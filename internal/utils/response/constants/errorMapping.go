@@ -1,0 +1,113 @@
+package constants
+
+import (
+	app_errors "serenibase/internal/app-errors"
+)
+
+var ErrorMapping = map[error]ResponseCode{
+	app_errors.ErrInternal:            Error.InternalError,
+	app_errors.DatabaseError:          Error.DatabaseError,
+	app_errors.ErrMapToStruct:         Error.MapToStructError,
+	app_errors.ErrStructToStruct:      Error.StructToStructError,
+	app_errors.ErrHashed:              Error.HashingError,
+	app_errors.InvalidCredentials:     Error.InvalidCredentials,
+	app_errors.FileNotFound:           Error.FileNotFound,
+	app_errors.FileAlreadyExists:      Error.FileAlreadyExists,
+	app_errors.FileReadFailed:         Error.FileReadFailed,
+	app_errors.FileWriteFailed:        Error.FileWriteFailed,
+	app_errors.FileDeleteFailed:       Error.FileDeleteFailed,
+	app_errors.FilePermissionDenied:   Error.FilePermissionDenied,
+	app_errors.FileInvalidPath:        Error.FileInvalidPath,
+	app_errors.FolderNotFound:         Error.FolderNotFound,
+	app_errors.FolderAlreadyExists:    Error.FolderAlreadyExists,
+	app_errors.FolderCreateFailed:     Error.FolderCreateFailed,
+	app_errors.FolderDeleteFailed:     Error.FolderDeleteFailed,
+	app_errors.FolderPermissionDenied: Error.FolderPermissionDenied,
+	app_errors.FolderInvalidPath:      Error.FolderInvalidPath,
+	app_errors.InvalidPayload:         Error.InvalidPayload,
+	app_errors.InvalidDriver:          Error.InvalidDriver,
+	app_errors.ErrRecordNotFound:      Error.ErrNotFound,
+	app_errors.ErrJSONMarshal:         Error.JSONMarshalError,
+	app_errors.ErrHTTPRequestCreation: Error.HTTPRequestCreationError,
+	app_errors.ErrHTTPDoRequest:       Error.HTTPDoRequestError,
+
+	// user management
+	app_errors.UserAlreadyExists:    UserError.UserAlreadyExists,
+	app_errors.UserNotFound:         UserError.ErrNotFound,
+	app_errors.EmailAlreadyVerified: UserError.EmailAlreadyVerified,
+	app_errors.InvalidOldPassword:   UserError.InvalidOldPassword,
+	app_errors.NewPasswordInvalid:   UserError.NewPasswordInvalid,
+
+	// role management
+	app_errors.RoleAlreadyExists: RoleError.RoleAlreadyExists,
+	app_errors.RoleNotFound:      RoleError.RoleNotFound,
+
+	// subscription plan management
+	app_errors.SubscriptionPlanAlreadyExists: SubscriptionPlanError.PlanAlreadyExists,
+	app_errors.SubscriptionPlanNotFound:      SubscriptionPlanError.PlanNotFound,
+
+	// tenant management
+	app_errors.TenantAlreadyExists: TenantError.TenantAlreadyExists,
+	app_errors.TenantNotFound:      TenantError.TenantNotFound,
+
+	// tenant subscription management
+	app_errors.TenantSubscriptionAlreadyExists: TenantError.SubscriptionNotCreated,
+	app_errors.TenantSubscriptionNotFound:      TenantError.SubscriptionNotFound,
+
+	// auth management
+	app_errors.InvalidOTP:                       AuthError.InvalidOTP,
+	app_errors.AuthProviderLoginFailed:          AuthError.AuthProviderLoginFailed,
+	app_errors.AuthProviderRefreshTokenFailed:   AuthError.AuthProviderRefreshTokenFailed,
+	app_errors.AuthProviderTokenInvalid:         AuthError.AuthProviderTokenInvalid,
+	app_errors.AuthProviderPingFailed:           AuthError.AuthProviderPingFailed,
+	app_errors.AuthProviderAuthHeaderRequired:   AuthError.AuthProviderAuthHeaderRequired,
+	app_errors.AuthProviderTokenDecodeFailed:    AuthError.AuthProviderTokenDecodeFailed,
+	app_errors.AuthProviderClaimsNotFound:       AuthError.AuthProviderClaimsNotFound,
+	app_errors.AuthProviderUserIDNotFound:       AuthError.AuthProviderUserIDNotFound,
+	app_errors.TokenUserIdNotFound:              AuthError.TokenUserIdNotFound,
+	app_errors.TokenAccessTokenSignFailed:       AuthError.TokenAccessTokenSignFailed,
+	app_errors.TokenRefreshTokenSignFailed:      AuthError.TokenRefreshTokenSignFailed,
+	app_errors.TokenRefreshTokenInvalid:         AuthError.TokenRefreshTokenInvalid,
+	app_errors.TokenRefreshTokenClaimsInvalid:   AuthError.TokenRefreshTokenClaimsInvalid,
+	app_errors.TokenInvalid:                     AuthError.TokenInvalid,
+	app_errors.TokenClaimsInvalid:               AuthError.TokenClaimsInvalid,
+	app_errors.TokenAuthorizationHeaderRequired: AuthError.TokenAuthorizationHeaderRequired,
+	app_errors.TokenClaimsNotFound:              AuthError.TokenClaimsNotFound,
+	app_errors.AuthProviderAdminLoginFailed:     AuthError.AuthProviderAdminLoginFailed,
+	app_errors.AuthProviderUserCreateFailed:     AuthError.AuthProviderUserCreateFailed,
+	app_errors.AuthProviderSetPasswordFailed:    AuthError.AuthProviderSetPasswordFailed,
+	app_errors.TokenExpired:                     AuthError.TokenExpired,
+	app_errors.AuthProviderTokenExpired:         AuthError.AuthProviderTokenExpired,
+	app_errors.TokenUnauthorized:                AuthError.TokenUnauthorized,
+
+	// workspace management
+	app_errors.ErrWorkspaceInsertion:     WorkspaceError.ErrWorkspaceInsertion,
+	app_errors.WorkspaceMemberNotFound:   WorkspaceError.WorkspaceMemberNotFound,
+	app_errors.ErrUserAlreadyInWorkspace: WorkspaceError.ErrUserAlreadyInWorkspace,
+
+	// base management
+	app_errors.BaseNotFound: BaseError.BaseNotFound,
+
+	// asset management
+	app_errors.VirusDetected:              AssetError.VirusDetected,
+	app_errors.StorageFileOpenFailed:      AssetError.StorageFileOpenFailed,
+	app_errors.StorageUploadFailed:        AssetError.StorageUploadFailed,
+	app_errors.AssetNotFound:              AssetError.AssetNotFound,
+	app_errors.MultipartFormNotFound:      AssetError.MultipartFormNotFound,
+	app_errors.FileTooLargeError:          AssetError.FileTooLargeError,
+	app_errors.MultipleFilesTooLargeError: AssetError.MultipleFilesTooLargeError,
+	app_errors.TooManyFilesError:          AssetError.TooManyFilesError,
+
+	// table management
+	app_errors.ViewNotFound:                   TableError.ViewNotFound,
+	app_errors.ViewUploadFailed:               TableError.ViewUploadFailed,
+	app_errors.UpdateNotAllowed:               TableError.UpdateNotAllowed,
+	app_errors.DeleteNotAllowed:               TableError.DeleteNotAllowed,
+	app_errors.ColumnNotFound:                 TableError.ColumnNotFound,
+	app_errors.ColumnUpdateFailed:             TableError.ColumnUpdateFailed,
+	app_errors.TableNotFound:                  TableError.TableNotFound,
+	app_errors.InvalidUIDT:                    TableError.UIDTInvalid,
+	app_errors.InvalidColumnMetaForLinkType:   TableError.InvalidColumnMetaForLinkType,
+	app_errors.RowNotFound:                    TableError.RowNotFound,
+	app_errors.InvalidColumnMetaForLookupType: TableError.InvalidColumnMetaForLookupType,
+}

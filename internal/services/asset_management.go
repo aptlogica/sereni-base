@@ -1,0 +1,327 @@
+package services
+
+import (
+	"bytes"
+	"context"
+	"godbgrest/pkg"
+	"image"
+	_ "image/gif"
+	"image/jpeg"
+	_ "image/jpeg"
+	"image/png"
+	_ "image/png"
+	"io"
+	"mime/multipart"
+	"path/filepath"
+	"serenibase/internal/dto"
+	"serenibase/internal/models/tenant"
+	antivirusProviderInterface "serenibase/internal/providers/antivirus/interfaces"
+	storageProviderInterface "serenibase/internal/providers/storage/interfaces"
+	"serenibase/internal/services/interfaces"
+
+	"fmt"
+	app_errors "serenibase/internal/app-errors"
+	"strings"
+	"time"
+
+	"github.com/disintegration/imaging"
+	"github.com/google/uuid"
+)
+
+type assetManagementService struct {
+	repo                   *pkg.DatabaseService
+	assetsService          interfaces.AssetService
+	storageProviderService storageProviderInterface.StorageProvider
+	antivirusProvider      antivirusProviderInterface.Provider
+}
+
+func NewAssetManagementService(
+	repo *pkg.DatabaseService,
+	assetsService interfaces.AssetService,
+	storageProviderService storageProviderInterface.StorageProvider,
+	antivirusProvider antivirusProviderInterface.Provider,
+) interfaces.AssetManagementService {
+	return &assetManagementService{
+		repo:                   repo,
+		assetsService:          assetsService,
+		storageProviderService: storageProviderService,
+		antivirusProvider:      antivirusProvider,
+	}
+}
+
+func (s *assetManagementService) getImageDimensions(file io.ReadSeeker) (int, int, error) {
+	cfg, _, err := image.DecodeConfig(file)
+	if err != nil {
+		return 0, 0, err
+	}
+	return cfg.Width, cfg.Height, nil
+}
+
+func (s *assetManagementService) generateTimestampedFilename(filename string) string {
+	ext := filepath.Ext(filename)
+	name := strings.TrimSuffix(filename, ext)
+	timestamp := time.Now().Format("20060102_150405") // e.g., 20250804_143210
+	return fmt.Sprintf("%s_%s%s", name, timestamp, ext)
+}
+
+func (s *assetManagementService) processAndUploadFile(fileHeader *multipart.FileHeader, schema string) (dto.AssetInsertion, error) {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return dto.AssetInsertion{}, app_errors.StorageFileOpenFailed
+	}
+	defer file.Close()
+
+	width, height, err := s.getImageDimensions(file)
+	if err != nil {
+		width, height = 0, 0
+	}
+
+	// Reset the file reader before upload
+	if _, err = file.Seek(0, 0); err != nil {
+		return dto.AssetInsertion{}, app_errors.StorageFileOpenFailed
+	}
+
+	contentType := fileHeader.Header.Get("Content-Type")
+	fileName := s.generateTimestampedFilename(fileHeader.Filename)
+	objectName := filepath.Join(schema, fileName)
+
+	filePath, err := s.uploadMainFile(objectName, file, fileHeader.Size, contentType, schema)
+	if err != nil {
+		fmt.Println(err)
+		return dto.AssetInsertion{}, app_errors.StorageUploadFailed
+	}
+
+	thumbnailUrl := s.getThumbnailUrl(fileHeader, contentType, fileName, filePath, schema)
+
+	return dto.AssetInsertion{
+		ID:           uuid.New(),
+		Title:        fileHeader.Filename,
+		BasePath:     strings.ReplaceAll(objectName, "\\", "/"),
+		Url:          filePath,
+		ThumbnailUrl: thumbnailUrl,
+		MimeType:     contentType,
+		Size:         fileHeader.Size,
+		Height:       height,
+		Width:        width,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}, nil
+}
+
+// Sagrigated helper to upload main file
+func (s *assetManagementService) uploadMainFile(objectName string, file io.Reader, size int64, contentType string, schema string) (string, error) {
+	return s.storageProviderService.Upload(
+		context.Background(),
+		objectName,
+		file,
+		size,
+		contentType,
+	)
+}
+
+// getThumbnailUrl generates a thumbnail for image files using the imaging library.
+// Thumbnails are JPEG, max 200px on the longest edge.
+func (s *assetManagementService) getThumbnailUrl(
+	fileHeader *multipart.FileHeader, contentType, fileName, filePath string, schema string,
+) string {
+	isImage := strings.HasPrefix(contentType, "image/") &&
+		(strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".jpg") ||
+			strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".jpeg") ||
+			strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".png"))
+
+	if !isImage {
+		return filePath // non-image files: thumbnail is same as url
+	}
+
+	const thumbnailMaxSize = 200
+
+	// Open the image file
+	file, err := fileHeader.Open()
+	if err != nil {
+		fmt.Println("getThumbnailUrl(imaging): failed to open source file for thumbnail:", err)
+		return filePath
+	}
+	defer file.Close()
+
+	// Decode using imaging
+	srcImg, err := imaging.Decode(file)
+	if err != nil {
+		fmt.Println("getThumbnailUrl(imaging): decode failed:", err)
+		return filePath
+	}
+
+	// Resize so that the largest edge is thumbnailMaxSize px (preserve aspect)
+	thumbImg := imaging.Thumbnail(srcImg, thumbnailMaxSize, thumbnailMaxSize, imaging.Lanczos)
+
+	// Encode to JPEG (quality=75)
+	var buf bytes.Buffer
+	err = imaging.Encode(&buf, thumbImg, imaging.JPEG, imaging.JPEGQuality(75))
+	if err != nil {
+		fmt.Println("getThumbnailUrl(imaging): encode failed:", err)
+		return filePath
+	}
+
+	thumbBytes := buf.Bytes()
+	if len(thumbBytes) == 0 {
+		fmt.Println("getThumbnailUrl(imaging): encode returned empty buffer")
+		return filePath
+	}
+
+	thumbFile := bytes.NewReader(thumbBytes)
+	thumbContentType := "image/jpeg"
+	thumbObjectName := filepath.Join(schema, "thumb_"+fileName)
+	thumbPath, thumbErr := s.storageProviderService.Upload(
+		context.Background(),
+		thumbObjectName,
+		thumbFile,
+		int64(len(thumbBytes)),
+		thumbContentType,
+	)
+	if thumbErr != nil {
+		fmt.Println("getThumbnailUrl(imaging): upload failed:", thumbErr)
+		return filePath
+	}
+	return thumbPath
+}
+
+// Create a new function to scan files in req.Files using antivirusProvider (if present)
+func (s *assetManagementService) scanFilesWithAntivirus(ctx context.Context, req dto.UploadAssetRequest) error {
+	for _, fileHeader := range req.Files {
+		if s.antivirusProvider != nil {
+			file, err := fileHeader.Open()
+			if err != nil {
+				fmt.Println("antivirus scan: failed to open file:", err)
+				continue
+			}
+			scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, fileHeader.Filename, file)
+      file.Close()
+			if scanErr != nil {
+				fmt.Printf("Antivirus: %s is infected or unreadable: %s\n", scanResult.FileName, scanResult.Threat)
+				return fmt.Errorf("file '%s' is infected", scanResult.FileName)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *assetManagementService) Upload(ctx context.Context, req dto.UploadAssetRequest, schema string) ([]tenant.Assets, error) {
+	var records []dto.AssetInsertion
+
+	err := s.scanFilesWithAntivirus(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, fileHeader := range req.Files {
+		asset, err := s.processAndUploadFile(fileHeader, schema)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, asset)
+	}
+	insertedAssets, err := s.assetsService.AssetBulkInsertion(ctx, records, schema)
+	if err != nil {
+		return nil, err
+	}
+	return insertedAssets, nil
+}
+
+func (s *assetManagementService) UploadImage(ctx context.Context, req dto.UploadAssetRequest, schema string) ([]tenant.Assets, error) {
+	// Validate that there is exactly one file
+	if len(req.Files) != 1 {
+		return nil, fmt.Errorf("exactly one image file is required")
+	}
+
+	fileHeader := req.Files[0]
+
+	// Validate that the file is an image
+	contentType := fileHeader.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		return nil, fmt.Errorf("file '%s' is not an image", fileHeader.Filename)
+	}
+
+	err := s.scanFilesWithAntivirus(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	asset, err := s.processAndUploadFile(fileHeader, schema)
+	if err != nil {
+		return nil, err
+	}
+
+	insertedAsset, err := s.assetsService.AssetInsertion(ctx, asset, schema)
+	if err != nil {
+		return nil, err
+	}
+	return []tenant.Assets{insertedAsset}, nil
+}
+
+func (s *assetManagementService) GetBulkAssets(ctx context.Context, schemaName string, ids []string) ([]tenant.Assets, error) {
+	return s.assetsService.GetBulkAssets(ctx, schemaName, ids)
+}
+
+func (s *assetManagementService) UpdateAsset(ctx context.Context, assetId string, assetData dto.AssetUpdate, schemaName string) (tenant.Assets, error) {
+	return s.assetsService.AssetUpdate(ctx, assetId, assetData, schemaName)
+}
+
+func (s *assetManagementService) DeleteAsset(ctx context.Context, assetId string, schemaName string) error {
+
+	asset, err := s.assetsService.GetAssetByID(ctx, assetId, schemaName)
+	if err != nil {
+		return err
+	}
+
+	err = s.storageProviderService.Delete(ctx, asset.BasePath)
+	if err != nil {
+		return err
+	}
+
+	err = s.assetsService.DeleteAsset(ctx, assetId, schemaName)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *assetManagementService) GetAssetByURL(ctx context.Context, schemaName string, url string) (tenant.Assets, error) {
+	return s.assetsService.GetAssetByURL(ctx, url, schemaName)
+}
+
+func (s *assetManagementService) compressImage(fileHeader *multipart.FileHeader, quality int) ([]byte, error) {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	// Decode the image
+	img, format, err := image.Decode(file)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	switch format {
+	case "jpeg", "jpg":
+		// Quality range: 1-100
+		var opt jpeg.Options
+		if quality < 1 {
+			opt.Quality = 75
+		} else if quality > 100 {
+			opt.Quality = 100
+		} else {
+			opt.Quality = quality
+		}
+		err = jpeg.Encode(&buf, img, &opt)
+	case "png":
+		err = png.Encode(&buf, img) // PNG doesn't use quality, so just encode
+	default:
+		return nil, fmt.Errorf("unsupported image format: %s", format)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}

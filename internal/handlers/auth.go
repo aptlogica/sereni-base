@@ -1,0 +1,490 @@
+package handlers
+
+import (
+	"fmt"
+	"net/http"
+	"serenibase/internal/dto"
+	"serenibase/internal/handlers/validators"
+	"serenibase/internal/services/interfaces"
+	"serenibase/internal/utils/response"
+	responseConst "serenibase/internal/utils/response/constants"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+)
+
+type AuthHandler struct {
+	authManagementService interfaces.AuthManagementService
+}
+
+func NewAuthHandler(authManagementService interfaces.AuthManagementService) *AuthHandler {
+	return &AuthHandler{authManagementService: authManagementService}
+}
+
+func (h *AuthHandler) RegisterUser(c *gin.Context) {
+	var req dto.RegisterRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RegisterValidationError(ve[0]))
+			return
+		}
+		fmt.Println("err", err)
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	registerUser, err := h.authManagementService.Register(c.Request.Context(), req)
+	if err != nil {
+		fmt.Println("err", err)
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.UserRegister, registerUser)
+}
+
+func (h *AuthHandler) LoginUser(c *gin.Context) {
+	var req dto.LoginRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.LoginValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	user, err := h.authManagementService.Login(c.Request.Context(), req.Email, req.Password)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.UserLogin, user)
+}
+
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	var req dto.VerifyEmailRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.VerifyEmailRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	loginResp, err := h.authManagementService.VerifyEmail(c.Request.Context(), req)
+	if err != nil {
+		fmt.Println("err--->", err)
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.EmailVerified, loginResp)
+}
+
+func (h *AuthHandler) ResendOTP(c *gin.Context) {
+	var req dto.ResendOTPRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.VerifyResendOtpRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	err := h.authManagementService.ResendOTP(c.Request.Context(), req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.ResendOTP, nil)
+}
+
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	var req dto.RefreshTokenRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RefreshTokenRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	refreshResp, err := h.authManagementService.RefreshToken(c.Request.Context(), req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.RefreshToken, refreshResp)
+
+}
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req dto.ForgotPasswordRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ForgotPasswordRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	err := h.authManagementService.ForgotPassword(c.Request.Context(), req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.ForgotPassword, nil)
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req dto.ResetPasswordRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ResetPasswordRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	err := h.authManagementService.ResetPassword(c.Request.Context(), req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.ResetPassword, nil)
+}
+
+func (h *AuthHandler) KeycloakCallback(c *gin.Context) {
+	code := c.Query("code")
+
+	if code == "" {
+		response.SendError(c, "Missing code in Keycloak callback")
+		return
+	}
+
+	result, err := h.authManagementService.HandleKeycloakCallback(c.Request.Context(), code)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.UserLogin, result)
+}
+
+func (h *AuthHandler) LoginByProvider(c *gin.Context) {
+	provider := c.Param("provider")
+	redirectURL := h.authManagementService.GetAuthProviderUrl(provider)
+	c.Redirect(http.StatusFound, redirectURL)
+}
+
+func (h *AuthHandler) Logout(c *gin.Context) {
+	var req dto.LogoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.LogoutRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	err := h.authManagementService.Logout(c.Request.Context(), req.Token)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.UserLogout, err)
+}
+
+func (h *AuthHandler) AddUser(c *gin.Context) {
+	var req dto.AddUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.AddUserRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	_, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserAdded, nil)
+}
+
+func (h *AuthHandler) RemoveUser(c *gin.Context) {
+	var req dto.RemoveUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RemoveUserRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.authManagementService.DeleteUserCompletely(c.Request.Context(), schemaName, req.UserID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserRemoved, nil)
+}
+
+func (h *AuthHandler) GetUsers(c *gin.Context) {
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	fmt.Println("schemaName: ", schemaName)
+
+	users, err := h.authManagementService.GetUsers(c.Request.Context(), schemaName)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UsersFetched, users)
+}
+
+// add into user handler
+func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
+	var req dto.CreateMemberRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.CreateMemberRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	fmt.Println(req)
+
+	// NOTE: You should implement this method on your authManagementService!
+	err := h.authManagementService.AssignUserToWorkspace(c.Request.Context(), schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserAssignedToWorkspace, nil)
+}
+
+func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
+	var req dto.RemoveMemberRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RemoveMemberRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// Set workspaceID from URL parameter "id"
+	workspaceID := c.Param("id")
+	req.WorkspaceID = workspaceID
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromWorkspace, nil)
+}
+
+// add into workspace handler
+func (h *AuthHandler) InviteUser(c *gin.Context) {
+	var req dto.CreateMemberRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	workspaceID := c.Param("id")
+	req.WorkspaceID = workspaceID
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.authManagementService.InviteMemberToWorkspace(c.Request.Context(), schemaName, req); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "User invited to workspace successfully", nil)
+}
+
+func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
+	workspaceID := c.Param("id")
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	members, err := h.authManagementService.GetWorkspaceMembers(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Workspace members retrieved successfully", members)
+}
+
+func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
+	baseID := c.Param("id")
+	fmt.Println("baseID...", baseID)
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+	fmt.Println("schemaName...", schemaName)
+	baseMembers, err := h.authManagementService.GetBaseMembers(c.Request.Context(), schemaName, baseID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Base members retrieved successfully", baseMembers)
+}
+
+// AddMultipleMembers adds multiple users to a workspace at once
+func (h *AuthHandler) AddMultipleMembers(c *gin.Context) {
+	var req dto.AddMultipleMembersRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.AddMultipleMembersRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// Set workspaceID from URL parameter "id"
+	workspaceID := c.Param("id")
+	req.WorkspaceID = workspaceID
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	result, err := h.authManagementService.AddMultipleMembers(c.Request.Context(), schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Members processed successfully", result)
+}
+
+func (h *AuthHandler) UpdatePassword(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	var updatePayload dto.UpdateUserPasswordRequest
+	if err := c.ShouldBindJSON(&updatePayload); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.UpdateUserPasswordValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.authManagementService.UpdatePassword(c.Request.Context(), schemaName, id, updatePayload)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.PasswordUpdated, nil)
+}
+
+func (h *AuthHandler) ActivateUser(c *gin.Context) {
+	var req dto.ActivateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ActivateUserRequestError(ve[0]))
+			return
+		}
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	updatedProfile, err := h.authManagementService.ActivateUser(c.Request.Context(), schemaName, req.UserID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+}
+
+func (h *AuthHandler) DeactivateUser(c *gin.Context) {
+	var req dto.DeactivateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.DeactivateUserRequestError(ve[0]))
+			return
+		}
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	updatedProfile, err := h.authManagementService.DeactivateUser(c.Request.Context(), schemaName, req.UserID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+}

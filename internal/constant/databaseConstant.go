@@ -1,0 +1,268 @@
+package constant
+
+type Function struct {
+	FunctionName   string
+	FunctionParams string
+	FunctionSQL    string
+}
+
+var DefinedFunctions = []Function{
+	{
+		FunctionName:   "dynamic_array_join_assets_jsonb",
+		FunctionParams: "schema_name TEXT, source_table TEXT, source_columns TEXT[], target_table TEXT",
+		FunctionSQL: `
+			RETURNS SETOF JSONB
+			LANGUAGE plpgsql AS $$
+			DECLARE
+				query TEXT;
+				col_exprs TEXT;
+			BEGIN
+				-- Build JSONB expressions for each source column
+				col_exprs := array_to_string(
+					ARRAY(
+						SELECT format(
+							'%L, COALESCE((SELECT jsonb_agg(a) FROM %I.%I a WHERE a.id = ANY(p.%I::uuid[])), ''[]''::jsonb)',
+							c, schema_name, target_table, c
+						)
+						FROM unnest(source_columns) AS c
+					),
+					', '
+				);
+
+				-- Final query with ORDER BY p.id
+				query := format(
+					'SELECT to_jsonb(p) || jsonb_build_object(%s) AS result FROM %I.%I p ORDER BY p.id',
+					col_exprs,
+					schema_name,
+					source_table
+				);
+
+				RETURN QUERY EXECUTE query;
+			END;
+			$$;
+		`,
+	},
+	{
+		FunctionName:   "convert_column_type",
+		FunctionParams: "schema_name TEXT, table_name TEXT, column_name TEXT, target_type TEXT, empty_before BOOLEAN",
+		FunctionSQL: `
+			RETURNS void
+			LANGUAGE plpgsql
+			AS $$
+			DECLARE
+				full_table_name TEXT;
+				sql TEXT;
+			BEGIN
+				-- Build full table name
+				full_table_name := format('%I.%I', schema_name, table_name);
+
+				-- If user wants to empty before converting
+				IF empty_before THEN
+					sql := format(
+						'ALTER TABLE %s ALTER COLUMN %I TYPE %s USING NULL',
+						full_table_name,
+						column_name,
+						target_type
+					);
+					EXECUTE sql;
+					RETURN;
+				END IF;
+
+				-- Normal behavior: try conversion with CAST → fallback to NULL
+				sql := format(
+					'ALTER TABLE %s ALTER COLUMN %I TYPE %s USING CAST(CAST(%I AS text) AS %s)',
+					full_table_name,
+					column_name,
+					target_type,
+					column_name,
+					target_type
+				);
+
+				BEGIN
+					EXECUTE sql;
+				EXCEPTION WHEN OTHERS THEN
+					-- Fallback: clear data if cast fails
+					sql := format(
+						'ALTER TABLE %s ALTER COLUMN %I TYPE %s USING NULL',
+						full_table_name,
+						column_name,
+						target_type
+					);
+					EXECUTE sql;
+				END;
+			END;
+			$$;
+		`,
+	},
+	{
+		FunctionName:   "get_paginated_relations",
+		FunctionParams: "schema_name TEXT, source_table_name TEXT, relation_data JSON[], page_size INT DEFAULT 10, page_number INT DEFAULT 1",
+		FunctionSQL: `
+			RETURNS JSON
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				rel JSON;
+				source_column_name TEXT;
+				target_table_name TEXT;
+				target_column_name TEXT;
+				relation TEXT;
+				target_columns TEXT[];
+				query TEXT;
+				relation_sql TEXT := '';
+				cols TEXT;
+				result JSON;
+				offset_val INT;
+			BEGIN
+				-- Calculate offset for pagination
+				offset_val := (page_number - 1) * page_size;
+
+				-- Loop through each relation object in relation_data array
+				FOR rel IN SELECT * FROM unnest(relation_data)
+				LOOP
+					source_column_name := rel->>'source_column_name';
+					target_table_name  := rel->>'target_table_name';
+					target_column_name := rel->>'target_column_name';
+					relation           := rel->>'relation';
+					target_columns     := ARRAY(SELECT json_array_elements_text(rel->'target_columns'));
+
+					-- Build columns for this relation
+					cols := array_to_string(
+						ARRAY(
+							SELECT CASE
+								WHEN relation IN ('has-many','many-to-many') THEN
+									format(
+										'(SELECT COALESCE(JSON_AGG(t.%I), ''[]''::JSON)
+										  FROM %I.%I t
+										  WHERE t.%I = ANY(s.%I)) AS %I',
+										c, schema_name, target_table_name, target_column_name, source_column_name,
+										target_table_name || '_' || c
+									)
+								ELSE
+									format(
+										'(SELECT t.%I FROM %I.%I t WHERE t.%I = s.%I LIMIT 1) AS %I',
+										c, schema_name, target_table_name, target_column_name, source_column_name,
+										target_table_name || '_' || c
+									)
+								END
+							FROM unnest(target_columns) AS c
+						), ', '
+					);
+
+					-- Add this relation's columns to the main query projection
+					relation_sql := relation_sql || ', ' || cols;
+				END LOOP;
+
+				-- Build final query with pagination
+				query := format(
+					'SELECT COALESCE(JSON_AGG(row_to_json(row)), ''[]''::JSON)
+					 FROM (
+						 SELECT s.* %s
+						 FROM %I.%I s
+						 ORDER BY s.id
+						 LIMIT %s OFFSET %s
+					 ) row',
+					relation_sql,
+					schema_name, source_table_name,
+					page_size, offset_val
+				);
+
+				-- Execute dynamic query into a JSON array
+				EXECUTE query INTO result;
+
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
+		FunctionName:   "reorder_columns_after_delete",
+		FunctionParams: "p_schema_name TEXT, p_model_id TEXT, p_order_index INT",
+		FunctionSQL: `
+			RETURNS VOID
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				sql TEXT;
+			BEGIN
+				sql := format(
+					'UPDATE %I.columns
+					SET order_index = order_index - 1
+					WHERE model_id = $1
+					AND order_index > $2;',
+					p_schema_name
+				);
+
+				EXECUTE sql USING p_model_id, p_order_index;
+
+				RAISE NOTICE 'Reordered columns in schema %, model %, after order_index %',
+					p_schema_name, p_model_id, p_order_index;
+			END;
+			$$;
+		`,
+	},
+	{
+		FunctionName:   "get_workspace_base_users",
+		FunctionParams: "p_schema_name text, p_workspace_id uuid, p_base_id uuid",
+		FunctionSQL: `
+			RETURNS SETOF jsonb
+			LANGUAGE plpgsql
+			AS $$
+			DECLARE
+				sql text;
+			BEGIN
+				sql := format($f$
+					SELECT jsonb_build_object(
+						'user_id',      user_id,
+						'workspace_id', workspace_id,
+						'bases_ids',    bases_ids,
+						'access_level', access_level      -- 👈 add this line
+					)
+					FROM %I.workspace_members
+					WHERE workspace_id = $1::text
+					AND (
+							bases_ids = '*'  -- full access
+							OR $2::text = ANY (
+									string_to_array(
+										replace(bases_ids, ' ', ''),
+										','
+									)
+							)
+					)
+				$f$, p_schema_name);
+
+				RETURN QUERY EXECUTE sql USING p_workspace_id, p_base_id;
+			END;
+			$$;
+		`,
+	},
+	{
+		FunctionName:   "get_users_with_role",
+		FunctionParams: "p_schema_name text",
+		FunctionSQL: `
+		RETURNS SETOF jsonb
+		LANGUAGE plpgsql
+		AS $$
+		DECLARE
+			sql text;
+		BEGIN
+			sql := format($f$
+				SELECT
+					to_jsonb(u) ||
+					jsonb_build_object(
+						'role_id', r.id,
+						'roles', r.name
+					)
+				FROM %I.users u
+				LEFT JOIN %I.user_roles ur 
+					ON ur.user_id::uuid = u.id
+				LEFT JOIN %I.roles r 
+					ON r.id = ur.role_id::uuid
+			$f$, p_schema_name, p_schema_name, p_schema_name);
+
+			RETURN QUERY EXECUTE sql;
+		END;
+		$$;
+	`,
+	},
+}

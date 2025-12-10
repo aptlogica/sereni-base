@@ -1,0 +1,79 @@
+server:
+  host: "{{server_host}}"
+  port: "{{server_port}}"
+  read_timeout: {{server_read_timeout}}
+  write_timeout: {{server_write_timeout}}
+  env: "{{server_env}}"
+  scheme: "{{server_scheme}}" # options: http | https
+
+database:
+  host: "{{database_host}}"
+  # host: "{{database_host_alt}}"
+  port: {{database_port}}
+  username: "{{database_username}}"
+  password: "{{database_password}}"
+  # database_name: "{{database_name_alt}}"
+  database_name: "{{database_name}}"
+  # database_name: "{{database_name_dev_lookup}}"
+  ssl_mode: "{{database_ssl_mode}}"
+  max_open_conns: {{database_max_open_conns}}
+  max_idle_conns: {{database_max_idle_conns}}
+  driver: "{{database_driver}}"
+
+auth:
+  url: "{{auth_url}}"
+  reset_password_url: "{{auth_reset_password_url}}"
+
+redis:
+  enabled: {{redis_enabled}}
+  url: "{{redis_url}}"
+  password: "{{redis_password}}"
+
+email:
+  smtp_host: "{{email_smtp_host}}"
+  smtp_port: "{{email_smtp_port}}"
+  smtp_username: "{{email_smtp_username}}"
+  smtp_password: "{{email_smtp_password}}"
+  from_email: "{{email_from_email}}"
+  from_name: "{{email_from_name}}"
+
+storage:
+  driver: {{storage_driver}} # options: dev, minio, aws
+
+  dev:
+    path: {{dev_storage_path}} # Local directory for development
+
+  minio:
+    endpoint: {{minio_endpoint}}
+    access_key: {{minio_access_key}}
+    secret_key: {{minio_secret_key}}
+    bucket: {{minio_bucket}}
+    use_ssl: {{minio_use_ssl}}
+    region: {{minio_region}}
+
+  aws:
+    access_key: {{aws_access_key}}
+    secret_key: {{aws_secret_key}}
+    bucket: {{aws_bucket}}
+    region: {{aws_region}}
+    use_ssl: {{aws_use_ssl}}
+
+log:
+  level: {{log_level}}        # debug, info, warn, error, fatal, panic
+  file: {{log_file}}
+  max_size: {{log_max_size}}       # MB
+  max_backups: {{log_max_backups}}
+  max_age: {{log_max_age}}        # days
+  compress: {{log_compress}}
+
+asset:
+  max_size : {{asset_max_size}}  # 5MB
+
+antivirus:
+  driver: {{antivirus_driver}}  # options: clamav
+  clamav:
+    address: "{{clamav_address}}"
+    timeout_seconds: {{clamav_timeout_seconds}}
+
+temporary_added_user_password:
+  value: "{{temporary_added_user_password_value}}"

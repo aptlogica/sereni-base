@@ -1,0 +1,8 @@
+tests/
+.env
+Makefile
+config.yaml
+docs/
+keycloak-docs/
+uploads/
+assets/
