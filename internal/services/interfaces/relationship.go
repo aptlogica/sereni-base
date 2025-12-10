@@ -1,0 +1,14 @@
+package interfaces
+
+import (
+	"context"
+	"serenibase/internal/dto"
+	"serenibase/internal/models/tenant"
+)
+
+type RelationshipService interface {
+	Create(ctx context.Context, req dto.RelationInsertion, schemaName string) (tenant.Relation, error)
+	GetRelationByID(ctx context.Context, id string, schemaName string) (tenant.Relation, error)
+	DeleteRelation(ctx context.Context, relationId string, schemaName string) error
+	UpdateRelation(ctx context.Context, relationId string, relationData dto.RelationUpdate, schemaName string) (tenant.Relation, error)
+}

@@ -1,0 +1,101 @@
+package services
+
+import (
+	"context"
+	"fmt"
+	"godbgrest/pkg"
+	dbModels "godbgrest/pkg/models"
+	app_errors "serenibase/internal/app-errors"
+	"serenibase/internal/dto"
+	"serenibase/internal/models/tenant"
+	"serenibase/internal/services/interfaces"
+	"serenibase/internal/utils/helpers"
+)
+
+type relationshipService struct {
+	repo *pkg.DatabaseService
+}
+
+func NewRelationshipService(repo *pkg.DatabaseService) interfaces.RelationshipService {
+	return &relationshipService{repo: repo}
+}
+
+func (s *relationshipService) Create(ctx context.Context, req dto.RelationInsertion, schemaName string) (tenant.Relation, error) {
+	tableName := tenant.Relation{}.TableName(schemaName)
+	insertedRelationshipData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	if err != nil {
+		fmt.Println("err", err)
+		return tenant.Relation{}, app_errors.DatabaseError
+	}
+
+	var insertedRelationship tenant.Relation
+	if err := helpers.MapToStruct(insertedRelationshipData, &insertedRelationship); err != nil {
+		fmt.Println("err MapToStruct", err)
+		return tenant.Relation{}, app_errors.ErrMapToStruct
+	}
+	return insertedRelationship, nil
+}
+
+func (s *relationshipService) GetRelationByID(ctx context.Context, id string, schemaName string) (tenant.Relation, error) {
+	tableName := tenant.Relation{}.TableName(schemaName)
+	limit := 1
+	query := dbModels.QueryParams{
+		Select: []string{"*"},
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "id",
+				Operator: "eq",
+				Value:    id,
+			},
+		},
+		Limit: &limit,
+	}
+
+	relationsData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	if err != nil {
+		return tenant.Relation{}, app_errors.DatabaseError
+	}
+
+	if len(relationsData) == 0 {
+		return tenant.Relation{}, app_errors.InvalidPayload
+	}
+
+	relationData := relationsData[0]
+	var relation tenant.Relation
+	if err := helpers.MapToStruct(relationData, &relation); err != nil {
+		return tenant.Relation{}, app_errors.ErrMapToStruct
+	}
+	return relation, nil
+}
+
+func (s *relationshipService) DeleteRelation(ctx context.Context, relationId string, schemaName string) error {
+	tableName := tenant.Relation{}.TableName(schemaName)
+
+	err := s.repo.TableService.DeleteRecord(ctx, tableName, relationId)
+	if err != nil {
+		return app_errors.DatabaseError
+	}
+
+	return nil
+}
+
+func (s *relationshipService) UpdateRelation(ctx context.Context, relationId string, relationData dto.RelationUpdate, schemaName string) (tenant.Relation, error) {
+	tableName := tenant.Relation{}.TableName(schemaName)
+	updateData := relationData.Map()
+
+	if len(updateData) == 0 {
+		return tenant.Relation{}, app_errors.InvalidPayload
+	}
+
+	updatedData, err := s.repo.TableService.UpdateRecord(ctx, tableName, relationId, updateData)
+	if err != nil {
+		return tenant.Relation{}, app_errors.DatabaseError
+	}
+
+	var relation tenant.Relation
+	if err := helpers.MapToStruct(updatedData, &relation); err != nil {
+		return tenant.Relation{}, app_errors.ErrMapToStruct
+	}
+
+	return relation, nil
+}
