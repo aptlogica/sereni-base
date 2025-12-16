@@ -1539,6 +1539,7 @@ func (s tableManagementService) DeleteColumn(
 	}
 
 	if columnData.UIDT == "lookup" {
+		fmt.Println("DeleteColumn...... ")
 		lookupColumnID, relationID, ok := s.validateMetaForLookup(columnData.Meta)
 
 		lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
@@ -2355,7 +2356,6 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 	}
 	return response, nil
 }
-
 
 func (s tableManagementService) handleDeleteRowForLinks(ctx context.Context, sourceModel tenant.Model, rowData map[string]interface{}, schemaName string, req dto.DeleteRowDataRequest) error {
 	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())

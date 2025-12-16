@@ -168,6 +168,7 @@ func (s *modelService) GetModelByBaseID(ctx context.Context, schemaName string, 
 		Filters: []dbModels.QueryFilter{
 			{Column: "base_id", Operator: "eq", Value: base_id},
 		},
+		OrderBy: []string{"order_index"},
 	})
 	if err != nil {
 		return []tenant.Model{}, app_errors.DatabaseError

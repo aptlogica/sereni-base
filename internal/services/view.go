@@ -148,6 +148,7 @@ func (s *viewService) GetViewsByModelID(ctx context.Context, schemaName string, 
 		Filters: []dbModels.QueryFilter{
 			{Column: "model_id", Operator: "eq", Value: modelID},
 		},
+		OrderBy: []string{"order_index"},
 	})
 	if err != nil {
 		return []tenant.View{}, err
