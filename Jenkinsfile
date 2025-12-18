@@ -9,6 +9,14 @@ pipeline {
     }
 
     stage('SonarQube Analysis') {
+        when {
+        anyOf {
+          branch 'develop'
+          branch 'main'
+          branch 'release/*'
+          branch 'master'
+        }
+      }
       steps {
         script {
           // Get path to the installed Sonar Scanner tool
@@ -23,6 +31,14 @@ pipeline {
     }
 
     stage('Quality Gate') {
+      when {
+        anyOf {
+          branch 'develop'
+          branch 'main'
+          branch 'release/*'
+          branch 'master'
+        }
+      }
       steps {
         timeout(time: 10, unit: 'MINUTES') {
           waitForQualityGate abortPipeline: true
