@@ -8,6 +8,19 @@ import (
 
 const (
 	MasterDatabase = "master"
+
+	// Email footer notice
+	EmailFooterNotice = `────────────────────────────────────
+CONFIDENTIALITY & SECURITY NOTICE
+
+This email and any attachments are intended solely for the designated recipient and may contain confidential or proprietary information. Unauthorized use, disclosure, or distribution is strictly prohibited.
+
+Serenibase will never request passwords or sensitive credentials via email. Please do not share OTPs, access links, or authentication details.
+
+This is an automated message. Replies are not monitored.
+
+© Serenibase. All rights reserved.
+────────────────────────────────────`
 )
 
 func strPtr(s string) *string {

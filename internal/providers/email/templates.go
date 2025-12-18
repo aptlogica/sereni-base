@@ -1,6 +1,9 @@
 package email
 
-import "fmt"
+import (
+	"fmt"
+	"serenibase/internal/constant"
+)
 
 // service implements EmailTemplateService.
 type service struct{}
@@ -28,7 +31,7 @@ func (s *service) wrapBody(title string, content string) string {
         .email-body { padding: 40px; }
         .email-body p { margin-bottom: 20px; font-size: 16px; color: #333333; }
         .button { display: inline-block; background-color: #3869D4; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 4px; font-weight: bold; text-align: center; }
-        .footer { padding: 20px; text-align: center; color: #6b6e76; font-size: 12px; }
+        .footer { padding: 20px; text-align: center; color: #6b6e76; font-size: 12px; white-space: pre-wrap; }
         a { color: #3869D4; text-decoration: none; }
         strong { color: #333333; }
     </style>
@@ -44,23 +47,25 @@ func (s *service) wrapBody(title string, content string) string {
             </div>
         </div>
         <div class="footer">
-            <p>&copy; Serenibase. All rights reserved.</p>
+            <p>%s</p>
         </div>
     </div>
 </body>
 </html>
-`, title, title, content)
+`, title, title, content, constant.EmailFooterNotice)
 }
 
 // Email Verification OTP
 func (s *service) EmailVerificationOTPBody(otp string) EmailContent {
-	subject := "Verify Your Email"
+	subject := "Email Address Verification Required"
 	content := fmt.Sprintf(`
-		<p>Hello,</p>
-		<p>Thank you for registering with Serenibase. To verify your email address, please use the One-Time Password (OTP) below:</p>
+		<p>Dear User,</p>
+		<p>Thank you for registering with Serenibase.</p>
+		<p>To complete the verification of your email address, please use the One-Time Password (OTP) provided below:</p>
 		<p style="font-size: 24px; font-weight: bold; text-align: center; margin: 30px 0; letter-spacing: 5px; color: #3869D4;">%s</p>
-		<p>This OTP is valid for <strong>5 minutes</strong>.</p>
-		<p>If you did not request this verification, please ignore this email.</p>
+		<p>This OTP is valid for a period of <strong>5 minutes</strong>.</p>
+		<p>If you did not initiate this request, please disregard this email. No further action is required.</p>
+		<p>For security reasons, please do not share this OTP with anyone.</p>
 	`, otp)
 
 	return EmailContent{
@@ -71,17 +76,18 @@ func (s *service) EmailVerificationOTPBody(otp string) EmailContent {
 
 // Password Reset
 func (s *service) PasswordResetBody(resetLink string) EmailContent {
-	subject := "Reset Your Password"
+	subject := "Password Reset Instructions"
 	content := fmt.Sprintf(`
-		<p>Hello,</p>
-		<p>We received a request to reset your password for your Serenibase account.</p>
+		<p>Dear User,</p>
+		<p>We received a request to reset the password associated with your Serenibase account.</p>
+		<p>To proceed, please click the button below:</p>
 		<p style="text-align: center; margin: 30px 0;">
 			<a href="%s" class="button" style="color: #ffffff;">Reset Password</a>
 		</p>
-		<p>Or copy and paste this link into your browser:</p>
+		<p>Alternatively, you may copy and paste the following link into your web browser:</p>
 		<p><a href="%s">%s</a></p>
-		<p>This link will expire in <strong>1 hour</strong>.</p>
-		<p>If you did not request a password reset, you can safely ignore this email.</p>
+		<p>This password reset link will expire in <strong>1 hour</strong> for security purposes.</p>
+		<p>If you did not request a password reset, please ignore this email. Your account will remain secure.</p>
 	`, resetLink, resetLink, resetLink)
 
 	return EmailContent{
@@ -92,19 +98,20 @@ func (s *service) PasswordResetBody(resetLink string) EmailContent {
 
 // Tenant/User Invitation
 func (s *service) PlatformInvitationBody(firstName, tenantName, resetLink string) EmailContent {
-	subject := fmt.Sprintf("You're Invited to %s", tenantName)
+	subject := fmt.Sprintf("Invitation to Join %s on Serenibase", tenantName)
 	content := fmt.Sprintf(`
-		<p>Hello %s,</p>
-		<p>You have been invited to join the <strong>%s</strong> tenant on Serenibase.</p>
-		<p>To accept your invitation and set up your account password, please click the button below:</p>
+		<p>Dear %s,</p>
+		<p>You have been invited to join the organization <strong>%s</strong> on the Serenibase platform.</p>
+		<p>To accept this invitation and complete your account setup, please click the button below:</p>
 		<p style="text-align: center; margin: 30px 0;">
-			<a href="%s" class="button" style="color: #ffffff;">Join %s</a>
+			<a href="%s" class="button" style="color: #ffffff;">Accept Invitation</a>
 		</p>
-		<p>Or use this link:</p>
+		<p>Alternatively, you may use the following link:</p>
 		<p><a href="%s">%s</a></p>
-		<p>This invitation link is valid for <strong>1 hour</strong>.</p>
-		<p>We look forward to having you on board!</p>
-	`, firstName, tenantName, resetLink, tenantName, resetLink, resetLink)
+		<p>This invitation link will remain valid for <strong>1 hour</strong>.</p>
+		<p>If you believe this invitation was sent to you in error, you may safely disregard this message.</p>
+		<p>We look forward to your participation on Serenibase.</p>
+	`, firstName, tenantName, resetLink, resetLink, resetLink)
 
 	return EmailContent{
 		Subject: subject,
@@ -114,12 +121,13 @@ func (s *service) PlatformInvitationBody(firstName, tenantName, resetLink string
 
 // Added to Workspace
 func (s *service) AddedToWorkspaceBody(workspaceName, access string) EmailContent {
-	subject := "Added to Workspace"
+	subject := fmt.Sprintf("Access Granted to Workspace: %s", workspaceName)
 	content := fmt.Sprintf(`
-		<p>Hello,</p>
-		<p>You have been added to the workspace <strong>%s</strong>.</p>
-		<p>Your access level is: <strong>%s</strong></p>
-		<p>You can now start collaborating with your team in this workspace.</p>
+		<p>Dear User,</p>
+		<p>You have been granted access to the workspace "<strong>%s</strong>" on Serenibase.</p>
+		<p>Assigned Access Level: <strong>%s</strong></p>
+		<p>You may now log in to begin collaborating within this workspace.</p>
+		<p>If you have any questions regarding your access, please contact your workspace administrator.</p>
 	`, workspaceName, access)
 
 	return EmailContent{
@@ -130,11 +138,11 @@ func (s *service) AddedToWorkspaceBody(workspaceName, access string) EmailConten
 
 // Removed from Workspace
 func (s *service) RemovedFromWorkspaceBody(workspaceLabel string) EmailContent {
-	subject := "Removed from Workspace"
+	subject := fmt.Sprintf("Workspace Access Revoked: %s", workspaceLabel)
 	content := fmt.Sprintf(`
-		<p>Hello,</p>
-		<p>You have been removed from the workspace <strong>%s</strong>.</p>
-		<p>If you believe this is an error, please contact your workspace administrator.</p>
+		<p>Dear User,</p>
+		<p>Your access to the workspace "<strong>%s</strong>" on Serenibase has been removed.</p>
+		<p>If you believe this change was made in error, please reach out to your workspace administrator for further clarification.</p>
 	`, workspaceLabel)
 
 	return EmailContent{
@@ -145,12 +153,13 @@ func (s *service) RemovedFromWorkspaceBody(workspaceLabel string) EmailContent {
 
 // Invited to Workspace
 func (s *service) InvitedToWorkspaceBody(workspaceName, access string) EmailContent {
-	subject := "Workspace Invitation"
+	subject := fmt.Sprintf("Invitation to Join Workspace: %s", workspaceName)
 	content := fmt.Sprintf(`
-		<p>Hello,</p>
-		<p>You have been invited to join the workspace <strong>%s</strong>.</p>
-		<p>Access Level: <strong>%s</strong></p>
-		<p>Log in to your account to view and accept this invitation.</p>
+		<p>Dear User,</p>
+		<p>You have been invited to join the workspace "<strong>%s</strong>" on Serenibase.</p>
+		<p>Proposed Access Level: <strong>%s</strong></p>
+		<p>Please log in to your Serenibase account to review and accept this invitation.</p>
+		<p>If you were not expecting this invitation, no action is required.</p>
 	`, workspaceName, access)
 
 	return EmailContent{
@@ -161,11 +170,13 @@ func (s *service) InvitedToWorkspaceBody(workspaceName, access string) EmailCont
 
 // Workspace Access Updated
 func (s *service) WorkspaceAccessUpdatedBody(workspaceName, access string) EmailContent {
-	subject := "Access Rights Updated"
+	subject := "Workspace Access Level Updated"
 	content := fmt.Sprintf(`
-		<p>Hello,</p>
-		<p>Your access rights for the workspace <strong>%s</strong> have been updated.</p>
+		<p>Dear User,</p>
+		<p>Your access permissions for the workspace "<strong>%s</strong>" have been updated.</p>
 		<p>New Access Level: <strong>%s</strong></p>
+		<p>These changes take effect immediately.</p>
+		<p>If you require additional information regarding this update, please contact your workspace administrator.</p>
 	`, workspaceName, access)
 
 	return EmailContent{
