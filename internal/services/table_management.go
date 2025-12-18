@@ -1576,6 +1576,7 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, model.Alias)
 
 	data := map[string]interface{}{
+		"id":                 uuid.New().String(),
 		"created_by":         req.CreatedBy,
 		"last_modified_by":   req.CreatedBy,
 		"created_time":       time.Now().UTC(),
@@ -1601,7 +1602,7 @@ func (s tableManagementService) GetAllRecords(ctx context.Context, schemaName st
 
 	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, model.Alias)
 	params := dbModels.QueryParams{
-		OrderBy: []string{"id"},
+		OrderBy: []string{"created_time"},
 	}
 	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
 	if err != nil {

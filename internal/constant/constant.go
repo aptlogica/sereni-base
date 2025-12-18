@@ -64,7 +64,6 @@ var PlanNames = struct {
 	Premium: "Premium",
 }
 
-
 var DefaultPlans = []dto.PlanInsertion{
 	{
 		Name:                 PlanNames.Free,
@@ -102,8 +101,8 @@ var SystemColumns = []dto.AddColumnRequest{
 	{
 		Title:       "Id",
 		Description: "",
-		UIDT:        "number",
-		DT:          "BIGSERIAL",
+		UIDT:        "uuid",
+		DT:          "UUID",
 		OrderIndex:  helpers.Float64Ptr(0),
 		Virtual:     helpers.BoolPtr(false),
 		System:      helpers.BoolPtr(true),
@@ -525,7 +524,6 @@ var UITypeMappings = map[string]DBMapping{
 		Oracle:    "TEXT",
 	},
 }
-
 
 // AllowedConversions says: fromType -> list of allowed target types.
 //

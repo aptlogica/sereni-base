@@ -159,7 +159,7 @@ var DefinedFunctions = []Function{
 					 FROM (
 						 SELECT s.* %s
 						 FROM %I.%I s
-						 ORDER BY s.id
+						 ORDER BY s.created_time
 						 LIMIT %s OFFSET %s
 					 ) row',
 					relation_sql,
