@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type importService struct {
@@ -49,16 +51,55 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 	// 3. Infer Types
 	columnTypes := s.inferColumnTypes(headers, dataRows)
 
+	// Store first CSV column header to use as the title column name
+	titleColumnName := ""
+	if len(headers) > 0 && headers[0] != "" {
+		titleColumnName = headers[0]
+	}
+
 	// 4. Create Table
+	// Keep the original req.Title for the model title, don't override with CSV column name
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
 		return dto.ImportTableResponse{}, err
 	}
 
+	// Update the Title column with the first CSV header name
+	if titleColumnName != "" {
+		titleColumnID := ""
+		// Find the Title column ID from the default columns
+		for _, col := range tableResp.Columns {
+			if col.Title == "Title" {
+				titleColumnID = col.ID.String()
+				break
+			}
+		}
+
+		// Update the Title column with the first CSV header name
+		if titleColumnID != "" {
+			updateColReq := dto.ColumnUpdate{
+				Title: &titleColumnName,
+			}
+			_, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq)
+			if err != nil {
+				return dto.ImportTableResponse{}, err
+			}
+		}
+	}
+
 	// 5. Add Columns
 	columnMap := make(map[int]dto.ColumnResponse) // Index -> Column
+	systemFieldAdded := false
 	for i, header := range headers {
+		// Skip first column as it's used for the title field
+		if i == 0 {
+			continue
+		}
+
 		colType := columnTypes[i]
+		if colType == "text" && !systemFieldAdded {
+			systemFieldAdded = true
+		}
 
 		// Skip empty headers
 		if header == "" {
@@ -90,6 +131,7 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 	for _, row := range dataRows {
 		// Compose a record (map) with all header-column values for this row
 		record := map[string]interface{}{
+			"id":                 uuid.New().String(),
 			"created_by":         req.CreatedBy,
 			"last_modified_by":   req.CreatedBy,
 			"created_time":       time.Now().UTC(),
@@ -100,6 +142,14 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 			if cellVal == "" {
 				continue
 			}
+
+			// Map first column to title field
+			if i == 0 {
+				val := s.convertValue(cellVal, columnTypes[i])
+				record["title"] = val
+				continue
+			}
+
 			colResp, exists := columnMap[i]
 			if !exists {
 				continue
@@ -145,9 +195,10 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	isDecimal := true
 	isBool := true
 	isDate := true
-	// isDateTime := true // Simplified to just date for now
+	isLongText := false
 
 	hasData := false
+	totalLength := 0
 
 	for _, row := range rows {
 		if colIndex >= len(row) {
@@ -158,14 +209,13 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 			continue
 		}
 		hasData = true
+		totalLength += len(val)
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
-			// Check if it's an integer
 			if _, err := strconv.ParseInt(val, 10, 64); err != nil {
 				isNumber = false
 			}
-			// Check if it's a decimal (float)
 			if _, err := strconv.ParseFloat(val, 64); err != nil {
 				isDecimal = false
 			}
@@ -181,7 +231,6 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 
 		// Check Date (Simple check)
 		if isDate {
-			// Try parsing common formats
 			formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
 			parsed := false
 			for _, f := range formats {
@@ -193,6 +242,11 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 			if !parsed {
 				isDate = false
 			}
+		}
+
+		// Check if long text (avg length > 255)
+		if len(val) > 255 {
+			isLongText = true
 		}
 	}
 
@@ -211,6 +265,9 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	}
 	if isDate {
 		return "date"
+	}
+	if isLongText {
+		return "longText"
 	}
 	return "text"
 }

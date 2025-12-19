@@ -51,11 +51,9 @@ func NewTableManagementService(
 
 func (s tableManagementService) createTableWithDefaultsInDB(schemaName string, tableName string) ([]dto.AddColumnRequest, error) {
 	columnsData := constant.SystemColumns
-
-	var columnsDefinationParams []dbModels.ColumnDefinition
-
+	var columnsDefinitionParams []dbModels.ColumnDefinition
 	for _, col := range columnsData {
-		columnsDefinationParams = append(columnsDefinationParams, dbModels.ColumnDefinition{
+		columnsDefinitionParams = append(columnsDefinitionParams, dbModels.ColumnDefinition{
 			Name:     helpers.ToSnakeCase(col.Title),
 			DataType: col.DT,
 		})
@@ -63,7 +61,7 @@ func (s tableManagementService) createTableWithDefaultsInDB(schemaName string, t
 
 	creationReq := dbModels.CreateTableRequest{
 		Name:       fmt.Sprintf("\"%s\".\"%s\"", schemaName, tableName),
-		Columns:    columnsDefinationParams,
+		Columns:    columnsDefinitionParams,
 		PrimaryKey: []string{"id"},
 	}
 
@@ -134,7 +132,77 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 
 }
 
+func (s tableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	insertedModel, err := s.createModel(ctx, tableData, schemaName)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	columnsResponse, err := s.setupSystemColumns(ctx, schemaName, insertedModel)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	recordsData, err := s.GetAllRecords(ctx, schemaName, insertedModel.ID.String())
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	modelResponse := s.convertModelToResponse(insertedModel)
+
+	tableResponse := dto.TableResponse{
+		Model:   modelResponse,
+		Columns: columnsResponse,
+		Views: []dto.ViewResponse{
+			viewResponse,
+		},
+		Records: recordsData.Records,
+	}
+
+	return tableResponse, nil
+}
+
 func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	insertedModel, err := s.createModel(ctx, tableData, schemaName)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	columnsResponse, err := s.setupSystemColumns(ctx, schemaName, insertedModel)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	recordsData, err := s.GetAllRecords(ctx, schemaName, insertedModel.ID.String())
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+
+	modelResponse := s.convertModelToResponse(insertedModel)
+
+	tableResponse := dto.TableResponse{
+		Model:   modelResponse,
+		Columns: columnsResponse,
+		Views: []dto.ViewResponse{
+			viewResponse,
+		},
+		Records: recordsData.Records,
+	}
+
+	return tableResponse, nil
+}
+
+func (s tableManagementService) createModel(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (tenant.Model, error) {
 	modelInsertionData := dto.ModelInsertion{
 		ID:               uuid.New().String(),
 		BaseID:           tableData.BaseID,
@@ -155,54 +223,30 @@ func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tab
 
 	insertedModel, err := s.modelService.Create(ctx, modelInsertionData, schemaName)
 	if err != nil {
-		fmt.Println("modelService.Create: ", err)
-		return dto.TableResponse{}, err
+		return tenant.Model{}, err
 	}
 
-	fmt.Println("insertedModel: ", insertedModel)
+	return insertedModel, nil
+}
 
-	systemColumns, err := s.createTableWithDefaultsInDB(schemaName, insertedModel.Alias)
+func (s tableManagementService) setupSystemColumns(ctx context.Context, schemaName string, model tenant.Model) ([]dto.ColumnResponse, error) {
+	systemColumns, err := s.createTableWithDefaultsInDB(schemaName, model.Alias)
 	if err != nil {
-		fmt.Println("createTableWithDefaultsInDB: ", err)
-		return dto.TableResponse{}, err
+		return []dto.ColumnResponse{}, err
 	}
 
-	columnsResponse, err := s.insertSystemColumns(schemaName, insertedModel, systemColumns)
+	columnsResponse, err := s.insertSystemColumns(schemaName, model, systemColumns)
 	if err != nil {
-		fmt.Println("s.insertSystemColumns: ", err)
-		return dto.TableResponse{}, err
+		return []dto.ColumnResponse{}, err
 	}
 
-	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
-	if err != nil {
-		fmt.Println("s.createDefaultView: ", err)
-		return dto.TableResponse{}, err
-	}
+	return columnsResponse, nil
+}
 
-	// Check type of insertedModel.UpdatedBy
-	fmt.Printf("Type of insertedModel.UpdatedAt: %T\n", insertedModel.UpdatedAt)
-
+func (s tableManagementService) convertModelToResponse(model tenant.Model) dto.ModelResponse {
 	var modelResponse dto.ModelResponse
-	if err := helpers.StructToStruct(insertedModel, &modelResponse); err != nil {
-		return dto.TableResponse{}, app_errors.ErrStructToStruct
-	}
-	fmt.Println(modelResponse)
-
-	recordsData, err := s.GetAllRecords(ctx, schemaName, insertedModel.ID.String())
-	if err != nil {
-		return dto.TableResponse{}, err
-	}
-
-	tableResponse := dto.TableResponse{
-		Model:   modelResponse,
-		Columns: columnsResponse,
-		Views: []dto.ViewResponse{
-			viewResponse,
-		},
-		Records: recordsData.Records,
-	}
-
-	return tableResponse, nil
+	helpers.StructToStruct(model, &modelResponse)
+	return modelResponse
 }
 
 func (s tableManagementService) UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error) {
