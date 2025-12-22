@@ -12,6 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+
+	app_errors "serenibase/internal/app-errors"
 )
 
 type WorkspaceHandler struct {
@@ -153,7 +155,7 @@ func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 		workspaceMemberDataMap, ok := workspaceMemberData.(*tenant.WorkspaceMember)
 		if !ok {
 			fmt.Println("invalid workspaceMemberData type")
-			response.CheckAndSendError(c, fmt.Errorf("invalid workspaceMemberData type"))
+			response.CheckAndSendError(c, app_errors.ErrInvalidWorkspaceMemberData)
 			return
 		}
 		bases, err = h.workspaceManagementService.GetBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceMemberDataMap)

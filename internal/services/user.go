@@ -7,6 +7,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/master"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"time"
 
@@ -26,6 +27,7 @@ func NewUserService(repo *pkg.DatabaseService) interfaces.UserService {
 }
 
 func (u *userService) CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (master.User, error) {
+	lg := logger.Get()
 	tableName := master.User{}.TableName(schema)
 
 	// Parse DateOfBirth if present
@@ -71,10 +73,10 @@ func (u *userService) CreateUser(ctx context.Context, schema string, req dto.Reg
 
 	insertedUserData, err := u.repo.TableService.CreateRecord(ctx, tableName, userData.Map())
 	if err != nil {
-		fmt.Println("CreateUser-->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to create user record")
 		return master.User{}, app_errors.DatabaseError
 	}
-	fmt.Println("insertedUserData--->", insertedUserData)
+	lg.Debug().Interface("userData", insertedUserData).Msg("User record created successfully")
 
 	var insertedUser master.User
 	if err := helpers.MapToStruct(insertedUserData, &insertedUser); err != nil {
@@ -120,6 +122,7 @@ func (u *userService) GetUserByEmail(ctx context.Context, schema string, email s
 }
 
 func (u *userService) GetUserByID(ctx context.Context, schema string, id string) (master.User, error) {
+	lg := logger.Get()
 	tableName := master.User{}.TableName(schema)
 	limit := 1
 	query := dbModels.QueryParams{
@@ -136,8 +139,7 @@ func (u *userService) GetUserByID(ctx context.Context, schema string, id string)
 
 	usersData, err := u.repo.TableService.GetTableData(ctx, tableName, query)
 	if err != nil {
-		fmt.Println("errr====", err)
-		fmt.Println(schema, id)
+		lg.Error().Stack().Err(err).Str("schema", schema).Str("id", id).Msg("Failed to get user by ID")
 		return master.User{}, app_errors.DatabaseError
 	}
 
@@ -158,6 +160,7 @@ func (u *userService) GetUserByID(ctx context.Context, schema string, id string)
 }
 
 func (u *userService) UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (master.User, error) {
+	lg := logger.Get()
 	tableName := master.User{}.TableName(schema)
 
 	if dob, ok := updateData["DateOfBirth"]; ok {
@@ -173,12 +176,12 @@ func (u *userService) UpdateUser(ctx context.Context, schema string, id string, 
 	}
 
 	updatedRecord, err := u.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
-	fmt.Println("updatedRecord, err", updatedRecord, err)
+	lg.Debug().Interface("record", updatedRecord).Msg("Updated user record")
 	if err != nil {
-		fmt.Println("UpdateUser err------>", err)
+		lg.Error().Stack().Err(err).Msg("Failed to update user record")
 		return master.User{}, app_errors.DatabaseError
 	}
-	fmt.Println("updatedRecord--->", updatedRecord)
+	lg.Debug().Interface("record", updatedRecord).Msg("User update completed")
 
 	var updatedUser master.User
 	if err := helpers.MapToStruct(updatedRecord, &updatedUser); err != nil {

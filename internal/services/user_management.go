@@ -9,6 +9,7 @@ import (
 	"serenibase/internal/dto"
 	"serenibase/internal/models/master"
 	"serenibase/internal/models/tenant"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strings"
@@ -59,11 +60,12 @@ func NewUserManagementService(
 }
 
 func (s *userManagementService) GetUserProfileByID(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
+	lg := logger.Get()
 	user, err := s.userService.GetUserByID(ctx, schema, userID)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}
-	fmt.Println(user)
+	lg.Debug().Interface("user", user).Msg("Retrieved user profile")
 
 	var userResponse dto.UserResponse
 	err = helpers.StructToStruct(user, &userResponse) // Assume this helper exists, else use manual mapping
@@ -79,6 +81,7 @@ func (s *userManagementService) GetUserProfileByID(ctx context.Context, schema s
 }
 
 func (s *userManagementService) UpdateUserProfile(ctx context.Context, schema string, userID string, updateData dto.UpdateUserProfileRequest) (dto.UserResponse, error) {
+	lg := logger.Get()
 	updateData.UpdatedAt = time.Now()
 
 	updateFields := updateData.Map()
@@ -99,7 +102,7 @@ func (s *userManagementService) UpdateUserProfile(ctx context.Context, schema st
 
 	updatedUser, err := s.userService.UpdateUser(ctx, schema, userID, updateFields)
 	if err != nil {
-		fmt.Println(err)
+		lg.Error().Stack().Err(err).Msg("Failed to update user")
 		return dto.UserResponse{}, err
 	}
 
@@ -154,6 +157,7 @@ func (s *userManagementService) UpdatePassword(ctx context.Context, schema strin
 }
 
 func (s *userManagementService) AddAvatar(ctx context.Context, schema string, userID string, fileHeader *multipart.FileHeader) (dto.UserResponse, error) {
+	lg := logger.Get()
 	err := s.deleteAvatarIfExists(ctx, schema, userID)
 	if err != nil {
 		return dto.UserResponse{}, err
@@ -179,7 +183,7 @@ func (s *userManagementService) AddAvatar(ctx context.Context, schema string, us
 	}
 	assets, err := s.assetManagementService.Upload(ctx, uploadReq, schema)
 	if err != nil || len(assets) == 0 {
-		fmt.Println("assetManagementService upload: ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to upload avatar asset")
 		return dto.UserResponse{}, err
 	}
 	avatarPath := assets[0].Url
@@ -271,6 +275,7 @@ func (s *userManagementService) GetUserByID(ctx context.Context, schema string, 
 }
 
 func (s *userManagementService) AddUserRole(ctx context.Context, schema string, userID, roleID uuid.UUID) error {
+	lg := logger.Get()
 	userRoleInsertionReq := dto.UserRoleInsertion{
 		ID:     uuid.New(),
 		UserID: userID,
@@ -279,7 +284,7 @@ func (s *userManagementService) AddUserRole(ctx context.Context, schema string, 
 
 	_, err := s.userRoleService.CreateUserRole(ctx, schema, userRoleInsertionReq)
 	if err != nil {
-		fmt.Println("CreateUserRole err ----> ", err, schema)
+		lg.Error().Stack().Err(err).Str("schema", schema).Msg("Failed to create user role")
 		return app_errors.TableNotFound
 	}
 
@@ -287,6 +292,7 @@ func (s *userManagementService) AddUserRole(ctx context.Context, schema string, 
 }
 
 func (t *userManagementService) AddUserToTenant(ctx context.Context, schema string, userData dto.AddUserRequest, roleId uuid.UUID, userPassword string) (master.User, master.Tenant, error) {
+	lg := logger.Get()
 	userCreationReq := dto.RegisterRequest{
 		ID:            uuid.New(),
 		Email:         userData.Email,
@@ -305,7 +311,7 @@ func (t *userManagementService) AddUserToTenant(ctx context.Context, schema stri
 
 	tenentData, err := t.tenantManagementService.GetTenantBySchema(ctx, schema)
 	if err != nil {
-		fmt.Println("GetTenantBySchema err ----> ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to get tenant by schema")
 		return master.User{}, master.Tenant{}, app_errors.TableNotFound
 	}
 
@@ -317,7 +323,8 @@ func (s *userManagementService) GetAllUsers(ctx context.Context, schema string) 
 }
 
 func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error) {
-	fmt.Println("roles: ", roles)
+	lg := logger.Get()
+	lg.Debug().Str("roles", roles).Msg("Fetching workspaces for user")
 	if roles == appConstant.RoleNames.Admin {
 		workspaces, err := s.workspaceManagementService.GetAll(ctx, schema)
 		if err != nil {
@@ -376,6 +383,7 @@ func (s *userManagementService) GetBulkUsers(ctx context.Context, schema string,
 }
 
 func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
+	lg := logger.Get()
 	functionName := "get_users_with_role"
 	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
@@ -399,11 +407,11 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 			if err := helpers.MapToStruct(rec, &user); err == nil {
 				result = append(result, user)
 			} else {
-				fmt.Println("MapToStruct error:", err)
+				lg.Warn().Err(err).Msg("Failed to convert struct to UserWithRole")
 			}
 		}
 	}
-	fmt.Println("result: ", result)
+	lg.Debug().Interface("result", result).Msg("Retrieved users with roles")
 	return result, nil
 }
 
@@ -436,7 +444,7 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 			}
 		}
 		memberships = filteredMemberships
-		
+
 		// If no membership found for the specified workspace, return empty response
 		if len(memberships) == 0 {
 			return response, nil
@@ -447,7 +455,7 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 	workspaceIDs := make([]string, 0, len(memberships))
 	workspaceAccess := make(map[string]string)
 	membershipMap := make(map[string]*tenant.WorkspaceMember)
-	
+
 	for i := range memberships {
 		workspaceIDs = append(workspaceIDs, memberships[i].WorkspaceID)
 		workspaceAccess[memberships[i].WorkspaceID] = memberships[i].AccessLevel
@@ -464,10 +472,10 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 	for _, ws := range workspaces {
 		accessLevel := workspaceAccess[ws.ID.String()]
 		membership := membershipMap[ws.ID.String()]
-		
+
 		// Only get bases for limited_access users
 		baseAccessInfos := []dto.BaseAccessInfo{}
-		
+
 		// For full_access and admin users, return empty bases array (they have access to all bases)
 		if accessLevel == appConstant.AccessNames.LimitedAccess && membership != nil {
 			// Get bases only for limited access users
@@ -499,4 +507,3 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 
 	return response, nil
 }
-

@@ -10,6 +10,7 @@ import (
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strconv"
@@ -449,10 +450,11 @@ func (s tableManagementService) DeleteTable(
 		return err
 	}
 
-	fmt.Println("schemaName, model.Alias------------", schemaName, model.Alias)
+	lg := logger.Get()
+	lg.Debug().Str("schemaName", schemaName).Str("tableAlias", model.Alias).Msg("Deleting table from database")
 
 	if err := s.deleteTableInDB(ctx, schemaName, model.Alias); err != nil {
-		fmt.Println("err")
+		lg.Error().Stack().Err(err).Str("schemaName", schemaName).Str("tableAlias", model.Alias).Msg("Failed to delete table from database")
 		return err
 	}
 
@@ -484,9 +486,12 @@ func (s tableManagementService) addColumnInTableDb(schemaName string, tableName 
 }
 
 func (s tableManagementService) getDataBaseType(uidt string) (string, error) {
-	fmt.Println("uidt: ", uidt)
+	lg := logger.Get()
+	lg.Debug().Str("uidt", uidt).Msg("Getting database type for UIDT")
+
 	mapping, exists := constant.UITypeMappings[uidt]
 	if !exists {
+		lg.Warn().Str("uidt", uidt).Msg("UIDT not found in mappings")
 		return "", app_errors.InvalidUIDT
 	}
 
@@ -668,7 +673,8 @@ func (s tableManagementService) AddColumn(
 
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(column, &columnResponse); err != nil {
-		fmt.Println(err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to convert column struct to response")
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 
@@ -808,7 +814,8 @@ func (s tableManagementService) addColumnWithRelation(
 
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(sourcColumn, &columnResponse); err != nil {
-		fmt.Println(err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to convert source column struct to response")
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 	return columnResponse, nil
@@ -823,8 +830,9 @@ func (s tableManagementService) addLookupColumnInRelation(
 ) error {
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationID, schemaName)
 	if err != nil {
-		fmt.Println("relationID, schemaName;;;;;; ", relationID, schemaName)
-		fmt.Println("err: GetRelationByID ==== ", err)
+		lg := logger.Get()
+		lg.Debug().Str("relationID", relationID).Str("schemaName", schemaName).Msg("Fetching source lookup columns for relation")
+		lg.Error().Stack().Err(err).Msg("Failed to get relation by ID")
 		return err
 	}
 
@@ -851,7 +859,8 @@ func (s tableManagementService) addLookupColumnInRelation(
 
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
-		fmt.Println("err: UpdateRelation ==== ", err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to update relation with source lookup columns")
 		return err
 	}
 	return nil
@@ -866,8 +875,9 @@ func (s tableManagementService) removeLookupColumnInRelation(
 ) error {
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationID, schemaName)
 	if err != nil {
-		fmt.Println("relationID, schemaName;;;;;; ", relationID, schemaName)
-		fmt.Println("err: GetRelationByID ==== ", err)
+		lg := logger.Get()
+		lg.Debug().Str("relationID", relationID).Str("schemaName", schemaName).Msg("Fetching target lookup columns for relation")
+		lg.Error().Stack().Err(err).Msg("Failed to get relation by ID for removal")
 		return err
 	}
 
@@ -876,7 +886,8 @@ func (s tableManagementService) removeLookupColumnInRelation(
 	}
 
 	if relationData.SourceModelID == modelId {
-		fmt.Printf("Type of relationData.SourceLookupColumns: %T\n", relationData.SourceLookupColumns)
+		lg := logger.Get()
+		lg.Debug().Str("type", fmt.Sprintf("%T", relationData.SourceLookupColumns)).Msg("Type of SourceLookupColumns")
 		if relationData.SourceLookupColumns != nil {
 			newArr := make([]string, 0)
 			for _, col := range relationData.SourceLookupColumns {
@@ -890,7 +901,8 @@ func (s tableManagementService) removeLookupColumnInRelation(
 		}
 	}
 	if relationData.TargetModelID == modelId {
-		fmt.Printf("Type of relationData.TargetLookupColumns: %T\n", relationData.TargetLookupColumns)
+		lg := logger.Get()
+		lg.Debug().Str("type", fmt.Sprintf("%T", relationData.TargetLookupColumns)).Msg("Type of TargetLookupColumns")
 		if relationData.TargetLookupColumns != nil {
 			newArr := make([]string, 0)
 			for _, col := range relationData.TargetLookupColumns {
@@ -906,7 +918,8 @@ func (s tableManagementService) removeLookupColumnInRelation(
 
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
-		fmt.Println("err: UpdateRelation ==== ", err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to update relation with target lookup columns")
 		return err
 	}
 	return nil
@@ -959,12 +972,14 @@ func (s tableManagementService) addColumnWithLookup(
 
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(insertedColumn, &columnResponse); err != nil {
-		fmt.Println("StructToStruct ::::: ", err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to convert relationship column struct to response")
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 
 	if err := s.addLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumnData.ColumnName); err != nil {
-		fmt.Println("addLookupColumnInRelation ::::: ", err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to add lookup column in relationship")
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 	return columnResponse, nil
@@ -975,6 +990,7 @@ func (s tableManagementService) GetColumnById(
 	schemaName string,
 	id string,
 ) (dto.ColumnResponse, error) {
+	lg := logger.Get()
 	column, err := s.columnsService.GetColumnByID(ctx, schemaName, id)
 	if err != nil {
 		return dto.ColumnResponse{}, err
@@ -982,7 +998,7 @@ func (s tableManagementService) GetColumnById(
 
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(column, &columnResponse); err != nil {
-		fmt.Println(err)
+		lg.Error().Stack().Err(err).Msg("Failed to convert struct")
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 
@@ -993,6 +1009,7 @@ func (s tableManagementService) GetAllColumns(
 	ctx context.Context,
 	schemaName string,
 ) ([]dto.ColumnResponse, error) {
+	lg := logger.Get()
 	columns, err := s.columnsService.GetAllColumns(ctx, schemaName)
 	if err != nil {
 		return nil, err
@@ -1002,7 +1019,7 @@ func (s tableManagementService) GetAllColumns(
 	for _, column := range columns {
 		var columnResponse dto.ColumnResponse
 		if err := helpers.StructToStruct(column, &columnResponse); err != nil {
-			fmt.Println(err)
+			lg.Error().Stack().Err(err).Msg("Failed to convert column struct")
 			return nil, app_errors.ErrStructToStruct
 		}
 		columnResponses = append(columnResponses, columnResponse)
@@ -1016,6 +1033,7 @@ func (s tableManagementService) GetColumnsByModelID(
 	schemaName string,
 	modelID string,
 ) ([]dto.ColumnResponse, error) {
+	lg := logger.Get()
 	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, modelID)
 	if err != nil {
 		return nil, err
@@ -1025,7 +1043,7 @@ func (s tableManagementService) GetColumnsByModelID(
 	for _, column := range columns {
 		var columnResponse dto.ColumnResponse
 		if err := helpers.StructToStruct(column, &columnResponse); err != nil {
-			fmt.Println(err)
+			lg.Error().Stack().Err(err).Msg("Failed to convert column struct")
 			return nil, app_errors.ErrStructToStruct
 		}
 		columnResponses = append(columnResponses, columnResponse)
@@ -1038,6 +1056,7 @@ func (s tableManagementService) CreateView(
 	schemaName string,
 	viewData dto.CreateViewRequest,
 ) (dto.ViewResponse, error) {
+	lg := logger.Get()
 
 	viewInserionData := dto.ViewInsertion{
 		ID:          uuid.New(),
@@ -1067,7 +1086,7 @@ func (s tableManagementService) CreateView(
 
 	var viewResponse dto.ViewResponse
 	if err := helpers.StructToStruct(view, &viewResponse); err != nil {
-		fmt.Println(err)
+		lg.Error().Stack().Err(err).Msg("Failed to convert view struct")
 		return dto.ViewResponse{}, app_errors.ErrStructToStruct
 	}
 
@@ -1079,6 +1098,7 @@ func (s tableManagementService) GetViewByID(
 	schemaName string,
 	id string,
 ) (dto.ViewResponse, error) {
+	lg := logger.Get()
 	view, err := s.viewService.GetViewByID(ctx, schemaName, id)
 	if err != nil {
 		return dto.ViewResponse{}, err
@@ -1086,7 +1106,7 @@ func (s tableManagementService) GetViewByID(
 
 	var viewResponse dto.ViewResponse
 	if err := helpers.StructToStruct(view, &viewResponse); err != nil {
-		fmt.Println(err)
+		lg.Error().Stack().Err(err).Msg("Failed to convert view struct")
 		return dto.ViewResponse{}, app_errors.ErrStructToStruct
 	}
 
@@ -1097,6 +1117,7 @@ func (s tableManagementService) GetAllViews(
 	ctx context.Context,
 	schemaName string,
 ) ([]dto.ViewResponse, error) {
+	lg := logger.Get()
 	views, err := s.viewService.GetAllViews(ctx, schemaName)
 	if err != nil {
 		return nil, err
@@ -1106,7 +1127,7 @@ func (s tableManagementService) GetAllViews(
 	for _, view := range views {
 		var viewResponse dto.ViewResponse
 		if err := helpers.StructToStruct(view, &viewResponse); err != nil {
-			fmt.Println(err)
+			lg.Error().Stack().Err(err).Msg("Failed to convert view struct")
 			return nil, app_errors.ErrStructToStruct
 		}
 		viewResponses = append(viewResponses, viewResponse)
@@ -1120,6 +1141,7 @@ func (s tableManagementService) GetViewsByModelID(
 	schemaName string,
 	modelID string,
 ) ([]dto.ViewResponse, error) {
+	lg := logger.Get()
 	views, err := s.viewService.GetViewsByModelID(ctx, schemaName, modelID)
 	if err != nil {
 		return nil, err
@@ -1129,7 +1151,7 @@ func (s tableManagementService) GetViewsByModelID(
 	for _, view := range views {
 		var viewResponse dto.ViewResponse
 		if err := helpers.StructToStruct(view, &viewResponse); err != nil {
-			fmt.Println(err)
+			lg.Error().Stack().Err(err).Msg("Failed to convert view struct")
 			return nil, app_errors.ErrStructToStruct
 		}
 		viewResponses = append(viewResponses, viewResponse)
@@ -1144,6 +1166,7 @@ func (s tableManagementService) UpdateView(
 	id string,
 	req dto.ViewUpdate,
 ) (dto.ViewResponse, error) {
+	lg := logger.Get()
 
 	if req.UpdatedAt.IsZero() {
 		req.UpdatedAt = time.Now().UTC()
@@ -1161,7 +1184,7 @@ func (s tableManagementService) UpdateView(
 
 	var viewResponse dto.ViewResponse
 	if err := helpers.StructToStruct(view, &viewResponse); err != nil {
-		fmt.Println(err)
+		lg.Error().Stack().Err(err).Msg("Failed to convert view struct")
 		return dto.ViewResponse{}, app_errors.ErrStructToStruct
 	}
 
@@ -1188,6 +1211,7 @@ func (s tableManagementService) allowUpdate(columnData dto.ColumnResponse) bool 
 }
 
 func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, schemaName string, tableName string, columnName string, newDataType string, empty_before bool) error {
+	lg := logger.Get()
 	functionName := "convert_column_type"
 	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, functionName)
 
@@ -1199,7 +1223,7 @@ func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, sc
 		"empty_before": empty_before,
 	}
 
-	fmt.Println(args)
+	lg.Debug().Interface("args", args).Msg("Converting column datatype")
 
 	_, err := s.repo.TableService.GetByFunction(
 		ctx,
@@ -1207,7 +1231,7 @@ func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, sc
 		args,
 	)
 	if err != nil {
-		fmt.Println("err---->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to convert column datatype")
 		return err
 	}
 
@@ -1270,6 +1294,7 @@ func (s tableManagementService) UpdateColumn(
 	id string,
 	req dto.ColumnUpdate,
 ) (dto.ColumnResponse, error) {
+	lg := logger.Get()
 	if req.UpdatedAt.IsZero() {
 		req.UpdatedAt = time.Now().UTC()
 	}
@@ -1340,7 +1365,7 @@ func (s tableManagementService) UpdateColumn(
 
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(column, &columnResponse); err != nil {
-		fmt.Println(err)
+		lg.Error().Stack().Err(err).Msg("Failed to convert updated column struct")
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 
@@ -1389,6 +1414,7 @@ func (s tableManagementService) deleteLookups(ctx context.Context, relationId st
 }
 
 func (s tableManagementService) handleDeleteColumnForLink(ctx context.Context, schemaName string, srcColumnData dto.ColumnResponse) error {
+	lg := logger.Get()
 	srcColumnMeta := srcColumnData.Meta
 	relationId, ok := srcColumnMeta["relation_id"].(string)
 	if !ok {
@@ -1401,32 +1427,32 @@ func (s tableManagementService) handleDeleteColumnForLink(ctx context.Context, s
 
 	relation, err := s.relationshipService.GetRelationByID(ctx, relationId, schemaName)
 	if err != nil {
-		fmt.Println("relation err--->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to get relationship")
 		return err
 	}
 
 	// source column
 	err = s.columnsService.DeleteColumn(ctx, schemaName, srcColumnData.ID.String())
 	if err != nil {
-		fmt.Println("source DeleteColumn err--->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to delete source column")
 		return err
 	}
 
 	model, err := s.modelService.GetModelByID(ctx, schemaName, srcColumnData.ModelID.String())
 	if err != nil {
-		fmt.Println("source GetModelByID err--->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to get source model by ID")
 		return err
 	}
 
 	err = s.removeColumnInTableDb(schemaName, model.Alias, srcColumnData.ColumnName)
 	if err != nil {
-		fmt.Println("source removeColumnInTableDb err--->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to remove column from database")
 		return err
 	}
 
 	err = s.deleteLookups(ctx, relationId, srcColumnData.ModelID.String(), schemaName)
 	if err != nil {
-		fmt.Println("deleteLookups err--->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to delete lookups")
 		return err
 	}
 
@@ -1486,16 +1512,17 @@ func (s tableManagementService) ReorderColumn(
 	schemaName string,
 	req dto.ReorderColumnRequest,
 ) ([]dto.ColumnResponse, error) {
+	lg := logger.Get()
 
 	sourceColumnData, err := s.columnsService.GetColumnByID(ctx, schemaName, req.SourceColumnID.String())
 	if err != nil {
-		fmt.Println("sourceColumnData------")
+		lg.Error().Stack().Err(err).Msg("Failed to get source column data for reordering")
 		return []dto.ColumnResponse{}, err
 	}
 
 	targetColumnData, err := s.columnsService.GetColumnByID(ctx, schemaName, req.TargetColumnID.String())
 	if err != nil {
-		fmt.Println("targetColumnData------")
+		lg.Error().Stack().Err(err).Msg("Failed to get target column data for reordering")
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -1557,6 +1584,7 @@ func (s tableManagementService) DeleteColumn(
 	schemaName string,
 	id string,
 ) error {
+	lg := logger.Get()
 	// Check if the column exists
 	columnData, err := s.GetColumnById(ctx, schemaName, id)
 	if err != nil {
@@ -1583,7 +1611,7 @@ func (s tableManagementService) DeleteColumn(
 	}
 
 	if columnData.UIDT == "lookup" {
-		fmt.Println("DeleteColumn...... ")
+		lg.Debug().Msg("Deleting lookup column")
 		lookupColumnID, relationID, ok := s.validateMetaForLookup(columnData.Meta)
 
 		lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
@@ -1611,6 +1639,7 @@ func (s tableManagementService) DeleteColumn(
 }
 
 func (s tableManagementService) CreateRow(ctx context.Context, schemaName string, req dto.CreateRowRequest) (dto.RecordResponse, error) {
+	lg := logger.Get()
 
 	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
 	if err != nil {
@@ -1629,7 +1658,7 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 
 	createdRecord, err := s.repo.TableService.CreateRecord(ctx, tableName, data)
 	if err != nil {
-		fmt.Println("err::::;", err)
+		lg.Error().Stack().Err(err).Msg("Failed to create row record")
 		return dto.RecordResponse{}, app_errors.DatabaseError
 	}
 
@@ -1716,9 +1745,10 @@ func (s tableManagementService) checkLookuup(columnsData []dto.ColumnResponse) [
 }
 
 func (s tableManagementService) GetRecordsWithPagination(ctx context.Context, schemaName string, tableName string, columnsData []dto.ColumnResponse, page_size int, page_number int) (dto.RecordsResponse, error) {
+	lg := logger.Get()
 	functionName := "get_paginated_relations"
 	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, functionName)
-	fmt.Println(" page_size int, page_number int", page_size, page_number)
+	lg.Debug().Int("pageSize", page_size).Int("pageNumber", page_number).Msg("Fetching paginated records")
 
 	// check if lookup available
 	relationIds := s.checkLookuup(columnsData)
@@ -1791,7 +1821,7 @@ func (s tableManagementService) GetRecordsWithPagination(ctx context.Context, sc
 		"page_number":       page_number,
 	}
 
-	fmt.Println("args==============", args)
+	lg.Debug().Interface("args", args).Msg("Executing pagination function with args")
 
 	records, err := s.repo.TableService.GetByFunction(
 		ctx,
@@ -2199,7 +2229,8 @@ func (s tableManagementService) handleHasManyIntArrayRelation(
 	},
 	req dto.UpdateRowDataLinksRequest,
 ) error {
-	fmt.Println("has-many", c.srcTable, c.srcColumn, c.id)
+	lg := logger.Get()
+	lg.Debug().Str("srcTable", c.srcTable).Str("srcColumn", c.srcColumn).Int("id", c.id).Msg("Handling has-many int array relation")
 	data, err := s.getRowByRelationColumnHasMany(ctx, c.srcTable, c.srcColumn, c.id)
 	if err != nil && err != app_errors.RowNotFound {
 		return err
@@ -2371,11 +2402,12 @@ func (s tableManagementService) InsertRowData(ctx context.Context, schemaName st
 }
 
 func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schemaName string, modelAlias string, record map[string]interface{}) (dto.RecordResponse, error) {
+	lg := logger.Get()
 	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, modelAlias)
 
 	createdRecord, err := s.repo.TableService.CreateRecord(ctx, tableName, record)
 	if err != nil {
-		fmt.Println("err::::;", err)
+		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
 		return dto.RecordResponse{}, app_errors.DatabaseError
 	}
 
@@ -2385,11 +2417,12 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 }
 
 func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, schemaName string, modelAlias string, records []map[string]interface{}) ([]dto.RecordResponse, error) {
+	lg := logger.Get()
 	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, modelAlias)
 
 	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
 	if err != nil {
-		fmt.Println("bulk insert error:", err)
+		lg.Error().Stack().Err(err).Msg("Failed to bulk insert rows")
 		return nil, app_errors.DatabaseError
 	}
 
@@ -2510,8 +2543,9 @@ func (s tableManagementService) unlinkRowData(
 	rowData map[string]interface{},
 	sourceDataType, targetDataType string,
 ) error {
+	lg := logger.Get()
 	if sourceDataType == "INT" {
-		fmt.Println("Unlink single one")
+		lg.Debug().Msg("Unlinking single row")
 		targetRowId := rowData[column.ColumnName].(int64)
 		return s.unlinkSingleRow(ctx, req, sourceTableName, targetTableName, column, targetColumn, sourceDataType, targetDataType, targetRowId)
 	}
@@ -2618,6 +2652,7 @@ func (s tableManagementService) AddAttachment(
 	req dto.AddAttachmentRequest,
 	files []*multipart.FileHeader,
 ) (dto.RecordResponse, error) {
+	lg := logger.Get()
 	assets, err := s.uploadAssets(ctx, schemaName, files)
 	if err != nil {
 		return dto.RecordResponse{}, err
@@ -2642,7 +2677,7 @@ func (s tableManagementService) AddAttachment(
 
 	insertedRecord, err := s.repo.TableService.UpdateRecord(ctx, tableName, req.RowId, data)
 	if err != nil {
-		fmt.Println("insertedRecord: ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to add attachment to record")
 		return dto.RecordResponse{}, app_errors.DatabaseError
 	}
 

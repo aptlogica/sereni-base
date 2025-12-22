@@ -28,7 +28,7 @@ type ServerConfig struct {
 }
 
 type EmailConfig struct {
-	URL          string `mapstructure:"url"`
+	URL string `mapstructure:"url"`
 	// SMTPHost     string `mapstructure:"smtp_host"`
 	// SMTPPort     string `mapstructure:"smtp_port"`
 	// SMTPUsername string `mapstructure:"smtp_username"`
@@ -102,6 +102,7 @@ type RedisConfig struct {
 type LogConfig struct {
 	Level      string `mapstructure:"level"`
 	File       string `mapstructure:"file"`
+	ErrorFile  string `mapstructure:"error_file"`
 	MaxSize    int    `mapstructure:"max_size"`
 	MaxBackups int    `mapstructure:"max_backups"`
 	MaxAge     int    `mapstructure:"max_age"`

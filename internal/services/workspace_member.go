@@ -8,6 +8,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"time"
@@ -29,6 +30,7 @@ func NewWorkspaceMemberService(
 
 // CreateWorkspaceMember inserts a new workspace member using WorkspaceMemberInsertion DTO.
 func (s *workspaceMemberService) CreateWorkspaceMember(ctx context.Context, workspaceMemberReq *dto.CreateMemberRequest, schemaName string) error {
+	lg := logger.Get()
 	workspaceData := dto.WorkspaceMemberInsertion{
 		ID:          uuid.New(),
 		AccessLevel: workspaceMemberReq.AccessLevel,
@@ -43,7 +45,7 @@ func (s *workspaceMemberService) CreateWorkspaceMember(ctx context.Context, work
 
 	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, workspaceData.Map())
 	if err != nil {
-		fmt.Println("insertedData: ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to insert workspace member record")
 		return app_errors.DatabaseError
 	}
 
@@ -173,6 +175,7 @@ func (s *workspaceMemberService) GetWorkspaceMemberByUser(ctx context.Context, s
 
 // GetWorkspaceMembersByWorkspace retrieves all workspace members for a specific workspace in a schema.
 func (s *workspaceMemberService) GetWorkspaceMembersByWorkspace(ctx context.Context, schemaName string, workspaceId string) ([]tenant.WorkspaceMember, error) {
+	lg := logger.Get()
 	tableName := tenant.WorkspaceMember{}.TableName(schemaName)
 
 	params := dbModels.QueryParams{
@@ -190,7 +193,7 @@ func (s *workspaceMemberService) GetWorkspaceMembersByWorkspace(ctx context.Cont
 	if err != nil {
 		return nil, app_errors.DatabaseError
 	}
-	fmt.Println("rows---------------", rows)
+	lg.Debug().Interface("rows", rows).Msg("Retrieved workspace members data")
 
 	if len(rows) == 0 {
 		return nil, app_errors.WorkspaceMemberNotFound
@@ -204,7 +207,7 @@ func (s *workspaceMemberService) GetWorkspaceMembersByWorkspace(ctx context.Cont
 		}
 		members = append(members, member)
 	}
-	fmt.Println("members---------------", members)
+	lg.Debug().Interface("members", members).Msg("Retrieved members for workspace")
 
 	return members, nil
 }
@@ -231,6 +234,7 @@ func (s *workspaceMemberService) DeleteUserMappings(ctx context.Context, schemaN
 // For limited_access, it replaces the bases_ids with the new ones provided.
 // For full_access, it sets bases_ids to "*".
 func (s *workspaceMemberService) UpdateWorkspaceMemberBases(ctx context.Context, schemaName string, workspaceId string, userId string, accessLevel string, basesIds string) error {
+	lg := logger.Get()
 	// Get existing workspace member
 	existingMember, err := s.GetWorkspaceMemberByUserAndWorkspace(ctx, schemaName, userId, workspaceId)
 	if err != nil {
@@ -238,10 +242,10 @@ func (s *workspaceMemberService) UpdateWorkspaceMemberBases(ctx context.Context,
 	}
 
 	tableName := tenant.WorkspaceMember{}.TableName(schemaName)
-	
+
 	// Prepare update data
 	updateData := map[string]interface{}{
-		"access_level":        accessLevel,
+		"access_level":       accessLevel,
 		"last_modified_time": time.Now(),
 	}
 
@@ -254,18 +258,15 @@ func (s *workspaceMemberService) UpdateWorkspaceMemberBases(ctx context.Context,
 		updateData["bases_ids"] = basesIds
 	}
 
-	// Debug logging
-	fmt.Printf("UpdateWorkspaceMemberBases - ID: %s, UpdateData: %+v\n", existingMember.ID.String(), updateData)
-
 	// Update the record - convert UUID to string
 	recordID := existingMember.ID.String()
+	lg.Debug().Str("id", recordID).Interface("updateData", updateData).Msg("Updating workspace member bases")
 	_, err = s.repo.TableService.UpdateRecord(ctx, tableName, recordID, updateData)
 	if err != nil {
-		fmt.Println("UpdateWorkspaceMemberBases error: ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to update workspace member bases")
 		return app_errors.DatabaseError
 	}
 
-	fmt.Println("UpdateWorkspaceMemberBases - Successfully updated workspace member")
+	lg.Info().Str("id", recordID).Msg("Successfully updated workspace member")
 	return nil
 }
-

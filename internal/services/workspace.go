@@ -7,6 +7,7 @@ import (
 	dbModels "godbgrest/pkg/models"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strings"
@@ -50,7 +51,8 @@ func (s *workspaceService) WorkspaceInsertion(ctx context.Context, req dto.Creat
 
 	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, workspaceData.Map())
 	if err != nil {
-		fmt.Println("insertedData: ", err)
+		lg := logger.Get()
+		lg.Error().Stack().Err(err).Msg("Failed to insert workspace record")
 		return tenant.Workspace{}, app_errors.DatabaseError
 	}
 
@@ -64,6 +66,7 @@ func (s *workspaceService) WorkspaceInsertion(ctx context.Context, req dto.Creat
 }
 
 func (s *workspaceService) ensureAuditColumns(ctx context.Context, schemaName string) {
+	lg := logger.Get()
 	tableName := fmt.Sprintf("\"%s\".\"workspaces\"", schemaName)
 	columns := []string{"created_by", "last_modified_by"}
 	for _, col := range columns {
@@ -74,7 +77,7 @@ func (s *workspaceService) ensureAuditColumns(ctx context.Context, schemaName st
 			},
 		}
 		if err := s.repo.TableService.AddColumn(tableName, req); err != nil {
-			fmt.Printf("DEBUG: Failed to add column %s to %s: %v\n", col, tableName, err)
+			lg.Warn().Err(err).Str("column", col).Str("table", tableName).Msg("Failed to add audit column")
 		}
 	}
 }
@@ -89,7 +92,7 @@ func (s *workspaceService) CreateWorkspace(ctx context.Context, schemaName strin
 	if err := s.repo.TableService.CreateTable(workspace.TableSchema(schemaName)); err != nil {
 		return tenant.Workspace{}, err
 	}
-	
+
 	// Ensure columns exist (for existing tables)
 	s.ensureAuditColumns(ctx, schemaName)
 
@@ -164,6 +167,7 @@ func (s *workspaceService) GetAllWorkspaces(ctx context.Context, schemaName stri
 }
 
 func (s *workspaceService) UpdateWorkspace(ctx context.Context, schemaName string, id string, req dto.WorkspaceUpdate) (tenant.Workspace, error) {
+	lg := logger.Get()
 	if id == "" {
 		return tenant.Workspace{}, fmt.Errorf("workspace ID cannot be empty")
 	}
@@ -183,11 +187,11 @@ func (s *workspaceService) UpdateWorkspace(ctx context.Context, schemaName strin
 	}
 	updateData["last_modified_time"] = time.Now().UTC()
 
-	fmt.Println("updateData: ", updateData)
+	lg.Debug().Interface("updateData", updateData).Msg("Updating workspace")
 	// Perform update
 	updatedRows, err := s.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
 	if err != nil {
-		fmt.Println("err: ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to update workspace")
 		return tenant.Workspace{}, app_errors.DatabaseError
 	}
 	if updatedRows == nil || len(updatedRows) == 0 {

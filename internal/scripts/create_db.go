@@ -9,12 +9,18 @@ import (
 	"serenibase/internal/dto"
 	"serenibase/internal/models/master"
 	"serenibase/internal/utils/helpers"
+	"strings"
 	"time"
 
 	dbModels "godbgrest/pkg/models"
 
 	"github.com/google/uuid"
 )
+
+// contains checks if a string contains a substring (case-insensitive)
+func contains(str, substr string) bool {
+	return strings.Contains(strings.ToLower(str), strings.ToLower(substr))
+}
 
 func createRole(repo *pkg.DatabaseService, req dto.RoleInsertion) (master.Role, error) {
 	ctx := context.Background()
@@ -166,7 +172,11 @@ func createMasterSchema(repo *pkg.DatabaseService) {
 
 func createTableUsingSchema(repo *pkg.DatabaseService, schema models.CreateTableRequest) {
 	if err := repo.TableService.CreateTable(schema); err != nil {
-		fmt.Printf("Error creating table %s: %v\n", schema.Name, err)
+		// Only log if it's not an "already exists" error
+		errMsg := err.Error()
+		if !contains(errMsg, "already exists") {
+			fmt.Printf("Error creating table %s: %v\n", schema.Name, err)
+		}
 	} else {
 		fmt.Printf("Table %s created successfully.\n", schema.Name)
 	}
@@ -197,7 +207,10 @@ func createFunctions(repo *pkg.DatabaseService, schemaName string) error {
 		functionName := fmt.Sprintf("\"%s\".%s(%s)", schemaName, function.FunctionName, function.FunctionParams)
 		err := repo.TableService.CreateFunction(ctx, functionName, function.FunctionSQL)
 		if err != nil {
-			fmt.Printf("error creating function '%s': %w\n", function.FunctionName, err)
+			// Only log if it's not an "already exists" error
+			if !contains(err.Error(), "already exists") {
+				fmt.Printf("error creating function '%s': %v\n", function.FunctionName, err)
+			}
 		}
 	}
 	return nil

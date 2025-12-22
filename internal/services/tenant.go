@@ -6,6 +6,7 @@ import (
 	"godbgrest/pkg"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/master"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strings"
@@ -105,6 +106,7 @@ func (t *tenantService) GetTenant(ctx context.Context, id uuid.UUID) (master.Ten
 }
 
 func (t *tenantService) GetTenantBySchema(ctx context.Context, schema string) (master.Tenant, error) {
+	lg := logger.Get()
 	limit := 1
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
@@ -119,12 +121,12 @@ func (t *tenantService) GetTenantBySchema(ctx context.Context, schema string) (m
 
 	data, err := t.repo.TableService.GetTableData(ctx, t.tableName, query)
 	if err != nil {
-		fmt.Println("err:= ", err)
+		lg.Error().Stack().Err(err).Msg("Failed to get tenant data by schema")
 		return master.Tenant{}, app_errors.DatabaseError
 	}
 
 	if len(data) == 0 {
-		fmt.Println("err:= ", err)
+		lg.Warn().Str("schema", schema).Msg("Tenant not found for schema")
 		return master.Tenant{}, app_errors.TenantNotFound
 	}
 
@@ -136,6 +138,7 @@ func (t *tenantService) GetTenantBySchema(ctx context.Context, schema string) (m
 }
 
 func (t *tenantService) SchemaExists(ctx context.Context, schema string) (bool, error) {
+	lg := logger.Get()
 	limit := 1
 	query := dbModels.QueryParams{
 		Select: []string{"id"},
@@ -151,7 +154,7 @@ func (t *tenantService) SchemaExists(ctx context.Context, schema string) (bool, 
 
 	data, err := t.repo.TableService.GetTableData(ctx, t.tableName, query)
 	if err != nil {
-		fmt.Println("SchemaExists---->", err)
+		lg.Error().Stack().Err(err).Msg("Failed to check if schema exists")
 		return false, app_errors.DatabaseError
 	}
 

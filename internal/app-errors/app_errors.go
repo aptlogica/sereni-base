@@ -23,6 +23,15 @@ var (
 	FolderDeleteFailed     = errors.New("folder delete failed")
 	FolderPermissionDenied = errors.New("folder permission denied")
 	FolderInvalidPath      = errors.New("folder invalid path")
+
+	// New errors for refactoring
+	ErrInvalidDateOfBirth         = errors.New("invalid date of birth format")
+	ErrRoleCreation               = errors.New("failed to create role")
+	ErrSubscriptionPlanNotFound   = errors.New("subscription plan not found")
+	ErrRoleNotFound               = errors.New("role not found")
+	ErrUserDisableFailed          = errors.New("failed to disable user")
+	ErrInvalidWorkspaceMemberData = errors.New("invalid workspace member data")
+	ErrUserContextNotFound        = errors.New("user context not found")
 )
 
 // var (

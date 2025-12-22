@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"serenibase/internal/dto"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strconv"
@@ -26,9 +27,12 @@ func NewImportService(tableService interfaces.TableManagementService) interfaces
 }
 
 func (s *importService) Import(ctx context.Context, schemaName string, req dto.CreateTableRequest, file *multipart.FileHeader) (dto.ImportTableResponse, error) {
+	lg := logger.Get()
+
 	// 1. Open file
 	f, err := file.Open()
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file")
 		return dto.ImportTableResponse{}, err
 	}
 	defer f.Close()
@@ -38,18 +42,24 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 	reader := csv.NewReader(f)
 	records, err := reader.ReadAll()
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to parse CSV file")
 		return dto.ImportTableResponse{}, err
 	}
 
 	if len(records) < 1 {
-		return dto.ImportTableResponse{}, fmt.Errorf("empty csv file")
+		errMsg := "empty csv file"
+		lg.Error().Str("file", file.Filename).Msg(errMsg)
+		return dto.ImportTableResponse{}, fmt.Errorf("%s", errMsg)
 	}
+
+	lg.Info().Str("file", file.Filename).Int("rows", len(records)).Msg("CSV file parsed successfully")
 
 	headers := records[0]
 	dataRows := records[1:]
 
 	// 3. Infer Types
 	columnTypes := s.inferColumnTypes(headers, dataRows)
+	lg.Info().Strs("headers", headers).Strs("columnTypes", columnTypes).Msg("Column types inferred")
 
 	// Store first CSV column header to use as the title column name
 	titleColumnName := ""
@@ -59,10 +69,13 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 
 	// 4. Create Table
 	// Keep the original req.Title for the model title, don't override with CSV column name
+	lg.Info().Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Creating table with defaults")
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Failed to create table with defaults")
 		return dto.ImportTableResponse{}, err
 	}
+	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Table created successfully")
 
 	// Update the Title column with the first CSV header name
 	if titleColumnName != "" {
@@ -77,17 +90,21 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 
 		// Update the Title column with the first CSV header name
 		if titleColumnID != "" {
+			lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Updating title column name")
 			updateColReq := dto.ColumnUpdate{
 				Title: &titleColumnName,
 			}
 			_, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq)
 			if err != nil {
+				lg.Error().Stack().Err(err).Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Failed to update title column")
 				return dto.ImportTableResponse{}, err
 			}
+			lg.Info().Str("columnID", titleColumnID).Msg("Title column updated successfully")
 		}
 	}
 
 	// 5. Add Columns
+	lg.Info().Int("columnCount", len(headers)-1).Msg("Starting to add columns")
 	columnMap := make(map[int]dto.ColumnResponse) // Index -> Column
 	systemFieldAdded := false
 	for i, header := range headers {
@@ -121,12 +138,16 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		}
 		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
 		if err != nil {
+			lg.Error().Stack().Err(err).Str("columnTitle", header).Str("columnType", colType).Msg("Failed to add column")
 			return dto.ImportTableResponse{}, err
 		}
 		columnMap[i] = colResp
+		lg.Debug().Str("columnTitle", header).Str("columnType", colType).Msg("Column added successfully")
 	}
+	lg.Info().Int("columnsAdded", len(columnMap)).Msg("All columns added")
 
 	// 6. Insert Data
+	lg.Info().Int("recordCount", len(dataRows)).Msg("Starting to insert records")
 	newRecords := []map[string]interface{}{}
 	for _, row := range dataRows {
 		// Compose a record (map) with all header-column values for this row
@@ -159,26 +180,39 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		}
 		newRecords = append(newRecords, record)
 	}
+	lg.Info().Int("recordsCreated", len(newRecords)).Msg("Records prepared for insertion")
 
 	batchSize := 50
+	totalBatches := (len(newRecords) + batchSize - 1) / batchSize
+	lg.Info().Int("batchSize", batchSize).Int("totalBatches", totalBatches).Msg("Starting batch insertion")
+
 	for i := 0; i < len(newRecords); i += batchSize {
 		end := i + batchSize
 		if end > len(newRecords) {
 			end = len(newRecords)
 		}
 		batch := newRecords[i:end]
+		batchNum := (i / batchSize) + 1
+
+		lg.Info().Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Inserting batch")
 		_, err := s.tableService.CreateRowsWithRecordsBulk(ctx, schemaName, tableResp.Model.Alias, batch)
 		if err != nil {
+			lg.Error().Stack().Err(err).Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Failed to insert batch")
 			return dto.ImportTableResponse{}, err
 		}
+		lg.Debug().Int("batchNumber", batchNum).Msg("Batch inserted successfully")
 	}
+	lg.Info().Msg("All batches inserted successfully")
 
 	// Refresh table response to include new columns and records
+	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Refreshing table response")
 	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName, 0, 0)
 	if err != nil {
+		lg.Warn().Stack().Err(err).Str("tableID", tableResp.Model.ID.String()).Msg("Failed to refresh table response, returning cached response")
 		return dto.ImportTableResponse{TableResponse: tableResp}, nil
 	}
 
+	lg.Info().Str("tableID", finalTableResp.Model.ID.String()).Int("columns", len(finalTableResp.Columns)).Int("records", len(finalTableResp.Records)).Msg("Import completed successfully")
 	return dto.ImportTableResponse{TableResponse: finalTableResp}, nil
 }
 
