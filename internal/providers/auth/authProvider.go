@@ -35,15 +35,16 @@ type AuthProviderService struct {
 func parseAPIResponse(resp *http.Response) (APIResponse, error) {
 	defer resp.Body.Close()
 
-	fmt.Println("--------------------")
-	fmt.Println(resp)
-
 	var respWrap APIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&respWrap); err != nil {
 		return APIResponse{}, fmt.Errorf("JSON decode failed: %w", err)
 	}
 	if !respWrap.Success {
-		return respWrap, fmt.Errorf("%s: %s", respWrap.Code, respWrap.Message)
+		return respWrap, &appErrors.APIError{
+			Code:    respWrap.Code,
+			Message: respWrap.Message,
+			Details: respWrap.Details,
+		}
 	}
 	return respWrap, nil
 }

@@ -159,3 +159,18 @@ var (
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
 )
+
+// APIError represents an error response from an external API
+type APIError struct {
+	Code    string
+	Message string
+	Details interface{}
+}
+
+// Error implements the error interface for APIError
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return e.Code
+}
