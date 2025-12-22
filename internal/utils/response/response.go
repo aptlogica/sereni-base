@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
+	"serenibase/internal/providers/logger"
 	responseConstants "serenibase/internal/utils/response/constants"
 )
 
@@ -95,6 +96,9 @@ func SendErrorWithMessage(ctx *gin.Context, code responseConstants.ResponseCode,
 }
 
 func CheckAndSendError(ctx *gin.Context, err error) {
+	// Log the original error
+	logger.Get().Error().Err(err).Msg("API Error")
+
 	code, ok := responseConstants.ErrorMapping[err]
 	if !ok || code == "" {
 		code = responseConstants.Error.InternalError

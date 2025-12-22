@@ -277,7 +277,7 @@ func (a *authManagementService) createDefaultRoles(ctx context.Context, schema s
 		role.ID = uuid.New()
 		_, err := a.roleService.CreateRole(ctx, schema, role)
 		if err != nil {
-			return fmt.Errorf("error creating role '%s': %w", role.Name, err)
+			return app_errors.ErrRoleCreation
 		}
 		fmt.Printf("Role '%s' created successfully.\n", role.Name)
 	}
@@ -287,12 +287,12 @@ func (a *authManagementService) createDefaultRoles(ctx context.Context, schema s
 func (a *authManagementService) addUserWithTenant(ctx context.Context, userId string, user master.User, tenantId string) (dto.UserResponse, error) {
 	plan, err := a.subscriptionPlanService.GetSubscriptionPlanByName(ctx, appConstant.PlanNames.Free)
 	if err != nil {
-		return dto.UserResponse{}, fmt.Errorf("failed to get subscription plan: %w", err)
+		return dto.UserResponse{}, app_errors.ErrSubscriptionPlanNotFound
 	}
 
 	role, err := a.roleService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RoleNames.Admin)
 	if err != nil {
-		return dto.UserResponse{}, fmt.Errorf("failed to get role: %w", err)
+		return dto.UserResponse{}, app_errors.ErrRoleNotFound
 	}
 
 	tenantReq := dto.TenantRequest{
@@ -349,7 +349,7 @@ func (a *authManagementService) addUserWithTenant(ctx context.Context, userId st
 
 	tenantUserRole, err := a.roleService.GetRoleByName(ctx, tenantData.Schema, appConstant.RoleNames.Admin)
 	if err != nil {
-		return dto.UserResponse{}, fmt.Errorf("failed to get role: %w", err)
+		return dto.UserResponse{}, app_errors.ErrRoleNotFound
 	}
 
 	err = a.userManagementService.AddUserRole(ctx, tenantData.Schema, user.ID, tenantUserRole.ID)
@@ -692,7 +692,7 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 
 	role, err := a.roleService.GetRoleByName(ctx, schema, roles)
 	if err != nil {
-		return master.User{}, fmt.Errorf("failed to get role by name: %w", err)
+		return master.User{}, app_errors.ErrRoleNotFound
 	}
 
 	user, tenant, err := a.userManagementService.AddUserToTenant(ctx, schema, userData, role.ID, a.userDefaultPassword.Value)
@@ -787,7 +787,7 @@ func (a *authManagementService) RemoveUser(ctx context.Context, schema string, u
 
 	err = a.authProviderService.DisableUser(ctx, providerUserID)
 	if err != nil {
-		return fmt.Errorf("failed to pending user in keycloak: %w", err)
+		return app_errors.ErrUserDisableFailed
 	}
 
 	return nil

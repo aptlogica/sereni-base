@@ -8,6 +8,19 @@ import (
 
 const (
 	MasterDatabase = "master"
+
+	// Email footer notice
+	EmailFooterNotice = `────────────────────────────────────
+CONFIDENTIALITY & SECURITY NOTICE
+
+This email and any attachments are intended solely for the designated recipient and may contain confidential or proprietary information. Unauthorized use, disclosure, or distribution is strictly prohibited.
+
+Serenibase will never request passwords or sensitive credentials via email. Please do not share OTPs, access links, or authentication details.
+
+This is an automated message. Replies are not monitored.
+
+© Serenibase. All rights reserved.
+────────────────────────────────────`
 )
 
 func strPtr(s string) *string {
@@ -64,7 +77,6 @@ var PlanNames = struct {
 	Premium: "Premium",
 }
 
-
 var DefaultPlans = []dto.PlanInsertion{
 	{
 		Name:                 PlanNames.Free,
@@ -102,8 +114,8 @@ var SystemColumns = []dto.AddColumnRequest{
 	{
 		Title:       "Id",
 		Description: "",
-		UIDT:        "number",
-		DT:          "BIGSERIAL",
+		UIDT:        "uuid",
+		DT:          "UUID",
 		OrderIndex:  helpers.Float64Ptr(0),
 		Virtual:     helpers.BoolPtr(false),
 		System:      helpers.BoolPtr(true),
@@ -525,7 +537,6 @@ var UITypeMappings = map[string]DBMapping{
 		Oracle:    "TEXT",
 	},
 }
-
 
 // AllowedConversions says: fromType -> list of allowed target types.
 //

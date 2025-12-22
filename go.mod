@@ -4,7 +4,7 @@ go 1.24.0
 
 toolchain go1.24.4
 
-replace godbgrest => ../go-db-rest
+replace godbgrest => ../go-postgres-rest
 
 require (
 	github.com/disintegration/imaging v1.6.2

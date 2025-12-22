@@ -3,7 +3,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"godbgrest/pkg"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 )
@@ -126,13 +126,14 @@ func (s *viewService) UpdateView(ctx context.Context, schemaName string, id stri
 }
 
 func (s *viewService) DeleteView(ctx context.Context, schemaName string, id string) error {
+	lg := logger.Get()
 	view := tenant.View{}
 	tableName := view.TableName(schemaName)
 
 	// Ensure exists
 	_, err := s.GetViewByID(ctx, schemaName, id)
-	fmt.Println("----------------------", err)
 	if err != nil {
+		lg.Error().Stack().Err(err).Msg("Failed to get view for deletion")
 		return err
 	}
 
@@ -148,6 +149,7 @@ func (s *viewService) GetViewsByModelID(ctx context.Context, schemaName string, 
 		Filters: []dbModels.QueryFilter{
 			{Column: "model_id", Operator: "eq", Value: modelID},
 		},
+		OrderBy: []string{"order_index"},
 	})
 	if err != nil {
 		return []tenant.View{}, err

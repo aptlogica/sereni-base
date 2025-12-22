@@ -8,6 +8,7 @@ import (
 	"serenibase/internal/dto"
 	"serenibase/internal/models/master"
 	"serenibase/internal/models/tenant"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"time"
@@ -92,6 +93,7 @@ func (t *tenantManagementService) createTenantSchema(ctx context.Context, schema
 
 // Tenant lifecycle management
 func (t *tenantManagementService) InitializeTenant(ctx context.Context, req dto.TenantRequest, planId uuid.UUID, roleId uuid.UUID) (dto.TenantResponse, error) {
+	lg := logger.Get()
 	// Step 1: Create the tenant
 	insertedTenant, err := t.tenantService.CreateTenant(ctx, req)
 	if err != nil {
@@ -115,13 +117,13 @@ func (t *tenantManagementService) InitializeTenant(ctx context.Context, req dto.
 
 	insertedTenantSubscription, err := t.subscriptionService.CreateTenantSubscription(ctx, subscriptionReq)
 	if err != nil {
-		fmt.Printf("failed to create tenant subscription: %w", err)
+		lg.Error().Stack().Err(err).Msg("Failed to create tenant subscription")
 		return dto.TenantResponse{}, err
 	}
 
 	var tenantSubscription dto.TenantSubscriptionResponse
 	if err := helpers.StructToStruct(insertedTenantSubscription, &tenantSubscription); err != nil {
-		fmt.Printf("failed to map tenant subscription: %v", err)
+		lg.Error().Stack().Err(err).Msg("Failed to map tenant subscription")
 		return dto.TenantResponse{}, err
 	}
 
@@ -137,7 +139,7 @@ func (t *tenantManagementService) InitializeTenant(ctx context.Context, req dto.
 	}
 	insertedTenantMenmbership, err := t.membershipService.CreateTenantMembership(ctx, membershipReq)
 	if err != nil {
-		fmt.Printf("failed to create tenant membership: %w", err)
+		lg.Error().Stack().Err(err).Msg("Failed to create tenant membership")
 		return dto.TenantResponse{}, err
 	}
 
@@ -197,7 +199,7 @@ func (t *tenantManagementService) GetTenantByUserId(ctx context.Context, userId 
 
 func (t *tenantManagementService) DeactivateTenant(ctx context.Context, tenantID string) error {
 	updates := map[string]interface{}{
-		"status":     "pending",
+		"status":             "pending",
 		"last_modified_time": time.Now(),
 	}
 
@@ -211,7 +213,7 @@ func (t *tenantManagementService) DeactivateTenant(ctx context.Context, tenantID
 
 func (t *tenantManagementService) ReactivateTenant(ctx context.Context, tenantID string) error {
 	updates := map[string]interface{}{
-		"status":     "active",
+		"status":             "active",
 		"last_modified_time": time.Now(),
 	}
 
@@ -225,8 +227,8 @@ func (t *tenantManagementService) ReactivateTenant(ctx context.Context, tenantID
 
 func (t *tenantManagementService) DeleteTenant(ctx context.Context, tenantID string) error {
 	updates := map[string]interface{}{
-		"is_deleted": true,
-		"deleted_at": time.Now(),
+		"is_deleted":         true,
+		"deleted_at":         time.Now(),
 		"last_modified_time": time.Now(),
 	}
 
@@ -350,7 +352,8 @@ func (t *tenantManagementService) UpdateTenantBySchema(ctx context.Context, sche
 		return dto.TenantResponse{}, err
 	}
 
-	fmt.Println(updatedTenant)
+	lg := logger.Get()
+	lg.Debug().Interface("tenant", updatedTenant).Msg("Updated tenant successfully")
 
 	var tenantData dto.TenantResponse
 	if err := helpers.StructToStruct(updatedTenant, &tenantData); err != nil {
@@ -368,7 +371,7 @@ func (t *tenantManagementService) UpdateTenantSettings(ctx context.Context, tena
 	}
 
 	updates := map[string]interface{}{
-		"settings":   string(settingsJSON),
+		"settings":           string(settingsJSON),
 		"last_modified_time": time.Now(),
 	}
 
@@ -471,7 +474,7 @@ func (t *tenantManagementService) GetTenantUsage(ctx context.Context, tenantID s
 		"tenant_status":       tenant.Status,
 		"member_count":        len(members),
 		"subscription_status": subscription.Status,
-		"created_time":          tenant.CreatedAt,
+		"created_time":        tenant.CreatedAt,
 		"last_updated":        tenant.UpdatedAt,
 	}
 
@@ -574,7 +577,7 @@ func (t *tenantManagementService) CreateTenantSchema(ctx context.Context, tenant
 	updates := map[string]interface{}{
 		"schema_version":     "1.0.0",
 		"last_migration_run": time.Now(),
-		"last_modified_time":         time.Now(),
+		"last_modified_time": time.Now(),
 	}
 
 	conditions := map[string]interface{}{
@@ -589,7 +592,7 @@ func (t *tenantManagementService) UpdateTenantSchema(ctx context.Context, tenant
 	updates := map[string]interface{}{
 		"schema_version":     version,
 		"last_migration_run": time.Now(),
-		"last_modified_time":         time.Now(),
+		"last_modified_time": time.Now(),
 	}
 
 	conditions := map[string]interface{}{
@@ -615,7 +618,7 @@ func (t *tenantManagementService) RunTenantMigration(ctx context.Context, tenant
 	// For now, just updating the last migration timestamp
 	updates := map[string]interface{}{
 		"last_migration_run": time.Now(),
-		"last_modified_time":         time.Now(),
+		"last_modified_time": time.Now(),
 	}
 
 	conditions := map[string]interface{}{
@@ -638,7 +641,7 @@ func (t *tenantManagementService) RestoreTenantData(ctx context.Context, tenantI
 	// For now, just updating the last migration timestamp
 	updates := map[string]interface{}{
 		"last_migration_run": time.Now(),
-		"last_modified_time":         time.Now(),
+		"last_modified_time": time.Now(),
 	}
 
 	conditions := map[string]interface{}{

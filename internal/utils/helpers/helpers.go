@@ -506,7 +506,7 @@ func SplitAndTrim(str string, delimiter string) []string {
 	if str == "" {
 		return []string{}
 	}
-	
+
 	parts := strings.Split(str, delimiter)
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -515,7 +515,7 @@ func SplitAndTrim(str string, delimiter string) []string {
 			result = append(result, trimmed)
 		}
 	}
-	
+
 	return result
 }
 
@@ -524,3 +524,11 @@ func JoinStrings(parts []string, delimiter string) string {
 	return strings.Join(parts, delimiter)
 }
 
+func ContainsString(slice []string, element string) bool {
+	for _, v := range slice {
+		if v == element {
+			return true
+		}
+	}
+	return false
+}

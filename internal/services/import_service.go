@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"mime/multipart"
 	"serenibase/internal/dto"
+	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type importService struct {
@@ -24,9 +27,12 @@ func NewImportService(tableService interfaces.TableManagementService) interfaces
 }
 
 func (s *importService) Import(ctx context.Context, schemaName string, req dto.CreateTableRequest, file *multipart.FileHeader) (dto.ImportTableResponse, error) {
+	lg := logger.Get()
+
 	// 1. Open file
 	f, err := file.Open()
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file")
 		return dto.ImportTableResponse{}, err
 	}
 	defer f.Close()
@@ -36,29 +42,81 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 	reader := csv.NewReader(f)
 	records, err := reader.ReadAll()
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to parse CSV file")
 		return dto.ImportTableResponse{}, err
 	}
 
 	if len(records) < 1 {
-		return dto.ImportTableResponse{}, fmt.Errorf("empty csv file")
+		errMsg := "empty csv file"
+		lg.Error().Str("file", file.Filename).Msg(errMsg)
+		return dto.ImportTableResponse{}, fmt.Errorf("%s", errMsg)
 	}
+
+	lg.Info().Str("file", file.Filename).Int("rows", len(records)).Msg("CSV file parsed successfully")
 
 	headers := records[0]
 	dataRows := records[1:]
 
 	// 3. Infer Types
 	columnTypes := s.inferColumnTypes(headers, dataRows)
+	lg.Info().Strs("headers", headers).Strs("columnTypes", columnTypes).Msg("Column types inferred")
+
+	// Store first CSV column header to use as the title column name
+	titleColumnName := ""
+	if len(headers) > 0 && headers[0] != "" {
+		titleColumnName = headers[0]
+	}
 
 	// 4. Create Table
+	// Keep the original req.Title for the model title, don't override with CSV column name
+	lg.Info().Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Creating table with defaults")
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Failed to create table with defaults")
 		return dto.ImportTableResponse{}, err
+	}
+	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Table created successfully")
+
+	// Update the Title column with the first CSV header name
+	if titleColumnName != "" {
+		titleColumnID := ""
+		// Find the Title column ID from the default columns
+		for _, col := range tableResp.Columns {
+			if col.Title == "Title" {
+				titleColumnID = col.ID.String()
+				break
+			}
+		}
+
+		// Update the Title column with the first CSV header name
+		if titleColumnID != "" {
+			lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Updating title column name")
+			updateColReq := dto.ColumnUpdate{
+				Title: &titleColumnName,
+			}
+			_, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq)
+			if err != nil {
+				lg.Error().Stack().Err(err).Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Failed to update title column")
+				return dto.ImportTableResponse{}, err
+			}
+			lg.Info().Str("columnID", titleColumnID).Msg("Title column updated successfully")
+		}
 	}
 
 	// 5. Add Columns
+	lg.Info().Int("columnCount", len(headers)-1).Msg("Starting to add columns")
 	columnMap := make(map[int]dto.ColumnResponse) // Index -> Column
+	systemFieldAdded := false
 	for i, header := range headers {
+		// Skip first column as it's used for the title field
+		if i == 0 {
+			continue
+		}
+
 		colType := columnTypes[i]
+		if colType == "text" && !systemFieldAdded {
+			systemFieldAdded = true
+		}
 
 		// Skip empty headers
 		if header == "" {
@@ -80,16 +138,21 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		}
 		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
 		if err != nil {
+			lg.Error().Stack().Err(err).Str("columnTitle", header).Str("columnType", colType).Msg("Failed to add column")
 			return dto.ImportTableResponse{}, err
 		}
 		columnMap[i] = colResp
+		lg.Debug().Str("columnTitle", header).Str("columnType", colType).Msg("Column added successfully")
 	}
+	lg.Info().Int("columnsAdded", len(columnMap)).Msg("All columns added")
 
 	// 6. Insert Data
+	lg.Info().Int("recordCount", len(dataRows)).Msg("Starting to insert records")
 	newRecords := []map[string]interface{}{}
 	for _, row := range dataRows {
 		// Compose a record (map) with all header-column values for this row
 		record := map[string]interface{}{
+			"id":                 uuid.New().String(),
 			"created_by":         req.CreatedBy,
 			"last_modified_by":   req.CreatedBy,
 			"created_time":       time.Now().UTC(),
@@ -100,6 +163,14 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 			if cellVal == "" {
 				continue
 			}
+
+			// Map first column to title field
+			if i == 0 {
+				val := s.convertValue(cellVal, columnTypes[i])
+				record["title"] = val
+				continue
+			}
+
 			colResp, exists := columnMap[i]
 			if !exists {
 				continue
@@ -109,26 +180,39 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		}
 		newRecords = append(newRecords, record)
 	}
+	lg.Info().Int("recordsCreated", len(newRecords)).Msg("Records prepared for insertion")
 
 	batchSize := 50
+	totalBatches := (len(newRecords) + batchSize - 1) / batchSize
+	lg.Info().Int("batchSize", batchSize).Int("totalBatches", totalBatches).Msg("Starting batch insertion")
+
 	for i := 0; i < len(newRecords); i += batchSize {
 		end := i + batchSize
 		if end > len(newRecords) {
 			end = len(newRecords)
 		}
 		batch := newRecords[i:end]
+		batchNum := (i / batchSize) + 1
+
+		lg.Info().Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Inserting batch")
 		_, err := s.tableService.CreateRowsWithRecordsBulk(ctx, schemaName, tableResp.Model.Alias, batch)
 		if err != nil {
+			lg.Error().Stack().Err(err).Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Failed to insert batch")
 			return dto.ImportTableResponse{}, err
 		}
+		lg.Debug().Int("batchNumber", batchNum).Msg("Batch inserted successfully")
 	}
+	lg.Info().Msg("All batches inserted successfully")
 
 	// Refresh table response to include new columns and records
+	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Refreshing table response")
 	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName, 0, 0)
 	if err != nil {
+		lg.Warn().Stack().Err(err).Str("tableID", tableResp.Model.ID.String()).Msg("Failed to refresh table response, returning cached response")
 		return dto.ImportTableResponse{TableResponse: tableResp}, nil
 	}
 
+	lg.Info().Str("tableID", finalTableResp.Model.ID.String()).Int("columns", len(finalTableResp.Columns)).Int("records", len(finalTableResp.Records)).Msg("Import completed successfully")
 	return dto.ImportTableResponse{TableResponse: finalTableResp}, nil
 }
 
@@ -145,9 +229,10 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	isDecimal := true
 	isBool := true
 	isDate := true
-	// isDateTime := true // Simplified to just date for now
+	isLongText := false
 
 	hasData := false
+	totalLength := 0
 
 	for _, row := range rows {
 		if colIndex >= len(row) {
@@ -158,14 +243,13 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 			continue
 		}
 		hasData = true
+		totalLength += len(val)
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
-			// Check if it's an integer
 			if _, err := strconv.ParseInt(val, 10, 64); err != nil {
 				isNumber = false
 			}
-			// Check if it's a decimal (float)
 			if _, err := strconv.ParseFloat(val, 64); err != nil {
 				isDecimal = false
 			}
@@ -181,7 +265,6 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 
 		// Check Date (Simple check)
 		if isDate {
-			// Try parsing common formats
 			formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
 			parsed := false
 			for _, f := range formats {
@@ -193,6 +276,11 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 			if !parsed {
 				isDate = false
 			}
+		}
+
+		// Check if long text (avg length > 255)
+		if len(val) > 255 {
+			isLongText = true
 		}
 	}
 
@@ -211,6 +299,9 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	}
 	if isDate {
 		return "date"
+	}
+	if isLongText {
+		return "longText"
 	}
 	return "text"
 }

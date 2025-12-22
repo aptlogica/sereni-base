@@ -110,4 +110,13 @@ var ErrorMapping = map[error]ResponseCode{
 	app_errors.InvalidColumnMetaForLinkType:   TableError.InvalidColumnMetaForLinkType,
 	app_errors.RowNotFound:                    TableError.RowNotFound,
 	app_errors.InvalidColumnMetaForLookupType: TableError.InvalidColumnMetaForLookupType,
+
+	// New mappings
+	app_errors.ErrInvalidDateOfBirth:         Error.InvalidDateOfBirth,
+	app_errors.ErrRoleCreation:               Error.RoleCreationError,
+	app_errors.ErrSubscriptionPlanNotFound:   Error.SubscriptionPlanNotFound,
+	app_errors.ErrRoleNotFound:               Error.RoleNotFound,
+	app_errors.ErrUserDisableFailed:          Error.UserDisableFailed,
+	app_errors.ErrInvalidWorkspaceMemberData: Error.InvalidWorkspaceMemberData,
+	app_errors.ErrUserContextNotFound:        Error.UserContextNotFound,
 }

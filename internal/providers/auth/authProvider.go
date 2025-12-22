@@ -162,7 +162,6 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, token string) (T
 }
 
 // Adjusted to use POST /auth/verify-token with JSON body: { "token": ... }
-
 func (a *AuthProviderService) ValidateToken(ctx context.Context, token string) (Claims, error) {
 	// Remove "Bearer " prefix if present in the token
 	const bearerPrefix = "Bearer "

@@ -60,7 +60,8 @@ storage:
 
 log:
   level: {{log_level}}        # debug, info, warn, error, fatal, panic
-  file: {{log_file}}
+  file: logs/app.log
+  error_file: logs/error.log
   max_size: {{log_max_size}}       # MB
   max_backups: {{log_max_backups}}
   max_age: {{log_max_age}}        # days

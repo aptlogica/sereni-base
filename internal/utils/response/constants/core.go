@@ -33,7 +33,6 @@ var Error = struct {
 	HTTPRequestCreationError ResponseCode
 	HTTPDoRequestError       ResponseCode
 
-
 	// file handling
 	FileNotFound           ResponseCode
 	FileAlreadyExists      ResponseCode
@@ -48,6 +47,15 @@ var Error = struct {
 	FolderDeleteFailed     ResponseCode
 	FolderPermissionDenied ResponseCode
 	FolderInvalidPath      ResponseCode
+
+	// New refactored codes
+	InvalidDateOfBirth         ResponseCode
+	RoleCreationError          ResponseCode
+	SubscriptionPlanNotFound   ResponseCode
+	RoleNotFound               ResponseCode
+	UserDisableFailed          ResponseCode
+	InvalidWorkspaceMemberData ResponseCode
+	UserContextNotFound        ResponseCode
 }{
 	InvalidID:                "ERR_0001",
 	UnauthorizedAccess:       "ERR_0002",
@@ -92,6 +100,14 @@ var Error = struct {
 	FolderDeleteFailed:     "ERR_1011",
 	FolderPermissionDenied: "ERR_1012",
 	FolderInvalidPath:      "ERR_1013",
+
+	InvalidDateOfBirth:         "ERR_1014",
+	RoleCreationError:          "ERR_1015",
+	SubscriptionPlanNotFound:   "ERR_1016",
+	RoleNotFound:               "ERR_1017",
+	UserDisableFailed:          "ERR_1018",
+	InvalidWorkspaceMemberData: "ERR_1019",
+	UserContextNotFound:        "ERR_1020",
 }
 
 var CoreErrorCodes = map[ResponseCode]MetaResponse{
@@ -138,6 +154,14 @@ var CoreErrorCodes = map[ResponseCode]MetaResponse{
 	Error.FolderDeleteFailed:     {HTTPStatus: http.StatusInternalServerError, Message: "Folder delete failed", Description: "Failed to delete the folder"},
 	Error.FolderPermissionDenied: {HTTPStatus: http.StatusForbidden, Message: "Folder permission denied", Description: "Permission denied for folder operation"},
 	Error.FolderInvalidPath:      {HTTPStatus: http.StatusBadRequest, Message: "Folder invalid path", Description: "The folder path provided is invalid"},
+
+	Error.InvalidDateOfBirth:         {HTTPStatus: http.StatusBadRequest, Message: "Invalid date of birth", Description: "The date of birth format is invalid"},
+	Error.RoleCreationError:          {HTTPStatus: http.StatusInternalServerError, Message: "Role creation failed", Description: "Failed to create the role"},
+	Error.SubscriptionPlanNotFound:   {HTTPStatus: http.StatusNotFound, Message: "Subscription plan not found", Description: "The requested subscription plan was not found"},
+	Error.RoleNotFound:               {HTTPStatus: http.StatusNotFound, Message: "Role not found", Description: "The requested role was not found"},
+	Error.UserDisableFailed:          {HTTPStatus: http.StatusInternalServerError, Message: "User disable failed", Description: "Failed to disable the user"},
+	Error.InvalidWorkspaceMemberData: {HTTPStatus: http.StatusInternalServerError, Message: "Invalid workspace member data", Description: "The workspace member data is invalid or corrupted"},
+	Error.UserContextNotFound:        {HTTPStatus: http.StatusUnauthorized, Message: "User context not found", Description: "Could not retrieve user context"},
 }
 
 var CoreSuccessCodes = map[ResponseCode]MetaResponse{}
