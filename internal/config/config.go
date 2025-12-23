@@ -37,22 +37,17 @@ type EmailConfig struct {
 	// FromName     string `mapstructure:"from_name"`
 }
 
-type KeycloakConfig struct {
-	Enabled       bool   `mapstructure:"enabled"`
-	Realm         string `mapstructure:"realm"`
-	ClientID      string `mapstructure:"client_id"`
-	IssuerURL     string `mapstructure:"issuer_url"`
-	AdminUsername string `mapstructure:"admin_username"`
-	AdminPassword string `mapstructure:"admin_password"`
-	AdminToken    string `mapstructure:"admin_token"`
-	ClientSecret  string `mapstructure:"client_secret"`
-	AdminRealm    string `mapstructure:"admin_realm"`
-	RedirectURI   string `mapstructure:"redirect_url"`
+type JWTConfig struct {
+	Secret             string `mapstructure:"secret"`
+	AccessTokenExpiry  int    `mapstructure:"access_token_expiry"`
+	RefreshTokenExpiry int    `mapstructure:"refresh_token_expiry"`
+	Issuer             string `mapstructure:"issuer"`
 }
 
 type AuthConfig struct {
-	URL              string `mapstructure:"url"`
-	ResetPasswordURL string `mapstructure:"reset_password_url"`
+	URL              string    `mapstructure:"url"` // Kept for backward compat if needed, or remove if unused. User asked to remove social/keycloak.
+	ResetPasswordURL string    `mapstructure:"reset_password_url"`
+	JWT              JWTConfig `mapstructure:"jwt"`
 }
 
 type StorageConfig struct {
@@ -132,8 +127,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("database.ssl_mode", "disable")
 	viper.SetDefault("database.max_open_conns", 25)
 	viper.SetDefault("database.max_idle_conns", 5)
-	viper.SetDefault("auth.token_expiry", 3600)
-	viper.SetDefault("auth.refresh_expiry", 86400)
+
+	viper.SetDefault("auth.jwt.access_token_expiry", 3600)   // 1 hour
+	viper.SetDefault("auth.jwt.refresh_token_expiry", 86400) // 24 hours
+	viper.SetDefault("auth.jwt.secret", "default-secret-change-me")
+	viper.SetDefault("auth.jwt.issuer", "serenibase")
+
 	viper.SetDefault("redis.enabled", false)
 	viper.SetDefault("redis.url", "redis://localhost:6379")
 	viper.SetDefault("auth.mode", "dev")

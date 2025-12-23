@@ -30,19 +30,5 @@ type AuthResult struct {
 type AuthProvider interface {
 	GenerateToken(ctx context.Context, user master.User) (Tokens, error)
 	RefreshToken(ctx context.Context, token string) (Tokens, error)
-	ValidateToken(ctx context.Context, authHeader string) (Claims, error)
-	Ping(ctx context.Context) (interface{}, error)
-
-	AddUser(ctx context.Context, user master.User, tenant_id string, roles string) (Tokens, error)
-	ResetPassword(ctx context.Context, email string, newPassword string) error
-	HandleCallback(ctx context.Context, code string) (*AuthResult, error)
-	AddOrUpdateUserAttributesToKeycloakUser(ctx context.Context, keycloakUserID string, attributes map[string]interface{}) error
-	SetEmailVerified(ctx context.Context, keycloakUserID string) error
-	CheckUserExistsByEmailAndReturnUser(ctx context.Context, email string) (exists bool, keycloakUserID string, attributes map[string]string, err error)
-
-	GetProviderURL(provider string) string
-	Logout(ctx context.Context, refreshToken string) error
-	DisableUser(ctx context.Context, keycloakUserID string) error
-	EnableUser(ctx context.Context, keycloakUserID string) error
-	DeleteUser(ctx context.Context, keycloakUserID string) error
+	ValidateToken(ctx context.Context, tokenStr string) (Claims, error)
 }

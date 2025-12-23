@@ -27,6 +27,10 @@ type User struct {
 	Phone         string    `db:"phone" json:"phone" mapstructure:"phone"`
 	PhoneVerified bool      `db:"phone_verified" json:"phone_verified" mapstructure:"phone_verified"`
 
+	// Contextual fields (not in DB)
+	TenantID uuid.UUID `db:"-" json:"tenant_id,omitempty" mapstructure:"-"`
+	Roles    string    `db:"-" json:"roles,omitempty" mapstructure:"-"`
+
 	// Account status
 	Status       string     `db:"status" json:"status" mapstructure:"status"`
 	LastLoginAt  *time.Time `db:"last_login_at" json:"last_login_at" mapstructure:"last_login_at"`

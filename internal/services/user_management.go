@@ -148,12 +148,13 @@ func (s *userManagementService) UpdatePassword(ctx context.Context, schema strin
 		"last_modified_time":  time.Now(),
 	}
 
-	user, err = s.userService.UpdateUser(ctx, schema, userID, updateFields)
+	// Update password in tenant schema only
+	updatedUser, err := s.userService.UpdateUser(ctx, schema, userID, updateFields)
 	if err != nil {
 		return master.User{}, err
 	}
 
-	return user, nil
+	return updatedUser, nil
 }
 
 func (s *userManagementService) AddAvatar(ctx context.Context, schema string, userID string, fileHeader *multipart.FileHeader) (dto.UserResponse, error) {

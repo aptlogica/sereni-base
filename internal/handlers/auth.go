@@ -172,27 +172,25 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	response.SendSuccess(c, responseConst.AuthSuccess.ResetPassword, nil)
 }
 
-func (h *AuthHandler) KeycloakCallback(c *gin.Context) {
-	code := c.Query("code")
-
-	if code == "" {
-		response.SendError(c, "Missing code in Keycloak callback")
-		return
-	}
-
-	result, err := h.authManagementService.HandleKeycloakCallback(c.Request.Context(), code)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, responseConst.AuthSuccess.UserLogin, result)
+func (h *AuthHandler) Health(c *gin.Context) {
+	c.Status(http.StatusOK)
 }
 
-func (h *AuthHandler) LoginByProvider(c *gin.Context) {
-	provider := c.Param("provider")
-	redirectURL := h.authManagementService.GetAuthProviderUrl(provider)
-	c.Redirect(http.StatusFound, redirectURL)
+func (h *AuthHandler) HealthLive(c *gin.Context) {
+	c.Status(http.StatusOK)
+}
+
+func (h *AuthHandler) HealthReady(c *gin.Context) {
+	c.Status(http.StatusOK)
+}
+
+// TODO: Implement proper logic for these
+func (h *AuthHandler) ValidateToken(c *gin.Context) {
+	c.Status(http.StatusOK)
+}
+
+func (h *AuthHandler) VerifyToken(c *gin.Context) {
+	c.Status(http.StatusOK)
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -212,7 +210,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.AuthSuccess.UserLogout, err)
+	response.SendSuccess(c, responseConst.AuthSuccess.UserLogout, nil)
 }
 
 func (h *AuthHandler) AddUser(c *gin.Context) {

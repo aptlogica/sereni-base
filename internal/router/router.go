@@ -81,8 +81,12 @@ func Setup(cfg *config.Config,
 		auth.POST("/refresh", handlerGroups.Auth.RefreshToken)
 		auth.POST("/forgot-password", handlerGroups.Auth.ForgotPassword)
 		auth.POST("/reset-password", handlerGroups.Auth.ResetPassword)
-		auth.GET("/login/:provider", handlerGroups.Auth.LoginByProvider)
-		auth.GET("/callback", handlerGroups.Auth.KeycloakCallback)
+		auth.POST("/validate-token", handlerGroups.Auth.ValidateToken)
+		auth.POST("/verify-token", handlerGroups.Auth.VerifyToken)
+
+		// Logout with middleware if possible (handlerGroups.Auth.Logout)
+		// Assuming AuthMiddleware is available in middlewareGroups
+		// auth.POST("/logout", middlewareGroups.AuthMiddleware(), handlerGroups.Auth.Logout)
 		auth.POST("/logout", handlerGroups.Auth.Logout)
 
 		otp := auth.Group("/otp")
@@ -129,9 +133,9 @@ func Setup(cfg *config.Config,
 			fullAccessWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
 			{
 				// fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.InviteUser)                   // fullAccess
-				fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.AddMultipleMembers) // fullAccess
-				fullAccessWorkspace.POST("/:id/remove", handlerGroups.Auth.RemoveUserFromWorkspace)     // fullAccess
-				fullAccessWorkspace.GET("/:id/members", handlerGroups.Auth.GetWorkspaceMembers)         // fullAccess
+				fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.AddMultipleMembers)      // fullAccess
+				fullAccessWorkspace.POST("/:id/remove", handlerGroups.Auth.RemoveUserFromWorkspace) // fullAccess
+				fullAccessWorkspace.GET("/:id/members", handlerGroups.Auth.GetWorkspaceMembers)     // fullAccess
 			}
 
 			// All access
