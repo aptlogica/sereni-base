@@ -88,10 +88,6 @@ func New(cfg *config.Config) (*App, error) {
 	// Initialize services
 	userService := services.NewUserService(dbService)
 	roleService := services.NewRoleService(dbService)
-	subscriptionPlanService := services.NewSubscriptionPlanService(dbService)
-	tenantService := services.NewTenantService(dbService)
-	tenantMembershipService := services.NewTenantMembershipService(dbService)
-	tenantSubscriptionService := services.NewTenantSubscriptionService(dbService)
 	workspaceService := services.NewWorkspaceService(dbService)
 	workspaceMemberService := services.NewWorkspaceMemberService(dbService)
 	baseService := services.NewBaseService(dbService)
@@ -142,18 +138,11 @@ func New(cfg *config.Config) (*App, error) {
 		tableManagementService,
 	)
 
-	tenantManagementService := services.NewTenantManagementService(
-		dbService,
-		tenantService,
-		tenantSubscriptionService,
-		tenantMembershipService,
-	)
+
 
 	userManagementService := services.NewUserManagementService(
 		dbService,
 		userService,
-		tenantManagementService,
-		subscriptionPlanService,
 		assetManagementService,
 		userResetTokenService,
 		userRoleService,
@@ -175,8 +164,6 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.TemporaryAddedUserPassword,
 		dbService,
 		userManagementService,
-		tenantManagementService,
-		subscriptionPlanService,
 		roleService,
 		workspaceManagementService,
 		userResetTokenService,
@@ -194,7 +181,6 @@ func New(cfg *config.Config) (*App, error) {
 	assetHandler := handlers.NewAssetsHandler(assetManagementService)
 	tableHandler := handlers.NewTableHandler(tableManagementService, importService)
 	userHandler := handlers.NewUserHandler(userManagementService)
-	tenantHandler := handlers.NewTenantHandler(tenantManagementService)
 
 	handlerGroups := router.Handlers{
 		Auth:      authHandler,
@@ -203,7 +189,6 @@ func New(cfg *config.Config) (*App, error) {
 		Asset:     assetHandler,
 		Table:     tableHandler,
 		User:      userHandler,
-		Tenant:    tenantHandler,
 	}
 
 	middlewareGroups := router.Middlewares{
@@ -212,7 +197,6 @@ func New(cfg *config.Config) (*App, error) {
 		DatabaseQueryLogger:     middleware.DatabaseQueryLogger,
 		RequestSizeLimit:        middleware.RequestSizeLimit,
 		AuthMiddleware:          func() gin.HandlerFunc { return middleware.AuthMiddleware(authProvider) },
-		TenantSchemaMiddleware:  func() gin.HandlerFunc { return middleware.TenantSchemaMiddleware(tenantManagementService) },
 		FileSizeLimitMiddleware: middleware.FileSizeLimitMiddleware,
 		ScopeHeaderMiddleware:   func(scope string) gin.HandlerFunc { return middleware.ScopeHeaderMiddleware(scope) },
 		WorkspaceAndBaseAccessValidationMiddleware: func(allowedAccess []string) gin.HandlerFunc {
@@ -282,7 +266,7 @@ func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, 
 
 	// Your custom logic like DB connection, migration, etc.
 	scripts.CreateMasterSchema(repo) // Example: Create database schema
-	
+
 	// Register predefined owner from configuration
 	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
 		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)

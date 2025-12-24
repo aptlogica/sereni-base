@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"godbgrest/pkg"
 	"serenibase/internal/config"
+	"serenibase/internal/constant"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"strings"
 	"time"
@@ -32,8 +33,6 @@ type authManagementService struct {
 	repo                *pkg.DatabaseService
 
 	userManagementService      interfaces.UserManagementService
-	tenantManagementService    interfaces.TenantManagementService
-	subscriptionPlanService    interfaces.SubscriptionPlanService
 	roleService                interfaces.RoleService
 	workspaceManagementService interfaces.WorkspaceManagementService
 	userResetTokenService      interfaces.UserResetTokenService
@@ -49,8 +48,6 @@ func NewAuthManagementService(
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig,
 	repo *pkg.DatabaseService,
 	userManagementService interfaces.UserManagementService,
-	tenantManagementService interfaces.TenantManagementService,
-	subscriptionPlanService interfaces.SubscriptionPlanService,
 	roleService interfaces.RoleService,
 	workspaceManagementService interfaces.WorkspaceManagementService,
 	userResetTokenService interfaces.UserResetTokenService,
@@ -64,11 +61,10 @@ func NewAuthManagementService(
 		userDefaultPassword:        userDefaultPassword,
 		repo:                       repo,
 		userManagementService:      userManagementService,
-		tenantManagementService:    tenantManagementService,
-		subscriptionPlanService:    subscriptionPlanService,
 		roleService:                roleService,
 		workspaceManagementService: workspaceManagementService,
 		userResetTokenService:      userResetTokenService,
+		rbacManagementService:      rbacManagementService,
 		otpProviderService:         otpProviderService,
 		emailTemplateService:       emailTemplateService,
 		emailProviderService:       emailProviderService,
@@ -114,9 +110,6 @@ func (a *authManagementService) Register(ctx context.Context, req dto.RegisterRe
 	insertedUser.Password = password // Pass raw password if needed for some reason, but GenerateToken usually doesn't need it for JWT
 	// NOTE: GenerateToken does not require raw password for local JWT signing, just user properties.
 
-	// Default role for new registration?
-	// Usually invalid/no-access until email verified and tenant initialized.
-
 	tokenData, err := a.generateToken(ctx, insertedUser)
 	if err != nil {
 		return dto.RegisterResponse{}, err
@@ -129,7 +122,60 @@ func (a *authManagementService) Register(ctx context.Context, req dto.RegisterRe
 	return registerResponse, nil
 }
 
-func (a *authManagementService) generateToken(ctx context.Context, user master.User) (dto.TokenResponse, error) {
+func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error) {
+	// 1. Check if user already exists
+	if existingUser, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
+		fmt.Println("User already exists with ID:", existingUser.ID)
+		// If user exists, we might want to check if they are already an owner/verified.
+		// For now, return error or handle gracefully. Script handled it by printing.
+		// But here we return error to let caller decide.
+		return dto.LoginResponse{}, app_errors.UserAlreadyExists
+	} else if err != app_errors.UserNotFound {
+		return dto.LoginResponse{}, err
+	}
+
+	// 2. Hash password
+	hashed, err := helpers.HashPassword(req.Password)
+	if err != nil {
+		return dto.LoginResponse{}, app_errors.ErrHashed
+	}
+	req.Password = hashed
+
+	// 3. Create user in master schema
+	insertedUser, err := a.userManagementService.CreateUser(ctx, appConstant.MasterDatabase, req)
+	if err != nil {
+		return dto.LoginResponse{}, err
+	}
+
+	// 4. Verify Email (Skip OTP for owner) && Initialize
+	userData, err := a.initializeOwner(ctx, insertedUser.ID.String(), insertedUser)
+	if err != nil {
+		return dto.LoginResponse{}, err
+	}
+
+	// 6. Generate Tokens
+	insertedUser.EmailVerified = true
+	// insertedUser.Password = originalPassword // If needed by auth provider local check, but usually strictly by user object content for JWT
+
+	tokens, err := a.authProviderService.GenerateToken(ctx, insertedUser)
+	if err != nil {
+		return dto.LoginResponse{}, err
+	}
+
+	tokenResponse := dto.TokenResponse{
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+	}
+
+	loginResponse := dto.LoginResponse{
+		User:  &userData,
+		Token: &tokenResponse,
+	}
+
+	return loginResponse, nil
+}
+
+func (a *authManagementService) generateToken(ctx context.Context, user tenant.User) (dto.TokenResponse, error) {
 	// No more calling authProvider.AddUser (Keycloak sync)
 
 	tokens, err := a.authProviderService.GenerateToken(ctx, user)
@@ -183,23 +229,6 @@ func (a *authManagementService) jwtDecodeSegment(seg string) ([]byte, error) {
 
 func (a *authManagementService) Login(ctx context.Context, email string, password string) (dto.LoginResponse, error) {
 	// Check user existence
-	// We need tenant info?
-	// The original code tried to generate token first (via Keycloak) then check claims.
-	// We must do it reverse: Find user -> Check Pass -> Generate Token
-
-	// Assumption: User must be in MasterDatabase or we search across?
-	// Original code: `GetUserByEmail` was used on MasterDatabase in Register.
-	// But `Login` pulled `tenant_id` from token to identify where the user belongs?
-	// If we are multi-tenant, we need to know which tenant the user belongs to.
-	// Or we check `master.User` which might have a default tenant or something?
-	// Original code extracted `tenant_id` from the Keycloak token claims.
-
-	// In local auth, we need to find the user first.
-	// Users are in a specific schema? Or is there a central user table?
-	// `userManagementService.GetUserByEmail` takes a schema.
-	// Assuming `appConstant.MasterDatabase` holds the global user list or default schema.
-
-	// First, find the user in master database to get basic info and tenant
 	masterUser, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, email)
 	if err != nil {
 		if err == app_errors.UserNotFound {
@@ -208,73 +237,22 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 		return dto.LoginResponse{}, err
 	}
 
-	// Get the tenant for this user
-	tenantData, err := a.tenantManagementService.GetTenantByUserId(ctx, masterUser.ID)
-	if err != nil {
-		logger.Get().Warn().Err(err).Str("user_id", masterUser.ID.String()).Msg("Failed to resolve tenant for user during login")
+	// Verify Password
+	if !helpers.CheckPasswordHash(password, masterUser.Password) {
 		return dto.LoginResponse{}, app_errors.InvalidCredentials
 	}
-
-	// Now get the user from the tenant schema to verify password
-	// This ensures we check against the tenant's user record where passwords are updated
-	user, err := a.userManagementService.GetUserByID(ctx, tenantData.Schema, masterUser.ID.String())
-	if err != nil {
-		logger.Get().Error().
-			Err(err).
-			Str("user_id", masterUser.ID.String()).
-			Str("tenant_schema", tenantData.Schema).
-			Msg("Failed to get user from tenant schema")
-		return dto.LoginResponse{}, app_errors.InvalidCredentials
-	}
-
-	// Verify Password against tenant schema user
-	if !helpers.CheckPasswordHash(password, user.Password) {
-		return dto.LoginResponse{}, app_errors.InvalidCredentials
-	}
-
-	// Set tenant info for token generation
-	user.TenantID = tenantData.ID
-	user.Roles = "Admin" // Simplified: Default to Admin if tenant found for now
 
 	// Generate Token
-	tokens, err := a.authProviderService.GenerateToken(ctx, user)
+	tokens, err := a.authProviderService.GenerateToken(ctx, masterUser)
 	if err != nil {
 		return dto.LoginResponse{}, err
 	}
 
-	// Logic from here mirrors original: check verification, tenant, etc.
-	// We need to resolve tenant_id for the user.
-	// If the user was created properly, they should be mapped to a tenant or workspace.
-	// But `master.User` struct doesn't seem to have `TenantID`.
-	// The original code relied on Keycloak claims having `tenant_id`.
-	// Where did Keycloak get it? From attributes we set during `AddUser`.
-
-	// We need to find the tenant for this user.
-	// `workspaceManagementService` deals with User Mappings? `tenantManagementService`?
-	// Since we don't have Keycloak storing it, we must query DB.
-	// Ideally `user` table should have it or a mapping table.
-	// Let's assume for now we can get it from `user` if extended or we search.
-	// Or the user is an admin of their own tenant?
-
-	// Hack: We need to see how `addUserWithTenant` sets it up.
-	// It creates a Tenant, adds User to that Tenant Schema.
-	// So the user exists in a specific Schema.
-	// But we found the user in `MasterDatabase` schema?
-	// If `CreateUser` creates in `MasterDatabase`, good.
-	// But `GetUserByEmail` in `MasterDatabase` returns the user.
-
-	// Note: `GetUserByEmail` returns `master.User`.
-	// If we can't find tenant easily, we might be stuck.
-	// But wait, `ValidateToken` returns `Claims` which has `TenantId`.
-	// `GenerateToken` generates claims. It needs TenantId.
-	// I left a TODO in `authProvider` about TenantID.
-
-	// For now, let's proceed.
 	// If email not verified:
-	if !user.EmailVerified {
+	if !masterUser.EmailVerified {
 		return dto.LoginResponse{
 			User: &dto.UserResponse{
-				ID: user.ID,
+				ID: masterUser.ID,
 			},
 			Token: &dto.TokenResponse{
 				RefreshToken: tokens.RefreshToken,
@@ -282,18 +260,8 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 		}, nil
 	}
 
-	// We need to get TenantID to return full user object and update login time.
-	// Access token claims should probably have it.
-	// Since we just generated it, we didn't put it in if we didn't have it.
-
-	// Let's look up tenant.
-	// Maybe `tenantManagementService.GetTenantByUserId` exists?
-	// If not, we might default to something or user has to select workspace.
-
-	// Proceeding with what we have. Login success.
-
 	var userResponse dto.UserResponse
-	if err := helpers.StructToStruct(user, &userResponse); err != nil {
+	if err := helpers.StructToStruct(masterUser, &userResponse); err != nil {
 		return dto.LoginResponse{}, app_errors.ErrMapToStruct
 	}
 
@@ -310,69 +278,24 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 	return loginResponse, nil
 }
 
-func (a *authManagementService) createDefaultRoles(ctx context.Context, schema string) error {
-	for _, role := range appConstant.DefaultRoles {
-		role.ID = uuid.New()
-		_, err := a.roleService.CreateRole(ctx, schema, role)
-		if err != nil {
-			return app_errors.ErrRoleCreation
-		}
-		fmt.Printf("Role '%s' created successfully.\n", role.Name)
-	}
-	return nil
-}
+func (a *authManagementService) initializeOwner(ctx context.Context, userId string, user tenant.User) (dto.UserResponse, error) {
 
-func (a *authManagementService) addUserWithTenant(ctx context.Context, userId string, user master.User, tenantId string) (dto.UserResponse, error) {
-	plan, err := a.subscriptionPlanService.GetSubscriptionPlanByName(ctx, appConstant.PlanNames.Free)
+	// Example: RBAC system initialization if not already done globally
+	err := a.rbacManagementService.InitializeRBACSystem(ctx, appConstant.MasterDatabase)
 	if err != nil {
-		return dto.UserResponse{}, app_errors.ErrSubscriptionPlanNotFound
+		// Log but maybe continue if already initialized? InitializeRBACSystem handles idempotency mostly
+		// return dto.UserResponse{}, err
 	}
 
-	role, err := a.roleService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RoleNames.Admin)
-	if err != nil {
-		return dto.UserResponse{}, app_errors.ErrRoleNotFound
-	}
+	var userResp dto.UserResponse
+	// Basic mapping
+	userResp.ID = user.ID
+	userResp.Email = user.Email
+	userResp.FirstName = user.FirstName
+	userResp.LastName = user.LastName
+	// ... (other fields as needed)
 
-	tenantReq := dto.TenantRequest{
-		UserID:   uuid.MustParse(userId),
-		TenantID: uuid.MustParse(tenantId),
-	}
-
-	// Create Tenant
-	tenantData, err := a.tenantManagementService.InitializeTenant(ctx, tenantReq, plan.ID, role.ID)
-	if err != nil {
-		return dto.UserResponse{}, err
-	}
-
-	err = a.rbacManagementService.InitializeRBACSystem(ctx, tenantData.Schema)
-	if err != nil {
-		return dto.UserResponse{}, err
-	}
-
-	// Create User in Tenant Schema
-	// Note: We already created in MasterDatabase? Yes.
-	// This seems to duplicate user into tenant schema?
-	// Or maybe MasterDatabase is just for initial auth lookup?
-
-	_, err = a.userManagementService.CreateUser(ctx, tenantData.Schema, dto.RegisterRequest{
-		ID:            user.ID,
-		Email:         user.Email,
-		FirstName:     user.FirstName,
-		LastName:      user.LastName,
-		Password:      user.Password,
-		AuthProvider:  user.AuthProvider, // "local" or whatever
-		Status:        "active",
-		EmailVerified: true,
-		DateOfBirth:   user.DateOfBirth,
-		Country:       user.Country,
-		Timezone:      user.Timezone,
-	})
-
-	if err != nil {
-		return dto.UserResponse{}, err
-	}
-
-	// Update Master User
+	// Update User
 	updateData := map[string]interface{}{
 		"status":         "active",
 		"email_verified": true,
@@ -380,6 +303,7 @@ func (a *authManagementService) addUserWithTenant(ctx context.Context, userId st
 	}
 
 	updatedUser, err := a.userManagementService.UpdateUser(ctx, appConstant.MasterDatabase, userId, updateData)
+	fmt.Println("Updated user after initialization:", updatedUser)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}
@@ -387,26 +311,6 @@ func (a *authManagementService) addUserWithTenant(ctx context.Context, userId st
 	var userData dto.UserResponse
 	if err := helpers.StructToStruct(updatedUser, &userData); err != nil {
 		return dto.UserResponse{}, app_errors.ErrStructToStruct
-	}
-
-	tenantUserRole, err := a.roleService.GetRoleByName(ctx, tenantData.Schema, appConstant.RoleNames.Admin)
-	if err != nil {
-		return dto.UserResponse{}, app_errors.ErrRoleNotFound
-	}
-
-	err = a.userManagementService.AddUserRole(ctx, tenantData.Schema, user.ID, tenantUserRole.ID)
-	if err != nil {
-		return dto.UserResponse{}, err
-	}
-
-	workspaceReq := dto.CreateWorkspaceRequest{
-		Title:       "Default Workspace",
-		Description: helpers.StringPtr(""),
-	}
-
-	_, err = a.workspaceManagementService.Create(ctx, workspaceReq, tenantData.Schema, userData.ID.String())
-	if err != nil {
-		return dto.UserResponse{}, err
 	}
 
 	return userData, nil
@@ -431,7 +335,6 @@ func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyE
 	}
 
 	userId := claims.UserId
-	// We don't have tenantId yet effectively.
 
 	user, err := a.userManagementService.GetUserByID(ctx, appConstant.MasterDatabase, userId)
 	if err != nil {
@@ -443,19 +346,14 @@ func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyE
 		return dto.LoginResponse{}, app_errors.InvalidOTP
 	}
 
-	// Create Tenant ID
-	tenantId := uuid.NewString()
-
-	userData, err := a.addUserWithTenant(ctx, user.ID.String(), user, tenantId)
+	userData, err := a.initializeOwner(ctx, user.ID.String(), user)
 	if err != nil {
 		fmt.Println(err)
 		return dto.LoginResponse{}, err
 	}
 
-	// Generate FRESH tokens with TenantID and Role
-	// user object needs to be updated with TenantID
-	user.TenantID = uuid.MustParse(tenantId)
-	user.Roles = "Admin" // Default for new tenant owner
+	// Generate FRESH tokens
+	user.Roles = "Admin" // Default for new owner? Or regular user? verifyEmail usually implies general user.
 
 	// We also need to update user.EmailVerified = true locally for token generation
 	user.EmailVerified = true
@@ -524,38 +422,22 @@ func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.Forg
 	// Original used: CheckUserExistsByEmailAndReturnUser(ctx, req.Email) from Provider.
 	// Now we use `GetUserByEmail`.
 
-	// Note: We need to know which schema/tenant the user is in?
-	// Or searches MasterDatabase?
-	// The original code got `tenant_id` from Keycloak attributes.
-	// If we don't have that, we might assume MasterDatabase for existence check.
-
 	user, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email)
 	if err != nil {
 		return app_errors.UserNotFound
-	}
-
-	// Resolve tenant for the user (similar to Login function)
-	// This is necessary because ResetPassword updates password in both master and tenant schemas
-	tenantId := ""
-	tenantData, err := a.tenantManagementService.GetTenantByUserId(ctx, user.ID)
-	if err == nil {
-		tenantId = tenantData.ID.String()
-	} else {
-		// Log warning but continue - user may not have completed email verification yet
-		logger.Get().Warn().Err(err).Str("user_id", user.ID.String()).Msg("Failed to resolve tenant for password reset")
 	}
 
 	if !user.EmailVerified {
 		return app_errors.InvalidCredentials
 	}
 
-	if user.Status == "pending" {
+	// Removing strict "pending" check if verified, as verified users are "active" usually.
+	if user.Status == "pending" && !user.EmailVerified {
 		return app_errors.InvalidCredentials
 	}
 
 	tokenAttrs := map[string]interface{}{
-		"tenant_id": tenantId,
-		"user_id":   user.ID.String(),
+		"user_id": user.ID.String(),
 	}
 
 	token, err := helpers.GenerateCustomJWT(tokenAttrs, user.ID.String(), 3600) // 1 hour expiry
@@ -607,8 +489,8 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return app_errors.ErrHashed
 	}
 
-	// Extract tenant_id from token to get the tenant schema
-	claims, err := helpers.DecodeJWT(userResetToken.Token)
+	// Extract claims if needed validation
+	_, err = helpers.DecodeJWT(userResetToken.Token)
 	if err != nil {
 		logger.Get().Error().
 			Err(err).
@@ -617,26 +499,8 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return app_errors.TokenInvalid
 	}
 
-	tenantId, ok := claims["tenant_id"].(string)
-	if !ok || tenantId == "" {
-		logger.Get().Error().
-			Str("user_id", userId).
-			Msg("tenant_id not found in reset token claims")
-		return app_errors.TokenInvalid
-	}
-
-	// Get Tenant Schema
-	tenantData, err := a.tenantManagementService.GetTenant(ctx, tenantId)
-	if err != nil {
-		logger.Get().Error().
-			Err(err).
-			Str("tenant_id", tenantId).
-			Msg("Failed to get tenant data")
-		return err
-	}
-
-	// Update password in tenant schema only
-	_, err = a.userManagementService.UpdateUser(ctx, tenantData.Schema, userId, map[string]interface{}{
+	// Update password in master schema
+	_, err = a.userManagementService.UpdateUser(ctx, appConstant.MasterDatabase, userId, map[string]interface{}{
 		"password":            hashedPassword,
 		"password_changed_at": time.Now(),
 	})
@@ -644,8 +508,7 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		logger.Get().Error().
 			Err(err).
 			Str("user_id", userId).
-			Str("tenant_schema", tenantData.Schema).
-			Msg("Failed to update password in tenant schema")
+			Msg("Failed to update password in master schema")
 		return err
 	}
 
@@ -667,32 +530,45 @@ func (a *authManagementService) Logout(ctx context.Context, refreshToken string)
 	return nil
 }
 
-func (a *authManagementService) AddUser(ctx context.Context, schema string, userData dto.AddUserRequest) (master.User, error) {
+func (a *authManagementService) AddUser(ctx context.Context, schema string, userData dto.AddUserRequest) (tenant.User, error) {
 	// Admin adding user
 	roles := appConstant.RoleNames.User
 
 	role, err := a.roleService.GetRoleByName(ctx, schema, roles)
 	if err != nil {
-		return master.User{}, app_errors.ErrRoleNotFound
+		return tenant.User{}, app_errors.ErrRoleNotFound
 	}
 
-	user, tenant, err := a.userManagementService.AddUserToTenant(ctx, schema, userData, role.ID, a.userDefaultPassword.Value)
+	userCreationReq := dto.RegisterRequest{
+		ID:            uuid.New(),
+		Email:         userData.Email,
+		FirstName:     userData.FirstName,
+		LastName:      userData.LastName,
+		Password:      a.userDefaultPassword.Value,
+		AuthProvider:  "email",
+		EmailVerified: false,
+		Status:        "pending",
+		Roles:         constant.RBACRoleNames.Owner,
+	}
+
+	user, err := a.userManagementService.CreateUser(ctx, schema, userCreationReq)
 	if err != nil {
-		return master.User{}, err
+		return tenant.User{}, err
 	}
 
-	// Previous: authProvider.AddUser
-	// Now: Just ensure they are in Master DB? AddUserToTenant probably handled DB.
-	// We just need to send invitation.
+	err = a.userManagementService.AddUserRole(ctx, schema, user.ID, role.ID)
+	if err != nil {
+		return tenant.User{}, err
+	}
 
+	// Send invitation
 	tokenAttrs := map[string]interface{}{
-		"tenant_id": tenant.ID.String(),
-		"user_id":   user.ID.String(),
+		"user_id": user.ID.String(),
 	}
 
 	token, err := helpers.GenerateCustomJWT(tokenAttrs, user.ID.String(), 3600)
 	if err != nil {
-		return master.User{}, err
+		return tenant.User{}, err
 	}
 
 	dataToInsert := dto.UserResetTokenInsertion{
@@ -704,7 +580,7 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
 	if err != nil {
-		return master.User{}, err
+		return tenant.User{}, err
 	}
 
 	resetURLTemplate := config.AppConfig.Auth.ResetPasswordURL
@@ -712,7 +588,11 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 		resetURLTemplate = "http://localhost:5050/reset-password?token=%s"
 	}
 	resetLink := fmt.Sprintf(resetURLTemplate, data.Token)
-	emailData := a.emailTemplateService.PlatformInvitationBody(user.FirstName, tenant.Name, resetLink)
+
+	// Assuming PlatformInvitationBody expects (FirstName, OrganizationName, Link).
+	// Since tenantData.Name is gone, we can use a hardcoded name or config name.
+	// For now, using empty string or "SereniBase" placeholder until config is better.
+	emailData := a.emailTemplateService.PlatformInvitationBody(user.FirstName, "SereniBase", resetLink)
 
 	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
 

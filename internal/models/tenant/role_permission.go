@@ -28,7 +28,7 @@ func (tbl RolePermission) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
 			{Name: "role_id", DataType: "uuid", NotNull: true},
 			{Name: "permission_id", DataType: "uuid", NotNull: true},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_role_permissions_role_id", Columns: []string{"role_id"}},
@@ -39,14 +39,14 @@ func (tbl RolePermission) TableSchema(prefix string) models.CreateTableRequest {
 			{
 				Name:              "fk_role_permissions_role_id",
 				Columns:           []string{"role_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".access_roles", "SCHEMA_PREFIX"),
+				ReferencedTable:   fmt.Sprintf("\"%s\".access_roles", prefix),
 				ReferencedColumns: []string{"id"},
 				OnDelete:          "CASCADE",
 			},
 			{
 				Name:              "fk_role_permissions_permission_id",
 				Columns:           []string{"permission_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".permissions", "SCHEMA_PREFIX"),
+				ReferencedTable:   fmt.Sprintf("\"%s\".permissions", prefix),
 				ReferencedColumns: []string{"id"},
 				OnDelete:          "CASCADE",
 			},

@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 )
 
 type Tokens struct {
@@ -28,7 +28,7 @@ type AuthResult struct {
 }
 
 type AuthProvider interface {
-	GenerateToken(ctx context.Context, user master.User) (Tokens, error)
+	GenerateToken(ctx context.Context, user tenant.User) (Tokens, error)
 	RefreshToken(ctx context.Context, token string) (Tokens, error)
 	ValidateToken(ctx context.Context, tokenStr string) (Claims, error)
 }

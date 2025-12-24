@@ -28,7 +28,7 @@ func (tbl Permission) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
 			{Name: "resource_id", DataType: "uuid", NotNull: true},
 			{Name: "action_id", DataType: "uuid", NotNull: true},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_permissions_resource_id", Columns: []string{"resource_id"}},
@@ -39,14 +39,14 @@ func (tbl Permission) TableSchema(prefix string) models.CreateTableRequest {
 			{
 				Name:              "fk_permissions_resource_id",
 				Columns:           []string{"resource_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".resources", "SCHEMA_PREFIX"),
+				ReferencedTable:   fmt.Sprintf("\"%s\".resources", prefix),
 				ReferencedColumns: []string{"id"},
 				OnDelete:          "CASCADE",
 			},
 			{
 				Name:              "fk_permissions_action_id",
 				Columns:           []string{"action_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".actions", "SCHEMA_PREFIX"),
+				ReferencedTable:   fmt.Sprintf("\"%s\".actions", prefix),
 				ReferencedColumns: []string{"id"},
 				OnDelete:          "CASCADE",
 			},

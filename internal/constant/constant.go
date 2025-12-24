@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	MasterDatabase = "master"
+	MasterDatabase = "public"
 
 	// Email footer notice
 	EmailFooterNotice = `────────────────────────────────────
@@ -62,15 +62,15 @@ var RBACRoleNames = struct {
 	WorkspaceMaintainerRO string
 	BaseMember            string
 	BaseMemberReadOnly    string
-	Viewer                string
+	NoAccess              string
 }{
 	Owner:                 "owner",
 	CoOwner:               "co-owner",
-	WorkspaceMaintainer:   "workspace_maintainer",
-	WorkspaceMaintainerRO: "workspace_maintainer_readonly",
-	BaseMember:            "base_member",
-	BaseMemberReadOnly:    "base_member_readonly",
-	Viewer:                "viewer",
+	WorkspaceMaintainer:   "maintainer",
+	WorkspaceMaintainerRO: "workspace-read",
+	BaseMember:            "base-member",
+	BaseMemberReadOnly:    "base-read",
+	NoAccess:              "user",
 }
 
 // ========== RBAC Resource Codes ==========
@@ -169,11 +169,11 @@ var DefaultAccessRoles = []dto.AccessRoleDTO{
 		IsDefault:   false,
 	},
 	{
-		Name:        RBACRoleNames.Viewer,
-		ScopeLevel:  ScopeLevels.Base,
-		Priority:    40,
-		Description: strPtr("Viewer with minimal read-only access"),
-		IsDefault:   false,
+		Name:        RBACRoleNames.NoAccess,
+		ScopeLevel:  ScopeLevels.System,
+		Priority:    10,
+		Description: strPtr("No workspace access - can only view and edit own profile"),
+		IsDefault:   true,
 	},
 }
 

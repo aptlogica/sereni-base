@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"serenibase/internal/constant"
 	"serenibase/internal/providers/auth"
 	"serenibase/internal/utils/response"
 
@@ -21,7 +22,7 @@ func AuthMiddleware(authProviderService auth.AuthProvider) gin.HandlerFunc {
 		}
 		fmt.Println("userClaims: ", userClaims)
 		c.Set("user_id", userClaims.UserId)
-		c.Set("tenant_id", userClaims.TenantId)
+		c.Set("schema", constant.MasterDatabase)
 		c.Set("roles", userClaims.Roles)
 		c.Next()
 	}

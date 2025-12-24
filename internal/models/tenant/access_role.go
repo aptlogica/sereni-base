@@ -33,11 +33,11 @@ func (tbl AccessRole) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
 			{Name: "name", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "scope_level", DataType: "varchar", NotNull: true}, // system, workspace, base
-			{Name: "priority", DataType: "integer", NotNull: true, DefaultValue: strPtr("0")},
-			{Name: "description", DataType: "text"},
-			{Name: "is_default", DataType: "boolean", NotNull: true, DefaultValue: strPtr("false")},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "priority", DataType: "integer", NotNull: true, DefaultValue: StrPtr("0")},
+			{Name: "color", DataType: "varchar", NotNull: false},
+			{Name: "is_default", DataType: "boolean", NotNull: true, DefaultValue: StrPtr("false")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_access_roles_name", Columns: []string{"name"}},

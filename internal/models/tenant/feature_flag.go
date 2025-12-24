@@ -29,9 +29,9 @@ func (tbl FeatureFlag) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "id", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "name", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "description", DataType: "text"},
-			{Name: "default_enabled", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "default_enabled", DataType: "boolean", DefaultValue: StrPtr("false")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_feature_flags_name", Columns: []string{"name"}},

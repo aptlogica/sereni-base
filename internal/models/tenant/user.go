@@ -38,9 +38,9 @@ type User struct {
 	FailedLoginAttempts int        `db:"failed_login_attempts" json:"failed_login_attempts" mapstructure:"failed_login_attempts"`
 	LockedUntil         *time.Time `db:"locked_until" json:"locked_until" mapstructure:"locked_until"`
 	PasswordChangedAt   *time.Time `db:"password_changed_at" json:"password_changed_at" mapstructure:"password_changed_at"`
-
-	DateOfBirth string `db:"date_of_birth" json:"date_of_birth,omitempty" format:"2006-01-02" mapstructure:"date_of_birth"`
-	Country     string `db:"country" json:"country,omitempty" mapstructure:"country"`
+	Roles               string     `db:"roles" json:"roles" mapstructure:"roles"`
+	DateOfBirth         string     `db:"date_of_birth" json:"date_of_birth,omitempty" format:"2006-01-02" mapstructure:"date_of_birth"`
+	Country             string     `db:"country" json:"country,omitempty" mapstructure:"country"`
 
 	CreatedAt time.Time  `db:"created_time" json:"created_time,omitempty" mapstructure:"created_time"`
 	UpdatedAt time.Time  `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
@@ -88,6 +88,7 @@ func (tbl User) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "failed_login_attempts", DataType: "int", DefaultValue: strPtr("0")},
 			{Name: "locked_until", DataType: "timestamptz", DefaultValue: &null},
 			{Name: "password_changed_at", DataType: "timestamptz", DefaultValue: &null},
+			{Name: "roles", DataType: "varchar(255)", NotNull: true, DefaultValue: strPtr("'user'")},
 
 			{Name: "date_of_birth", DataType: "TEXT"},
 			{Name: "country", DataType: "varchar(100)"},

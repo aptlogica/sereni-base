@@ -6,7 +6,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
@@ -22,9 +22,9 @@ func NewUserResetTokenService(repo *pkg.DatabaseService) interfaces.UserResetTok
 	return &userResetTokenService{repo: repo}
 }
 
-func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dto.UserResetTokenInsertion) (master.UserResetToken, error) {
+func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dto.UserResetTokenInsertion) (tenant.UserResetToken, error) {
 	lg := logger.Get()
-	tableName := master.UserResetToken{}.TableName(constant.MasterDatabase)
+	tableName := tenant.UserResetToken{}.TableName(constant.MasterDatabase)
 
 	// Check if a reset token already exists for this user_id
 	limit := 1
@@ -42,7 +42,7 @@ func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dt
 	existing, err := s.repo.TableService.GetTableData(ctx, tableName, query)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to fetch existing reset tokens")
-		return master.UserResetToken{}, app_errors.DatabaseError
+		return tenant.UserResetToken{}, app_errors.DatabaseError
 	}
 
 	// Always insert new record, delete any existing record for this user_id first
@@ -52,30 +52,30 @@ func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dt
 			idVal, ok := record["id"]
 			if !ok {
 				lg.Warn().Msg("ID field not found in reset token record")
-				return master.UserResetToken{}, app_errors.DatabaseError
+				return tenant.UserResetToken{}, app_errors.DatabaseError
 			}
 			if err := s.repo.TableService.DeleteRecord(ctx, tableName, idVal); err != nil {
 				lg.Error().Stack().Err(err).Msg("Failed to delete existing reset token")
-				return master.UserResetToken{}, app_errors.DatabaseError
+				return tenant.UserResetToken{}, app_errors.DatabaseError
 			}
 		}
 	}
 	recordData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create reset token record")
-		return master.UserResetToken{}, app_errors.DatabaseError
+		return tenant.UserResetToken{}, app_errors.DatabaseError
 	}
 
-	var out master.UserResetToken
+	var out tenant.UserResetToken
 	if err := helpers.MapToStruct(recordData, &out); err != nil {
-		return master.UserResetToken{}, app_errors.ErrMapToStruct
+		return tenant.UserResetToken{}, app_errors.ErrMapToStruct
 	}
 	return out, nil
 }
 
-func (s *userResetTokenService) GetUserResetToken(ctx context.Context, token string) (master.UserResetToken, error) {
+func (s *userResetTokenService) GetUserResetToken(ctx context.Context, token string) (tenant.UserResetToken, error) {
 	limit := 1
-	tableName := master.UserResetToken{}.TableName(constant.MasterDatabase)
+	tableName := tenant.UserResetToken{}.TableName(constant.MasterDatabase)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -89,25 +89,25 @@ func (s *userResetTokenService) GetUserResetToken(ctx context.Context, token str
 
 	tokensData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
 	if err != nil {
-		return master.UserResetToken{}, app_errors.DatabaseError
+		return tenant.UserResetToken{}, app_errors.DatabaseError
 	}
 
 	if len(tokensData) == 0 {
-		return master.UserResetToken{}, app_errors.ErrRecordNotFound
+		return tenant.UserResetToken{}, app_errors.ErrRecordNotFound
 	}
 
 	tokenData := tokensData[0]
 
-	var outToken master.UserResetToken
+	var outToken tenant.UserResetToken
 	if err := helpers.MapToStruct(tokenData, &outToken); err != nil {
-		return master.UserResetToken{}, app_errors.ErrMapToStruct
+		return tenant.UserResetToken{}, app_errors.ErrMapToStruct
 	}
 	return outToken, nil
 }
 
 func (s *userResetTokenService) DeleteTokensByUserId(ctx context.Context, userId string) error {
 	lg := logger.Get()
-	tableName := master.UserResetToken{}.TableName(constant.MasterDatabase)
+	tableName := tenant.UserResetToken{}.TableName(constant.MasterDatabase)
 	// Build filter for user_id
 	filter := dbModels.QueryFilter{
 		Column:   "user_id",

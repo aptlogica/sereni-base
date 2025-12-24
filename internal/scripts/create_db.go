@@ -7,7 +7,7 @@ import (
 	"godbgrest/pkg/models"
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 	"serenibase/internal/utils/helpers"
 	"strings"
 	"time"
@@ -22,9 +22,9 @@ func contains(str, substr string) bool {
 	return strings.Contains(strings.ToLower(str), strings.ToLower(substr))
 }
 
-func createRole(repo *pkg.DatabaseService, req dto.RoleInsertion) (master.Role, error) {
+func createRole(repo *pkg.DatabaseService, req dto.RoleInsertion) (tenant.Role, error) {
 	ctx := context.Background()
-	tableName := master.Role{}.TableName(constant.MasterDatabase)
+	tableName := tenant.Role{}.TableName(constant.MasterDatabase)
 
 	roleInsertion := dto.RoleInsertion{
 		ID:          uuid.New(),
@@ -37,12 +37,12 @@ func createRole(repo *pkg.DatabaseService, req dto.RoleInsertion) (master.Role, 
 
 	insertedRoleData, err := repo.TableService.CreateRecord(ctx, tableName, roleInsertion.Map())
 	if err != nil {
-		return master.Role{}, err
+		return tenant.Role{}, err
 	}
 
-	var insertedRole master.Role
+	var insertedRole tenant.Role
 	if err := helpers.MapToStruct(insertedRoleData, &insertedRole); err != nil {
-		return master.Role{}, err
+		return tenant.Role{}, err
 	}
 	return insertedRole, nil
 }
@@ -50,7 +50,7 @@ func createRole(repo *pkg.DatabaseService, req dto.RoleInsertion) (master.Role, 
 func isRoleExists(repo *pkg.DatabaseService, name string) (bool, error) {
 	ctx := context.Background()
 	limit := 1
-	tableName := master.Role{}.TableName(constant.MasterDatabase)
+	tableName := tenant.Role{}.TableName(constant.MasterDatabase)
 	query := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -69,69 +69,6 @@ func isRoleExists(repo *pkg.DatabaseService, name string) (bool, error) {
 	}
 
 	if rolesData == nil || len(rolesData) == 0 {
-		return true, nil // does not exist, so return true
-	}
-
-	return false, nil // already exists, so return false
-}
-
-func createSubscriptionPlan(repo *pkg.DatabaseService, req dto.PlanInsertion) (master.SubscriptionPlan, error) {
-	ctx := context.Background()
-	tableName := master.SubscriptionPlan{}.TableName(constant.MasterDatabase)
-
-	planInsertion := dto.PlanInsertion{
-		ID:                   uuid.New(),
-		Name:                 req.Name,
-		Slug:                 req.Slug,
-		Description:          req.Description,
-		Currency:             req.Currency,
-		MaxWorkspaces:        req.MaxWorkspaces,
-		MaxBasesPerWorkspace: req.MaxBasesPerWorkspace,
-		MaxTablesPerBase:     req.MaxTablesPerBase,
-		MaxRowsPerTable:      req.MaxRowsPerTable,
-		MaxCollaborators:     req.MaxCollaborators,
-		MaxAPICallsPerHour:   req.MaxAPICallsPerHour,
-		StorageLimitGB:       req.StorageLimitGB,
-		Features:             req.Features,
-		IsActive:             req.IsActive,
-		CreatedAt:            time.Now(),
-		UpdatedAt:            time.Now(),
-	}
-
-	insertedPlanData, err := repo.TableService.CreateRecord(ctx, tableName, planInsertion.Map())
-	if err != nil {
-		return master.SubscriptionPlan{}, err
-	}
-
-	var insertedPlan master.SubscriptionPlan
-	if err := helpers.MapToStruct(insertedPlanData, &insertedPlan); err != nil {
-		return master.SubscriptionPlan{}, err
-	}
-	return insertedPlan, nil
-}
-
-func isPlanExists(repo *pkg.DatabaseService, slug string) (bool, error) {
-	ctx := context.Background()
-	limit := 1
-	tableName := master.SubscriptionPlan{}.TableName(constant.MasterDatabase)
-	query := dbModels.QueryParams{
-		Select: []string{"id"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "slug",
-				Operator: "eq",
-				Value:    slug,
-			},
-		},
-		Limit: &limit,
-	}
-
-	plansData, err := repo.TableService.GetTableData(ctx, tableName, query)
-	if err != nil {
-		return false, err
-	}
-
-	if plansData == nil || len(plansData) == 0 {
 		return true, nil // does not exist, so return true
 	}
 
@@ -182,25 +119,6 @@ func createTableUsingSchema(repo *pkg.DatabaseService, schema models.CreateTable
 	}
 }
 
-func createDefaultPlans(repo *pkg.DatabaseService) error {
-	for _, plan := range constant.DefaultPlans {
-		exists, err := isPlanExists(repo, plan.Slug)
-		if err != nil {
-			return fmt.Errorf("error checking if plan '%s' exists: %w", plan.Slug, err)
-		}
-		if exists {
-			_, err := createSubscriptionPlan(repo, plan)
-			if err != nil {
-				return fmt.Errorf("error creating plan '%s': %w", plan.Slug, err)
-			}
-			fmt.Printf("Plan '%s' created successfully.\n", plan.Slug)
-		} else {
-			fmt.Printf("Plan '%s' already exists. Skipping creation.\n", plan.Slug)
-		}
-	}
-	return nil
-}
-
 func createFunctions(repo *pkg.DatabaseService, schemaName string) error {
 	ctx := context.Background()
 	for _, function := range constant.DefinedFunctions {
@@ -221,17 +139,28 @@ func CreateMasterSchema(repo *pkg.DatabaseService) {
 	createMasterSchema(repo)
 
 	// Create all tables
-	createTableUsingSchema(repo, master.Role{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.User{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.Tenant{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.UsageMetric{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.SubscriptionPlan{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.TenantSubscription{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.TenantMembership{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.TenantDomain{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.SchemaMigration{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.GlobalAuditLog{}.TableSchema(constant.MasterDatabase))
-	createTableUsingSchema(repo, master.UserResetToken{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.User{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.UsageMetric{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.GlobalAuditLog{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.UserResetToken{}.TableSchema(constant.MasterDatabase))
+
+	// Create RBAC tables
+	createTableUsingSchema(repo, tenant.Resource{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Action{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.AccessRole{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Permission{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.RolePermission{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.AccessMember{}.TableSchema(constant.MasterDatabase))
+
+	// serenibase tables
+	createTableUsingSchema(repo, tenant.Assets{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Workspace{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Base{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.WorkspaceMember{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Model{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Column{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.View{}.TableSchema(constant.MasterDatabase))
+	createTableUsingSchema(repo, tenant.Relation{}.TableSchema(constant.MasterDatabase))
 
 	// create required roles
 	if err := createDefaultRoles(repo); err != nil {
@@ -240,8 +169,4 @@ func CreateMasterSchema(repo *pkg.DatabaseService) {
 
 	createFunctions(repo, constant.MasterDatabase)
 
-	// create default subscription plans
-	if err := createDefaultPlans(repo); err != nil {
-		fmt.Printf("Error while creating default plans: %v\n", err)
-	}
 }

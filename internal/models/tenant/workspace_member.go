@@ -32,8 +32,8 @@ func (tbl WorkspaceMember) TableSchema(prefix string) models.CreateTableRequest 
 			{Name: "user_id", DataType: "varchar", NotNull: true},
 			{Name: "access_level", DataType: "varchar", NotNull: true},
 			{Name: "bases_ids", DataType: "text"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_workspace_members_workspace_user", Columns: []string{"workspace_id", "user_id"}, Unique: true},

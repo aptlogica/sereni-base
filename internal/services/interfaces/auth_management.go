@@ -3,19 +3,20 @@ package interfaces
 import (
 	"context"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 )
 
 type AuthManagementService interface {
 	// Authentication
 	Login(ctx context.Context, email string, password string) (dto.LoginResponse, error)
 	Register(ctx context.Context, req dto.RegisterRequest) (dto.RegisterResponse, error)
+	RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error)
 	VerifyEmail(ctx context.Context, req dto.VerifyEmailRequest) (dto.LoginResponse, error)
 	ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error
 	Logout(ctx context.Context, refreshToken string) error
 
 	// crud user
-	AddUser(ctx context.Context, schema string, userData dto.AddUserRequest) (master.User, error)
+	AddUser(ctx context.Context, schema string, userData dto.AddUserRequest) (tenant.User, error)
 	RemoveUser(ctx context.Context, schema string, userID string) error
 	DeleteUserCompletely(ctx context.Context, schema string, userID string) error
 	GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error)

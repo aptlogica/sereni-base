@@ -7,8 +7,8 @@ import (
 	"mime/multipart"
 	"path/filepath"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
 	"serenibase/internal/models/tenant"
+
 	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
@@ -26,8 +26,6 @@ import (
 type userManagementService struct {
 	repo                       *pkg.DatabaseService
 	userService                interfaces.UserService
-	tenantManagementService    interfaces.TenantManagementService
-	subscriptionPlanService    interfaces.SubscriptionPlanService
 	assetManagementService     interfaces.AssetManagementService
 	userResetTokenService      interfaces.UserResetTokenService
 	userRoleService            interfaces.UserRoleService
@@ -38,8 +36,6 @@ type userManagementService struct {
 func NewUserManagementService(
 	repo *pkg.DatabaseService,
 	userService interfaces.UserService,
-	tenantManagementService interfaces.TenantManagementService,
-	subscriptionPlanService interfaces.SubscriptionPlanService,
 	assetManagementService interfaces.AssetManagementService,
 	userResetTokenService interfaces.UserResetTokenService,
 	userRoleService interfaces.UserRoleService,
@@ -49,8 +45,6 @@ func NewUserManagementService(
 	return &userManagementService{
 		repo:                       repo,
 		userService:                userService,
-		tenantManagementService:    tenantManagementService,
-		subscriptionPlanService:    subscriptionPlanService,
 		assetManagementService:     assetManagementService,
 		userResetTokenService:      userResetTokenService,
 		userRoleService:            userRoleService,
@@ -120,26 +114,26 @@ func (s *userManagementService) UpdateUserProfile(ctx context.Context, schema st
 	return userResponse, nil
 }
 
-func (s *userManagementService) UpdatePassword(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) (master.User, error) {
+func (s *userManagementService) UpdatePassword(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) (tenant.User, error) {
 	if updateData.OldPassword == updateData.NewPassword {
-		return master.User{}, app_errors.NewPasswordInvalid
+		return tenant.User{}, app_errors.NewPasswordInvalid
 	}
 
 	// Fetch user by ID
 	user, err := s.userService.GetUserByID(ctx, schema, userID)
 	if err != nil {
-		return master.User{}, err
+		return tenant.User{}, err
 	}
 
 	// Check if old password matches
 	if !helpers.CheckPasswordHash(updateData.OldPassword, user.Password) {
-		return master.User{}, app_errors.InvalidOldPassword
+		return tenant.User{}, app_errors.InvalidOldPassword
 	}
 
 	// Hash the new password
 	hashedPassword, err := helpers.HashPassword(updateData.NewPassword)
 	if err != nil {
-		return master.User{}, app_errors.ErrHashed
+		return tenant.User{}, app_errors.ErrHashed
 	}
 
 	updateFields := map[string]interface{}{
@@ -151,7 +145,7 @@ func (s *userManagementService) UpdatePassword(ctx context.Context, schema strin
 	// Update password in tenant schema only
 	updatedUser, err := s.userService.UpdateUser(ctx, schema, userID, updateFields)
 	if err != nil {
-		return master.User{}, err
+		return tenant.User{}, err
 	}
 
 	return updatedUser, nil
@@ -259,19 +253,19 @@ func (s *userManagementService) RemoveAvatar(ctx context.Context, schema string,
 	return userResponse, nil
 }
 
-func (s *userManagementService) GetUserByEmail(ctx context.Context, schema string, email string) (master.User, error) {
+func (s *userManagementService) GetUserByEmail(ctx context.Context, schema string, email string) (tenant.User, error) {
 	return s.userService.GetUserByEmail(ctx, schema, email)
 }
 
-func (s *userManagementService) CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (master.User, error) {
+func (s *userManagementService) CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error) {
 	return s.userService.CreateUser(ctx, schema, req)
 }
 
-func (s *userManagementService) UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (master.User, error) {
+func (s *userManagementService) UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
 	return s.userService.UpdateUser(ctx, schema, id, updateData)
 }
 
-func (s *userManagementService) GetUserByID(ctx context.Context, schema string, id string) (master.User, error) {
+func (s *userManagementService) GetUserByID(ctx context.Context, schema string, id string) (tenant.User, error) {
 	return s.userService.GetUserByID(ctx, schema, id)
 }
 
@@ -292,34 +286,7 @@ func (s *userManagementService) AddUserRole(ctx context.Context, schema string, 
 	return nil
 }
 
-func (t *userManagementService) AddUserToTenant(ctx context.Context, schema string, userData dto.AddUserRequest, roleId uuid.UUID, userPassword string) (master.User, master.Tenant, error) {
-	lg := logger.Get()
-	userCreationReq := dto.RegisterRequest{
-		ID:            uuid.New(),
-		Email:         userData.Email,
-		FirstName:     userData.FirstName,
-		LastName:      userData.LastName,
-		Password:      userPassword,
-		AuthProvider:  "email",
-		EmailVerified: false,
-		Status:        "pending",
-	}
-
-	createdUser, err := t.CreateUser(ctx, schema, userCreationReq)
-	if err != nil {
-		return master.User{}, master.Tenant{}, err
-	}
-
-	tenentData, err := t.tenantManagementService.GetTenantBySchema(ctx, schema)
-	if err != nil {
-		lg.Error().Stack().Err(err).Msg("Failed to get tenant by schema")
-		return master.User{}, master.Tenant{}, app_errors.TableNotFound
-	}
-
-	return createdUser, tenentData, nil
-}
-
-func (s *userManagementService) GetAllUsers(ctx context.Context, schema string) ([]master.User, error) {
+func (s *userManagementService) GetAllUsers(ctx context.Context, schema string) ([]tenant.User, error) {
 	return s.userService.GetAllUsers(ctx, schema)
 }
 
@@ -379,7 +346,7 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 	return res, nil
 }
 
-func (s *userManagementService) GetBulkUsers(ctx context.Context, schema string, ids []string) ([]master.User, error) {
+func (s *userManagementService) GetBulkUsers(ctx context.Context, schema string, ids []string) ([]tenant.User, error) {
 	return s.userService.GetBulkUsers(ctx, schema, ids)
 }
 

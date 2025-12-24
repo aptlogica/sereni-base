@@ -18,7 +18,6 @@ type Middlewares struct {
 	DatabaseQueryLogger                        func() gin.HandlerFunc
 	RequestSizeLimit                           func(int64) gin.HandlerFunc
 	AuthMiddleware                             func() gin.HandlerFunc
-	TenantSchemaMiddleware                     func() gin.HandlerFunc
 	FileSizeLimitMiddleware                    func() gin.HandlerFunc
 	ScopeHeaderMiddleware                      func(scope string) gin.HandlerFunc
 	WorkspaceAndBaseAccessValidationMiddleware func(allowedAccess []string) gin.HandlerFunc
@@ -31,7 +30,6 @@ type Handlers struct {
 	Asset     *handlers.AssetsHandler
 	Table     *handlers.TableHandler
 	User      *handlers.UserHandler
-	Tenant    *handlers.TenantHandler
 }
 
 func Setup(cfg *config.Config,
@@ -77,7 +75,8 @@ func Setup(cfg *config.Config,
 	auth := api.Group("/auth")
 	{
 		auth.POST("/login", handlerGroups.Auth.LoginUser)
-		auth.POST("/refresh", handlerGroups.Auth.RefreshToken)
+		// auth.POST("/register", handlerGroups.Auth.RegisterUser) // Removed
+
 		auth.POST("/forgot-password", handlerGroups.Auth.ForgotPassword)
 		auth.POST("/reset-password", handlerGroups.Auth.ResetPassword)
 		auth.POST("/validate-token", handlerGroups.Auth.ValidateToken)
@@ -99,7 +98,7 @@ func Setup(cfg *config.Config,
 	private.Use(middlewareGroups.AuthMiddleware())
 	{
 		user := private.Group("/user")
-		user.Use(middlewareGroups.TenantSchemaMiddleware())
+		// TenantSchemaMiddleware removed
 
 		user.GET("profile/:id", handlerGroups.User.GetUserProfileByID)
 		user.PATCH("profile/:id", handlerGroups.User.UpdateUserProfile)
@@ -111,7 +110,7 @@ func Setup(cfg *config.Config,
 		user.POST("assign", handlerGroups.Auth.AssignUserToWorkspace) // only admin can do
 
 		tm := private.Group("") // Group of all api's that require tenant schema
-		tm.Use(middlewareGroups.TenantSchemaMiddleware())
+		// tm.Use(middlewareGroups.TenantSchemaMiddleware())
 		{
 			// -------- WORKSPACE SCOPED --------
 			workspace := tm.Group("/workspace")
@@ -248,19 +247,17 @@ func Setup(cfg *config.Config,
 		// only admin can do
 		tenant := private.Group("/tenant")
 		adminTenant := tenant.Group("")
-		adminTenant.Use(middlewareGroups.TenantSchemaMiddleware())
+		// adminTenant.Use(middlewareGroups.TenantSchemaMiddleware())
 		adminTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
 		{
 			adminTenant.POST("user/create", handlerGroups.Auth.AddUser)            // only admin
 			adminTenant.POST("user/remove", handlerGroups.Auth.RemoveUser)         // only admin
 			adminTenant.POST("user/activate", handlerGroups.Auth.ActivateUser)     // only admin
 			adminTenant.POST("user/deactivate", handlerGroups.Auth.DeactivateUser) // only admin
-			adminTenant.GET("info", handlerGroups.Tenant.GetTenantInfo)            // only admin
-			adminTenant.PATCH("info", handlerGroups.Tenant.UpdateTenantInfo)       // only admin
 		}
 
 		adminAndWorkspaceTenant := tenant.Group("")
-		adminAndWorkspaceTenant.Use(middlewareGroups.TenantSchemaMiddleware())
+		// adminAndWorkspaceTenant.Use(middlewareGroups.TenantSchemaMiddleware())
 		adminAndWorkspaceTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
 		adminAndWorkspaceTenant.GET("users", handlerGroups.Auth.GetUsers)
 	}

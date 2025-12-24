@@ -28,7 +28,7 @@ func (tbl Resource) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
 			{Name: "code", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "description", DataType: "text"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_resources_code", Columns: []string{"code"}},

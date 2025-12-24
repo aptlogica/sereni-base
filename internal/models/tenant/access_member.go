@@ -36,8 +36,8 @@ func (tbl AccessMember) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "scope_id", DataType: "varchar"},                  // null for system level, workspace_id or base_id otherwise
 			{Name: "role_id", DataType: "varchar", NotNull: true},
 			{Name: "assigned_by", DataType: "varchar"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_access_members_user_id", Columns: []string{"user_id"}},

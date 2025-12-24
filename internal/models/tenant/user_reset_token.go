@@ -1,4 +1,4 @@
-package master
+package tenant
 
 import (
 	"fmt"

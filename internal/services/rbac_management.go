@@ -257,31 +257,6 @@ func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema
 		}
 	}
 
-	// Viewer role permissions
-	viewerPermissions := []string{
-		"base.read",
-		"records.read",
-		"views.read",
-	}
-
-	viewerRoleID, ok := roleMap[constant.RBACRoleNames.Viewer]
-	if ok {
-		for _, permName := range viewerPermissions {
-			if permID, ok := permissionMap[permName]; ok {
-				_, err := s.rolePermissionService.AssignPermissionToRole(ctx, schema, dto.RolePermissionDTO{
-					ID:           uuid.New(),
-					RoleID:       viewerRoleID,
-					PermissionID: permID,
-				})
-				if err != nil {
-					fmt.Printf("Error assigning permission %s to viewer: %v\n", permName, err)
-					continue
-				}
-				fmt.Printf("✓ Assigned permission %s to viewer\n", permName)
-			}
-		}
-	}
-
 	fmt.Println("\n✓ RBAC System initialization completed successfully!")
 	return nil
 }

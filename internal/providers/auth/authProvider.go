@@ -7,7 +7,7 @@ import (
 
 	appErrors "serenibase/internal/app-errors"
 	"serenibase/internal/config"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -27,26 +27,17 @@ type AuthProviderService struct {
 type CustomClaims struct {
 	UserId        string `json:"user_id"`
 	Email         string `json:"email"`
-	TenantId      string `json:"tenant_id,omitempty"`
 	Roles         string `json:"roles,omitempty"`
 	EmailVerified bool   `json:"email_verified"`
 	jwt.RegisteredClaims
 }
 
-func (a *AuthProviderService) GenerateToken(ctx context.Context, user master.User) (Tokens, error) {
-	// TODO: Retrieve tenant_id and roles if available in User object or passed separately.
-	// For now, assuming they might need to be passed or derived.
-	// However, looking at the previous implementation, the user object might not have everything populated.
-	// But let's stick to what we have. The Login logic in service layer seems to handle finding tenant.
-	// Wait, the interface GenerateToken signature is strictly (user master.User).
-	// In the service layer, we see it gets called with just User.
-
+func (a *AuthProviderService) GenerateToken(ctx context.Context, user tenant.User) (Tokens, error) {
 	// Create Access Token
 	accessClaims := CustomClaims{
 		UserId:        user.ID.String(),
 		Email:         user.Email,
 		EmailVerified: user.EmailVerified,
-		TenantId:      user.TenantID.String(),
 		Roles:         user.Roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(a.AuthConfig.JWT.AccessTokenExpiry) * time.Second)),
@@ -63,9 +54,8 @@ func (a *AuthProviderService) GenerateToken(ctx context.Context, user master.Use
 
 	// Create Refresh Token
 	refreshClaims := CustomClaims{
-		UserId:   user.ID.String(),
-		Email:    user.Email,
-		TenantId: user.TenantID.String(),
+		UserId: user.ID.String(),
+		Email:  user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(a.AuthConfig.JWT.RefreshTokenExpiry) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -104,9 +94,8 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 
 	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
 		return Claims{
-			UserId:   claims.UserId,
-			TenantId: claims.TenantId,
-			Roles:    claims.Roles,
+			UserId: claims.UserId,
+			Roles:  claims.Roles,
 		}, nil
 	}
 
@@ -124,7 +113,7 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string)
 	}
 
 	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
-		user := master.User{
+		user := tenant.User{
 			Email: claims.Email,
 		}
 
@@ -132,12 +121,6 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string)
 			uid, err := uuid.Parse(claims.UserId)
 			if err == nil {
 				user.ID = uid
-			}
-		}
-
-		if claims.TenantId != "" {
-			if tid, err := uuid.Parse(claims.TenantId); err == nil {
-				user.TenantID = tid
 			}
 		}
 

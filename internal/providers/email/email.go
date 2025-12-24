@@ -64,7 +64,7 @@ func (s *Service) worker(id int) {
 			return
 		case job := <-s.queue:
 			if err := s.sendEmail(job); err != nil {
-				fmt.Println("Worker %d: failed to send email to %s: %v", id, job.To, err)
+				fmt.Printf("Worker %d: failed to send email to %s: %v\n", id, job.To, err)
 				log.Printf("Worker %d: failed to send email to %s: %v", id, job.To, err)
 			} else {
 				log.Printf("Worker %d: email sent to %s", id, job.To)

@@ -11,9 +11,10 @@ type RegisterRequest struct {
 	AuthProvider  string    `json:"auth_provider,omitempty" example:"local" format:"string"`
 	Status        string    `json:"status,omitempty" example:"active" format:"string"`
 	EmailVerified bool      `json:"email_verified,omitempty" example:"true" format:"bool"`
-	DateOfBirth   *string    `json:"dob,omitempty" example:"17-11-2025" format:"string"`
+	DateOfBirth   *string   `json:"dob,omitempty" example:"17-11-2025" format:"string"`
 	Country       string    `json:"country,omitempty" example:"US" format:"string"`
 	Timezone      string    `json:"timezone,omitempty" example:"UTC" format:"string"`
+	Roles         string    `json:"roles,omitempty" example:"user" format:"string"`
 }
 
 type RegisterResponse struct {

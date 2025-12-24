@@ -21,29 +21,6 @@ func NewAuthHandler(authManagementService interfaces.AuthManagementService) *Aut
 	return &AuthHandler{authManagementService: authManagementService}
 }
 
-func (h *AuthHandler) RegisterUser(c *gin.Context) {
-	var req dto.RegisterRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RegisterValidationError(ve[0]))
-			return
-		}
-		fmt.Println("err", err)
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	registerUser, err := h.authManagementService.Register(c.Request.Context(), req)
-	if err != nil {
-		fmt.Println("err", err)
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, responseConst.AuthSuccess.UserRegister, registerUser)
-}
-
 func (h *AuthHandler) LoginUser(c *gin.Context) {
 	var req dto.LoginRequest
 

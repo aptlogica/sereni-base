@@ -27,7 +27,7 @@ type UserResponse struct {
 
 	// Account status
 	Status       string     `db:"status" json:"status" mapstructure:"status"`
-	LastLoginAt  *time.Time `db:"last_login_at" json:"last_login_at" mapstructure:"last_login_at"`
+	LastLoginAt  *time.Time `db:"last_login" json:"last_login_at" mapstructure:"last_login"`
 	LastActiveAt *time.Time `db:"last_active_at" json:"last_active_at" mapstructure:"last_active_at"`
 	Timezone     string     `db:"timezone" json:"timezone" mapstructure:"timezone"`
 	Locale       string     `db:"locale" json:"locale" mapstructure:"locale"`
@@ -75,12 +75,18 @@ func (u *UserInsertion) Map() map[string]interface{} {
 		"created_time":       u.CreatedAt,
 		"last_modified_time": u.UpdatedAt,
 		"deleted_at":         u.DeletedAt,
-		"date_of_birth":      u.DateOfBirth,
-		"country":            u.Country,
 		"timezone":           u.Timezone,
 		"status":             u.Status,
 		"email_verified":     u.EmailVerified,
 	}
+	// Only include date_of_birth and country if they are not nil/empty
+	// These fields may not exist in all schemas
+	// if u.DateOfBirth != nil {
+	// 	result["dob"] = u.DateOfBirth
+	// }
+	// if u.Country != "" {
+	// 	result["country"] = u.Country
+	// }
 	return result
 }
 
@@ -150,9 +156,8 @@ type ActivateUserRequest struct {
 }
 
 type DeactivateUserRequest struct {
-	UserID       string `json:"user_id" mapstructure:"user_id" binding:"required"`
+	UserID string `json:"user_id" mapstructure:"user_id" binding:"required"`
 }
-
 
 type UserWorkspaceResponse struct {
 	ID          uuid.UUID              `db:"id" json:"id" mapstructure:"id"`
