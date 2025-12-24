@@ -76,7 +76,6 @@ func Setup(cfg *config.Config,
 
 	auth := api.Group("/auth")
 	{
-		auth.POST("/register", handlerGroups.Auth.RegisterUser)
 		auth.POST("/login", handlerGroups.Auth.LoginUser)
 		auth.POST("/refresh", handlerGroups.Auth.RefreshToken)
 		auth.POST("/forgot-password", handlerGroups.Auth.ForgotPassword)

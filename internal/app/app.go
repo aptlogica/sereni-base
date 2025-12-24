@@ -33,8 +33,9 @@ import (
 )
 
 type App struct {
-	config *config.Config
-	server *http.Server
+	config       *config.Config
+	server       *http.Server
+	authProvider auth.AuthProvider
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -101,6 +102,12 @@ func New(cfg *config.Config) (*App, error) {
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
 	userRoleService := services.NewUserRoleService(dbService)
+	resourceService := services.NewResourceService(dbService)
+	actionService := services.NewActionService(dbService)
+	permissionService := services.NewPermissionService(dbService)
+	rolePermissionService := services.NewRolePermissionService(dbService)
+	accessMemberService := services.NewAccessMemberService(dbService)
+	accessRoleService := services.NewAccessRoleService(dbService)
 
 	assetManagementService := services.NewAssetManagementService(
 		dbService,
@@ -154,6 +161,16 @@ func New(cfg *config.Config) (*App, error) {
 		authProvider,
 	)
 
+	rbacManagementService := services.NewRBACManagementService(
+		dbService,
+		accessRoleService,
+		resourceService,
+		actionService,
+		permissionService,
+		rolePermissionService,
+		accessMemberService,
+	)
+
 	authService := services.NewAuthManagementService(
 		cfg.TemporaryAddedUserPassword,
 		dbService,
@@ -163,6 +180,7 @@ func New(cfg *config.Config) (*App, error) {
 		roleService,
 		workspaceManagementService,
 		userResetTokenService,
+		rbacManagementService,
 		otpProvider,
 		emailTemplateService,
 		emailProvider,
@@ -214,8 +232,9 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		config: cfg,
-		server: server,
+		config:       cfg,
+		server:       server,
+		authProvider: authProvider,
 	}, nil
 }
 
@@ -242,7 +261,7 @@ func (a *App) Run() error {
 		fmt.Printf("failed to init services: %v", err)
 	}
 
-	runBeforeServer(dbService)
+	runBeforeServer(dbService, a.authProvider, a.config)
 
 	fmt.Printf("🚀 Serenibase server starting on %s\n", a.server.Addr)
 	// fmt.Printf("📚 API Documentation available at http://%s/api/v1/health\n", a.server.Addr)
@@ -258,9 +277,14 @@ func (a *App) Run() error {
 	return a.server.ListenAndServe()
 }
 
-func runBeforeServer(repo *pkg.DatabaseService) {
+func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, cfg *config.Config) {
 	fmt.Println("Running script before Gin server starts...")
 
 	// Your custom logic like DB connection, migration, etc.
 	scripts.CreateMasterSchema(repo) // Example: Create database schema
+	
+	// Register predefined owner from configuration
+	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
+		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)
+	}
 }

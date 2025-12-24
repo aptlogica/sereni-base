@@ -43,6 +43,140 @@ var AccessNames = struct {
 	LimitedAccess: "limited_access",
 }
 
+// ========== RBAC Scope Levels ==========
+var ScopeLevels = struct {
+	System    string
+	Workspace string
+	Base      string
+}{
+	System:    "system",
+	Workspace: "workspace",
+	Base:      "base",
+}
+
+// ========== RBAC Role Names ==========
+var RBACRoleNames = struct {
+	Owner                 string
+	CoOwner               string
+	WorkspaceMaintainer   string
+	WorkspaceMaintainerRO string
+	BaseMember            string
+	BaseMemberReadOnly    string
+	Viewer                string
+}{
+	Owner:                 "owner",
+	CoOwner:               "co-owner",
+	WorkspaceMaintainer:   "workspace_maintainer",
+	WorkspaceMaintainerRO: "workspace_maintainer_readonly",
+	BaseMember:            "base_member",
+	BaseMemberReadOnly:    "base_member_readonly",
+	Viewer:                "viewer",
+}
+
+// ========== RBAC Resource Codes ==========
+var ResourceCodes = struct {
+	Workspace   string
+	Base        string
+	Table       string
+	Records     string
+	Members     string
+	Views       string
+	Settings    string
+	ApiTokens   string
+	Webhooks    string
+	Automations string
+}{
+	Workspace:   "workspace",
+	Base:        "base",
+	Table:       "table",
+	Records:     "records",
+	Members:     "members",
+	Views:       "views",
+	Settings:    "settings",
+	ApiTokens:   "api_tokens",
+	Webhooks:    "webhooks",
+	Automations: "automations",
+}
+
+// ========== RBAC Action Codes ==========
+var ActionCodes = struct {
+	Read    string
+	Create  string
+	Update  string
+	Delete  string
+	Share   string
+	Invite  string
+	Export  string
+	Import  string
+	Execute string
+	Manage  string
+}{
+	Read:    "read",
+	Create:  "create",
+	Update:  "update",
+	Delete:  "delete",
+	Share:   "share",
+	Invite:  "invite",
+	Export:  "export",
+	Import:  "import",
+	Execute: "execute",
+	Manage:  "manage",
+}
+
+// ========== Default RBAC Roles ==========
+// These roles are created by default and mapped to permissions
+var DefaultAccessRoles = []dto.AccessRoleDTO{
+	{
+		Name:        RBACRoleNames.Owner,
+		ScopeLevel:  ScopeLevels.Workspace,
+		Priority:    100,
+		Description: strPtr("Workspace owner with full control and management capabilities"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.CoOwner,
+		ScopeLevel:  ScopeLevels.Workspace,
+		Priority:    90,
+		Description: strPtr("Co-owner with full access similar to owner"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.WorkspaceMaintainer,
+		ScopeLevel:  ScopeLevels.Workspace,
+		Priority:    80,
+		Description: strPtr("Workspace maintainer with elevated permissions to manage workspace"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.WorkspaceMaintainerRO,
+		ScopeLevel:  ScopeLevels.Workspace,
+		Priority:    70,
+		Description: strPtr("Workspace maintainer with read-only access"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.BaseMember,
+		ScopeLevel:  ScopeLevels.Base,
+		Priority:    60,
+		Description: strPtr("Base member with standard read and write permissions"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.BaseMemberReadOnly,
+		ScopeLevel:  ScopeLevels.Base,
+		Priority:    50,
+		Description: strPtr("Base member with read-only access"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.Viewer,
+		ScopeLevel:  ScopeLevels.Base,
+		Priority:    40,
+		Description: strPtr("Viewer with minimal read-only access"),
+		IsDefault:   false,
+	},
+}
+
 var DefaultRoles = []dto.RoleInsertion{
 	{
 		Name:        RoleNames.Admin,

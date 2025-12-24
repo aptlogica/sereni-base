@@ -78,3 +78,9 @@ antivirus:
 
 temporary_added_user_password:
   value: "{{temporary_added_user_password_value}}"
+
+owner_registration:
+  first_name: "{{owner_first_name}}"
+  last_name: "{{owner_last_name}}"
+  email: "{{owner_email}}"
+  password: "{{owner_password}}"

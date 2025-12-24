@@ -36,6 +36,7 @@ type authManagementService struct {
 	roleService                interfaces.RoleService
 	workspaceManagementService interfaces.WorkspaceManagementService
 	userResetTokenService      interfaces.UserResetTokenService
+	rbacManagementService      interfaces.RBACManagementService
 
 	otpProviderService   otpProvider.OtpService
 	emailTemplateService emailProvider.EmailTemplateService
@@ -52,6 +53,7 @@ func NewAuthManagementService(
 	roleService interfaces.RoleService,
 	workspaceManagementService interfaces.WorkspaceManagementService,
 	userResetTokenService interfaces.UserResetTokenService,
+	rbacManagementService interfaces.RBACManagementService,
 	otpProviderService otpProvider.OtpService,
 	emailTemplateService emailProvider.EmailTemplateService,
 	emailProviderService emailProvider.EmailService,
@@ -306,7 +308,7 @@ func (a *authManagementService) addUserWithTenant(ctx context.Context, userId st
 	}
 	fmt.Println("tenantData--->", tenantData)
 
-	err = a.createDefaultRoles(ctx, tenantData.Schema)
+	err = a.rbacManagementService.InitializeRBACSystem(ctx, tenantData.Schema)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}

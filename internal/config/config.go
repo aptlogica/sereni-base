@@ -16,6 +16,7 @@ type Config struct {
 	Asset                      AssetConfig                      `mapstructure:"asset"`
 	Antivirus                  AntivirusConfig                  `mapstructure:"antivirus"`
 	TemporaryAddedUserPassword TemporaryAddedUserPasswordConfig `mapstructure:"temporary_added_user_password"`
+	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
 }
 
 type ServerConfig struct {
@@ -116,6 +117,14 @@ type AssetConfig struct {
 // TemporaryAddedUserPasswordConfig holds config for temporary password assigned to newly added users so they can change it later
 type TemporaryAddedUserPasswordConfig struct {
 	Value string `mapstructure:"value"`
+}
+
+// OwnerRegistrationConfig holds config for pre-registering an owner user
+type OwnerRegistrationConfig struct {
+	FirstName string `mapstructure:"first_name"`
+	LastName  string `mapstructure:"last_name"`
+	Email     string `mapstructure:"email"`
+	Password  string `mapstructure:"password"`
 }
 
 func Load() (*Config, error) {

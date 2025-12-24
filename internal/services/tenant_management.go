@@ -45,10 +45,6 @@ func NewTenantManagementService(
 	}
 }
 
-func (t *tenantManagementService) createTableUsingSchema(schema dbModels.CreateTableRequest) error {
-	return t.repo.TableService.CreateTable(schema)
-}
-
 func (t *tenantManagementService) createTenantSchema(ctx context.Context, schema string) error {
 	if err := t.repo.TableService.CreateSchema(ctx, schema); err != nil {
 		return app_errors.DatabaseError
@@ -74,6 +70,12 @@ func (t *tenantManagementService) createTenantSchema(ctx context.Context, schema
 		tenant.Role{},
 		tenant.User{},
 		tenant.UserRole{},
+		tenant.AccessMember{},
+		tenant.AccessRole{},
+		tenant.Action{},
+		tenant.Permission{},
+		tenant.Resource{},
+		tenant.RolePermission{},
 		// tenant.TenantFeature{},
 		// tenant.FeatureFlag{},
 	}
@@ -681,3 +683,7 @@ func (t *tenantManagementService) GetTenantInfoBySchema(ctx context.Context, sch
 
 	return tenant, nil
 }
+
+
+
+
