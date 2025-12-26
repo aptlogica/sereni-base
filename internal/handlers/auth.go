@@ -305,6 +305,35 @@ func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UserAssignedToWorkspace, nil)
 }
 
+func (h *AuthHandler) UpdateUserAccess(c *gin.Context) {
+	var req dto.CreateMemberRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.CreateMemberRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	// NOTE: UpdateUserAccess uses the same service method as AssignUserToWorkspace
+	// It will detect if user already has access and update accordingly
+	err := h.authManagementService.AssignUserToWorkspace(c.Request.Context(), schemaName, req, reqBy)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "User access updated successfully", nil)
+}
+
 func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 	var req dto.RemoveMemberRequest
 

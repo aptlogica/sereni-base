@@ -107,7 +107,8 @@ func Setup(cfg *config.Config,
 		user.DELETE("profile/:id/avatar", handlerGroups.User.RemoveAvatar)
 		user.GET("workspaces", handlerGroups.User.GetWorkspaces)
 		user.GET("access-details", handlerGroups.User.GetUserAccessDetails)
-		user.POST("assign", handlerGroups.Auth.AssignUserToWorkspace) // only owner, co-owner and maintainer can do
+		user.POST("assign", handlerGroups.Auth.AssignUserToWorkspace)  // only owner, co-owner and maintainer can do
+		user.PUT("access/update", handlerGroups.Auth.UpdateUserAccess) // update existing user access
 
 		tm := private.Group("") // Group of all api's that require tenant schema
 		// tm.Use(middlewareGroups.TenantSchemaMiddleware())
