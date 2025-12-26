@@ -81,23 +81,6 @@ func RegisterOwner(
 		modelService,
 	)
 
-	workspaceManagementService := services.NewWorkspaceManagementService(
-		dbService,
-		workspaceService,
-		workspaceMemberService,
-		baseManagementService,
-		tableManagementService,
-	)
-
-	userManagementService := services.NewUserManagementService(
-		dbService,
-		userService,
-		assetManagementService,
-		userResetTokenService,
-		workspaceManagementService,
-		authProvider,
-	)
-
 	rbacManagementService := services.NewRBACManagementService(
 		dbService,
 		accessRoleService,
@@ -107,6 +90,25 @@ func RegisterOwner(
 		rolePermissionService,
 		accessMemberService,
 		baseService,
+	)
+
+	workspaceManagementService := services.NewWorkspaceManagementService(
+		dbService,
+		workspaceService,
+		workspaceMemberService,
+		baseManagementService,
+		tableManagementService,
+		rbacManagementService,
+	)
+
+	userManagementService := services.NewUserManagementService(
+		dbService,
+		userService,
+		assetManagementService,
+		userResetTokenService,
+		workspaceManagementService,
+		rbacManagementService,
+		authProvider,
 	)
 
 	// Initialize provider services for AuthManagementService

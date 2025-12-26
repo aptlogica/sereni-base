@@ -48,10 +48,9 @@ func (b *BaseInsertion) Map() map[string]interface{} {
 		"row_count":          b.RowCount,
 		"storage_used_bytes": b.StorageUsedBytes,
 		"created_by":         b.CreatedBy,
-		"last_modified_by":         b.UpdatedBy,
+		"last_modified_by":   b.UpdatedBy,
 		"created_time":       b.CreatedAt,
 		"last_modified_time": b.UpdatedAt,
-
 	}
 }
 
@@ -192,6 +191,8 @@ type BaseResponse struct {
 
 	CreatedAt time.Time `db:"created_time" json:"created_time,omitempty" mapstructure:"created_time"`
 	UpdatedAt time.Time `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
+
+	AccessLevel string `db:"access_level" json:"access_level" mapstructure:"access_level"`
 
 	Tables []TableResponse `db:"tables" json:"tables" mapstructure:"tables"`
 }

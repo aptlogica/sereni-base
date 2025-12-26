@@ -19,6 +19,8 @@ import (
 	authProviderInterface "serenibase/internal/providers/auth"
 
 	appConstant "serenibase/internal/constant"
+
+	"github.com/google/uuid"
 )
 
 type userManagementService struct {
@@ -27,6 +29,7 @@ type userManagementService struct {
 	assetManagementService     interfaces.AssetManagementService
 	userResetTokenService      interfaces.UserResetTokenService
 	workspaceManagementService interfaces.WorkspaceManagementService
+	rbacManagementService      interfaces.RBACManagementService
 	authProvider               authProviderInterface.AuthProvider
 }
 
@@ -36,6 +39,7 @@ func NewUserManagementService(
 	assetManagementService interfaces.AssetManagementService,
 	userResetTokenService interfaces.UserResetTokenService,
 	workspaceManagementService interfaces.WorkspaceManagementService,
+	rbacManagementService interfaces.RBACManagementService,
 	authProvider authProviderInterface.AuthProvider,
 ) interfaces.UserManagementService {
 	return &userManagementService{
@@ -44,6 +48,7 @@ func NewUserManagementService(
 		assetManagementService:     assetManagementService,
 		userResetTokenService:      userResetTokenService,
 		workspaceManagementService: workspaceManagementService,
+		rbacManagementService:      rbacManagementService,
 		authProvider:               authProvider,
 	}
 }
@@ -291,26 +296,62 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 		return res, nil
 	}
 
-	memberships, err := s.workspaceManagementService.GetWorkspaceMemberByUser(ctx, schema, userID)
+	// Get user's workspace access from RBAC access_members table
+	// This includes both workspace-level and base-level access
+	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
 	if err != nil {
-		if err == app_errors.WorkspaceMemberNotFound {
-			return []dto.UserWorkspaceResponse{}, nil
-		}
-		return nil, err
+		return []dto.UserWorkspaceResponse{}, nil
 	}
 
-	workspaceIDs := make([]string, 0, len(memberships))
+	// Map to store workspace IDs and their access levels
+	// Key: workspace_id, Value: either "base" or role_id
 	workspaceAccess := map[string]string{}
-	for _, membership := range memberships {
-		workspaceIDs = append(workspaceIDs, membership.WorkspaceID)
-		workspaceAccess[membership.WorkspaceID] = membership.AccessLevel
+	// Also track scope_type to determine if it's base-level access
+	workspaceScopeType := map[string]string{}
+
+	for _, member := range accessMembers {
+		// Check workspace_id column (for base-level access, this identifies the workspace)
+		if member.WorkspaceID != nil && *member.WorkspaceID != "" {
+			fmt.Printf("DEBUG: Found workspace access via workspace_id column: %s with scope_type: %s, role: %s\n",
+				*member.WorkspaceID, member.ScopeType, member.RoleID)
+			// Base-level access - set access level as "base"
+			workspaceAccess[*member.WorkspaceID] = "base"
+			workspaceScopeType[*member.WorkspaceID] = member.ScopeType
+		}
+
+		// Check scope_id column for workspace-level access (scope_type = 'workspace')
+		if member.ScopeType == "workspace" && member.ScopeID != nil && *member.ScopeID != "" {
+			fmt.Printf("DEBUG: Found workspace access via scope_id column: %s with role: %s\n", *member.ScopeID, member.RoleID)
+			// Only set if not already set (prioritize workspace-level over base-level)
+			if _, exists := workspaceAccess[*member.ScopeID]; !exists {
+				// Workspace-level access - set access level as role_id
+				workspaceAccess[*member.ScopeID] = member.RoleID
+				workspaceScopeType[*member.ScopeID] = member.ScopeType
+			}
+		}
 	}
 
+	// If no workspace access found, return empty list
+	if len(workspaceAccess) == 0 {
+		fmt.Printf("DEBUG: No workspace access found for user %s\n", userID)
+		return []dto.UserWorkspaceResponse{}, nil
+	}
+
+	// Get unique workspace IDs
+	workspaceIDs := make([]string, 0, len(workspaceAccess))
+	for wsID := range workspaceAccess {
+		workspaceIDs = append(workspaceIDs, wsID)
+	}
+
+	fmt.Printf("DEBUG: Fetching %d workspaces for user %s\n", len(workspaceIDs), userID)
+
+	// Get workspace details
 	workspaces, err := s.workspaceManagementService.GetBulkWorkspaces(ctx, schema, workspaceIDs)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build response with workspace details and access roles
 	var res []dto.UserWorkspaceResponse
 	for _, ws := range workspaces {
 		var wsResp dto.UserWorkspaceResponse
@@ -318,10 +359,39 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 		if err != nil {
 			return nil, app_errors.ErrStructToStruct
 		}
-		wsResp.AccessLevel = workspaceAccess[wsResp.ID.String()]
+
+		// Get role ID for this workspace
+		roleIDOrLevel, exists := workspaceAccess[wsResp.ID.String()]
+		if !exists {
+			continue
+		}
+
+		// If it's "base", set as access level directly
+		if roleIDOrLevel == "base" {
+			wsResp.AccessLevel = "base"
+			fmt.Printf("DEBUG: Workspace %s (ID: %s) access role: base\n", ws.Title, wsResp.ID.String())
+		} else {
+			// Otherwise, fetch the role name from the role ID
+			roleUUID, parseErr := uuid.Parse(roleIDOrLevel)
+			if parseErr != nil {
+				fmt.Printf("DEBUG: Failed to parse role ID %s: %v\n", roleIDOrLevel, parseErr)
+				wsResp.AccessLevel = roleIDOrLevel
+			} else {
+				role, roleErr := s.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+				if roleErr != nil {
+					fmt.Printf("DEBUG: Failed to get role name for ID %s: %v\n", roleIDOrLevel, roleErr)
+					wsResp.AccessLevel = roleIDOrLevel
+				} else {
+					wsResp.AccessLevel = role.Name
+					fmt.Printf("DEBUG: Workspace %s (ID: %s) access role: %s (name: %s)\n", ws.Title, wsResp.ID.String(), roleIDOrLevel, role.Name)
+				}
+			}
+		}
+
 		res = append(res, wsResp)
 	}
 
+	fmt.Printf("DEBUG: Returning %d workspaces for user %s\n", len(res), userID)
 	return res, nil
 }
 

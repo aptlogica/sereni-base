@@ -11,6 +11,8 @@ import (
 
 	app_errors "serenibase/internal/app-errors"
 	appConstant "serenibase/internal/constant"
+
+	"github.com/google/uuid"
 )
 
 type workspaceManagementService struct {
@@ -19,6 +21,7 @@ type workspaceManagementService struct {
 	workspaceMember        interfaces.WorkspaceMemberService
 	baseManagementService  interfaces.BaseManagementService
 	tableManagementService interfaces.TableManagementService
+	rbacManagementService  interfaces.RBACManagementService
 }
 
 func NewWorkspaceManagementService(
@@ -27,6 +30,7 @@ func NewWorkspaceManagementService(
 	workspaceMember interfaces.WorkspaceMemberService,
 	baseManagementService interfaces.BaseManagementService,
 	tableManagementService interfaces.TableManagementService,
+	rbacManagementService interfaces.RBACManagementService,
 ) interfaces.WorkspaceManagementService {
 	return &workspaceManagementService{
 		repo:                   repo,
@@ -34,6 +38,7 @@ func NewWorkspaceManagementService(
 		workspaceMember:        workspaceMember,
 		baseManagementService:  baseManagementService,
 		tableManagementService: tableManagementService,
+		rbacManagementService:  rbacManagementService,
 	}
 }
 
@@ -161,12 +166,86 @@ func (s workspaceManagementService) GetBasesByWorkspaceId(ctx context.Context, s
 	return bases, nil
 }
 
-func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
-	bases, err := s.baseManagementService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
+func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
+	// Check if user is owner or coowner - they can see all bases in workspace
+	if role == appConstant.RBACRoleNames.Owner ||
+		role == appConstant.RBACRoleNames.CoOwner ||
+		role == appConstant.RBACRoleNames.WorkspaceMaintainer ||
+		role == appConstant.RBACRoleNames.WorkspaceMaintainerRO {
+		// Get all bases in workspace
+		bases, err := s.baseManagementService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert to BaseResponse and add workspace-level access level
+		var response []dto.BaseResponse
+		for _, base := range bases {
+			var baseResp dto.BaseResponse
+			if err := helpers.StructToStruct(base, &baseResp); err != nil {
+				return nil, app_errors.ErrStructToStruct
+			}
+			// Workspace-level users get the workspace role as access level
+			baseResp.AccessLevel = role
+			response = append(response, baseResp)
+		}
+		return response, nil
+	}
+
+	// For base-member and base-read: Get only bases where user has explicit access
+	// Get user's access members for this workspace with scope_type='base'
+	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schemaName, userID)
 	if err != nil {
 		return nil, err
 	}
-	return bases, nil
+
+	// Filter to only base-level access in this workspace
+	baseAccessMap := make(map[string]string) // Key: base_id, Value: role_name
+	for _, member := range accessMembers {
+		// Only include base-level access (scope_type='base') in this workspace
+		if member.ScopeType == "base" && member.WorkspaceID != nil && *member.WorkspaceID == workspaceID && member.ScopeID != nil {
+			// Fetch role name
+			roleID := member.RoleID
+			if roleID != "" {
+				roleUUID, parseErr := uuid.Parse(roleID)
+				if parseErr == nil {
+					roleData, roleErr := s.rbacManagementService.GetRoleByID(ctx, schemaName, roleUUID)
+					if roleErr == nil {
+						baseAccessMap[*member.ScopeID] = roleData.Name
+					} else {
+						baseAccessMap[*member.ScopeID] = roleID
+					}
+				}
+			}
+		}
+	}
+
+	// If no base access found, return empty list
+	if len(baseAccessMap) == 0 {
+		fmt.Printf("DEBUG: User %s has no base-level access in workspace %s\n", userID, workspaceID)
+		return []dto.BaseResponse{}, nil
+	}
+
+	// Get all bases with user's access
+	var response []dto.BaseResponse
+	for baseID, roleName := range baseAccessMap {
+		base, err := s.baseManagementService.GetBaseByID(ctx, schemaName, baseID)
+		if err != nil {
+			fmt.Printf("DEBUG: Failed to get base %s: %v\n", baseID, err)
+			continue
+		}
+
+		var baseResp dto.BaseResponse
+		if err := helpers.StructToStruct(base, &baseResp); err != nil {
+			fmt.Printf("DEBUG: Failed to convert base %s: %v\n", baseID, err)
+			continue
+		}
+		baseResp.AccessLevel = roleName
+		response = append(response, baseResp)
+	}
+
+	fmt.Printf("DEBUG: Returning %d bases for user %s with base-level access in workspace %s\n", len(response), userID, workspaceID)
+	return response, nil
 }
 
 func (s workspaceManagementService) RemoveUserFromWorkspace(ctx context.Context, schemaName string, workspaceID string, userID string) error {

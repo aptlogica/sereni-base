@@ -1,19 +1,13 @@
 package handlers
 
 import (
-	"fmt"
 	"serenibase/internal/dto"
 	"serenibase/internal/handlers/validators"
-	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/response"
 
-	appConstant "serenibase/internal/constant"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-
-	app_errors "serenibase/internal/app-errors"
 )
 
 type WorkspaceHandler struct {
@@ -144,22 +138,13 @@ func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 	rolesVal, _ := c.Get("roles")
 	roles, _ := rolesVal.(string)
 
+	userIDVal, _ := c.Get("user_id")
+	userID, _ := userIDVal.(string)
+
 	var bases interface{}
 	var err error
 
-	// Check if user is admin in workspace
-	if roles == appConstant.RBACRoleNames.Owner || roles == appConstant.RBACRoleNames.CoOwner {
-		bases, err = h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID)
-	} else {
-		workspaceMemberData, _ := c.Get("workspaceMemberData")
-		workspaceMemberDataMap, ok := workspaceMemberData.(*tenant.WorkspaceMember)
-		if !ok {
-			fmt.Println("invalid workspaceMemberData type")
-			response.CheckAndSendError(c, app_errors.ErrInvalidWorkspaceMemberData)
-			return
-		}
-		bases, err = h.workspaceManagementService.GetBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceMemberDataMap)
-	}
+	bases, err = h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID, roles, userID)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return

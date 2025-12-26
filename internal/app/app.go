@@ -120,6 +120,17 @@ func New(cfg *config.Config) (*App, error) {
 		assetManagementService,
 	)
 
+	rbacManagementService := services.NewRBACManagementService(
+		dbService,
+		accessRoleService,
+		resourceService,
+		actionService,
+		permissionService,
+		rolePermissionService,
+		accessMemberService,
+		baseService,
+	)
+
 	importService := services.NewImportService(tableManagementService)
 
 	baseManagementService := services.NewBaseManagementService(
@@ -134,6 +145,7 @@ func New(cfg *config.Config) (*App, error) {
 		workspaceMemberService,
 		baseManagementService,
 		tableManagementService,
+		rbacManagementService,
 	)
 
 	userManagementService := services.NewUserManagementService(
@@ -142,18 +154,8 @@ func New(cfg *config.Config) (*App, error) {
 		assetManagementService,
 		userResetTokenService,
 		workspaceManagementService,
+		rbacManagementService,
 		authProvider,
-	)
-
-	rbacManagementService := services.NewRBACManagementService(
-		dbService,
-		accessRoleService,
-		resourceService,
-		actionService,
-		permissionService,
-		rolePermissionService,
-		accessMemberService,
-		baseService,
 	)
 
 	authService := services.NewAuthManagementService(

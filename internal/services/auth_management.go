@@ -518,13 +518,13 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 		return tenant.User{}, err
 	}
 
-	// // Handle profile picture file upload
-	// if userData.ProfilePic != nil {
-	// 	_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
-	// 	if err != nil {
-	// 		return tenant.User{}, err
-	// 	}
-	// }
+	// Handle profile picture file upload
+	if userData.ProfilePic != nil {
+		_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
+		if err != nil {
+			return tenant.User{}, err
+		}
+	}
 
 	// Send invitation
 	tokenAttrs := map[string]interface{}{
