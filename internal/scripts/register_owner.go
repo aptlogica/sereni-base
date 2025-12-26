@@ -41,7 +41,6 @@ func RegisterOwner(
 
 	// Initialize required services
 	userService := services.NewUserService(dbService)
-	roleService := services.NewRoleService(dbService)
 	workspaceService := services.NewWorkspaceService(dbService)
 	workspaceMemberService := services.NewWorkspaceMemberService(dbService)
 	baseService := services.NewBaseService(dbService)
@@ -50,7 +49,6 @@ func RegisterOwner(
 	viewService := services.NewViewService(dbService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
-	userRoleService := services.NewUserRoleService(dbService)
 	resourceService := services.NewResourceService(dbService)
 	actionService := services.NewActionService(dbService)
 	permissionService := services.NewPermissionService(dbService)
@@ -96,7 +94,6 @@ func RegisterOwner(
 		userService,
 		assetManagementService,
 		userResetTokenService,
-		userRoleService,
 		workspaceManagementService,
 		authProvider,
 	)
@@ -109,6 +106,7 @@ func RegisterOwner(
 		permissionService,
 		rolePermissionService,
 		accessMemberService,
+		baseService,
 	)
 
 	// Initialize provider services for AuthManagementService
@@ -123,7 +121,6 @@ func RegisterOwner(
 		cfg.TemporaryAddedUserPassword,
 		dbService,
 		userManagementService,
-		roleService,
 		workspaceManagementService,
 		userResetTokenService,
 		rbacManagementService,
@@ -177,15 +174,19 @@ func RegisterOwner(
 	fmt.Println("\n==================================================")
 	fmt.Println("✓ Owner registration completed successfully!")
 	fmt.Println("==================================================")
-	fmt.Printf("\nOwner Details:\n")
-	fmt.Printf("  Name:      %s %s\n", loginResponse.User.FirstName, loginResponse.User.LastName)
-	fmt.Printf("  Email:     %s\n", loginResponse.User.Email)
-	fmt.Printf("  User ID:   %s\n", loginResponse.User.ID)
-	fmt.Printf("  Role:      Admin\n")
+
+	if loginResponse.User != nil {
+		fmt.Printf("\nOwner Details:\n")
+		fmt.Printf("  Name:      %s %s\n", loginResponse.User.FirstName, loginResponse.User.LastName)
+		fmt.Printf("  Email:     %s\n", loginResponse.User.Email)
+		fmt.Printf("  User ID:   %s\n", loginResponse.User.ID)
+		fmt.Printf("  Role:      Admin\n")
+	}
+
 	fmt.Printf("\nYou can now login with:\n")
 	fmt.Printf("  Email:    %s\n", cfg.OwnerRegistration.Email)
 	fmt.Printf("  Password: <configured password>\n")
-	fmt.Printf("\nAccess Token: %s\n", loginResponse.Token.AccessToken[:50]+"...")
+
 	fmt.Println()
 
 	return nil

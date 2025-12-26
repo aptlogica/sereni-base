@@ -15,9 +15,6 @@ type WorkspaceManagementService interface {
 	GetTablesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string) ([]dto.TableResponse, error)
 	GetBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceMemberData *tenant.WorkspaceMember) ([]tenant.Base, error)
 	GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error)
-	InviteMember(ctx context.Context, schemaName string, req dto.CreateMemberRequest) error
-	AssignUserToWorkspace(ctx context.Context, schemaName string, req dto.CreateMemberRequest) error
-	RemoveUserFromWorkspace(ctx context.Context, schemaName string, workspaceID string, userID string) error
 	GetWorkspaceMemberByUser(ctx context.Context, schemaName string, userID string) ([]tenant.WorkspaceMember, error)
 	GetWorkspaceMembers(ctx context.Context, schemaName string, workspaceID string) ([]tenant.WorkspaceMember, error)
 	GetBulkWorkspaces(ctx context.Context, schemaName string, workspaceIDs []string) ([]tenant.Workspace, error)

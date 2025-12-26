@@ -238,31 +238,33 @@ var DefinedFunctions = []Function{
 	},
 	{
 		FunctionName:   "get_users_with_role",
-		FunctionParams: "p_schema_name text",
+		FunctionParams: "",
 		FunctionSQL: `
-		RETURNS SETOF jsonb
-		LANGUAGE plpgsql
-		AS $$
-		DECLARE
-			sql text;
-		BEGIN
-			sql := format($f$
-				SELECT
-					to_jsonb(u) ||
-					jsonb_build_object(
-						'role_id', r.id,
-						'roles', r.name
-					)
-				FROM %I.users u
-				LEFT JOIN %I.user_roles ur 
-					ON ur.user_id::uuid = u.id
-				LEFT JOIN %I.roles r 
-					ON r.id = ur.role_id::uuid
-			$f$, p_schema_name, p_schema_name, p_schema_name);
-
-			RETURN QUERY EXECUTE sql;
-		END;
-		$$;
-	`,
+			RETURNS SETOF JSON
+			LANGUAGE plpgsql STABLE AS $$
+			BEGIN
+				RETURN QUERY
+				SELECT 
+					(to_jsonb(u) || jsonb_build_object('roles', COALESCE(r.roles, '[]'::json)))::json AS user
+				FROM public.users u
+				LEFT JOIN (
+					SELECT 
+						am.user_id::uuid AS user_id,
+						JSON_AGG(
+							JSON_BUILD_OBJECT(
+								'id', r.id,
+								'name', r.name,
+								'scope_level', r.scope_level,
+								'priority', r.priority,
+								'description', r.description
+							)
+						) AS roles
+					FROM public.access_members am
+					LEFT JOIN public.access_roles r ON r.id = am.role_id::uuid
+					GROUP BY am.user_id
+				) r ON r.user_id = u.id;
+			END;
+			$$;
+		`,
 	},
 }

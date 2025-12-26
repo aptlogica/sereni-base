@@ -19,8 +19,6 @@ import (
 	authProviderInterface "serenibase/internal/providers/auth"
 
 	appConstant "serenibase/internal/constant"
-
-	"github.com/google/uuid"
 )
 
 type userManagementService struct {
@@ -28,7 +26,6 @@ type userManagementService struct {
 	userService                interfaces.UserService
 	assetManagementService     interfaces.AssetManagementService
 	userResetTokenService      interfaces.UserResetTokenService
-	userRoleService            interfaces.UserRoleService
 	workspaceManagementService interfaces.WorkspaceManagementService
 	authProvider               authProviderInterface.AuthProvider
 }
@@ -38,7 +35,6 @@ func NewUserManagementService(
 	userService interfaces.UserService,
 	assetManagementService interfaces.AssetManagementService,
 	userResetTokenService interfaces.UserResetTokenService,
-	userRoleService interfaces.UserRoleService,
 	workspaceManagementService interfaces.WorkspaceManagementService,
 	authProvider authProviderInterface.AuthProvider,
 ) interfaces.UserManagementService {
@@ -47,7 +43,6 @@ func NewUserManagementService(
 		userService:                userService,
 		assetManagementService:     assetManagementService,
 		userResetTokenService:      userResetTokenService,
-		userRoleService:            userRoleService,
 		workspaceManagementService: workspaceManagementService,
 		authProvider:               authProvider,
 	}
@@ -269,23 +264,6 @@ func (s *userManagementService) GetUserByID(ctx context.Context, schema string, 
 	return s.userService.GetUserByID(ctx, schema, id)
 }
 
-func (s *userManagementService) AddUserRole(ctx context.Context, schema string, userID, roleID uuid.UUID) error {
-	lg := logger.Get()
-	userRoleInsertionReq := dto.UserRoleInsertion{
-		ID:     uuid.New(),
-		UserID: userID,
-		RoleID: roleID,
-	}
-
-	_, err := s.userRoleService.CreateUserRole(ctx, schema, userRoleInsertionReq)
-	if err != nil {
-		lg.Error().Stack().Err(err).Str("schema", schema).Msg("Failed to create user role")
-		return app_errors.TableNotFound
-	}
-
-	return nil
-}
-
 func (s *userManagementService) GetAllUsers(ctx context.Context, schema string) ([]tenant.User, error) {
 	return s.userService.GetAllUsers(ctx, schema)
 }
@@ -293,7 +271,8 @@ func (s *userManagementService) GetAllUsers(ctx context.Context, schema string) 
 func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error) {
 	lg := logger.Get()
 	lg.Debug().Str("roles", roles).Msg("Fetching workspaces for user")
-	if roles == appConstant.RoleNames.Admin {
+	if roles == appConstant.RBACRoleNames.CoOwner || roles == appConstant.RBACRoleNames.Owner {
+		fmt.Println("User is Owner or CoOwner, fetching all workspaces")
 		workspaces, err := s.workspaceManagementService.GetAll(ctx, schema)
 		if err != nil {
 			return nil, err
@@ -305,7 +284,7 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 			if err != nil {
 				return nil, app_errors.ErrStructToStruct
 			}
-			wsResp.AccessLevel = appConstant.RoleNames.Admin
+			wsResp.AccessLevel = roles
 			res = append(res, wsResp)
 		}
 
@@ -355,19 +334,15 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 	functionName := "get_users_with_role"
 	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
-	args := map[string]interface{}{
-		"p_schema_name": schema,
-	}
-
 	records, err := s.repo.TableService.GetByFunction(
 		ctx,
 		schemaFunctionName,
-		args,
+		nil,
 	)
 	if err != nil {
 		return nil, app_errors.DatabaseError
 	}
-
+	fmt.Println("result records: ---- ", records)
 	var result []dto.UserWithRole
 	for _, record := range records {
 		if rec, ok := record[functionName].(map[string]interface{}); ok {
@@ -375,7 +350,7 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 			if err := helpers.MapToStruct(rec, &user); err == nil {
 				result = append(result, user)
 			} else {
-				lg.Warn().Err(err).Msg("Failed to convert struct to UserWithRole")
+				lg.Warn().Err(err).Msg("Failed to convert record to UserWithRole")
 			}
 		}
 	}
@@ -445,7 +420,7 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 		baseAccessInfos := []dto.BaseAccessInfo{}
 
 		// For full_access and admin users, return empty bases array (they have access to all bases)
-		if accessLevel == appConstant.AccessNames.LimitedAccess && membership != nil {
+		if accessLevel == appConstant.RBACRoleNames.Owner && membership != nil {
 			// Get bases only for limited access users
 			bases, err := s.workspaceManagementService.GetBasesByWorkspaceId(ctx, schema, membership)
 			if err != nil && err != app_errors.BaseNotFound {

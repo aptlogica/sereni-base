@@ -9,8 +9,6 @@ import (
 	responseConst "serenibase/internal/utils/response/constants"
 	"strings"
 
-	appConstant "serenibase/internal/constant"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,25 +28,25 @@ func ScopeHeaderMiddleware(scope string) gin.HandlerFunc {
 
 func WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService interfaces.WorkspaceMemberService, allowedAccess []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, hasRole := c.Get("roles")
+		_, hasRole := c.Get("roles")
 		if !hasRole {
 			response.SendError(c, responseConst.Error.UnauthorizedAccess)
 			c.Abort()
 			return
 		}
 
-		roleStr, _ := role.(string)
+		// roleStr, _ := role.(string)
 
-		if roleStr == appConstant.RoleNames.Admin {
-			c.Next()
-			return
-		}
+		// if roleStr == appConstant.RoleNames.Admin {
+		// 	c.Next()
+		// 	return
+		// }
 
-		if roleStr == appConstant.RoleNames.User && len(allowedAccess) == 0 {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
-			return
-		}
+		// if roleStr == appConstant.RoleNames.User && len(allowedAccess) == 0 {
+		// 	response.SendError(c, responseConst.Error.UnauthorizedAccess)
+		// 	c.Abort()
+		// 	return
+		// }
 
 		userId, hasUser := c.Get("user_id")
 		schema, hasSchema := c.Get("schema")

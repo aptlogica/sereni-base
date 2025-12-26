@@ -46,7 +46,7 @@ func (w *WorkspaceInsertion) Map() map[string]interface{} {
 		"is_default":         w.IsDefault,
 		"status":             w.Status,
 		"created_by":         w.CreatedBy,
-		"last_modified_by":         w.UpdatedBy,
+		"last_modified_by":   w.UpdatedBy,
 		"created_time":       w.CreatedAt,
 		"last_modified_time": w.UpdatedAt,
 	}
@@ -131,10 +131,8 @@ func (wmi *WorkspaceMemberInsertion) Map() map[string]interface{} {
 }
 
 type CreateMemberRequest struct {
-	WorkspaceID string `db:"workspace_id" json:"workspace_id,omitempty" mapstructure:"workspace_id"`
-	UserID      string `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
-	AccessLevel string `db:"access_level" json:"access_level,omitempty" mapstructure:"access_level"`
-	BasesIds    string `db:"bases_ids" json:"bases_ids,omitempty" mapstructure:"bases_ids"`
+	UserID     string              `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
+	Membership []MembershipRequest `json:"membership" mapstructure:"membership"`
 }
 
 type RemoveMemberRequest struct {

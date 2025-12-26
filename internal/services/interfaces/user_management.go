@@ -6,7 +6,6 @@ import (
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 
-	"github.com/google/uuid"
 )
 
 type UserManagementService interface {
@@ -21,7 +20,6 @@ type UserManagementService interface {
 	UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error)
 	GetUserByID(ctx context.Context, schema string, id string) (tenant.User, error)
 	GetAllUsers(ctx context.Context, schema string) ([]tenant.User, error)
-	AddUserRole(ctx context.Context, schema string, userID, roleID uuid.UUID) error
 	GetWorkspaces(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error)
 	GetBulkUsers(ctx context.Context, schema string, ids []string) ([]tenant.User, error)
 	GetUsersWithRole(ctx context.Context, schema string) ([]dto.UserWithRole, error)

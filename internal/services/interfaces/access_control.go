@@ -68,6 +68,8 @@ type AccessMemberService interface {
 	// User access assignment
 	AssignRoleToUser(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error)
 	RemoveRoleFromUser(ctx context.Context, schemaName string, userID, scopeID string, scopeType string) error
+	RemoveAccessMemberByID(ctx context.Context, schemaName string, memberID string) error
+	UpdateRoleForUser(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string, newRoleID string) error
 	GetUserAccessMembers(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error)
 	GetUserAccessByScope(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error)
 	GetScopeMembers(ctx context.Context, schemaName string, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error)

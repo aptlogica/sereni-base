@@ -51,17 +51,6 @@ func (s workspaceManagementService) Create(ctx context.Context, req dto.CreateWo
 		return dto.WorkspaceResponse{}, app_errors.ErrStructToStruct
 	}
 
-	// workspaceMemberReq := dto.CreateMemberRequest{
-	// 	WorkspaceID: workspace.ID.String(),
-	// 	Role:        appConstant.RoleNames.Admin,
-	// 	UserID:      userId,
-	// }
-
-	// err = s.workspaceMember.CreateWorkspaceMember(ctx, &workspaceMemberReq, schemaName)
-	// if err != nil {
-	// 	return dto.WorkspaceResponse{}, err
-	// }
-
 	baseInsertionData := dto.CreateBaseRequest{
 		WorkspaceID: insertedWorkspace.ID.String(),
 		Title:       "Default Base",
@@ -180,36 +169,6 @@ func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context
 	return bases, nil
 }
 
-func (s workspaceManagementService) InviteMember(ctx context.Context, schemaName string, req dto.CreateMemberRequest) error {
-	validRole := false
-	switch req.AccessLevel {
-	case appConstant.AccessNames.LimitedAccess:
-		validRole = true
-	}
-	if !validRole {
-		return app_errors.RoleNotFound
-	}
-	return s.workspaceMember.CreateWorkspaceMember(ctx, &req, schemaName)
-}
-
-func (s workspaceManagementService) AssignUserToWorkspace(ctx context.Context, schemaName string, req dto.CreateMemberRequest) error {
-	validRole := false
-	switch req.AccessLevel {
-	case appConstant.AccessNames.FullAccess,
-		appConstant.AccessNames.LimitedAccess:
-		validRole = true
-	}
-	if !validRole {
-		return app_errors.RoleNotFound
-	}
-
-	if req.AccessLevel == appConstant.AccessNames.FullAccess {
-		req.BasesIds = "*"
-	}
-
-	return s.workspaceMember.CreateWorkspaceMember(ctx, &req, schemaName)
-}
-
 func (s workspaceManagementService) RemoveUserFromWorkspace(ctx context.Context, schemaName string, workspaceID string, userID string) error {
 	workspaceMemner, err := s.workspaceMember.GetWorkspaceMemberByUserAndWorkspace(ctx, schemaName, userID, workspaceID)
 	if err != nil {
@@ -270,7 +229,6 @@ func (s workspaceManagementService) GetWorkspaceBaseMembers(ctx context.Context,
 	return result, nil
 }
 
-
 func (s workspaceManagementService) DeleteUserMappings(ctx context.Context, schemaName string, userID string) error {
 	err := s.workspaceMember.DeleteUserMappings(ctx, schemaName, userID)
 	if err != nil {
@@ -284,4 +242,3 @@ func (s workspaceManagementService) UpdateWorkspaceMemberBases(ctx context.Conte
 	// Delegate to workspace member service
 	return s.workspaceMember.UpdateWorkspaceMemberBases(ctx, schemaName, workspaceID, userID, accessLevel, basesIds)
 }
-

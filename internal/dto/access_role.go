@@ -14,6 +14,7 @@ type AccessRoleDTO struct {
 	Priority    int       `json:"priority" binding:"required" example:"100" mapstructure:"priority"`             // higher = overrides lower
 	Description *string   `json:"description,omitempty" example:"Workspace owner with full control" mapstructure:"description"`
 	IsDefault   bool      `json:"is_default" example:"false" mapstructure:"is_default"`
+	WorkspaceID *string   `json:"workspace_id,omitempty" example:"ws-123" mapstructure:"workspace_id"` // for base-level roles
 	CreatedAt   time.Time `json:"created_time,omitempty" example:"2024-06-01T12:00:00Z" format:"date-time" mapstructure:"created_time"`
 	UpdatedAt   time.Time `json:"last_modified_time,omitempty" example:"2024-06-01T12:00:00Z" format:"date-time" mapstructure:"last_modified_time"`
 }
@@ -26,6 +27,7 @@ func (r AccessRoleDTO) Map() map[string]interface{} {
 		"priority":           r.Priority,
 		"description":        r.Description,
 		"is_default":         r.IsDefault,
+		"workspace_id":       r.WorkspaceID,
 		"created_time":       r.CreatedAt,
 		"last_modified_time": r.UpdatedAt,
 	}
@@ -39,6 +41,7 @@ type AccessRoleResponse struct {
 	Priority    int       `json:"priority"`
 	Description *string   `json:"description,omitempty"`
 	IsDefault   bool      `json:"is_default"`
+	WorkspaceID *string   `json:"workspace_id,omitempty"`
 	CreatedAt   time.Time `json:"created_time"`
 	UpdatedAt   time.Time `json:"last_modified_time"`
 }

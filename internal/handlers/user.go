@@ -115,7 +115,6 @@ func (h *UserHandler) RemoveAvatar(c *gin.Context) {
 }
 
 func (h *UserHandler) GetWorkspaces(c *gin.Context) {
-	fmt.Println("GetWorkspaces--------------------")
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 

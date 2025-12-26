@@ -9,14 +9,14 @@ import (
 type AuthManagementService interface {
 	// Authentication
 	Login(ctx context.Context, email string, password string) (dto.LoginResponse, error)
-	Register(ctx context.Context, req dto.RegisterRequest) (dto.RegisterResponse, error)
+	// Register(ctx context.Context, req dto.RegisterRequest) (dto.RegisterResponse, error)
 	RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error)
 	VerifyEmail(ctx context.Context, req dto.VerifyEmailRequest) (dto.LoginResponse, error)
 	ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error
 	Logout(ctx context.Context, refreshToken string) error
 
 	// crud user
-	AddUser(ctx context.Context, schema string, userData dto.AddUserRequest) (tenant.User, error)
+	AddUser(ctx context.Context, schema string, userData dto.AddUserRequest, reqBy string) (tenant.User, error)
 	RemoveUser(ctx context.Context, schema string, userID string) error
 	DeleteUserCompletely(ctx context.Context, schema string, userID string) error
 	GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error)
@@ -30,10 +30,10 @@ type AuthManagementService interface {
 	HandleKeycloakCallback(ctx context.Context, code string) (dto.LoginResponse, error)
 	GetAuthProviderUrl(provider string) string
 
-	AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest) error
-	AddMultipleMembers(ctx context.Context, schema string, req dto.AddMultipleMembersRequest) (dto.AddMultipleMembersResponse, error)
-	RemoveUserFromWorkspace(ctx context.Context, schema string, req dto.RemoveMemberRequest) error
-	InviteMemberToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest) error
+	AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
+	// AddMultipleMembers(ctx context.Context, schema string, req dto.AddMultipleMembersRequest) (dto.AddMultipleMembersResponse, error)
+	RemoveUserFromWorkspace(ctx context.Context, schema string, req dto.RemoveMemberRequest, reqBy string) error
+	InviteMemberToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
 	GetWorkspaceMembers(ctx context.Context, schema string, workspaceID string) ([]dto.WorkspaceMemberResponse, error)
 	GetBaseMembers(ctx context.Context, schema string, baseID string) ([]dto.WorkspaceMemberResponse, error)
 	UpdatePassword(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) error

@@ -148,7 +148,7 @@ func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 	var err error
 
 	// Check if user is admin in workspace
-	if roles == appConstant.RoleNames.Admin {
+	if roles == appConstant.RBACRoleNames.Owner || roles == appConstant.RBACRoleNames.CoOwner {
 		bases, err = h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID)
 	} else {
 		workspaceMemberData, _ := c.Get("workspaceMemberData")

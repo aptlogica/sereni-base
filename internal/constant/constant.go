@@ -3,7 +3,6 @@ package constant
 import (
 	"serenibase/internal/dto"
 	"serenibase/internal/utils/helpers"
-	"strings"
 )
 
 const (
@@ -27,21 +26,6 @@ func strPtr(s string) *string {
 	return &s
 }
 
-var RoleNames = struct {
-	Admin string
-	User  string
-}{
-	Admin: "Admin",
-	User:  "User",
-}
-
-var AccessNames = struct {
-	FullAccess    string
-	LimitedAccess string
-}{
-	FullAccess:    "full_access",
-	LimitedAccess: "limited_access",
-}
 
 // ========== RBAC Scope Levels ==========
 var ScopeLevels = struct {
@@ -128,14 +112,14 @@ var ActionCodes = struct {
 var DefaultAccessRoles = []dto.AccessRoleDTO{
 	{
 		Name:        RBACRoleNames.Owner,
-		ScopeLevel:  ScopeLevels.Workspace,
+		ScopeLevel:  ScopeLevels.System,
 		Priority:    100,
 		Description: strPtr("Workspace owner with full control and management capabilities"),
 		IsDefault:   false,
 	},
 	{
 		Name:        RBACRoleNames.CoOwner,
-		ScopeLevel:  ScopeLevels.Workspace,
+		ScopeLevel:  ScopeLevels.System,
 		Priority:    90,
 		Description: strPtr("Co-owner with full access similar to owner"),
 		IsDefault:   false,
@@ -174,73 +158,6 @@ var DefaultAccessRoles = []dto.AccessRoleDTO{
 		Priority:    10,
 		Description: strPtr("No workspace access - can only view and edit own profile"),
 		IsDefault:   true,
-	},
-}
-
-var DefaultRoles = []dto.RoleInsertion{
-	{
-		Name:        RoleNames.Admin,
-		Description: strPtr("Has full administrative privileges, including managing users, system settings, billings, and subscriptions."),
-		IsDefault:   false,
-	},
-	{
-		Name:        RoleNames.User,
-		Description: strPtr("Standard user with no access unless or until added to a workspace."),
-		IsDefault:   false,
-	},
-}
-
-var DefaultAccessLevels = []dto.RoleInsertion{
-	{
-		Name:        AccessNames.FullAccess,
-		Description: strPtr("Administrator of the workspace with elevated permissions specific to the workspace, can also invite other members who have already been added by the admin."),
-		IsDefault:   false,
-	},
-	{
-		Name:        AccessNames.LimitedAccess,
-		Description: strPtr("Member of the workspace with standard permissions."),
-		IsDefault:   false,
-	},
-}
-
-var PlanNames = struct {
-	Free    string
-	Premium string
-}{
-	Free:    "Free",
-	Premium: "Premium",
-}
-
-var DefaultPlans = []dto.PlanInsertion{
-	{
-		Name:                 PlanNames.Free,
-		Slug:                 strings.ToLower(PlanNames.Free),
-		Description:          strPtr("Free plan with limited features"),
-		Currency:             "USD",
-		MaxWorkspaces:        func() *int { v := 1; return &v }(),
-		MaxBasesPerWorkspace: func() *int { v := 2; return &v }(),
-		MaxTablesPerBase:     func() *int { v := 5; return &v }(),
-		MaxRowsPerTable:      func() *int { v := 1000; return &v }(),
-		MaxCollaborators:     func() *int { v := 3; return &v }(),
-		MaxAPICallsPerHour:   func() *int { v := 100; return &v }(),
-		StorageLimitGB:       func() *int { v := 1; return &v }(),
-		Features:             "[]",
-		IsActive:             true,
-	},
-	{
-		Name:                 PlanNames.Premium,
-		Slug:                 strings.ToLower(PlanNames.Premium),
-		Description:          strPtr("Premium plan with advanced features"),
-		Currency:             "USD",
-		MaxWorkspaces:        func() *int { v := 10; return &v }(),
-		MaxBasesPerWorkspace: func() *int { v := 20; return &v }(),
-		MaxTablesPerBase:     func() *int { v := 50; return &v }(),
-		MaxRowsPerTable:      func() *int { v := 100000; return &v }(),
-		MaxCollaborators:     func() *int { v := 50; return &v }(),
-		MaxAPICallsPerHour:   func() *int { v := 10000; return &v }(),
-		StorageLimitGB:       func() *int { v := 100; return &v }(),
-		Features:             "[\"priority_support\",\"advanced_analytics\"]",
-		IsActive:             true,
 	},
 }
 

@@ -4,6 +4,7 @@ package services
 import (
 	"context"
 	"godbgrest/pkg"
+	"strings"
 	"time"
 
 	dbModels "godbgrest/pkg/models"
@@ -41,6 +42,7 @@ func (s *viewService) Create(ctx context.Context, viewData dto.ViewInsertion, sc
 }
 
 func (s *viewService) ensureAuditColumns(ctx context.Context, schemaName string) {
+	lg := logger.Get()
 	tableName := tenant.View{}.TableName(schemaName)
 	columns := []string{"created_by", "last_modified_by"}
 	for _, col := range columns {
@@ -51,7 +53,11 @@ func (s *viewService) ensureAuditColumns(ctx context.Context, schemaName string)
 			},
 		}
 		if err := s.repo.TableService.AddColumn(tableName, req); err != nil {
-			// fmt.Printf("DEBUG: Failed to add column %s to %s: %v\n", col, tableName, err)
+			// Silently ignore "already exists" errors as columns are defined in TableSchema
+			errMsg := err.Error()
+			if !strings.Contains(errMsg, "already exists") {
+				lg.Warn().Err(err).Str("column", col).Str("table", tableName).Msg("Failed to add audit column")
+			}
 		}
 	}
 }

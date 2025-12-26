@@ -7,7 +7,7 @@ import (
 	// "serenibase/internal/providers/email"
 	// "serenibase/internal/providers/otp"
 
-	appConstant "serenibase/internal/constant"
+	// appConstant "serenibase/internal/constant"
 
 	"github.com/gin-gonic/gin"
 )
@@ -107,7 +107,7 @@ func Setup(cfg *config.Config,
 		user.DELETE("profile/:id/avatar", handlerGroups.User.RemoveAvatar)
 		user.GET("workspaces", handlerGroups.User.GetWorkspaces)
 		user.GET("access-details", handlerGroups.User.GetUserAccessDetails)
-		user.POST("assign", handlerGroups.Auth.AssignUserToWorkspace) // only admin can do
+		user.POST("assign", handlerGroups.Auth.AssignUserToWorkspace) // only owner, co-owner and maintainer can do
 
 		tm := private.Group("") // Group of all api's that require tenant schema
 		// tm.Use(middlewareGroups.TenantSchemaMiddleware())
@@ -117,7 +117,7 @@ func Setup(cfg *config.Config,
 
 			// Admin-only
 			adminWorkspace := workspace.Group("")
-			adminWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
+			// adminWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
 			{
 				adminWorkspace.POST("/create", handlerGroups.Workspace.CreateWorkspace)           // admin only
 				adminWorkspace.GET("/", handlerGroups.Workspace.GetAllWorkspaces)                 // admin only
@@ -128,17 +128,17 @@ func Setup(cfg *config.Config,
 
 			// Full access
 			fullAccessWorkspace := workspace.Group("")
-			fullAccessWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
+			// fullAccessWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
 			{
 				// fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.InviteUser)                   // fullAccess
-				fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.AddMultipleMembers)      // fullAccess
+				// fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.AddMultipleMembers)      // fullAccess
 				fullAccessWorkspace.POST("/:id/remove", handlerGroups.Auth.RemoveUserFromWorkspace) // fullAccess
 				fullAccessWorkspace.GET("/:id/members", handlerGroups.Auth.GetWorkspaceMembers)     // fullAccess
 			}
 
 			// All access
 			allWorkspace := workspace.Group("")
-			allWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// allWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 			{
 				allWorkspace.GET("/:id/bases", handlerGroups.Workspace.GetBasesByWorkspaceId) // all
 				allWorkspace.GET("/:id", handlerGroups.Workspace.GetWorkspaceByID)            // all
@@ -148,7 +148,7 @@ func Setup(cfg *config.Config,
 			base := tm.Group("/base")
 			// Full access
 			fullAccessBase := base.Group("")
-			fullAccessBase.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
+			// fullAccessBase.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
 			{
 				fullAccessBase.POST("/create", handlerGroups.Base.CreateBase) // fullAccess
 				fullAccessBase.PUT("/:id", handlerGroups.Base.UpdateBase)     // fullAccess
@@ -156,7 +156,7 @@ func Setup(cfg *config.Config,
 			}
 			// All access
 			allBase := base.Group("")
-			allBase.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// allBase.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 			{
 				allBase.GET("/:id", handlerGroups.Base.GetBaseByID)              // all
 				allBase.GET("/:id/tables", handlerGroups.Base.GetTablesByBaseId) // all
@@ -165,8 +165,8 @@ func Setup(cfg *config.Config,
 
 			// -------- TABLE SCOPED --------
 			table := tm.Group("/table")
-			table.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			table.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// table.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
+			// table.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 
 			// All access
 			{
@@ -183,8 +183,8 @@ func Setup(cfg *config.Config,
 
 			// -------- COLUMN SCOPED --------
 			column := tm.Group("/column")
-			column.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			column.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// column.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
+			// column.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 
 			// All access
 			{
@@ -198,8 +198,8 @@ func Setup(cfg *config.Config,
 
 			// -------- ROW SCOPED --------
 			row := tm.Group("/row")
-			row.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			row.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// row.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
+			// row.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 
 			// All access
 			{
@@ -217,8 +217,8 @@ func Setup(cfg *config.Config,
 
 			// -------- VIEW SCOPED --------
 			view := tm.Group("/view")
-			view.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			view.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// view.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
+			// view.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 
 			// All access
 			{
@@ -231,7 +231,7 @@ func Setup(cfg *config.Config,
 
 			// -------- ASSET SCOPED --------
 			asset := tm.Group("asset")
-			asset.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
+			// asset.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
 			{
 				am := asset.Group("")
 				am.Use(middlewareGroups.FileSizeLimitMiddleware())
@@ -248,7 +248,7 @@ func Setup(cfg *config.Config,
 		tenant := private.Group("/tenant")
 		adminTenant := tenant.Group("")
 		// adminTenant.Use(middlewareGroups.TenantSchemaMiddleware())
-		adminTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
+		// adminTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
 		{
 			adminTenant.POST("user/create", handlerGroups.Auth.AddUser)            // only admin
 			adminTenant.POST("user/remove", handlerGroups.Auth.RemoveUser)         // only admin
@@ -258,7 +258,7 @@ func Setup(cfg *config.Config,
 
 		adminAndWorkspaceTenant := tenant.Group("")
 		// adminAndWorkspaceTenant.Use(middlewareGroups.TenantSchemaMiddleware())
-		adminAndWorkspaceTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
+		// adminAndWorkspaceTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
 		adminAndWorkspaceTenant.GET("users", handlerGroups.Auth.GetUsers)
 	}
 

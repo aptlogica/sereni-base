@@ -91,4 +91,7 @@ type RBACManagementService interface {
 	AuditUserAccess(ctx context.Context, schemaName string, userID string) (dto.UserAccessAudit, error)
 	GetOrphanedPermissions(ctx context.Context, schemaName string) ([]tenant.Permission, error)
 	GetUnusedRoles(ctx context.Context, schemaName string) ([]tenant.AccessRole, error)
+
+	// Membership processing
+	ProcessUserMemberships(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error)
 }

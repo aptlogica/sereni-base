@@ -87,7 +87,6 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Initialize services
 	userService := services.NewUserService(dbService)
-	roleService := services.NewRoleService(dbService)
 	workspaceService := services.NewWorkspaceService(dbService)
 	workspaceMemberService := services.NewWorkspaceMemberService(dbService)
 	baseService := services.NewBaseService(dbService)
@@ -97,7 +96,6 @@ func New(cfg *config.Config) (*App, error) {
 	viewService := services.NewViewService(dbService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
-	userRoleService := services.NewUserRoleService(dbService)
 	resourceService := services.NewResourceService(dbService)
 	actionService := services.NewActionService(dbService)
 	permissionService := services.NewPermissionService(dbService)
@@ -138,14 +136,11 @@ func New(cfg *config.Config) (*App, error) {
 		tableManagementService,
 	)
 
-
-
 	userManagementService := services.NewUserManagementService(
 		dbService,
 		userService,
 		assetManagementService,
 		userResetTokenService,
-		userRoleService,
 		workspaceManagementService,
 		authProvider,
 	)
@@ -158,13 +153,13 @@ func New(cfg *config.Config) (*App, error) {
 		permissionService,
 		rolePermissionService,
 		accessMemberService,
+		baseService,
 	)
 
 	authService := services.NewAuthManagementService(
 		cfg.TemporaryAddedUserPassword,
 		dbService,
 		userManagementService,
-		roleService,
 		workspaceManagementService,
 		userResetTokenService,
 		rbacManagementService,
@@ -267,6 +262,9 @@ func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, 
 	// Your custom logic like DB connection, migration, etc.
 	scripts.CreateMasterSchema(repo) // Example: Create database schema
 
+	if err := scripts.CreateDefaultRBAC(repo); err != nil {
+		fmt.Printf("⚠ Warning: Default RBAC creation failed: %v\n", err)
+	}
 	// Register predefined owner from configuration
 	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
 		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)

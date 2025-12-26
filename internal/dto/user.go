@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"mime/multipart"
 	"serenibase/internal/utils/helpers"
 	"time"
 
@@ -61,6 +62,7 @@ type UserInsertion struct {
 	Timezone      string     `db:"timezone" json:"timezone,omitempty"`
 	Status        string     `db:"status" json:"status"`
 	EmailVerified bool       `db:"email_verified" json:"email_verified"`
+	Roles         string     `db:"roles" json:"roles,omitempty"`
 }
 
 func (u *UserInsertion) Map() map[string]interface{} {
@@ -77,6 +79,7 @@ func (u *UserInsertion) Map() map[string]interface{} {
 		"deleted_at":         u.DeletedAt,
 		"timezone":           u.Timezone,
 		"status":             u.Status,
+		"roles":              u.Roles,
 		"email_verified":     u.EmailVerified,
 	}
 	// Only include date_of_birth and country if they are not nil/empty
@@ -142,9 +145,23 @@ func (u *UpdateUserPasswordRequest) Map() map[string]interface{} {
 }
 
 type AddUserRequest struct {
-	Email     string `json:"email" mapstructure:"email" binding:"required,email"`
-	FirstName string `json:"firstname" mapstructure:"firstname"`
-	LastName  string `json:"lastname" mapstructure:"lastname"`
+	Email      string                `form:"email" json:"email" mapstructure:"email" binding:"required,email"`
+	FirstName  string                `form:"firstname" json:"firstname" mapstructure:"firstname"`
+	LastName   string                `form:"lastname" json:"lastname" mapstructure:"lastname"`
+	ProfilePic *multipart.FileHeader `form:"profile_pic" json:"profile_pic" mapstructure:"profile_pic"`
+	IsCoOwner  bool                  `form:"is_coowner" json:"is_coowner" mapstructure:"is_coowner"`
+	Membership []MembershipRequest   `json:"membership" mapstructure:"membership"`
+}
+
+type MembershipRequest struct {
+	WorkspaceID string           `json:"workspace_id" mapstructure:"workspace_id"`
+	Role        string           `json:"role" mapstructure:"role"`
+	Bases       []BaseMembership `json:"bases" mapstructure:"bases"`
+}
+
+type BaseMembership struct {
+	BaseID string `json:"base_id" mapstructure:"base_id"`
+	Role   string `json:"role" mapstructure:"role"`
 }
 
 type RemoveUserRequest struct {
@@ -209,7 +226,7 @@ type UserWithRole struct {
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at" mapstructure:"deleted_at"`
 	IsDeleted bool       `db:"is_deleted" json:"is_deleted" mapstructure:"is_deleted"`
 
-	Roles string `json:"roles" db:"roles" mapstructure:"roles"`
+	Roles []map[string]interface{} `json:"roles" db:"roles" mapstructure:"roles"`
 }
 
 // BaseAccessInfo contains base information with access level

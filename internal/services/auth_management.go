@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"godbgrest/pkg"
 	"serenibase/internal/config"
-	"serenibase/internal/constant"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -33,7 +32,6 @@ type authManagementService struct {
 	repo                *pkg.DatabaseService
 
 	userManagementService      interfaces.UserManagementService
-	roleService                interfaces.RoleService
 	workspaceManagementService interfaces.WorkspaceManagementService
 	userResetTokenService      interfaces.UserResetTokenService
 	rbacManagementService      interfaces.RBACManagementService
@@ -48,7 +46,6 @@ func NewAuthManagementService(
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig,
 	repo *pkg.DatabaseService,
 	userManagementService interfaces.UserManagementService,
-	roleService interfaces.RoleService,
 	workspaceManagementService interfaces.WorkspaceManagementService,
 	userResetTokenService interfaces.UserResetTokenService,
 	rbacManagementService interfaces.RBACManagementService,
@@ -61,7 +58,6 @@ func NewAuthManagementService(
 		userDefaultPassword:        userDefaultPassword,
 		repo:                       repo,
 		userManagementService:      userManagementService,
-		roleService:                roleService,
 		workspaceManagementService: workspaceManagementService,
 		userResetTokenService:      userResetTokenService,
 		rbacManagementService:      rbacManagementService,
@@ -76,50 +72,6 @@ func (s *authManagementService) sendOtpViaEmail(email string) {
 	otp := s.otpProviderService.Generate(email)
 	emailData := s.emailTemplateService.EmailVerificationOTPBody(otp)
 	s.emailProviderService.Enqueue(emailProvider.EmailJob{To: email, Subject: emailData.Subject, Body: emailData.Body})
-}
-
-func (a *authManagementService) Register(ctx context.Context, req dto.RegisterRequest) (dto.RegisterResponse, error) {
-	// 1. Check if user already exists
-	if _, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
-		fmt.Println("err", err)
-		return dto.RegisterResponse{}, app_errors.UserAlreadyExists
-	} else if err != app_errors.UserNotFound {
-		return dto.RegisterResponse{}, err
-	}
-
-	// 2. Hash password
-	hashed, err := helpers.HashPassword(req.Password)
-	password := req.Password
-	if err != nil {
-		fmt.Println("err", err)
-		return dto.RegisterResponse{}, app_errors.ErrHashed
-	}
-	req.Password = hashed
-
-	// 3. Create user in local DB
-	insertedUser, err := a.userManagementService.CreateUser(ctx, appConstant.MasterDatabase, req)
-	if err != nil {
-		fmt.Println("err", err)
-		return dto.RegisterResponse{}, err
-	}
-
-	// 4. Send OTP
-	a.sendOtpViaEmail(insertedUser.Email)
-
-	// 5. Generate Tokens
-	insertedUser.Password = password // Pass raw password if needed for some reason, but GenerateToken usually doesn't need it for JWT
-	// NOTE: GenerateToken does not require raw password for local JWT signing, just user properties.
-
-	tokenData, err := a.generateToken(ctx, insertedUser)
-	if err != nil {
-		return dto.RegisterResponse{}, err
-	}
-
-	registerResponse := dto.RegisterResponse{
-		Token: tokenData.RefreshToken, // Returning refresh token as "Token" in response per original code?
-	}
-
-	return registerResponse, nil
 }
 
 func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error) {
@@ -153,23 +105,40 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 		return dto.LoginResponse{}, err
 	}
 
-	// 6. Generate Tokens
-	insertedUser.EmailVerified = true
-	// insertedUser.Password = originalPassword // If needed by auth provider local check, but usually strictly by user object content for JWT
+	createDefaultWorkspace := dto.CreateWorkspaceRequest{
+		Title:       "Default Workspace",
+		Description: helpers.StringPtr(""),
+		CreatedBy:   insertedUser.ID.String(),
+	}
 
-	tokens, err := a.authProviderService.GenerateToken(ctx, insertedUser)
+	_, err = a.workspaceManagementService.Create(ctx, createDefaultWorkspace, appConstant.MasterDatabase, insertedUser.ID.String())
 	if err != nil {
 		return dto.LoginResponse{}, err
 	}
 
-	tokenResponse := dto.TokenResponse{
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
+	roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RBACRoleNames.Owner)
+	if err != nil {
+		fmt.Println("err: ------- ", err)
+		return dto.LoginResponse{}, err
+	}
+
+	fmt.Println("Assigning role", roleData.Name, "to user", insertedUser.Email)
+
+	accessMemberReq := dto.AccessMemberDTO{
+		UserID:     insertedUser.ID.String(),
+		ScopeType:  appConstant.ScopeLevels.System,
+		ScopeID:    nil,
+		RoleID:     roleData.ID.String(),
+		AssignedBy: helpers.StringPtr(insertedUser.ID.String()),
+	}
+
+	_, err = a.rbacManagementService.AssignRoleToUser(ctx, appConstant.MasterDatabase, accessMemberReq)
+	if err != nil {
+		return dto.LoginResponse{}, err
 	}
 
 	loginResponse := dto.LoginResponse{
-		User:  &userData,
-		Token: &tokenResponse,
+		User: &userData,
 	}
 
 	return loginResponse, nil
@@ -279,13 +248,6 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 }
 
 func (a *authManagementService) initializeOwner(ctx context.Context, userId string, user tenant.User) (dto.UserResponse, error) {
-
-	// Example: RBAC system initialization if not already done globally
-	err := a.rbacManagementService.InitializeRBACSystem(ctx, appConstant.MasterDatabase)
-	if err != nil {
-		// Log but maybe continue if already initialized? InitializeRBACSystem handles idempotency mostly
-		// return dto.UserResponse{}, err
-	}
 
 	var userResp dto.UserResponse
 	// Basic mapping
@@ -502,6 +464,8 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 	// Update password in master schema
 	_, err = a.userManagementService.UpdateUser(ctx, appConstant.MasterDatabase, userId, map[string]interface{}{
 		"password":            hashedPassword,
+		"status":              "active",
+		"email_verified":      true,
 		"password_changed_at": time.Now(),
 	})
 	if err != nil {
@@ -530,13 +494,11 @@ func (a *authManagementService) Logout(ctx context.Context, refreshToken string)
 	return nil
 }
 
-func (a *authManagementService) AddUser(ctx context.Context, schema string, userData dto.AddUserRequest) (tenant.User, error) {
+func (a *authManagementService) AddUser(ctx context.Context, schema string, userData dto.AddUserRequest, reqBy string) (tenant.User, error) {
 	// Admin adding user
-	roles := appConstant.RoleNames.User
-
-	role, err := a.roleService.GetRoleByName(ctx, schema, roles)
-	if err != nil {
-		return tenant.User{}, app_errors.ErrRoleNotFound
+	roles := appConstant.RBACRoleNames.NoAccess
+	if userData.IsCoOwner {
+		roles = appConstant.RBACRoleNames.CoOwner
 	}
 
 	userCreationReq := dto.RegisterRequest{
@@ -548,7 +510,7 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 		AuthProvider:  "email",
 		EmailVerified: false,
 		Status:        "pending",
-		Roles:         constant.RBACRoleNames.Owner,
+		Roles:         roles,
 	}
 
 	user, err := a.userManagementService.CreateUser(ctx, schema, userCreationReq)
@@ -556,10 +518,13 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 		return tenant.User{}, err
 	}
 
-	err = a.userManagementService.AddUserRole(ctx, schema, user.ID, role.ID)
-	if err != nil {
-		return tenant.User{}, err
-	}
+	// // Handle profile picture file upload
+	// if userData.ProfilePic != nil {
+	// 	_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
+	// 	if err != nil {
+	// 		return tenant.User{}, err
+	// 	}
+	// }
 
 	// Send invitation
 	tokenAttrs := map[string]interface{}{
@@ -581,6 +546,34 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
 	if err != nil {
 		return tenant.User{}, err
+	}
+
+	// handle membership invitations if any
+	if roles == appConstant.RBACRoleNames.CoOwner || len(userData.Membership) == 0 {
+		roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, roles)
+		if err != nil {
+			return tenant.User{}, err
+		}
+
+		accessMemberReq := dto.AccessMemberDTO{
+			UserID:     user.ID.String(),
+			ScopeType:  appConstant.ScopeLevels.System,
+			ScopeID:    nil,
+			RoleID:     roleData.ID.String(),
+			AssignedBy: helpers.StringPtr(reqBy),
+		}
+
+		_, err = a.rbacManagementService.AssignRoleToUser(ctx, appConstant.MasterDatabase, accessMemberReq)
+		if err != nil {
+			return tenant.User{}, err
+		}
+	} else {
+		fmt.Println("-------------------")
+		_, err = a.rbacManagementService.ProcessUserMemberships(ctx, schema, user.ID.String(), user.ID.String(), userData.Membership)
+		if err != nil {
+			return tenant.User{}, err
+		}
+
 	}
 
 	resetURLTemplate := config.AppConfig.Auth.ResetPasswordURL
@@ -653,43 +646,19 @@ func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]
 	return a.userManagementService.GetUsersWithRole(ctx, schema)
 }
 
-func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest) error {
-	memberships, err := a.workspaceManagementService.GetWorkspaceMemberByUser(ctx, schema, req.UserID)
-	if err != nil && err != app_errors.WorkspaceMemberNotFound {
-		return err
-	}
-	for _, member := range memberships {
-		if member.WorkspaceID == req.WorkspaceID {
-			return app_errors.ErrUserAlreadyInWorkspace
-		}
-	}
-
-	err = a.workspaceManagementService.AssignUserToWorkspace(ctx, schema, req)
+func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error {
+	_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, req.UserID, reqBy, req.Membership)
 	if err != nil {
 		return err
 	}
-
-	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, req.WorkspaceID)
-	if workspaceErr != nil {
-		return workspaceErr
-	}
-
-	user, userErr := a.userManagementService.GetUserByID(ctx, schema, req.UserID)
-	if userErr != nil {
-		return userErr
-	}
-
-	emailData := a.emailTemplateService.AddedToWorkspaceBody(workspace.Title, req.AccessLevel)
-	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
-
 	return nil
 }
 
-func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, req dto.RemoveMemberRequest) error {
-	err := a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, req.WorkspaceID, req.UserID)
-	if err != nil {
-		return err
-	}
+func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, req dto.RemoveMemberRequest, reqBy string) error {
+	// err := a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, req.WorkspaceID, req.UserID)
+	// if err != nil {
+	// 	return err
+	// }
 
 	user, userErr := a.userManagementService.GetUserByID(ctx, schema, req.UserID)
 	if userErr != nil {
@@ -708,34 +677,19 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 	return nil
 }
 
-func (a *authManagementService) InviteMemberToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest) error {
-	memberships, err := a.workspaceManagementService.GetWorkspaceMemberByUser(ctx, schema, req.UserID)
-	if err != nil && err != app_errors.WorkspaceMemberNotFound {
-		return err
-	}
-	for _, member := range memberships {
-		if member.WorkspaceID == req.WorkspaceID {
-			return app_errors.ErrUserAlreadyInWorkspace
-		}
-	}
+func (a *authManagementService) InviteMemberToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error {
+	// workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, req.WorkspaceID)
+	// if workspaceErr != nil {
+	// 	return workspaceErr
+	// }
 
-	err = a.workspaceManagementService.InviteMember(ctx, schema, req)
-	if err != nil {
-		return err
-	}
+	// user, userErr := a.userManagementService.GetUserByID(ctx, schema, req.UserID)
+	// if userErr != nil {
+	// 	return userErr
+	// }
 
-	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, req.WorkspaceID)
-	if workspaceErr != nil {
-		return workspaceErr
-	}
-
-	user, userErr := a.userManagementService.GetUserByID(ctx, schema, req.UserID)
-	if userErr != nil {
-		return userErr
-	}
-
-	emailData := a.emailTemplateService.InvitedToWorkspaceBody(workspace.Title, req.AccessLevel)
-	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
+	// emailData := a.emailTemplateService.InvitedToWorkspaceBody(workspace.Title, req.AccessLevel)
+	// a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
 
 	return nil
 }
@@ -828,91 +782,6 @@ func (a *authManagementService) DeleteUserCompletely(ctx context.Context, schema
 	return nil
 }
 
-func (a *authManagementService) AddMultipleMembers(ctx context.Context, schema string, req dto.AddMultipleMembersRequest) (dto.AddMultipleMembersResponse, error) {
-	response := dto.AddMultipleMembersResponse{
-		Successes: []dto.MemberAddSuccess{},
-		Failures:  []dto.MemberAddFailure{},
-	}
-
-	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, req.WorkspaceID)
-	if workspaceErr != nil {
-		return response, workspaceErr
-	}
-
-	for _, userID := range req.UserIDs {
-		memberReq := dto.CreateMemberRequest{
-			WorkspaceID: req.WorkspaceID,
-			UserID:      userID,
-			AccessLevel: req.AccessLevel,
-			BasesIds:    req.BasesIds,
-		}
-
-		memberships, err := a.workspaceManagementService.GetWorkspaceMemberByUser(ctx, schema, userID)
-		if err != nil && err != app_errors.WorkspaceMemberNotFound {
-			response.Failures = append(response.Failures, dto.MemberAddFailure{
-				UserID: userID,
-				Error:  "Failed to check existing membership",
-			})
-			response.FailureCount++
-			continue
-		}
-
-		alreadyMember := false
-		for _, member := range memberships {
-			if member.WorkspaceID == req.WorkspaceID {
-				alreadyMember = true
-				break
-			}
-		}
-
-		if alreadyMember {
-			err = a.workspaceManagementService.UpdateWorkspaceMemberBases(ctx, schema, req.WorkspaceID, userID, req.AccessLevel, req.BasesIds)
-			if err != nil {
-				response.Failures = append(response.Failures, dto.MemberAddFailure{
-					UserID: userID,
-					Error:  fmt.Sprintf("Failed to update base access: %s", err.Error()),
-				})
-				response.FailureCount++
-				continue
-			}
-
-			user, userErr := a.userManagementService.GetUserByID(ctx, schema, userID)
-			if userErr == nil {
-				emailData := a.emailTemplateService.WorkspaceAccessUpdatedBody(workspace.Title, req.AccessLevel)
-				a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
-			}
-
-			response.Successes = append(response.Successes, dto.MemberAddSuccess{
-				UserID: userID,
-			})
-			response.SuccessCount++
-			continue
-		}
-
-		err = a.workspaceManagementService.AssignUserToWorkspace(ctx, schema, memberReq)
-		if err != nil {
-			response.Failures = append(response.Failures, dto.MemberAddFailure{
-				UserID: userID,
-				Error:  err.Error(),
-			})
-			response.FailureCount++
-			continue
-		}
-
-		user, userErr := a.userManagementService.GetUserByID(ctx, schema, userID)
-		if userErr == nil {
-			emailData := a.emailTemplateService.AddedToWorkspaceBody(workspace.Title, req.AccessLevel)
-			a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
-		}
-
-		response.Successes = append(response.Successes, dto.MemberAddSuccess{
-			UserID: userID,
-		})
-		response.SuccessCount++
-	}
-
-	return response, nil
-}
 
 func (a *authManagementService) UpdatePassword(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) error {
 	user, err := a.userManagementService.UpdatePassword(ctx, schema, userID, updateData)

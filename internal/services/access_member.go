@@ -105,6 +105,28 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 	return nil
 }
 
+// RemoveAccessMemberByID deletes an access member record directly by its ID
+// This is more reliable than searching by composite key (user_id, scope_id, scope_type)
+func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schemaName string, memberID string) error {
+	if memberID == "" {
+		fmt.Printf("DEBUG: RemoveAccessMemberByID - memberID is empty\n")
+		return app_errors.ErrRecordNotFound
+	}
+
+	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	fmt.Printf("DEBUG: RemoveAccessMemberByID - Deleting from table: %s with ID: %s\n", tableName, memberID)
+
+	// Pass just the ID string, not a QueryFilter struct
+	deleteErr := s.repo.TableService.DeleteRecord(ctx, tableName, memberID)
+	if deleteErr != nil {
+		fmt.Printf("DEBUG: RemoveAccessMemberByID - DeleteRecord failed with error: %v (type: %T)\n", deleteErr, deleteErr)
+		return deleteErr
+	}
+
+	fmt.Printf("DEBUG: RemoveAccessMemberByID - Record deleted successfully\n")
+	return nil
+}
+
 func (s *accessMemberService) GetUserAccessMembers(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
 	query := dbModels.QueryParams{
@@ -391,6 +413,68 @@ func (s *accessMemberService) BulkRemoveRoleFromUsers(ctx context.Context, schem
 	// If all removals failed, return error
 	if len(removalErrors) == len(userIDs) {
 		return app_errors.BulkRemovalFailed
+	}
+
+	return nil
+}
+
+// UpdateRoleForUser updates the role for a user in a specific scope
+func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string, newRoleID string) error {
+	if userID == "" {
+		return app_errors.ErrRecordNotFound
+	}
+	if scopeType == "" {
+		return app_errors.InvalidScopeType
+	}
+
+	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+
+	// Find existing access member record
+	query := dbModels.QueryParams{
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "user_id",
+				Operator: "eq",
+				Value:    userID,
+			},
+			{
+				Column:   "scope_type",
+				Operator: "eq",
+				Value:    scopeType,
+			},
+		},
+	}
+
+	if scopeID != nil && *scopeID != "" {
+		query.Filters = append(query.Filters, dbModels.QueryFilter{
+			Column:   "scope_id",
+			Operator: "eq",
+			Value:    *scopeID,
+		})
+	}
+
+	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	if err != nil {
+		return app_errors.DatabaseError
+	}
+
+	if len(data) == 0 {
+		return app_errors.AccessMemberNotFound
+	}
+
+	var am tenant.AccessMember
+	if err := helpers.MapToStruct(data[0], &am); err != nil {
+		return app_errors.ErrMapToStruct
+	}
+
+	// Update the role_id for the access member
+	updateData := map[string]interface{}{
+		"role_id": newRoleID,
+	}
+
+	_, err = s.repo.TableService.UpdateRecord(ctx, tableName, am.ID.String(), updateData)
+	if err != nil {
+		return app_errors.DatabaseError
 	}
 
 	return nil

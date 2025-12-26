@@ -56,7 +56,9 @@ func (u *userService) CreateUser(ctx context.Context, schema string, req dto.Reg
 		DateOfBirth:   req.DateOfBirth,
 		Country:       req.Country,
 		Timezone:      req.Timezone,
-		DeletedAt:     nil,
+		Status:        req.Status,
+		AuthProvider:  req.AuthProvider,
+		Roles:         req.Roles,
 	}
 
 	// Set fields conditionally

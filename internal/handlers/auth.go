@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"serenibase/internal/dto"
@@ -192,7 +193,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 func (h *AuthHandler) AddUser(c *gin.Context) {
 	var req dto.AddUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+
+	// Bind form data (firstname, lastname, email)
+	if err := c.ShouldBind(&req); err != nil {
 		if ve, ok := err.(validator.ValidationErrors); ok {
 			response.SendError(c, validators.AddUserRequestError(ve[0]))
 			return
@@ -201,10 +204,32 @@ func (h *AuthHandler) AddUser(c *gin.Context) {
 		return
 	}
 
+	// Handle profile picture file upload
+	if req.ProfilePic != nil {
+		// You now have the file header directly from binding
+		// Can save the file or process it
+		// Example: c.SaveUploadedFile(req.ProfilePic, "./uploads/"+req.ProfilePic.Filename)
+		fmt.Println("File uploaded:", req.ProfilePic.Filename, "Size:", req.ProfilePic.Size)
+	}
+
+	// Parse membership JSON array from form field
+	membershipStr := c.PostForm("membership")
+	if membershipStr != "" && membershipStr != "[]" {
+		var membership []dto.MembershipRequest
+		if err := json.Unmarshal([]byte(membershipStr), &membership); err != nil {
+			response.CheckAndSendError(c, fmt.Errorf("invalid membership format: %v", err))
+			return
+		}
+		req.Membership = membership
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	_, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req)
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	_, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -267,10 +292,11 @@ func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	fmt.Println(req)
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
 
 	// NOTE: You should implement this method on your authManagementService!
-	err := h.authManagementService.AssignUserToWorkspace(c.Request.Context(), schemaName, req)
+	err := h.authManagementService.AssignUserToWorkspace(c.Request.Context(), schemaName, req, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -298,7 +324,10 @@ func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, req)
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, req, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -316,13 +345,13 @@ func (h *AuthHandler) InviteUser(c *gin.Context) {
 		return
 	}
 
-	workspaceID := c.Param("id")
-	req.WorkspaceID = workspaceID
-
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	if err := h.authManagementService.InviteMemberToWorkspace(c.Request.Context(), schemaName, req); err != nil {
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	if err := h.authManagementService.InviteMemberToWorkspace(c.Request.Context(), schemaName, req, reqBy); err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
@@ -358,35 +387,6 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 	}
 
 	response.SendSuccess(c, "Base members retrieved successfully", baseMembers)
-}
-
-// AddMultipleMembers adds multiple users to a workspace at once
-func (h *AuthHandler) AddMultipleMembers(c *gin.Context) {
-	var req dto.AddMultipleMembersRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.AddMultipleMembersRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	// Set workspaceID from URL parameter "id"
-	workspaceID := c.Param("id")
-	req.WorkspaceID = workspaceID
-
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	result, err := h.authManagementService.AddMultipleMembers(c.Request.Context(), schemaName, req)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, "Members processed successfully", result)
 }
 
 func (h *AuthHandler) UpdatePassword(c *gin.Context) {
