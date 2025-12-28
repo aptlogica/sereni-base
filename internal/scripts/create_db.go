@@ -58,6 +58,7 @@ func CreateMasterSchema(dbService *pkg.DatabaseService) {
 	createMasterSchema(dbService)
 
 	// Create all tables
+	createTableUsingSchema(dbService, tenant.Organization{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.User{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.UsageMetric{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.GlobalAuditLog{}.TableSchema(appConstant.MasterDatabase))

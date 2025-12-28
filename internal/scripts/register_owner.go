@@ -99,7 +99,10 @@ func RegisterOwner(
 		baseManagementService,
 		tableManagementService,
 		rbacManagementService,
+	
 	)
+
+	
 
 	userManagementService := services.NewUserManagementService(
 		dbService,
@@ -189,7 +192,50 @@ func RegisterOwner(
 	fmt.Printf("  Email:    %s\n", cfg.OwnerRegistration.Email)
 	fmt.Printf("  Password: <configured password>\n")
 
+	// Create default organization after owner registration
+	fmt.Println("\n=== Creating Default Organization ===")
+	err = CreateDefaultOrganization(dbService, cfg, loginResponse.User.Email)
+	if err != nil {
+		fmt.Printf("⚠ Warning: Failed to create default organization: %v\n", err)
+		// Don't fail the entire flow if organization creation fails
+	}
+
 	fmt.Println()
+
+	return nil
+}
+
+// CreateDefaultOrganization creates a default organization with the owner's email
+func CreateDefaultOrganization(
+	dbService *pkg.DatabaseService,
+	cfg *config.Config,
+	ownerEmail string,
+) error {
+	ctx := context.Background()
+
+	// Initialize organization service
+	organizationService := services.NewOrganizationService(dbService)
+
+	// Create organization request with default values
+	orgRequest := dto.CreateOrganizationRequest{
+		Name:  cfg.OwnerRegistration.FirstName + "'s Organization",
+		Email: ownerEmail,
+	}
+
+	// Create organization in master schema
+	fmt.Printf("Creating organization: %s\n", orgRequest.Name)
+	fmt.Printf("Organization email: %s\n", orgRequest.Email)
+
+	organization, err := organizationService.CreateOrganization(ctx, constant.MasterDatabase, orgRequest)
+	if err != nil {
+		fmt.Printf("⚠ Warning: Failed to create default organization: %v\n", err)
+		return nil // Don't fail owner registration if organization creation fails
+	}
+
+	fmt.Println("\n✓ Organization created successfully!")
+	fmt.Printf("  Organization ID: %s\n", organization.ID.String())
+	fmt.Printf("  Name: %s\n", organization.Name)
+	fmt.Printf("  Email: %s\n", organization.Email)
 
 	return nil
 }

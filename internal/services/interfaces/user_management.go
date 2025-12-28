@@ -5,7 +5,6 @@ import (
 	"mime/multipart"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
-
 )
 
 type UserManagementService interface {
@@ -23,6 +22,7 @@ type UserManagementService interface {
 	GetWorkspaces(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error)
 	GetBulkUsers(ctx context.Context, schema string, ids []string) ([]tenant.User, error)
 	GetUsersWithRole(ctx context.Context, schema string) ([]dto.UserWithRole, error)
+	GetActiveUsersForAssign(ctx context.Context, schema string) ([]dto.UserWithRole, error)
 	DeleteUserCompletely(ctx context.Context, schema string, userID string) error
 	GetUserAccessDetails(ctx context.Context, schema string, userID string, roles string, workspaceID string) (dto.UserAccessDetailsResponse, error)
 }

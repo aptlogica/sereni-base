@@ -4,11 +4,6 @@ import (
 	"serenibase/internal/config"
 	"serenibase/internal/handlers"
 
-	// "serenibase/internal/providers/email"
-	// "serenibase/internal/providers/otp"
-
-	// appConstant "serenibase/internal/constant"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,12 +19,13 @@ type Middlewares struct {
 }
 
 type Handlers struct {
-	Auth      *handlers.AuthHandler
-	Workspace *handlers.WorkspaceHandler
-	Base      *handlers.BaseHandler
-	Asset     *handlers.AssetsHandler
-	Table     *handlers.TableHandler
-	User      *handlers.UserHandler
+	Auth         *handlers.AuthHandler
+	Workspace    *handlers.WorkspaceHandler
+	Base         *handlers.BaseHandler
+	Asset        *handlers.AssetsHandler
+	Table        *handlers.TableHandler
+	User         *handlers.UserHandler
+	Organization *handlers.OrganizationHandler
 }
 
 func Setup(cfg *config.Config,
@@ -40,9 +36,6 @@ func Setup(cfg *config.Config,
 	r := gin.Default()
 
 	// Global middleware
-	// r.Use(middleware.CORS())
-	// Use Gin's built-in CORS middleware as a replacement
-	// import "github.com/gin-contrib/cors" at the top if not already imported
 	r.Use(middlewareGroups.CORS())
 	r.Use(middlewareGroups.RequestLogger())
 	r.Use(middlewareGroups.DatabaseQueryLogger())
@@ -72,196 +65,192 @@ func Setup(cfg *config.Config,
 		})
 	})
 
-	auth := api.Group("/auth")
-	{
-		auth.POST("/login", handlerGroups.Auth.LoginUser)
-		// auth.POST("/register", handlerGroups.Auth.RegisterUser) // Removed
+	// Public Auth Routes
+	setupAuthRoutes(api, handlerGroups)
 
-		auth.POST("/forgot-password", handlerGroups.Auth.ForgotPassword)
-		auth.POST("/reset-password", handlerGroups.Auth.ResetPassword)
-		auth.POST("/validate-token", handlerGroups.Auth.ValidateToken)
-		auth.POST("/verify-token", handlerGroups.Auth.VerifyToken)
-
-		// Logout with middleware if possible (handlerGroups.Auth.Logout)
-		// Assuming AuthMiddleware is available in middlewareGroups
-		// auth.POST("/logout", middlewareGroups.AuthMiddleware(), handlerGroups.Auth.Logout)
-		auth.POST("/logout", handlerGroups.Auth.Logout)
-
-		otp := auth.Group("/otp")
-		{
-			otp.POST("/verify", handlerGroups.Auth.VerifyEmail)
-			otp.POST("/resend", handlerGroups.Auth.ResendOTP)
-		}
-	}
-
+	// Protected Routes
 	private := api.Group("")
 	private.Use(middlewareGroups.AuthMiddleware())
 	{
-		user := private.Group("/user")
-		// TenantSchemaMiddleware removed
-
-		user.GET("profile/:id", handlerGroups.User.GetUserProfileByID)
-		user.PATCH("profile/:id", handlerGroups.User.UpdateUserProfile)
-		user.POST("change-password/:id", handlerGroups.Auth.UpdatePassword)
-		user.POST("profile/:id/avatar", handlerGroups.User.AddAvatar)
-		user.DELETE("profile/:id/avatar", handlerGroups.User.RemoveAvatar)
-		user.GET("workspaces", handlerGroups.User.GetWorkspaces)
-		user.GET("access-details", handlerGroups.User.GetUserAccessDetails)
-		user.POST("assign", handlerGroups.Auth.AssignUserToWorkspace)  // only owner, co-owner and maintainer can do
-		user.PUT("access/update", handlerGroups.Auth.UpdateUserAccess) // update existing user access
-
-		tm := private.Group("") // Group of all api's that require tenant schema
-		// tm.Use(middlewareGroups.TenantSchemaMiddleware())
-		{
-			// -------- WORKSPACE SCOPED --------
-			workspace := tm.Group("/workspace")
-
-			// Admin-only
-			adminWorkspace := workspace.Group("")
-			// adminWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
-			{
-				adminWorkspace.POST("/create", handlerGroups.Workspace.CreateWorkspace)           // admin only
-				adminWorkspace.GET("/", handlerGroups.Workspace.GetAllWorkspaces)                 // admin only
-				adminWorkspace.GET("/:id/tables", handlerGroups.Workspace.GetTablesByWorkspaceId) // admin only
-				adminWorkspace.PUT("/:id", handlerGroups.Workspace.UpdateWorkspace)               // admin only
-				adminWorkspace.DELETE("/:id", handlerGroups.Workspace.DeleteWorkspace)            // admin only
-			}
-
-			// Full access
-			fullAccessWorkspace := workspace.Group("")
-			// fullAccessWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
-			{
-				// fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.InviteUser)                   // fullAccess
-				// fullAccessWorkspace.POST("/:id/invite", handlerGroups.Auth.AddMultipleMembers)      // fullAccess
-				fullAccessWorkspace.POST("/:id/remove", handlerGroups.Auth.RemoveUserFromWorkspace) // fullAccess
-				fullAccessWorkspace.GET("/:id/members", handlerGroups.Auth.GetWorkspaceMembers)     // fullAccess
-			}
-
-			// All access
-			allWorkspace := workspace.Group("")
-			// allWorkspace.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-			{
-				allWorkspace.GET("/:id/bases", handlerGroups.Workspace.GetBasesByWorkspaceId) // all
-				allWorkspace.GET("/:id", handlerGroups.Workspace.GetWorkspaceByID)            // all
-			}
-
-			// -------- BASE SCOPED --------
-			base := tm.Group("/base")
-			// Full access
-			fullAccessBase := base.Group("")
-			// fullAccessBase.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
-			{
-				fullAccessBase.POST("/create", handlerGroups.Base.CreateBase) // fullAccess
-				fullAccessBase.PUT("/:id", handlerGroups.Base.UpdateBase)     // fullAccess
-				fullAccessBase.DELETE("/:id", handlerGroups.Base.DeleteBase)  // fullAccess
-			}
-			// All access
-			allBase := base.Group("")
-			// allBase.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-			{
-				allBase.GET("/:id", handlerGroups.Base.GetBaseByID)              // all
-				allBase.GET("/:id/tables", handlerGroups.Base.GetTablesByBaseId) // all
-				allBase.GET("/:id/members", handlerGroups.Auth.GetBaseMembers)   // all
-			}
-
-			// -------- TABLE SCOPED --------
-			table := tm.Group("/table")
-			// table.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			// table.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-
-			// All access
-			{
-				table.POST("/create", handlerGroups.Table.CreateTable)           // all
-				table.POST("/import", handlerGroups.Table.ImportTable)           // all
-				table.PATCH("/:id", handlerGroups.Table.UpdateTable)             // all
-				table.GET("/:id", handlerGroups.Table.GetTableByID)              // all
-				table.GET("/", handlerGroups.Table.GetAllTables)                 // all
-				table.GET("/:id/columns", handlerGroups.Table.GetColumnsByTable) // all
-				table.GET("/:id/views", handlerGroups.Table.GetViewsByModelID)   // all
-				table.GET("/:id/records", handlerGroups.Table.GetAllRecords)     // all
-				table.DELETE("/:id", handlerGroups.Table.DeleteTable)            // all
-			}
-
-			// -------- COLUMN SCOPED --------
-			column := tm.Group("/column")
-			// column.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			// column.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-
-			// All access
-			{
-				column.POST("/create", handlerGroups.Table.AddColumn)      // all
-				column.GET("/:id", handlerGroups.Table.GetColumnById)      // all
-				column.GET("/", handlerGroups.Table.GetAllColumns)         // all
-				column.PATCH("/:id", handlerGroups.Table.UpdateColumn)     // all
-				column.DELETE("/:id", handlerGroups.Table.DeleteColumn)    // all
-				column.POST("/reorder", handlerGroups.Table.ReorderColumn) // all
-			}
-
-			// -------- ROW SCOPED --------
-			row := tm.Group("/row")
-			// row.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			// row.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-
-			// All access
-			{
-				row.POST("/create", handlerGroups.Table.CreateRow)                    // all
-				row.POST("/remove", handlerGroups.Table.DeleteRow)                    // all
-				row.POST("/data/insert", handlerGroups.Table.InsertRowData)           // all
-				row.POST("/data/relation", handlerGroups.Table.InsertRowDataForLinks) // all
-
-				am := row.Group("")
-				am.Use(middlewareGroups.FileSizeLimitMiddleware())            // all
-				am.POST("/attachment/add", handlerGroups.Table.AddAttachment) // all
-
-				row.POST("/attachment/remove", handlerGroups.Table.RemoveAttachments) // all
-			}
-
-			// -------- VIEW SCOPED --------
-			view := tm.Group("/view")
-			// view.Use(middlewareGroups.ScopeHeaderMiddleware("base"))
-			// view.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-
-			// All access
-			{
-				view.POST("/create", handlerGroups.Table.CreateView) // all
-				view.GET("/:id", handlerGroups.Table.GetViewByID)    // all
-				view.GET("/", handlerGroups.Table.GetAllViews)       // all
-				view.PATCH("/:id", handlerGroups.Table.UpdateView)   // all
-				view.DELETE("/:id", handlerGroups.Table.DeleteView)  // all
-			}
-
-			// -------- ASSET SCOPED --------
-			asset := tm.Group("asset")
-			// asset.Use(middlewareGroups.ScopeHeaderMiddleware("base")).Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.LimitedAccess, appConstant.AccessNames.FullAccess}))
-			{
-				am := asset.Group("")
-				am.Use(middlewareGroups.FileSizeLimitMiddleware())
-				am.POST("/upload", handlerGroups.Asset.Upload)
-				am.POST("/upload-image", handlerGroups.Asset.UploadImage)
-
-				asset.POST("/bulk", handlerGroups.Asset.GetBulkAssets)    // all
-				asset.PATCH("/:id", handlerGroups.Asset.UpdateAssetByID)  // all
-				asset.DELETE("/:id", handlerGroups.Asset.DeleteAssetByID) // all
-			}
-		}
-
-		// only admin can do
-		tenant := private.Group("/tenant")
-		adminTenant := tenant.Group("")
-		// adminTenant.Use(middlewareGroups.TenantSchemaMiddleware())
-		// adminTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{}))
-		{
-			adminTenant.POST("user/create", handlerGroups.Auth.AddUser)            // only admin
-			adminTenant.POST("user/remove", handlerGroups.Auth.RemoveUser)         // only admin
-			adminTenant.POST("user/activate", handlerGroups.Auth.ActivateUser)     // only admin
-			adminTenant.POST("user/deactivate", handlerGroups.Auth.DeactivateUser) // only admin
-		}
-
-		adminAndWorkspaceTenant := tenant.Group("")
-		// adminAndWorkspaceTenant.Use(middlewareGroups.TenantSchemaMiddleware())
-		// adminAndWorkspaceTenant.Use(middlewareGroups.WorkspaceAndBaseAccessValidationMiddleware([]string{appConstant.AccessNames.FullAccess}))
-		adminAndWorkspaceTenant.GET("users", handlerGroups.Auth.GetUsers)
+		setupUserRoutes(private, handlerGroups)
+		setupOrganizationRoutes(private, handlerGroups)
+		setupWorkspaceRoutes(private, handlerGroups)
+		setupBaseRoutes(private, handlerGroups)
+		setupTableRoutes(private, handlerGroups)
+		setupColumnRoutes(private, handlerGroups)
+		setupRowRoutes(private, handlerGroups, middlewareGroups)
+		setupViewRoutes(private, handlerGroups)
+		setupAssetRoutes(private, handlerGroups, middlewareGroups)
 	}
 
 	return r
+}
+
+// setupAuthRoutes configures public authentication endpoints
+func setupAuthRoutes(api *gin.RouterGroup, handlers Handlers) {
+	auth := api.Group("/auth")
+	{
+		auth.POST("/login", handlers.Auth.LoginUser)
+		auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
+		auth.POST("/reset-password", handlers.Auth.ResetPassword)
+		auth.POST("/validate-token", handlers.Auth.ValidateToken)
+		auth.POST("/verify-token", handlers.Auth.VerifyToken)
+		auth.POST("/logout", handlers.Auth.Logout)
+
+		otp := auth.Group("/otp")
+		{
+			otp.POST("/verify", handlers.Auth.VerifyEmail)
+			otp.POST("/resend", handlers.Auth.ResendOTP)
+		}
+	}
+}
+
+// setupUserRoutes configures user management endpoints
+func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
+	user := private.Group("/user")
+	{
+		// User profile endpoints
+		user.GET("/profile/:id", handlers.User.GetUserProfileByID)
+		user.PATCH("/profile/:id", handlers.User.UpdateUserProfile)
+		user.POST("/change-password/:id", handlers.Auth.UpdatePassword)
+		user.POST("/profile/:id/avatar", handlers.User.AddAvatar)
+		user.DELETE("/profile/:id/avatar", handlers.User.RemoveAvatar)
+		user.GET("/workspaces", handlers.User.GetWorkspaces)
+		user.GET("/access-details", handlers.User.GetUserAccessDetails)
+		user.POST("/assign", handlers.Auth.AssignUserToWorkspace)
+		user.PUT("/access/update", handlers.Auth.UpdateUserAccess)
+
+		// Admin user management endpoints
+		user.POST("/create", handlers.Auth.AddUser)
+		user.POST("/remove", handlers.Auth.RemoveUser)
+		user.POST("/activate", handlers.Auth.ActivateUser)
+		user.POST("/deactivate", handlers.Auth.DeactivateUser)
+		user.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
+		user.GET("/list", handlers.Auth.GetUsers)
+		user.GET("/list-for-assign", handlers.Auth.GetActiveUsersForAssign)
+	}
+}
+
+// setupOrganizationRoutes configures organization management endpoints
+func setupOrganizationRoutes(private *gin.RouterGroup, handlers Handlers) {
+	organization := private.Group("/organization")
+	{
+		organization.GET("", handlers.Organization.GetAllOrganizations)
+		organization.PUT("/:id", handlers.Organization.UpdateOrganization)
+	}
+}
+
+// setupWorkspaceRoutes configures workspace management endpoints
+func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers) {
+	workspace := private.Group("/workspace")
+	{
+		// Admin operations
+		workspace.POST("/create", handlers.Workspace.CreateWorkspace)
+		workspace.GET("/", handlers.Workspace.GetAllWorkspaces)
+		workspace.GET("/:id/tables", handlers.Workspace.GetTablesByWorkspaceId)
+		workspace.PUT("/:id", handlers.Workspace.UpdateWorkspace)
+		workspace.DELETE("/:id", handlers.Workspace.DeleteWorkspace)
+
+		// Full access operations
+		workspace.POST("/:id/remove", handlers.Auth.RemoveUserFromWorkspace)
+		workspace.GET("/:id/members", handlers.Auth.GetWorkspaceMembers)
+		workspace.GET("/:id/members-with-roles", handlers.Auth.GetWorkspaceMembersWithRole)
+		workspace.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddMembers)
+
+		// All access operations
+		workspace.GET("/:id/bases", handlers.Workspace.GetBasesByWorkspaceId)
+		workspace.GET("/:id", handlers.Workspace.GetWorkspaceByID)
+	}
+}
+
+// setupBaseRoutes configures base management endpoints
+func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
+	base := private.Group("/base")
+	{
+		// Full access operations
+		base.POST("/create", handlers.Base.CreateBase)
+		base.PUT("/:id", handlers.Base.UpdateBase)
+		base.DELETE("/:id", handlers.Base.DeleteBase)
+
+		// All access operations
+		base.GET("/:id", handlers.Base.GetBaseByID)
+		base.GET("/:id/tables", handlers.Base.GetTablesByBaseId)
+		base.GET("/:id/members", handlers.Auth.GetBaseMembers)
+		base.GET("/:id/members-with-roles", handlers.Auth.GetBaseMembersWithRole)
+		base.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddBaseMembers)
+	}
+}
+
+// setupTableRoutes configures table management endpoints
+func setupTableRoutes(private *gin.RouterGroup, handlers Handlers) {
+	table := private.Group("/table")
+	{
+		table.POST("/create", handlers.Table.CreateTable)
+		table.POST("/import", handlers.Table.ImportTable)
+		table.PATCH("/:id", handlers.Table.UpdateTable)
+		table.GET("/:id", handlers.Table.GetTableByID)
+		table.GET("/", handlers.Table.GetAllTables)
+		table.GET("/:id/columns", handlers.Table.GetColumnsByTable)
+		table.GET("/:id/views", handlers.Table.GetViewsByModelID)
+		table.GET("/:id/records", handlers.Table.GetAllRecords)
+		table.DELETE("/:id", handlers.Table.DeleteTable)
+	}
+}
+
+// setupColumnRoutes configures column management endpoints
+func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers) {
+	column := private.Group("/column")
+	{
+		column.POST("/create", handlers.Table.AddColumn)
+		column.GET("/:id", handlers.Table.GetColumnById)
+		column.GET("/", handlers.Table.GetAllColumns)
+		column.PATCH("/:id", handlers.Table.UpdateColumn)
+		column.DELETE("/:id", handlers.Table.DeleteColumn)
+		column.POST("/reorder", handlers.Table.ReorderColumn)
+	}
+}
+
+// setupRowRoutes configures row management endpoints
+func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
+	row := private.Group("/row")
+	{
+		row.POST("/create", handlers.Table.CreateRow)
+		row.POST("/remove", handlers.Table.DeleteRow)
+		row.POST("/data/insert", handlers.Table.InsertRowData)
+		row.POST("/data/relation", handlers.Table.InsertRowDataForLinks)
+
+		// Attachment endpoints with file size limit
+		am := row.Group("")
+		am.Use(middlewares.FileSizeLimitMiddleware())
+		am.POST("/attachment/add", handlers.Table.AddAttachment)
+
+		row.POST("/attachment/remove", handlers.Table.RemoveAttachments)
+	}
+}
+
+// setupViewRoutes configures view management endpoints
+func setupViewRoutes(private *gin.RouterGroup, handlers Handlers) {
+	view := private.Group("/view")
+	{
+		view.POST("/create", handlers.Table.CreateView)
+		view.GET("/:id", handlers.Table.GetViewByID)
+		view.GET("/", handlers.Table.GetAllViews)
+		view.PATCH("/:id", handlers.Table.UpdateView)
+		view.DELETE("/:id", handlers.Table.DeleteView)
+	}
+}
+
+// setupAssetRoutes configures asset management endpoints
+func setupAssetRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
+	asset := private.Group("/asset")
+	{
+		am := asset.Group("")
+		am.Use(middlewares.FileSizeLimitMiddleware())
+		am.POST("/upload", handlers.Asset.Upload)
+		am.POST("/upload-image", handlers.Asset.UploadImage)
+
+		asset.POST("/bulk", handlers.Asset.GetBulkAssets)
+		asset.PATCH("/:id", handlers.Asset.UpdateAssetByID)
+		asset.DELETE("/:id", handlers.Asset.DeleteAssetByID)
+	}
 }

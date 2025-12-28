@@ -518,13 +518,13 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 		return tenant.User{}, err
 	}
 
-	// Handle profile picture file upload
-	if userData.ProfilePic != nil {
-		_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
-		if err != nil {
-			return tenant.User{}, err
-		}
-	}
+	// // Handle profile picture file upload
+	// if userData.ProfilePic != nil {
+	// 	_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
+	// 	if err != nil {
+	// 		return tenant.User{}, err
+	// 	}
+	// }
 
 	// Send invitation
 	tokenAttrs := map[string]interface{}{
@@ -644,6 +644,10 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
 	return a.userManagementService.GetUsersWithRole(ctx, schema)
+}
+
+func (a *authManagementService) GetActiveUsersForAssign(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
+	return a.userManagementService.GetActiveUsersForAssign(ctx, schema)
 }
 
 func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error {
@@ -782,7 +786,6 @@ func (a *authManagementService) DeleteUserCompletely(ctx context.Context, schema
 	return nil
 }
 
-
 func (a *authManagementService) UpdatePassword(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) error {
 	user, err := a.userManagementService.UpdatePassword(ctx, schema, userID, updateData)
 	if err != nil {
@@ -790,5 +793,163 @@ func (a *authManagementService) UpdatePassword(ctx context.Context, schema strin
 	}
 	// No external sync
 	_ = user
+	return nil
+}
+
+// BulkAddMembers adds multiple members to a workspace with their memberships
+func (a *authManagementService) BulkAddMembers(ctx context.Context, schema string, req dto.BulkAddMembersRequest, userID string) (dto.BulkAddMembersResponse, error) {
+	result := dto.BulkAddMembersResponse{
+		Success: []string{},
+		Failed:  []dto.MemberAddFailure{},
+		Total:   len(req.Members),
+	}
+
+	for _, member := range req.Members {
+		createReq := dto.CreateMemberRequest{
+			UserID:     member.UserID,
+			Membership: member.Memberships,
+		}
+
+		err := a.AssignUserToWorkspace(ctx, schema, createReq, userID)
+		if err != nil {
+			result.Failed = append(result.Failed, dto.MemberAddFailure{
+				UserID: member.UserID,
+				Error:  fmt.Sprintf("failed to assign member: %v", err),
+			})
+		} else {
+			result.Success = append(result.Success, member.UserID)
+		}
+	}
+
+	return result, nil
+}
+
+// BulkAddBaseMembers adds multiple members to bases with their roles
+func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema string, baseID string, req dto.BulkAddBaseMembersRequest, userID string) (dto.BulkAddMembersResponse, error) {
+	result := dto.BulkAddMembersResponse{
+		Success: []string{},
+		Failed:  []dto.MemberAddFailure{},
+		Total:   len(req.Members),
+	}
+
+	for _, member := range req.Members {
+		// Convert BaseMembership array to MembershipRequest
+		membershipReq := make([]dto.MembershipRequest, 0)
+		for _, baseRole := range member.BaseRole {
+			membershipReq = append(membershipReq, dto.MembershipRequest{
+				Bases: []dto.BaseMembership{baseRole},
+			})
+		}
+
+		createReq := dto.CreateMemberRequest{
+			UserID:     member.UserID,
+			Membership: membershipReq,
+		}
+
+		err := a.AssignUserToWorkspace(ctx, schema, createReq, userID)
+		if err != nil {
+			result.Failed = append(result.Failed, dto.MemberAddFailure{
+				UserID: member.UserID,
+				Error:  fmt.Sprintf("failed to assign member to base: %v", err),
+			})
+		} else {
+			result.Success = append(result.Success, member.UserID)
+		}
+	}
+
+	return result, nil
+}
+
+// GetWorkspaceMembersWithRole retrieves workspace members with their roles in UserWithRole format
+// It checks for users who have access to the workspace either through:
+// 1. workspace_id in scope_id (workspace-level access)
+// 2. workspace_id as their membership workspace
+func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context, schema string, workspaceID string) ([]dto.UserWithRole, error) {
+	lg := logger.Get()
+	functionName := "get_workspace_members_with_role"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	args := map[string]interface{}{
+		"p_workspace_id": workspaceID,
+	}
+
+	records, err := a.repo.TableService.GetByFunction(
+		ctx,
+		schemaFunctionName,
+		args,
+	)
+	if err != nil {
+		lg.Error().Err(err).Msg("Failed to get workspace members with roles")
+		return nil, app_errors.DatabaseError
+	}
+
+	var result []dto.UserWithRole
+	for _, record := range records {
+		if rec, ok := record[functionName].(map[string]interface{}); ok {
+			var user dto.UserWithRole
+			if err := helpers.MapToStruct(rec, &user); err == nil {
+				result = append(result, user)
+			} else {
+				lg.Warn().Err(err).Msg("Failed to convert record to UserWithRole")
+			}
+		}
+	}
+
+	lg.Debug().Interface("result", result).Msg("Retrieved workspace members with roles")
+	return result, nil
+}
+
+// GetBaseMembersWithRole retrieves base members with their roles in UserWithRole format
+// It checks for users who have access to the base through:
+// 1. base_id in scope_id (base-level access)
+// 2. workspace members that have access to this base
+func (a *authManagementService) GetBaseMembersWithRole(ctx context.Context, schema string, baseID string) ([]dto.UserWithRole, error) {
+	lg := logger.Get()
+	functionName := "get_base_members_with_role"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	args := map[string]interface{}{
+		"p_base_id": baseID,
+	}
+
+	records, err := a.repo.TableService.GetByFunction(
+		ctx,
+		schemaFunctionName,
+		args,
+	)
+	if err != nil {
+		lg.Error().Err(err).Msg("Failed to get base members with roles")
+		return nil, app_errors.DatabaseError
+	}
+
+	var result []dto.UserWithRole
+	for _, record := range records {
+		if rec, ok := record[functionName].(map[string]interface{}); ok {
+			var user dto.UserWithRole
+			if err := helpers.MapToStruct(rec, &user); err == nil {
+				result = append(result, user)
+			} else {
+				lg.Warn().Err(err).Msg("Failed to convert record to UserWithRole")
+			}
+		}
+	}
+
+	lg.Debug().Interface("result", result).Msg("Retrieved base members with roles")
+	return result, nil
+}
+
+// RemoveAccessMemberByID removes a member from access_members table by access_member_id
+func (a *authManagementService) RemoveAccessMemberByID(ctx context.Context, schema string, accessMemberID string, reqBy string) error {
+	lg := logger.Get()
+
+	// Delete from access_members table using TableService
+	tableName := fmt.Sprintf("\"%s\".access_members", schema)
+	err := a.repo.TableService.DeleteRecord(ctx, tableName, accessMemberID)
+	if err != nil {
+		lg.Error().Err(err).Str("access_member_id", accessMemberID).Msg("Failed to remove access member")
+		return err
+	}
+
+	lg.Info().Str("access_member_id", accessMemberID).Str("removed_by", reqBy).Msg("Successfully removed access member")
 	return nil
 }

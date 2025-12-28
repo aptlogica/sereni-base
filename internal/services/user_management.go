@@ -428,6 +428,34 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 	return result, nil
 }
 
+func (s *userManagementService) GetActiveUsersForAssign(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
+	lg := logger.Get()
+	functionName := "get_active_users_for_assign"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	records, err := s.repo.TableService.GetByFunction(
+		ctx,
+		schemaFunctionName,
+		nil,
+	)
+	if err != nil {
+		return nil, app_errors.DatabaseError
+	}
+	var result []dto.UserWithRole
+	for _, record := range records {
+		if rec, ok := record[functionName].(map[string]interface{}); ok {
+			var user dto.UserWithRole
+			if err := helpers.MapToStruct(rec, &user); err == nil {
+				result = append(result, user)
+			} else {
+				lg.Warn().Err(err).Msg("Failed to convert record to UserWithRole")
+			}
+		}
+	}
+	lg.Debug().Interface("result", result).Msg("Retrieved active users for assignment")
+	return result, nil
+}
+
 func (s *userManagementService) DeleteUserCompletely(ctx context.Context, schema string, userID string) error {
 	return s.userService.DeleteUser(ctx, schema, userID)
 

@@ -204,3 +204,32 @@ type MemberAddFailure struct {
 	UserID string `json:"user_id"`
 	Error  string `json:"error"`
 }
+
+// BulkAddMembersRequest for adding multiple members at once
+type BulkAddMembersRequest struct {
+	Members []BulkMemberRequest `json:"members" binding:"required,min=1"`
+}
+
+// BulkMemberRequest contains user_id and their memberships
+type BulkMemberRequest struct {
+	UserID      string              `json:"user_id" binding:"required"`
+	Memberships []MembershipRequest `json:"memberships" binding:"required,min=1"`
+}
+
+// BulkAddMembersResponse contains results of bulk member addition
+type BulkAddMembersResponse struct {
+	Success []string           `json:"success"`
+	Failed  []MemberAddFailure `json:"failed"`
+	Total   int                `json:"total"`
+}
+
+// BulkAddBaseMembers for adding members to bases
+type BulkAddBaseMembersRequest struct {
+	Members []BulkBaseMemberRequest `json:"members" binding:"required,min=1"`
+}
+
+// BulkBaseMemberRequest for adding user to bases
+type BulkBaseMemberRequest struct {
+	UserID   string           `json:"user_id" binding:"required"`
+	BaseRole []BaseMembership `json:"base_role" binding:"required,min=1"`
+}

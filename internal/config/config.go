@@ -1,6 +1,9 @@
 package config
 
 import (
+	"fmt"
+
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -123,40 +126,159 @@ type OwnerRegistrationConfig struct {
 }
 
 func Load() (*Config, error) {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
-	viper.AddConfigPath("./config")
+	// Load .env file
+	_ = godotenv.Load()
+
+	// Setup Viper to read from environment variables
+	viper.AutomaticEnv()
+
+	// Set environment variable binding prefix
+	viper.SetEnvPrefix("")
+
+	// Bind individual environment variables
+	// Server Config
+	viper.BindEnv("server.port", "SERVER_PORT")
+	viper.BindEnv("server.host", "SERVER_HOST")
+	viper.BindEnv("server.read_timeout", "SERVER_READ_TIMEOUT")
+	viper.BindEnv("server.write_timeout", "SERVER_WRITE_TIMEOUT")
+	viper.BindEnv("server.scheme", "SERVER_SCHEME")
+	viper.BindEnv("server.env", "SERVER_ENV")
+
+	// Database Config
+	viper.BindEnv("database.host", "DATABASE_HOST")
+	viper.BindEnv("database.port", "DATABASE_PORT")
+	viper.BindEnv("database.username", "DATABASE_USERNAME")
+	viper.BindEnv("database.password", "DATABASE_PASSWORD")
+	viper.BindEnv("database.database_name", "DATABASE_NAME")
+	viper.BindEnv("database.ssl_mode", "DATABASE_SSL_MODE")
+	viper.BindEnv("database.max_open_conns", "DATABASE_MAX_OPEN_CONNS")
+	viper.BindEnv("database.max_idle_conns", "DATABASE_MAX_IDLE_CONNS")
+	viper.BindEnv("database.driver", "DATABASE_DRIVER")
+
+	// Auth Config
+	viper.BindEnv("auth.url", "AUTH_URL")
+	viper.BindEnv("auth.reset_password_url", "AUTH_RESET_PASSWORD_URL")
+	viper.BindEnv("auth.jwt.secret", "AUTH_JWT_SECRET")
+	viper.BindEnv("auth.jwt.access_token_expiry", "AUTH_JWT_ACCESS_TOKEN_EXPIRY")
+	viper.BindEnv("auth.jwt.refresh_token_expiry", "AUTH_JWT_REFRESH_TOKEN_EXPIRY")
+	viper.BindEnv("auth.jwt.issuer", "AUTH_JWT_ISSUER")
+
+	// Redis Config
+	viper.BindEnv("redis.enabled", "REDIS_ENABLED")
+	viper.BindEnv("redis.url", "REDIS_URL")
+	viper.BindEnv("redis.password", "REDIS_PASSWORD")
+
+	// Email Config
+	viper.BindEnv("email.url", "EMAIL_URL")
+
+	// Storage Config
+	viper.BindEnv("storage.driver", "STORAGE_DRIVER")
+	viper.BindEnv("storage.dev.path", "STORAGE_DEV_PATH")
+	viper.BindEnv("storage.minio.endpoint", "STORAGE_MINIO_ENDPOINT")
+	viper.BindEnv("storage.minio.access_key", "STORAGE_MINIO_ACCESS_KEY")
+	viper.BindEnv("storage.minio.secret_key", "STORAGE_MINIO_SECRET_KEY")
+	viper.BindEnv("storage.minio.bucket", "STORAGE_MINIO_BUCKET")
+	viper.BindEnv("storage.minio.use_ssl", "STORAGE_MINIO_USE_SSL")
+	viper.BindEnv("storage.minio.region", "STORAGE_MINIO_REGION")
+	viper.BindEnv("storage.aws.access_key", "STORAGE_AWS_ACCESS_KEY")
+	viper.BindEnv("storage.aws.secret_key", "STORAGE_AWS_SECRET_KEY")
+	viper.BindEnv("storage.aws.bucket", "STORAGE_AWS_BUCKET")
+	viper.BindEnv("storage.aws.region", "STORAGE_AWS_REGION")
+	viper.BindEnv("storage.aws.use_ssl", "STORAGE_AWS_USE_SSL")
+
+	// Log Config
+	viper.BindEnv("log.level", "LOG_LEVEL")
+	viper.BindEnv("log.file", "LOG_FILE")
+	viper.BindEnv("log.max_size", "LOG_MAX_SIZE")
+	viper.BindEnv("log.max_backups", "LOG_MAX_BACKUPS")
+	viper.BindEnv("log.max_age", "LOG_MAX_AGE")
+	viper.BindEnv("log.compress", "LOG_COMPRESS")
+
+	// Asset Config
+	viper.BindEnv("asset.max_size", "ASSET_MAX_SIZE")
+
+	// Antivirus Config
+	viper.BindEnv("antivirus.driver", "ANTIVIRUS_DRIVER")
+	viper.BindEnv("antivirus.clamav.address", "ANTIVIRUS_CLAMAV_ADDRESS")
+	viper.BindEnv("antivirus.clamav.timeout_seconds", "ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS")
+
+	// Temporary User Password Config
+	viper.BindEnv("temporary_added_user_password.value", "TEMPORARY_USER_PASSWORD")
+
+	// Owner Registration Config
+	viper.BindEnv("owner_registration.first_name", "OWNER_FIRST_NAME")
+	viper.BindEnv("owner_registration.last_name", "OWNER_LAST_NAME")
+	viper.BindEnv("owner_registration.email", "OWNER_EMAIL")
+	viper.BindEnv("owner_registration.password", "OWNER_PASSWORD")
 
 	// Set defaults
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.read_timeout", 30)
 	viper.SetDefault("server.write_timeout", 30)
+	viper.SetDefault("server.scheme", "http")
+	viper.SetDefault("server.env", "dev")
+
+	viper.SetDefault("database.host", "localhost")
+	viper.SetDefault("database.port", "5432")
+	viper.SetDefault("database.username", "postgres")
+	viper.SetDefault("database.password", "postgres")
+	viper.SetDefault("database.database_name", "serenibase")
 	viper.SetDefault("database.ssl_mode", "disable")
 	viper.SetDefault("database.max_open_conns", 25)
 	viper.SetDefault("database.max_idle_conns", 5)
+	viper.SetDefault("database.driver", "postgres")
 
-	viper.SetDefault("auth.jwt.access_token_expiry", 3600)   // 1 hour
-	viper.SetDefault("auth.jwt.refresh_token_expiry", 86400) // 24 hours
+	viper.SetDefault("auth.url", "http://localhost:8081")
+	viper.SetDefault("auth.reset_password_url", "http://localhost:5050/reset-password?token=%s")
+	viper.SetDefault("auth.jwt.access_token_expiry", 3600)
+	viper.SetDefault("auth.jwt.refresh_token_expiry", 86400)
 	viper.SetDefault("auth.jwt.secret", "default-secret-change-me")
 	viper.SetDefault("auth.jwt.issuer", "serenibase")
 
-	viper.SetDefault("redis.enabled", false)
+	viper.SetDefault("redis.enabled", true)
 	viper.SetDefault("redis.url", "redis://localhost:6379")
-	viper.SetDefault("auth.mode", "dev")
-	viper.SetDefault("server.scheme", "https")
-	// viper.AutomaticEnv()
+	viper.SetDefault("redis.password", "")
 
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, err
-		}
-	}
+	viper.SetDefault("email.url", "http://localhost:8082/api/v1/email")
+
+	viper.SetDefault("storage.driver", "dev")
+	viper.SetDefault("storage.dev.path", "./assets")
+	viper.SetDefault("storage.minio.endpoint", "192.170.1.29:9000")
+	viper.SetDefault("storage.minio.access_key", "minioadmin")
+	viper.SetDefault("storage.minio.secret_key", "minioadmin")
+	viper.SetDefault("storage.minio.bucket", "serenibase")
+	viper.SetDefault("storage.minio.use_ssl", false)
+	viper.SetDefault("storage.minio.region", "us-east-1")
+	viper.SetDefault("storage.aws.access_key", "YOUR_AWS_ACCESS_KEY")
+	viper.SetDefault("storage.aws.secret_key", "YOUR_AWS_SECRET_KEY")
+	viper.SetDefault("storage.aws.bucket", "your-s3-bucket-name")
+	viper.SetDefault("storage.aws.region", "us-east-1")
+	viper.SetDefault("storage.aws.use_ssl", true)
+
+	viper.SetDefault("log.level", "info")
+	viper.SetDefault("log.file", "app.log")
+	viper.SetDefault("log.max_size", 50)
+	viper.SetDefault("log.max_backups", 10)
+	viper.SetDefault("log.max_age", 30)
+	viper.SetDefault("log.compress", true)
+
+	viper.SetDefault("asset.max_size", 5242880)
+
+	viper.SetDefault("antivirus.driver", "clamav")
+	viper.SetDefault("antivirus.clamav.address", "192.170.1.77:3310")
+	viper.SetDefault("antivirus.clamav.timeout_seconds", 30)
+
+	viper.SetDefault("temporary_added_user_password.value", "FC4i;<S8q?~0")
+
+	viper.SetDefault("owner_registration.first_name", "Admin")
+	viper.SetDefault("owner_registration.last_name", "User")
+	viper.SetDefault("owner_registration.email", "admin@example.com")
+	viper.SetDefault("owner_registration.password", "Admin@123")
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	return &config, nil

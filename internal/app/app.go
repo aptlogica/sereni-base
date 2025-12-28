@@ -15,6 +15,7 @@ import (
 	"serenibase/internal/router"
 	"serenibase/internal/scripts"
 	"serenibase/internal/services"
+	"serenibase/internal/services/interfaces"
 
 	"serenibase/internal/providers/antivirus"
 	"serenibase/internal/providers/auth"
@@ -139,21 +140,15 @@ func New(cfg *config.Config) (*App, error) {
 		modelService,
 	)
 
-	workspaceManagementService := services.NewWorkspaceManagementService(
-		dbService,
-		workspaceService,
-		workspaceMemberService,
-		baseManagementService,
-		tableManagementService,
-		rbacManagementService,
-	)
+	// Create workspaceManagementService without authManagementService first (will be set later)
+	var workspaceManagementService interfaces.WorkspaceManagementService
 
 	userManagementService := services.NewUserManagementService(
 		dbService,
 		userService,
 		assetManagementService,
 		userResetTokenService,
-		workspaceManagementService,
+		nil, // Placeholder for workspaceManagementService (will be set after)
 		rbacManagementService,
 		authProvider,
 	)
@@ -162,7 +157,7 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.TemporaryAddedUserPassword,
 		dbService,
 		userManagementService,
-		workspaceManagementService,
+		nil, // Placeholder for workspaceManagementService (will be set after)
 		userResetTokenService,
 		rbacManagementService,
 		otpProvider,
@@ -171,21 +166,35 @@ func New(cfg *config.Config) (*App, error) {
 		authProvider,
 	)
 
+	// Now create workspaceManagementService with authService
+	workspaceManagementService = services.NewWorkspaceManagementService(
+		dbService,
+		workspaceService,
+		workspaceMemberService,
+		baseManagementService,
+		tableManagementService,
+		rbacManagementService,
+	)
+
+	organizationService := services.NewOrganizationService(dbService)
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
-	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService)
+	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService, authService)
 	baseHandler := handlers.NewBaseHandler(baseManagementService)
 	assetHandler := handlers.NewAssetsHandler(assetManagementService)
 	tableHandler := handlers.NewTableHandler(tableManagementService, importService)
 	userHandler := handlers.NewUserHandler(userManagementService)
+	organizationHandler := handlers.NewOrganizationHandler(organizationService)
 
 	handlerGroups := router.Handlers{
-		Auth:      authHandler,
-		Workspace: workspaceHandler,
-		Base:      baseHandler,
-		Asset:     assetHandler,
-		Table:     tableHandler,
-		User:      userHandler,
+		Auth:         authHandler,
+		Workspace:    workspaceHandler,
+		Base:         baseHandler,
+		Asset:        assetHandler,
+		Table:        tableHandler,
+		User:         userHandler,
+		Organization: organizationHandler,
 	}
 
 	middlewareGroups := router.Middlewares{

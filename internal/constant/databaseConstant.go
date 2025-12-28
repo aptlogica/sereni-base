@@ -256,15 +256,155 @@ var DefinedFunctions = []Function{
 								'name', r.name,
 								'scope_level', r.scope_level,
 								'priority', r.priority,
-								'description', r.description
+								'description', r.description,
+								'role_id', am.role_id::text,
+								'access_member_id', am.id
 							)
 						) AS roles
 					FROM public.access_members am
 					LEFT JOIN public.access_roles r ON r.id = am.role_id::uuid
 					GROUP BY am.user_id
-				) r ON r.user_id = u.id;
-			END;
-			$$;
-		`,
+			) r ON r.user_id = u.id;
+		END;
+		$$;
+	`,
+	},
+	{
+		FunctionName:   "get_active_users_for_assign",
+		FunctionParams: "",
+		FunctionSQL: `
+			RETURNS SETOF JSON
+			LANGUAGE plpgsql STABLE AS $$
+			BEGIN
+				RETURN QUERY
+				SELECT 
+					(to_jsonb(u) || jsonb_build_object('roles', COALESCE(r.roles, '[]'::json)))::json AS user
+				FROM public.users u
+				LEFT JOIN (
+					SELECT 
+						am.user_id::uuid AS user_id,
+						JSON_AGG(
+							JSON_BUILD_OBJECT(
+								'id', ar.id,
+								'name', ar.name,
+								'scope_level', ar.scope_level,
+								'priority', ar.priority,
+								'description', ar.description,
+								'role_id', am.role_id::text,
+								'access_member_id', am.id
+							)
+						) AS roles
+					FROM public.access_members am
+					LEFT JOIN public.access_roles ar ON am.role_id::uuid = ar.id
+					GROUP BY am.user_id
+			) r ON r.user_id = u.id
+			WHERE u.status = 'active'
+			AND u.id NOT IN (
+				SELECT DISTINCT am.user_id::uuid
+				FROM public.access_members am
+				LEFT JOIN public.access_roles ar ON am.role_id::uuid = ar.id
+				WHERE ar.name IN ('owner', 'co-owner')
+			)
+			ORDER BY u.display_name ASC;
+		END;
+		$$;
+	`,
+	},
+	{
+		FunctionName:   "get_workspace_members_with_role",
+		FunctionParams: "p_workspace_id text",
+		FunctionSQL: `
+		RETURNS SETOF JSON
+		LANGUAGE plpgsql STABLE AS $$
+		DECLARE
+			v_workspace_id uuid;
+		BEGIN
+			v_workspace_id := p_workspace_id::uuid;
+			RETURN QUERY
+			SELECT 
+				(to_jsonb(u) || jsonb_build_object('roles', COALESCE(r.roles, '[]'::json)))::json AS user
+			FROM public.users u
+			INNER JOIN (
+				-- Get users from access_members with workspace scope
+				SELECT DISTINCT am.user_id::uuid
+				FROM public.access_members am
+				WHERE am.scope_type = 'workspace' AND am.scope_id::uuid = v_workspace_id
+				UNION
+				-- OR get users from workspace_members table
+				SELECT DISTINCT wm.user_id::uuid
+				FROM public.workspace_members wm
+				WHERE wm.workspace_id::uuid = v_workspace_id
+			) members ON members.user_id = u.id
+			LEFT JOIN (
+				SELECT 
+					am.user_id::uuid AS user_id,
+					JSON_AGG(
+						JSON_BUILD_OBJECT(
+							'id', r.id,
+							'name', r.name,
+							'scope_level', r.scope_level,
+							'priority', r.priority,
+							'description', r.description,
+							'role_id', am.role_id::text,
+							'access_member_id', am.id,
+							'scope_id', am.scope_id,
+							'scope_type', am.scope_type
+						)
+					) AS roles
+				FROM public.access_members am
+				LEFT JOIN public.access_roles r ON r.id = am.role_id::uuid
+				WHERE am.scope_id::uuid = v_workspace_id AND am.scope_type = 'workspace'
+				GROUP BY am.user_id
+			) r ON r.user_id = u.id
+			WHERE u.status = 'active';
+		END;
+		$$;
+	`,
+	},
+	{
+		FunctionName:   "get_base_members_with_role",
+		FunctionParams: "p_base_id text",
+		FunctionSQL: `
+		RETURNS SETOF JSON
+		LANGUAGE plpgsql STABLE AS $$
+		DECLARE
+			v_base_id uuid;
+		BEGIN
+			v_base_id := p_base_id::uuid;
+			RETURN QUERY
+			SELECT 
+				(to_jsonb(u) || jsonb_build_object('roles', COALESCE(r.roles, '[]'::json)))::json AS user
+			FROM public.users u
+			INNER JOIN (
+				-- Get users from access_members with base scope
+				SELECT DISTINCT am.user_id::uuid
+				FROM public.access_members am
+				WHERE am.scope_type = 'base' AND am.scope_id::uuid = v_base_id
+			) members ON members.user_id = u.id
+			LEFT JOIN (
+				SELECT 
+					am.user_id::uuid AS user_id,
+					JSON_AGG(
+						JSON_BUILD_OBJECT(
+							'id', r.id,
+							'name', r.name,
+							'scope_level', r.scope_level,
+							'priority', r.priority,
+							'description', r.description,
+							'role_id', am.role_id::text,
+							'access_member_id', am.id,
+							'scope_id', am.scope_id,
+							'scope_type', am.scope_type
+						)
+					) AS roles
+				FROM public.access_members am
+				LEFT JOIN public.access_roles r ON r.id = am.role_id::uuid
+				WHERE am.scope_id::uuid = v_base_id AND am.scope_type = 'base'
+				GROUP BY am.user_id
+			) r ON r.user_id = u.id
+			WHERE u.status = 'active';
+		END;
+		$$;
+	`,
 	},
 }

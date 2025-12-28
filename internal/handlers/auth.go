@@ -276,6 +276,19 @@ func (h *AuthHandler) GetUsers(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UsersFetched, users)
 }
 
+func (h *AuthHandler) GetActiveUsersForAssign(c *gin.Context) {
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	users, err := h.authManagementService.GetActiveUsersForAssign(c.Request.Context(), schemaName)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UsersFetched, users)
+}
+
 // add into user handler
 func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 	var req dto.CreateMemberRequest
@@ -418,6 +431,36 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 	response.SendSuccess(c, "Base members retrieved successfully", baseMembers)
 }
 
+// GetWorkspaceMembersWithRole retrieves workspace members with their roles
+func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
+	workspaceID := c.Param("id")
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	members, err := h.authManagementService.GetWorkspaceMembersWithRole(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Workspace members with roles retrieved successfully", members)
+}
+
+// GetBaseMembersWithRole retrieves base members with their roles
+func (h *AuthHandler) GetBaseMembersWithRole(c *gin.Context) {
+	baseID := c.Param("id")
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	members, err := h.authManagementService.GetBaseMembersWithRole(c.Request.Context(), schemaName, baseID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Base members with roles retrieved successfully", members)
+}
+
 func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -491,4 +534,28 @@ func (h *AuthHandler) DeactivateUser(c *gin.Context) {
 	}
 
 	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+}
+
+func (h *AuthHandler) RemoveAccessMemberByID(c *gin.Context) {
+	// Get access_member_id from URL parameter
+	accessMemberID := c.Param("id")
+
+	if accessMemberID == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	err := h.authManagementService.RemoveAccessMemberByID(c.Request.Context(), schemaName, accessMemberID, reqBy)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromWorkspace, nil)
 }
