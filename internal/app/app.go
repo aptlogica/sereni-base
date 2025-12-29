@@ -136,6 +136,7 @@ func New(cfg *config.Config) (*App, error) {
 	baseManagementService := services.NewBaseManagementService(
 		dbService,
 		baseService,
+		tableManagementService,
 		modelService,
 	)
 
