@@ -15,7 +15,6 @@ import (
 	"serenibase/internal/router"
 	"serenibase/internal/scripts"
 	"serenibase/internal/services"
-	"serenibase/internal/services/interfaces"
 
 	"serenibase/internal/providers/antivirus"
 	"serenibase/internal/providers/auth"
@@ -140,15 +139,22 @@ func New(cfg *config.Config) (*App, error) {
 		modelService,
 	)
 
-	// Create workspaceManagementService without authManagementService first (will be set later)
-	var workspaceManagementService interfaces.WorkspaceManagementService
+	// Create workspaceManagementService first (no circular dependency needed here)
+	workspaceManagementService := services.NewWorkspaceManagementService(
+		dbService,
+		workspaceService,
+		workspaceMemberService,
+		baseManagementService,
+		tableManagementService,
+		rbacManagementService,
+	)
 
 	userManagementService := services.NewUserManagementService(
 		dbService,
 		userService,
 		assetManagementService,
 		userResetTokenService,
-		nil, // Placeholder for workspaceManagementService (will be set after)
+		workspaceManagementService, // Now pass the actual service
 		rbacManagementService,
 		authProvider,
 	)
@@ -157,23 +163,13 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.TemporaryAddedUserPassword,
 		dbService,
 		userManagementService,
-		nil, // Placeholder for workspaceManagementService (will be set after)
+		workspaceManagementService, // Now pass the actual service
 		userResetTokenService,
 		rbacManagementService,
 		otpProvider,
 		emailTemplateService,
 		emailProvider,
 		authProvider,
-	)
-
-	// Now create workspaceManagementService with authService
-	workspaceManagementService = services.NewWorkspaceManagementService(
-		dbService,
-		workspaceService,
-		workspaceMemberService,
-		baseManagementService,
-		tableManagementService,
-		rbacManagementService,
 	)
 
 	organizationService := services.NewOrganizationService(dbService)
