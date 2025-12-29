@@ -15,20 +15,23 @@ import (
 )
 
 type baseManagementService struct {
-	repo         *pkg.DatabaseService
-	baseService  interfaces.BaseService
-	modelService interfaces.ModelService
+	repo                   *pkg.DatabaseService
+	baseService            interfaces.BaseService
+	tableManagementService interfaces.TableManagementService
+	modelService           interfaces.ModelService
 }
 
 func NewBaseManagementService(
 	repo *pkg.DatabaseService,
 	baseService interfaces.BaseService,
+	tableManagementService interfaces.TableManagementService,
 	modelService interfaces.ModelService,
 ) interfaces.BaseManagementService {
 	return &baseManagementService{
-		repo:         repo,
-		baseService:  baseService,
-		modelService: modelService,
+		repo:                   repo,
+		baseService:            baseService,
+		tableManagementService: tableManagementService,
+		modelService:           modelService,
 	}
 }
 
@@ -46,12 +49,35 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 		Title:       req.Title,
 		Description: req.Description,
 		// ... copy other fields ...
-		CreatedBy:   req.CreatedBy,
-		UpdatedBy:   req.CreatedBy,
+		CreatedBy: req.CreatedBy,
+		UpdatedBy: req.CreatedBy,
 	}
 	insertedBase, err := s.baseService.BaseInsertion(ctx, insertionReq, schemaName)
 	if err != nil {
 		return tenant.Base{}, err
+	}
+	
+	var base dto.BaseResponse
+	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
+		return tenant.Base{}, app_errors.ErrStructToStruct
+	}
+
+	tableInsertionData := dto.CreateTableRequest{
+		BaseID:      insertedBase.ID.String(),
+		WorkspaceID: id.String(),
+		Title:       "Default Table",
+		Description: "",
+		OrderIndex:  0,
+		CreatedBy:   req.CreatedBy,
+	}
+
+	_, err = s.tableManagementService.CreateTableWithDefaults(ctx, tableInsertionData, schemaName)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
+		return tenant.Base{}, app_errors.ErrStructToStruct
 	}
 
 	return insertedBase, nil

@@ -63,40 +63,9 @@ func (s workspaceManagementService) Create(ctx context.Context, req dto.CreateWo
 		CreatedBy:   req.CreatedBy,
 	}
 
-	insertedBase, err := s.baseManagementService.CreateBase(ctx, baseInsertionData, schemaName, userId)
+	_, err = s.baseManagementService.CreateBase(ctx, baseInsertionData, schemaName, userId)
 	if err != nil {
 		return dto.WorkspaceResponse{}, err
-	}
-
-	var base dto.BaseResponse
-	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
-		return dto.WorkspaceResponse{}, app_errors.ErrStructToStruct
-	}
-
-	tableInsertionData := dto.CreateTableRequest{
-		BaseID:      insertedBase.ID.String(),
-		WorkspaceID: insertedWorkspace.ID.String(),
-		Title:       "Default Table",
-		Description: "",
-		OrderIndex:  0,
-		CreatedBy:   req.CreatedBy,
-	}
-
-	insertedTable, err := s.tableManagementService.CreateTableWithDefaults(ctx, tableInsertionData, schemaName)
-	if err != nil {
-		return dto.WorkspaceResponse{}, err
-	}
-
-	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
-		return dto.WorkspaceResponse{}, app_errors.ErrStructToStruct
-	}
-
-	base.Tables = []dto.TableResponse{
-		insertedTable,
-	}
-
-	workspace.Bases = []dto.BaseResponse{
-		base,
 	}
 
 	return workspace, nil

@@ -78,6 +78,7 @@ func RegisterOwner(
 	baseManagementService := services.NewBaseManagementService(
 		dbService,
 		baseService,
+		tableManagementService,
 		modelService,
 	)
 
