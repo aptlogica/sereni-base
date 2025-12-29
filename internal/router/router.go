@@ -118,7 +118,7 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
 		user.DELETE("/profile/:id/avatar", handlers.User.RemoveAvatar)
 		user.GET("/workspaces", handlers.User.GetWorkspaces)
 		user.GET("/access-details", handlers.User.GetUserAccessDetails)
-		user.GET("/roles-and-access", handlers.User.GetUserRolesAndAccess)
+		user.GET("/roles-and-access/:id", handlers.User.GetUserRolesAndAccess)
 		user.POST("/assign", handlers.Auth.AssignUserToWorkspace)
 		user.PUT("/access/update", handlers.Auth.UpdateUserAccess)
 
@@ -164,7 +164,7 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers) {
 	}
 }
 
-// setupBaseRoutes configures base management endpoints
+// setupBaseRoutes configures base management endpointsmembers-with-roles
 func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 	base := private.Group("/base")
 	{

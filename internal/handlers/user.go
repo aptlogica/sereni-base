@@ -172,9 +172,7 @@ func (h *UserHandler) GetUserRolesAndAccess(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	userIDVal, _ := c.Get("user_id")
-	userID, _ := userIDVal.(string)
-
+	userID := c.Param("id")
 	if userID == "" {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
