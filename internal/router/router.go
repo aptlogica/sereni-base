@@ -95,6 +95,7 @@ func setupAuthRoutes(api *gin.RouterGroup, handlers Handlers) {
 		auth.POST("/reset-password", handlers.Auth.ResetPassword)
 		auth.POST("/validate-token", handlers.Auth.ValidateToken)
 		auth.POST("/verify-token", handlers.Auth.VerifyToken)
+		auth.POST("/refresh", handlers.Auth.RefreshToken)
 		auth.POST("/logout", handlers.Auth.Logout)
 
 		otp := auth.Group("/otp")
@@ -117,6 +118,7 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
 		user.DELETE("/profile/:id/avatar", handlers.User.RemoveAvatar)
 		user.GET("/workspaces", handlers.User.GetWorkspaces)
 		user.GET("/access-details", handlers.User.GetUserAccessDetails)
+		user.GET("/roles-and-access", handlers.User.GetUserRolesAndAccess)
 		user.POST("/assign", handlers.Auth.AssignUserToWorkspace)
 		user.PUT("/access/update", handlers.Auth.UpdateUserAccess)
 
@@ -125,7 +127,6 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
 		user.POST("/remove", handlers.Auth.RemoveUser)
 		user.POST("/activate", handlers.Auth.ActivateUser)
 		user.POST("/deactivate", handlers.Auth.DeactivateUser)
-		user.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
 		user.GET("/list", handlers.Auth.GetUsers)
 		user.GET("/list-for-assign", handlers.Auth.GetActiveUsersForAssign)
 	}
@@ -156,7 +157,7 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers) {
 		workspace.GET("/:id/members", handlers.Auth.GetWorkspaceMembers)
 		workspace.GET("/:id/members-with-roles", handlers.Auth.GetWorkspaceMembersWithRole)
 		workspace.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddMembers)
-
+		workspace.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
 		// All access operations
 		workspace.GET("/:id/bases", handlers.Workspace.GetBasesByWorkspaceId)
 		workspace.GET("/:id", handlers.Workspace.GetWorkspaceByID)
@@ -178,6 +179,7 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 		base.GET("/:id/members", handlers.Auth.GetBaseMembers)
 		base.GET("/:id/members-with-roles", handlers.Auth.GetBaseMembersWithRole)
 		base.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddBaseMembers)
+		base.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
 	}
 }
 

@@ -140,7 +140,7 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	// Check if user has Admin role
 	rolesVal, _ := c.Get("roles")
 	roles, _ := rolesVal.(string)
-	
+
 	if roles != "Admin" {
 		response.SendError(c, responseConst.Error.UnauthorizedAccess)
 		return
@@ -156,7 +156,7 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	// Get optional workspace_id from query parameter
 	workspaceId := c.Query("workspace_id")
 
-	fmt.Println("role-->",rolesVal)
+	fmt.Println("role-->", rolesVal)
 
 	accessDetails, err := h.userManagementService.GetUserAccessDetails(c.Request.Context(), schemaName, userId, roles, workspaceId)
 	if err != nil {
@@ -167,4 +167,24 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UserAccessDetailsFetched, accessDetails)
 }
 
+// GetUserRolesAndAccess retrieves user's roles and access information organized by workspace and base
+func (h *UserHandler) GetUserRolesAndAccess(c *gin.Context) {
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
 
+	userIDVal, _ := c.Get("user_id")
+	userID, _ := userIDVal.(string)
+
+	if userID == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	rolesAndAccess, err := h.userManagementService.GetUserRolesAndAccess(c.Request.Context(), schemaName, userID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserFetched, rolesAndAccess)
+}

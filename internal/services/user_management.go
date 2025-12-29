@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"godbgrest/pkg"
+	dbModels "godbgrest/pkg/models"
 	"mime/multipart"
 	"path/filepath"
 	"serenibase/internal/dto"
@@ -547,4 +548,211 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 	}
 
 	return response, nil
+}
+
+// GetUserRolesAndAccess retrieves user's roles and access information organized by workspace and base
+// Returns data in the format:
+// [
+//
+//	{
+//	  "workspace_name": "My Workspace",
+//	  "access": "maintainer",
+//	  "bases": []
+//	},
+//	{
+//	  "workspace_name": "Another Workspace",
+//	  "access": "",
+//	  "bases": [
+//	    {
+//	      "base_name": "My Base",
+//	      "access": "base-member"
+//	    }
+//	  ]
+//	}
+//
+// ]
+func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schema string, userID string) ([]dto.UserRolesAccessResponse, error) {
+	lg := logger.Get()
+
+	// Get all access members for this user
+	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
+	if err != nil {
+		lg.Error().Err(err).Str("userID", userID).Msg("Failed to get user access members")
+		return []dto.UserRolesAccessResponse{}, nil
+	}
+
+	if len(accessMembers) == 0 {
+		return []dto.UserRolesAccessResponse{}, nil
+	}
+
+	// Map to store workspace and base information
+	// Key: workspace_id, Value: WorkspaceAccess info
+	workspaceAccessMap := make(map[string]*dto.UserRolesAccessResponse)
+
+	for _, member := range accessMembers {
+		switch member.ScopeType {
+		case "workspace":
+			// Workspace-level access
+			if member.ScopeID != nil && *member.ScopeID != "" {
+				workspaceID := *member.ScopeID
+
+				// Get workspace details
+				workspace, err := s.getWorkspaceByID(ctx, schema, workspaceID)
+				if err != nil {
+					lg.Warn().Err(err).Str("workspaceID", workspaceID).Msg("Failed to get workspace")
+					continue
+				}
+
+				// Get role name
+				roleName := s.getRoleNameByID(ctx, schema, member.RoleID)
+
+				// Initialize or update the workspace entry
+				if _, exists := workspaceAccessMap[workspaceID]; !exists {
+					workspaceAccessMap[workspaceID] = &dto.UserRolesAccessResponse{
+						WorkspaceName: workspace.Title,
+						Access:        roleName,
+						Bases:         []dto.BaseRoleAccess{},
+					}
+				} else {
+					// Update access if this role has higher priority
+					workspaceAccessMap[workspaceID].Access = roleName
+				}
+			}
+
+		case "base":
+			// Base-level access
+			if member.ScopeID != nil && *member.ScopeID != "" && member.WorkspaceID != nil && *member.WorkspaceID != "" {
+				baseID := *member.ScopeID
+				workspaceID := *member.WorkspaceID
+
+				// Get base details
+				base, err := s.getBaseByID(ctx, schema, baseID)
+				if err != nil {
+					lg.Warn().Err(err).Str("baseID", baseID).Msg("Failed to get base")
+					continue
+				}
+
+				// Get role name
+				roleName := s.getRoleNameByID(ctx, schema, member.RoleID)
+
+				// Get or create workspace entry
+				if _, exists := workspaceAccessMap[workspaceID]; !exists {
+					// Get workspace details
+					workspace, err := s.getWorkspaceByID(ctx, schema, workspaceID)
+					if err != nil {
+						lg.Warn().Err(err).Str("workspaceID", workspaceID).Msg("Failed to get workspace")
+						continue
+					}
+
+					workspaceAccessMap[workspaceID] = &dto.UserRolesAccessResponse{
+						WorkspaceName: workspace.Title,
+						Access:        "",
+						Bases:         []dto.BaseRoleAccess{},
+					}
+				}
+
+				// Add base to the workspace's bases list
+				workspaceAccessMap[workspaceID].Bases = append(
+					workspaceAccessMap[workspaceID].Bases,
+					dto.BaseRoleAccess{
+						BaseName: base.Title,
+						Access:   roleName,
+					},
+				)
+			}
+		}
+	}
+
+	// Convert map to slice
+	response := make([]dto.UserRolesAccessResponse, 0, len(workspaceAccessMap))
+	for _, wsAccess := range workspaceAccessMap {
+		response = append(response, *wsAccess)
+	}
+
+	return response, nil
+}
+
+// getWorkspaceByID is a helper method to fetch workspace by ID
+func (s *userManagementService) getWorkspaceByID(ctx context.Context, schema string, workspaceID string) (tenant.Workspace, error) {
+	tableName := tenant.Workspace{}.TableName(schema)
+	limit := 1
+	query := dbModels.QueryParams{
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "id",
+				Operator: "eq",
+				Value:    workspaceID,
+			},
+		},
+		Limit: &limit,
+	}
+
+	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	if err != nil {
+		return tenant.Workspace{}, err
+	}
+
+	if len(data) == 0 {
+		return tenant.Workspace{}, app_errors.ErrRecordNotFound
+	}
+
+	var workspace tenant.Workspace
+	if err := helpers.MapToStruct(data[0], &workspace); err != nil {
+		return tenant.Workspace{}, err
+	}
+
+	return workspace, nil
+}
+
+// getBaseByID is a helper method to fetch base by ID
+func (s *userManagementService) getBaseByID(ctx context.Context, schema string, baseID string) (tenant.Base, error) {
+	tableName := tenant.Base{}.TableName(schema)
+	limit := 1
+	query := dbModels.QueryParams{
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "id",
+				Operator: "eq",
+				Value:    baseID,
+			},
+		},
+		Limit: &limit,
+	}
+
+	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	if len(data) == 0 {
+		return tenant.Base{}, app_errors.ErrRecordNotFound
+	}
+
+	var base tenant.Base
+	if err := helpers.MapToStruct(data[0], &base); err != nil {
+		return tenant.Base{}, err
+	}
+
+	return base, nil
+}
+
+// getRoleNameByID is a helper method to get role name by role ID
+func (s *userManagementService) getRoleNameByID(ctx context.Context, schema string, roleID string) string {
+	if roleID == "" {
+		return ""
+	}
+
+	// Try to parse as UUID
+	roleUUID, err := uuid.Parse(roleID)
+	if err != nil {
+		return roleID
+	}
+
+	// Get role details
+	role, err := s.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+	if err != nil {
+		return roleID
+	}
+
+	return role.Name
 }

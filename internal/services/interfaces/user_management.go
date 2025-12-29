@@ -25,4 +25,5 @@ type UserManagementService interface {
 	GetActiveUsersForAssign(ctx context.Context, schema string) ([]dto.UserWithRole, error)
 	DeleteUserCompletely(ctx context.Context, schema string, userID string) error
 	GetUserAccessDetails(ctx context.Context, schema string, userID string, roles string, workspaceID string) (dto.UserAccessDetailsResponse, error)
+	GetUserRolesAndAccess(ctx context.Context, schema string, userID string) ([]dto.UserRolesAccessResponse, error)
 }
