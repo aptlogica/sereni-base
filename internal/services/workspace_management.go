@@ -135,39 +135,66 @@ func (s workspaceManagementService) GetBasesByWorkspaceId(ctx context.Context, s
 	return bases, nil
 }
 
-func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
-	// Check if user is owner or coowner - they can see all bases in workspace
-	if role == appConstant.RBACRoleNames.Owner ||
-		role == appConstant.RBACRoleNames.CoOwner ||
-		role == appConstant.RBACRoleNames.WorkspaceMaintainer ||
-		role == appConstant.RBACRoleNames.WorkspaceMaintainerRO {
-		// Get all bases in workspace
-		bases, err := s.baseManagementService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
-		if err != nil {
-			return nil, err
-		}
+// isWorkspaceLevelRole checks if the role is a workspace-level role that grants access to all bases
+func isWorkspaceLevelRole(role string) bool {
+	return role == appConstant.RBACRoleNames.Owner ||
+		role == appConstant.RBACRoleNames.CoOwner
+}
 
-		// Convert to BaseResponse and add workspace-level access level
-		var response []dto.BaseResponse
-		for _, base := range bases {
-			var baseResp dto.BaseResponse
-			if err := helpers.StructToStruct(base, &baseResp); err != nil {
-				return nil, app_errors.ErrStructToStruct
-			}
-			// Workspace-level users get the workspace role as access level
-			baseResp.AccessLevel = role
-			response = append(response, baseResp)
-		}
-		return response, nil
+// getAllBasesWithWorkspaceRole retrieves all bases in a workspace for users with workspace-level roles
+func (s workspaceManagementService) getAllBasesWithWorkspaceRole(ctx context.Context, schemaName string, workspaceID string, role string) ([]dto.BaseResponse, error) {
+	// Get all bases in workspace
+	bases, err := s.baseManagementService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
+	if err != nil {
+		return nil, err
 	}
 
-	// For base-member and base-read: Get only bases where user has explicit access
-	// Get user's access members for this workspace with scope_type='base'
+	// Convert to BaseResponse and add workspace-level access level
+	var response []dto.BaseResponse
+	for _, base := range bases {
+		var baseResp dto.BaseResponse
+		if err := helpers.StructToStruct(base, &baseResp); err != nil {
+			return nil, app_errors.ErrStructToStruct
+		}
+		// Workspace-level users get the workspace role as access level
+		baseResp.AccessLevel = role
+		response = append(response, baseResp)
+	}
+	return response, nil
+}
+
+func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
+	// Check if user has workspace-level role - they can see all bases in workspace
+	if isWorkspaceLevelRole(role) {
+		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, role)
+	}
+
+	// Get user's access members to check for workspace-level or base-level access
 	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schemaName, userID)
 	if err != nil {
 		return nil, err
 	}
 
+	// First, check if user has workspace-level access in accessMembers
+	// (scope_type='workspace' and scope_id matches workspace_id)
+	for _, member := range accessMembers {
+		if member.ScopeType == "workspace" && member.ScopeID != nil && *member.ScopeID == workspaceID {
+			// User has workspace-level access - get role name and return all bases
+			roleID := member.RoleID
+			if roleID != "" {
+				roleUUID, parseErr := uuid.Parse(roleID)
+				if parseErr == nil {
+					roleData, roleErr := s.rbacManagementService.GetRoleByID(ctx, schemaName, roleUUID)
+					if roleErr == nil {
+						fmt.Printf("DEBUG: User %s has workspace-level access with role: %s in workspace %s\n", userID, roleData.Name, workspaceID)
+						return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, roleData.Name)
+					}
+				}
+			}
+		}
+	}
+
+	// For base-member and base-read: Get only bases where user has explicit access
 	// Filter to only base-level access in this workspace
 	baseAccessMap := make(map[string]string) // Key: base_id, Value: role_name
 	for _, member := range accessMembers {
