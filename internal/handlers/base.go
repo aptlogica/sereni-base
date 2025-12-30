@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"serenibase/internal/dto"
-	"serenibase/internal/handlers/validators"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/response"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 )
 
 type BaseHandler struct {
@@ -70,18 +68,46 @@ func (h *BaseHandler) GetBaseByID(c *gin.Context) {
 }
 
 func (h *BaseHandler) UpdateBase(c *gin.Context) {
-	var req dto.BaseUpdate
+	id := c.Param("id")
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.BaseUpdateValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
-		return
+	req := dto.BaseUpdate{}
+
+	// Get optional title from form
+	title := c.PostForm("title")
+	if title != "" {
+		req.Title = &title
 	}
 
-	id := c.Param("id")
+	// Get optional description from form
+	description := c.PostForm("description")
+	if description != "" {
+		req.Description = &description
+	}
+
+	// Get optional status from form
+	status := c.PostForm("status")
+	if status != "" {
+		req.Status = &status
+	}
+
+	// Get optional visibility from form
+	visibility := c.PostForm("visibility")
+	if visibility != "" {
+		req.Visibility = &visibility
+	}
+
+	// Get optional type from form
+	baseType := c.PostForm("type")
+	if baseType != "" {
+		req.Type = &baseType
+	}
+
+	// Handle image file upload if provided
+	fileHeader, err := c.FormFile("image")
+	if err == nil && fileHeader != nil {
+		// Image will be handled separately in the service
+		// For now, we just accept the file and pass it
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -89,10 +115,21 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
 
+	req.UpdatedBy = userId
+
 	updatedBase, err := h.baseManagementService.UpdateBase(c.Request.Context(), schemaName, id, req, userId)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
+	}
+
+	// Handle image upload if file was provided
+	if fileHeader != nil {
+		_, imgErr := h.baseManagementService.AddBaseImage(c.Request.Context(), schemaName, id, fileHeader, userId)
+		if imgErr != nil {
+			response.CheckAndSendError(c, imgErr)
+			return
+		}
 	}
 
 	response.SendSuccess(c, "base updated successfully", updatedBase)
