@@ -19,16 +19,18 @@ func NewBaseHandler(baseManagementService interfaces.BaseManagementService) *Bas
 }
 
 func (h *BaseHandler) CreateBase(c *gin.Context) {
-	var req dto.CreateBaseRequest
+	// Get form values
+	title := c.PostForm("title")
+	description := c.PostForm("description")
+	workspaceID := c.PostForm("workspace_id")
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.BaseCreationValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if title == "" || workspaceID == "" {
+		response.SendError(c, "title and workspace_id are required")
 		return
 	}
+
+	// Get optional image file
+	file, _ := c.FormFile("image")
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -36,7 +38,14 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
 
-	base, err := h.baseManagementService.CreateBase(c.Request.Context(), req, schemaName, userId)
+	req := dto.CreateBaseRequest{
+		Title:       title,
+		Description: &description,
+		WorkspaceID: workspaceID,
+		CreatedBy:   userId,
+	}
+
+	base, err := h.baseManagementService.CreateBaseWithImage(c.Request.Context(), req, schemaName, userId, file)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -59,7 +68,6 @@ func (h *BaseHandler) GetBaseByID(c *gin.Context) {
 
 	response.SendSuccess(c, "base retrieved successfully", base)
 }
-
 
 func (h *BaseHandler) UpdateBase(c *gin.Context) {
 	var req dto.BaseUpdate
@@ -117,4 +125,54 @@ func (h *BaseHandler) GetTablesByBaseId(c *gin.Context) {
 	}
 
 	response.SendSuccess(c, "tables retrieved successfully", tables)
+}
+
+func (h *BaseHandler) AddBaseImage(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		response.SendError(c, "invalid base id")
+		return
+	}
+
+	file, err := c.FormFile("image")
+	if err != nil {
+		response.SendError(c, "invalid image file")
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	updatedBase, err := h.baseManagementService.AddBaseImage(c.Request.Context(), schemaName, id, file, userId)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "base image added successfully", updatedBase)
+}
+
+func (h *BaseHandler) RemoveBaseImage(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		response.SendError(c, "invalid base id")
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	updatedBase, err := h.baseManagementService.RemoveBaseImage(c.Request.Context(), schemaName, id, userId)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "base image removed successfully", updatedBase)
 }

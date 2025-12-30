@@ -172,6 +172,8 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 		base.POST("/create", handlers.Base.CreateBase)
 		base.PUT("/:id", handlers.Base.UpdateBase)
 		base.DELETE("/:id", handlers.Base.DeleteBase)
+		base.POST("/:id/image", handlers.Base.AddBaseImage)
+		base.DELETE("/:id/image", handlers.Base.RemoveBaseImage)
 
 		// All access operations
 		base.GET("/:id", handlers.Base.GetBaseByID)

@@ -80,6 +80,7 @@ func RegisterOwner(
 		baseService,
 		tableManagementService,
 		modelService,
+		assetManagementService,
 	)
 
 	rbacManagementService := services.NewRBACManagementService(
@@ -100,10 +101,7 @@ func RegisterOwner(
 		baseManagementService,
 		tableManagementService,
 		rbacManagementService,
-	
 	)
-
-	
 
 	userManagementService := services.NewUserManagementService(
 		dbService,

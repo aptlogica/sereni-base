@@ -100,6 +100,7 @@ func (b *BaseInsertion) SetMeta(meta string) error {
 type BaseUpdate struct {
 	Title            *string                 `db:"title" json:"title,omitempty"`
 	Description      *string                 `db:"description" json:"description,omitempty"`
+	Image            *string                 `db:"image" json:"image,omitempty"`
 	Type             *string                 `db:"type" json:"type,omitempty"`
 	Config           *map[string]interface{} `db:"config" json:"config,omitempty"`
 	Settings         *map[string]interface{} `db:"settings" json:"settings,omitempty"`
@@ -121,6 +122,9 @@ func (b *BaseUpdate) Map() map[string]interface{} {
 	}
 	if b.Description != nil {
 		result["description"] = *b.Description
+	}
+	if b.Image != nil {
+		result["image"] = *b.Image
 	}
 	if b.Type != nil {
 		result["type"] = *b.Type

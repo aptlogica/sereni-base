@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"godbgrest/pkg"
+	"mime/multipart"
+	"path/filepath"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -19,6 +21,7 @@ type baseManagementService struct {
 	baseService            interfaces.BaseService
 	tableManagementService interfaces.TableManagementService
 	modelService           interfaces.ModelService
+	assetManagementService interfaces.AssetManagementService
 }
 
 func NewBaseManagementService(
@@ -26,12 +29,14 @@ func NewBaseManagementService(
 	baseService interfaces.BaseService,
 	tableManagementService interfaces.TableManagementService,
 	modelService interfaces.ModelService,
+	assetManagementService interfaces.AssetManagementService,
 ) interfaces.BaseManagementService {
 	return &baseManagementService{
 		repo:                   repo,
 		baseService:            baseService,
 		tableManagementService: tableManagementService,
 		modelService:           modelService,
+		assetManagementService: assetManagementService,
 	}
 }
 
@@ -56,7 +61,7 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 	if err != nil {
 		return tenant.Base{}, err
 	}
-	
+
 	var base dto.BaseResponse
 	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
 		return tenant.Base{}, app_errors.ErrStructToStruct
@@ -78,6 +83,51 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 
 	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
 		return tenant.Base{}, app_errors.ErrStructToStruct
+	}
+
+	return insertedBase, nil
+}
+
+func (s baseManagementService) CreateBaseWithImage(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string, fileHeader *multipart.FileHeader) (tenant.Base, error) {
+	// First create the base
+	insertedBase, err := s.CreateBase(ctx, req, schemaName, userId)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	// If image file is provided, upload it
+	if fileHeader != nil {
+		filename := fileHeader.Filename
+		ext := strings.ToLower(filepath.Ext(filename))
+		allowedExtensions := map[string]bool{
+			".jpg":  true,
+			".jpeg": true,
+			".png":  true,
+		}
+		if !allowedExtensions[ext] {
+			return insertedBase, nil // Return base without image if extension not allowed
+		}
+
+		uploadReq := dto.UploadAssetRequest{
+			Files: []*multipart.FileHeader{fileHeader},
+		}
+		assets, err := s.assetManagementService.Upload(ctx, uploadReq, schemaName)
+		if err != nil || len(assets) == 0 {
+			return insertedBase, nil // Return base without image if upload fails
+		}
+		imagePath := assets[0].Url
+
+		updateReq := dto.BaseUpdate{
+			Image:     &imagePath,
+			UpdatedBy: userId,
+		}
+
+		updatedBase, err := s.baseService.UpdateBase(ctx, schemaName, insertedBase.ID.String(), updateReq)
+		if err != nil {
+			return insertedBase, nil // Return base without image if update fails
+		}
+
+		return updatedBase, nil
 	}
 
 	return insertedBase, nil
@@ -148,4 +198,90 @@ func (s baseManagementService) GetTablesByBaseId(ctx context.Context, schemaName
 
 func (s baseManagementService) GetBasesByWorkspace(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
 	return s.baseService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
+}
+
+func (s baseManagementService) AddBaseImage(ctx context.Context, schema string, baseID string, fileHeader *multipart.FileHeader, userId string) (tenant.Base, error) {
+	// Delete existing image if any
+	err := s.deleteBaseImageIfExists(ctx, schema, baseID)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	if fileHeader == nil {
+		return tenant.Base{}, app_errors.InvalidPayload
+	}
+
+	filename := fileHeader.Filename
+	ext := strings.ToLower(filepath.Ext(filename))
+	allowedExtensions := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+	}
+	if !allowedExtensions[ext] {
+		return tenant.Base{}, app_errors.InvalidPayload
+	}
+
+	uploadReq := dto.UploadAssetRequest{
+		Files: []*multipart.FileHeader{fileHeader},
+	}
+	assets, err := s.assetManagementService.Upload(ctx, uploadReq, schema)
+	if err != nil || len(assets) == 0 {
+		return tenant.Base{}, err
+	}
+	imagePath := assets[0].Url
+
+	updateReq := dto.BaseUpdate{
+		Image:     &imagePath,
+		UpdatedBy: userId,
+	}
+
+	updatedBase, err := s.baseService.UpdateBase(ctx, schema, baseID, updateReq)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	return updatedBase, nil
+}
+
+func (s baseManagementService) deleteBaseImageIfExists(ctx context.Context, schema string, baseID string) error {
+	base, err := s.baseService.GetBaseByID(ctx, schema, baseID)
+	if err != nil {
+		return err
+	}
+
+	if base.Image != "" {
+		asset, err := s.assetManagementService.GetAssetByURL(ctx, schema, base.Image)
+		if err == nil {
+			if asset.Url == base.Image {
+				imageAssetId := asset.ID.String()
+				err = s.assetManagementService.DeleteAsset(ctx, imageAssetId, schema)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s baseManagementService) RemoveBaseImage(ctx context.Context, schema string, baseID string, userId string) (tenant.Base, error) {
+	err := s.deleteBaseImageIfExists(ctx, schema, baseID)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	emptyImage := ""
+	updateReq := dto.BaseUpdate{
+		Image:     &emptyImage,
+		UpdatedBy: userId,
+	}
+
+	updatedBase, err := s.baseService.UpdateBase(ctx, schema, baseID, updateReq)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	return updatedBase, nil
 }
