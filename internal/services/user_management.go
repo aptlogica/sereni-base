@@ -609,6 +609,7 @@ func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schem
 				// Initialize or update the workspace entry
 				if _, exists := workspaceAccessMap[workspaceID]; !exists {
 					workspaceAccessMap[workspaceID] = &dto.UserRolesAccessResponse{
+						WorkspaceId:   workspaceID,
 						WorkspaceName: workspace.Title,
 						Access:        roleName,
 						Bases:         []dto.BaseRoleAccess{},
@@ -645,6 +646,7 @@ func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schem
 					}
 
 					workspaceAccessMap[workspaceID] = &dto.UserRolesAccessResponse{
+						WorkspaceId:   workspaceID,
 						WorkspaceName: workspace.Title,
 						Access:        "",
 						Bases:         []dto.BaseRoleAccess{},
@@ -655,6 +657,7 @@ func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schem
 				workspaceAccessMap[workspaceID].Bases = append(
 					workspaceAccessMap[workspaceID].Bases,
 					dto.BaseRoleAccess{
+						BaseId:   baseID,
 						BaseName: base.Title,
 						Access:   roleName,
 					},
