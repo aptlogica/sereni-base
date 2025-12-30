@@ -26,7 +26,6 @@ func strPtr(s string) *string {
 	return &s
 }
 
-
 // ========== RBAC Scope Levels ==========
 var ScopeLevels = struct {
 	System    string
@@ -165,8 +164,8 @@ var SystemColumns = []dto.AddColumnRequest{
 	{
 		Title:       "Id",
 		Description: "",
-		UIDT:        "uuid",
-		DT:          "UUID",
+		UIDT:        "number",
+		DT:          "BIGSERIAL",
 		OrderIndex:  helpers.Float64Ptr(0),
 		Virtual:     helpers.BoolPtr(false),
 		System:      helpers.BoolPtr(true),
