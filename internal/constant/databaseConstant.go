@@ -325,10 +325,12 @@ var DefinedFunctions = []Function{
 				(to_jsonb(u) || jsonb_build_object('roles', COALESCE(r.roles, '[]'::json)))::json AS user
 			FROM public.users u
 			INNER JOIN (
-				-- Get users from access_members with workspace scope
+				-- Get users from access_members with workspace scope (excluding owner and co-owner)
 				SELECT DISTINCT am.user_id::uuid
 				FROM public.access_members am
+				LEFT JOIN public.access_roles ar ON am.role_id::uuid = ar.id
 				WHERE am.scope_type = 'workspace' AND am.scope_id::uuid = v_workspace_id
+				  AND ar.name NOT IN ('owner', 'co-owner')
 				UNION
 				-- OR get users from workspace_members table
 				SELECT DISTINCT wm.user_id::uuid
@@ -354,6 +356,7 @@ var DefinedFunctions = []Function{
 				FROM public.access_members am
 				LEFT JOIN public.access_roles r ON r.id = am.role_id::uuid
 				WHERE am.scope_id::uuid = v_workspace_id AND am.scope_type = 'workspace'
+				  AND r.name NOT IN ('owner', 'co-owner')
 				GROUP BY am.user_id
 			) r ON r.user_id = u.id
 			WHERE u.status = 'active';
