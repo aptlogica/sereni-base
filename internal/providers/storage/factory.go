@@ -1,26 +1,23 @@
 package storage
 
 import (
+	"fmt"
 	"serenibase/internal/config"
+	"serenibase/internal/providers/storage/http"
 	"serenibase/internal/providers/storage/interfaces"
-	"serenibase/internal/providers/storage/local_storage"
-	"serenibase/internal/providers/storage/minio_storage"
-
-	"strings"
 )
 
 func NewStorage(cfg *config.StorageConfig) (interfaces.StorageProvider, error) {
-	switch strings.ToLower(cfg.Driver) {
-	case "dev":
-		return local_storage.NewStorageProvider(&cfg.Dev)
-
-	case "minio":
-		return minio_storage.NewStorageProvider(&cfg.Minio)
-
-	case "aws":
-		return local_storage.NewStorageProvider(&cfg.Dev)
-
-	default:
-		return local_storage.NewStorageProvider(&cfg.Dev)
+	if cfg == nil {
+		return nil, fmt.Errorf("storage config is nil")
 	}
+
+	if cfg.URL == "" {
+		return nil, fmt.Errorf("storage url is empty")
+	}
+
+	return http.New(http.Config{
+		BaseURL:        cfg.URL,
+		TimeoutSeconds: 60,
+	})
 }

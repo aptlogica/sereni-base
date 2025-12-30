@@ -2,22 +2,24 @@ package antivirus
 
 import (
 	"fmt"
-	"strings"
 
 	"serenibase/internal/config"
-	"serenibase/internal/providers/antivirus/clamav"
+	"serenibase/internal/providers/antivirus/http"
 	"serenibase/internal/providers/antivirus/interfaces"
 )
 
 // NewAntivirus constructs an antivirus provider based on configuration
 func NewAntivirus(cfg *config.AntivirusConfig) (interfaces.Provider, error) {
-	switch strings.ToLower(cfg.Driver) {
-	case "clamav":
-		return clamav.New(clamav.Config{
-			Address:        cfg.ClamAV.Address,
-			TimeoutSeconds: cfg.ClamAV.TimeoutSeconds,
-		})
-	default:
-		return nil, fmt.Errorf("unsupported antivirus driver: %s", cfg.Driver)
+	if cfg == nil {
+		return nil, fmt.Errorf("antivirus config is nil")
 	}
+
+	if cfg.URL == "" {
+		return nil, fmt.Errorf("antivirus url is empty")
+	}
+
+	return http.New(http.Config{
+		BaseURL:        cfg.URL,
+		TimeoutSeconds: 30,
+	})
 }
