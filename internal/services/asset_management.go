@@ -194,7 +194,7 @@ func (s *assetManagementService) scanFilesWithAntivirus(ctx context.Context, req
 				continue
 			}
 			scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, fileHeader.Filename, file)
-      file.Close()
+			file.Close()
 			if scanErr != nil {
 				fmt.Printf("Antivirus: %s is infected or unreadable: %s\n", scanResult.FileName, scanResult.Threat)
 				return fmt.Errorf("file '%s' is infected", scanResult.FileName)
@@ -272,14 +272,30 @@ func (s *assetManagementService) DeleteAsset(ctx context.Context, assetId string
 		return err
 	}
 
-	err = s.storageProviderService.Delete(ctx, asset.BasePath)
-	if err != nil {
-		return err
+	// Delete thumbnail if it exists and is different from the main file
+	if asset.ThumbnailUrl != "" && asset.ThumbnailUrl != asset.Url {
+		// Extract thumbnail path from URL if needed
+		// The thumbnail BasePath would be like "schema/thumb_filename.jpg"
+		thumbnailBasePath := strings.Replace(asset.BasePath, filepath.Base(asset.BasePath), "thumb_"+filepath.Base(asset.BasePath), 1)
+
+		// Try to delete thumbnail, but don't fail if it doesn't exist
+		thumbnailErr := s.storageProviderService.Delete(ctx, thumbnailBasePath)
+		if thumbnailErr != nil {
+			fmt.Printf("Warning: failed to delete thumbnail at %s: %v\n", thumbnailBasePath, thumbnailErr)
+			// Continue anyway - thumbnail deletion failure shouldn't block asset deletion
+		}
 	}
 
+	// Delete the main file
+	err = s.storageProviderService.Delete(ctx, asset.BasePath)
+	if err != nil {
+		return fmt.Errorf("failed to delete asset file: %w", err)
+	}
+
+	// Delete from database
 	err = s.assetsService.DeleteAsset(ctx, assetId, schemaName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete asset from database: %w", err)
 	}
 
 	return nil

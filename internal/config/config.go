@@ -52,41 +52,11 @@ type AuthConfig struct {
 }
 
 type StorageConfig struct {
-	Driver string             `mapstructure:"driver"`
-	Dev    StorageDevConfig   `mapstructure:"dev"`
-	Minio  StorageMinioConfig `mapstructure:"minio"`
-	AWS    StorageAWSConfig   `mapstructure:"aws"`
-}
-
-type StorageDevConfig struct {
-	Path string `mapstructure:"path"`
-}
-
-type StorageMinioConfig struct {
-	Endpoint  string `mapstructure:"endpoint"`
-	AccessKey string `mapstructure:"access_key"`
-	SecretKey string `mapstructure:"secret_key"`
-	Bucket    string `mapstructure:"bucket"`
-	UseSSL    bool   `mapstructure:"use_ssl"`
-	Region    string `mapstructure:"region"`
-}
-
-type StorageAWSConfig struct {
-	AccessKey string `mapstructure:"access_key"`
-	SecretKey string `mapstructure:"secret_key"`
-	Bucket    string `mapstructure:"bucket"`
-	Region    string `mapstructure:"region"`
-	UseSSL    bool   `mapstructure:"use_ssl"`
+	URL string `mapstructure:"url"`
 }
 
 type AntivirusConfig struct {
-	Driver string       `mapstructure:"driver"`
-	ClamAV ClamAVConfig `mapstructure:"clamav"`
-}
-
-type ClamAVConfig struct {
-	Address        string `mapstructure:"address"`
-	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+	URL string `mapstructure:"url"`
 }
 
 type RedisConfig struct {
