@@ -138,6 +138,7 @@ func New(cfg *config.Config) (*App, error) {
 		baseService,
 		tableManagementService,
 		modelService,
+		assetManagementService,
 	)
 
 	// Create workspaceManagementService first (no circular dependency needed here)
