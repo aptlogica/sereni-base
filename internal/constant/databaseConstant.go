@@ -325,19 +325,31 @@ var DefinedFunctions = []Function{
 				(to_jsonb(u) || jsonb_build_object('roles', COALESCE(r.roles, '[]'::json)))::json AS user
 			FROM public.users u
 			INNER JOIN (
-				-- Get users from access_members with workspace scope (excluding owner and co-owner)
+				-- Get all users who have any access to this workspace from access_members
+				-- Either scope_id matches (workspace-level) OR workspace_id matches (base-level)
 				SELECT DISTINCT am.user_id::uuid
 				FROM public.access_members am
 				LEFT JOIN public.access_roles ar ON am.role_id::uuid = ar.id
-				WHERE am.scope_type = 'workspace' AND am.scope_id::uuid = v_workspace_id
-				  AND ar.name NOT IN ('owner', 'co-owner')
+				WHERE ar.name NOT IN ('owner', 'co-owner')
+				  AND (
+					  -- Workspace-level access: scope_type='workspace' and scope_id is this workspace
+					  (am.scope_type = 'workspace' AND am.scope_id::uuid = v_workspace_id)
+					  OR
+					  -- Base-level access: scope_type='base' and the base belongs to this workspace
+					  (am.scope_type = 'base' AND EXISTS (
+						  SELECT 1 FROM public.bases b 
+						  WHERE b.id::uuid = am.scope_id::uuid 
+						  AND b.workspace_id::uuid = v_workspace_id
+					  ))
+				  )
 				UNION
-				-- OR get users from workspace_members table
+				-- Get users from workspace_members table
 				SELECT DISTINCT wm.user_id::uuid
 				FROM public.workspace_members wm
 				WHERE wm.workspace_id::uuid = v_workspace_id
 			) members ON members.user_id = u.id
 			LEFT JOIN (
+				-- Aggregate all roles for each user
 				SELECT 
 					am.user_id::uuid AS user_id,
 					JSON_AGG(
@@ -355,9 +367,40 @@ var DefinedFunctions = []Function{
 					) AS roles
 				FROM public.access_members am
 				LEFT JOIN public.access_roles r ON r.id = am.role_id::uuid
-				WHERE am.scope_id::uuid = v_workspace_id AND am.scope_type = 'workspace'
-				  AND r.name NOT IN ('owner', 'co-owner')
+				WHERE r.name NOT IN ('owner', 'co-owner')
+				  AND (
+					  (am.scope_type = 'workspace' AND am.scope_id::uuid = v_workspace_id)
+					  OR
+					  (am.scope_type = 'base' AND EXISTS (
+						  SELECT 1 FROM public.bases b 
+						  WHERE b.id::uuid = am.scope_id::uuid 
+						  AND b.workspace_id::uuid = v_workspace_id
+					  ))
+				  )
 				GROUP BY am.user_id
+				
+				UNION ALL
+				
+				-- Get roles from workspace_members table
+				SELECT 
+					wm.user_id::uuid AS user_id,
+					JSON_AGG(
+						JSON_BUILD_OBJECT(
+							'id', r.id,
+							'name', r.name,
+							'scope_level', r.scope_level,
+							'priority', r.priority,
+							'description', r.description,
+							'role_id', r.id::text,
+							'access_member_id', wm.id::text,
+							'scope_id', wm.workspace_id::text,
+							'scope_type', 'workspace'
+						)
+					) AS roles
+				FROM public.workspace_members wm
+				LEFT JOIN public.access_roles r ON r.name = wm.access_level
+				WHERE wm.workspace_id::uuid = v_workspace_id
+				GROUP BY wm.user_id
 			) r ON r.user_id = u.id
 			WHERE u.status = 'active';
 		END;

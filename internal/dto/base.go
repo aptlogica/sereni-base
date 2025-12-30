@@ -172,6 +172,7 @@ type BaseResponse struct {
 	WorkspaceID string    `db:"workspace_id" json:"workspace_id,omitempty" mapstructure:"workspace_id"`
 	Title       string    `db:"title" json:"title,omitempty" mapstructure:"title"`
 	Description *string   `db:"description" json:"description,omitempty" mapstructure:"description"`
+	Image       string    `db:"image" json:"image,omitempty" mapstructure:"image"`
 
 	// Database connection (for external sources)
 	Type   string                 `db:"type" json:"type,omitempty" mapstructure:"type"`
