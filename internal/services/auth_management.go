@@ -859,17 +859,9 @@ func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema s
 	}
 
 	for _, member := range req.Members {
-		// Convert BaseMembership array to MembershipRequest
-		membershipReq := make([]dto.MembershipRequest, 0)
-		for _, baseRole := range member.BaseRole {
-			membershipReq = append(membershipReq, dto.MembershipRequest{
-				Bases: []dto.BaseMembership{baseRole},
-			})
-		}
-
 		createReq := dto.CreateMemberRequest{
 			UserID:     member.UserID,
-			Membership: membershipReq,
+			Membership: member.Memberships,
 		}
 
 		err := a.AssignUserToWorkspace(ctx, schema, createReq, userID)

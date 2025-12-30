@@ -305,36 +305,32 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 	}
 
 	// Map to store workspace IDs and their access levels
-	// Key: workspace_id, Value: either "base" or role_id
+	// Key: workspace_id, Value: role_id or "base"
 	workspaceAccess := map[string]string{}
-	// Also track scope_type to determine if it's base-level access
-	workspaceScopeType := map[string]string{}
 
 	for _, member := range accessMembers {
-		// Check workspace_id column (for base-level access, this identifies the workspace)
-		if member.WorkspaceID != nil && *member.WorkspaceID != "" {
-			fmt.Printf("DEBUG: Found workspace access via workspace_id column: %s with scope_type: %s, role: %s\n",
-				*member.WorkspaceID, member.ScopeType, member.RoleID)
-			// Base-level access - set access level as "base"
-			workspaceAccess[*member.WorkspaceID] = "base"
-			workspaceScopeType[*member.WorkspaceID] = member.ScopeType
-		}
-
-		// Check scope_id column for workspace-level access (scope_type = 'workspace')
-		if member.ScopeType == "workspace" && member.ScopeID != nil && *member.ScopeID != "" {
-			fmt.Printf("DEBUG: Found workspace access via scope_id column: %s with role: %s\n", *member.ScopeID, member.RoleID)
-			// Only set if not already set (prioritize workspace-level over base-level)
-			if _, exists := workspaceAccess[*member.ScopeID]; !exists {
-				// Workspace-level access - set access level as role_id
-				workspaceAccess[*member.ScopeID] = member.RoleID
-				workspaceScopeType[*member.ScopeID] = member.ScopeType
+		switch member.ScopeType {
+		case "base":
+			// Base-level access - get workspace_id from workspace_id column
+			if member.WorkspaceID != nil && *member.WorkspaceID != "" {
+				workspaceID := *member.WorkspaceID
+				// Only set if not already set with workspace-level access (workspace-level has priority)
+				if _, exists := workspaceAccess[workspaceID]; !exists {
+					workspaceAccess[workspaceID] = "base"
+				}
+			}
+		case "workspace":
+			// Workspace-level access - get workspace_id from scope_id column
+			if member.ScopeID != nil && *member.ScopeID != "" {
+				workspaceID := *member.ScopeID
+				// Workspace-level access has priority, always set/override
+				workspaceAccess[workspaceID] = member.RoleID
 			}
 		}
 	}
 
 	// If no workspace access found, return empty list
 	if len(workspaceAccess) == 0 {
-		fmt.Printf("DEBUG: No workspace access found for user %s\n", userID)
 		return []dto.UserWorkspaceResponse{}, nil
 	}
 
@@ -344,9 +340,7 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 		workspaceIDs = append(workspaceIDs, wsID)
 	}
 
-	fmt.Printf("DEBUG: Fetching %d workspaces for user %s\n", len(workspaceIDs), userID)
-
-	// Get workspace details
+	// Get workspace details in bulk
 	workspaces, err := s.workspaceManagementService.GetBulkWorkspaces(ctx, schema, workspaceIDs)
 	if err != nil {
 		return nil, err
@@ -361,7 +355,7 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 			return nil, app_errors.ErrStructToStruct
 		}
 
-		// Get role ID for this workspace
+		// Get role ID or access level for this workspace
 		roleIDOrLevel, exists := workspaceAccess[wsResp.ID.String()]
 		if !exists {
 			continue
@@ -370,21 +364,17 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 		// If it's "base", set as access level directly
 		if roleIDOrLevel == "base" {
 			wsResp.AccessLevel = "base"
-			fmt.Printf("DEBUG: Workspace %s (ID: %s) access role: base\n", ws.Title, wsResp.ID.String())
 		} else {
 			// Otherwise, fetch the role name from the role ID
 			roleUUID, parseErr := uuid.Parse(roleIDOrLevel)
 			if parseErr != nil {
-				fmt.Printf("DEBUG: Failed to parse role ID %s: %v\n", roleIDOrLevel, parseErr)
 				wsResp.AccessLevel = roleIDOrLevel
 			} else {
 				role, roleErr := s.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
 				if roleErr != nil {
-					fmt.Printf("DEBUG: Failed to get role name for ID %s: %v\n", roleIDOrLevel, roleErr)
 					wsResp.AccessLevel = roleIDOrLevel
 				} else {
 					wsResp.AccessLevel = role.Name
-					fmt.Printf("DEBUG: Workspace %s (ID: %s) access role: %s (name: %s)\n", ws.Title, wsResp.ID.String(), roleIDOrLevel, role.Name)
 				}
 			}
 		}
@@ -392,7 +382,6 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 		res = append(res, wsResp)
 	}
 
-	fmt.Printf("DEBUG: Returning %d workspaces for user %s\n", len(res), userID)
 	return res, nil
 }
 

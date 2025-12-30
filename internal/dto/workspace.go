@@ -225,7 +225,7 @@ type BulkAddMembersResponse struct {
 
 // BulkAddBaseMembers for adding members to bases
 type BulkAddBaseMembersRequest struct {
-	Members []BulkBaseMemberRequest `json:"members" binding:"required,min=1"`
+	Members []BulkMemberRequest `json:"members" binding:"required,min=1"`
 }
 
 // BulkBaseMemberRequest for adding user to bases
