@@ -114,7 +114,9 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string)
 
 	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
 		user := tenant.User{
-			Email: claims.Email,
+			Email:         claims.Email,
+			Roles:         claims.Roles,
+			EmailVerified: claims.EmailVerified,
 		}
 
 		if claims.UserId != "" {
