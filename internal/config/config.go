@@ -141,20 +141,11 @@ func Load() (*Config, error) {
 	// Email Config
 	viper.BindEnv("email.url", "EMAIL_URL")
 
+	// Antivirus Config
+	viper.BindEnv("antivirus.url", "ANTIVIRUS_URL")
+
 	// Storage Config
-	viper.BindEnv("storage.driver", "STORAGE_DRIVER")
-	viper.BindEnv("storage.dev.path", "STORAGE_DEV_PATH")
-	viper.BindEnv("storage.minio.endpoint", "STORAGE_MINIO_ENDPOINT")
-	viper.BindEnv("storage.minio.access_key", "STORAGE_MINIO_ACCESS_KEY")
-	viper.BindEnv("storage.minio.secret_key", "STORAGE_MINIO_SECRET_KEY")
-	viper.BindEnv("storage.minio.bucket", "STORAGE_MINIO_BUCKET")
-	viper.BindEnv("storage.minio.use_ssl", "STORAGE_MINIO_USE_SSL")
-	viper.BindEnv("storage.minio.region", "STORAGE_MINIO_REGION")
-	viper.BindEnv("storage.aws.access_key", "STORAGE_AWS_ACCESS_KEY")
-	viper.BindEnv("storage.aws.secret_key", "STORAGE_AWS_SECRET_KEY")
-	viper.BindEnv("storage.aws.bucket", "STORAGE_AWS_BUCKET")
-	viper.BindEnv("storage.aws.region", "STORAGE_AWS_REGION")
-	viper.BindEnv("storage.aws.use_ssl", "STORAGE_AWS_USE_SSL")
+	viper.BindEnv("storage.url", "STORAGE_URL")
 
 	// Log Config
 	viper.BindEnv("log.level", "LOG_LEVEL")
@@ -166,11 +157,6 @@ func Load() (*Config, error) {
 
 	// Asset Config
 	viper.BindEnv("asset.max_size", "ASSET_MAX_SIZE")
-
-	// Antivirus Config
-	viper.BindEnv("antivirus.driver", "ANTIVIRUS_DRIVER")
-	viper.BindEnv("antivirus.clamav.address", "ANTIVIRUS_CLAMAV_ADDRESS")
-	viper.BindEnv("antivirus.clamav.timeout_seconds", "ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS")
 
 	// Temporary User Password Config
 	viper.BindEnv("temporary_added_user_password.value", "TEMPORARY_USER_PASSWORD")
