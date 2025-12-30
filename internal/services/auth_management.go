@@ -591,6 +591,137 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 	return user, nil
 }
 
+// EditUser updates user details with support for profile, avatar, membership, and co-owner status changes
+func (a *authManagementService) EditUser(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) (dto.UserResponse, error) {
+	// Get existing user
+	_, err := a.userManagementService.GetUserByID(ctx, schema, userData.UserID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
+	// 1. Handle FirstName and LastName updates
+	if userData.FirstName != nil || userData.LastName != nil {
+		updateReq := dto.UpdateUserProfileRequest{
+			UpdatedAt: time.Now(),
+		}
+		if userData.FirstName != nil {
+			updateReq.FirstName = userData.FirstName
+		}
+		if userData.LastName != nil {
+			updateReq.LastName = userData.LastName
+		}
+
+		_, err := a.userManagementService.UpdateUserProfile(ctx, schema, userData.UserID, updateReq)
+		if err != nil {
+			return dto.UserResponse{}, err
+		}
+	}
+
+	// 2. Handle ProfilePic updates (remove old, add new)
+	if userData.ProfilePic != nil {
+		_, err := a.userManagementService.RemoveAvatar(ctx, schema, userData.UserID)
+		if err != nil && err != app_errors.AssetNotFound {
+			return dto.UserResponse{}, err
+		}
+
+		_, err = a.userManagementService.AddAvatar(ctx, schema, userData.UserID, userData.ProfilePic)
+		if err != nil {
+			return dto.UserResponse{}, err
+		}
+	}
+
+	// 3. Handle CoOwner status changes
+	if userData.IsCoOwner != nil {
+		// Get current coowner status
+		currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
+		isCurrentCoOwner := false
+		var currentCoOwnerAccessID string
+
+		if err == nil {
+			for _, member := range currentAccessMembers {
+				if member.RoleID != "" {
+					roleUUID, parseErr := uuid.Parse(member.RoleID)
+					if parseErr == nil {
+						role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+						if roleErr == nil && role.Name == appConstant.RBACRoleNames.CoOwner {
+							isCurrentCoOwner = true
+							currentCoOwnerAccessID = member.ID.String()
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if *userData.IsCoOwner && !isCurrentCoOwner {
+			// Promote to CoOwner: Remove all current access, assign only CoOwner
+			// Delete all existing access_members for this user
+			if err == nil && len(currentAccessMembers) > 0 {
+				for _, member := range currentAccessMembers {
+					_ = a.RemoveAccessMemberByID(ctx, schema, member.ID.String(), reqBy)
+				}
+			}
+
+			// Assign CoOwner role at system level
+			roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RBACRoleNames.CoOwner)
+			if err != nil {
+				return dto.UserResponse{}, err
+			}
+
+			accessMemberReq := dto.AccessMemberDTO{
+				UserID:     userData.UserID,
+				ScopeType:  appConstant.ScopeLevels.System,
+				ScopeID:    nil,
+				RoleID:     roleData.ID.String(),
+				AssignedBy: helpers.StringPtr(reqBy),
+			}
+
+			_, err = a.rbacManagementService.AssignRoleToUser(ctx, appConstant.MasterDatabase, accessMemberReq)
+			if err != nil {
+				return dto.UserResponse{}, err
+			}
+		} else if !*userData.IsCoOwner && isCurrentCoOwner {
+			// Demote from CoOwner: Remove CoOwner access, add memberships if provided
+			if currentCoOwnerAccessID != "" {
+				_ = a.RemoveAccessMemberByID(ctx, schema, currentCoOwnerAccessID, reqBy)
+			}
+
+			// If membership provided, assign it
+			if len(userData.Membership) > 0 {
+				_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
+				if err != nil {
+					return dto.UserResponse{}, err
+				}
+			}
+		}
+	}
+
+	// 4. Handle Membership updates (only if IsCoOwner is not being changed to true)
+	if userData.IsCoOwner == nil && len(userData.Membership) > 0 {
+		// Just update memberships using existing functionality
+		_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
+		if err != nil {
+			return dto.UserResponse{}, err
+		}
+	} else if userData.IsCoOwner != nil && !*userData.IsCoOwner && len(userData.Membership) > 0 {
+		// Handled in step 3, no need to process again
+	}
+
+	// Fetch updated user data
+	updatedUser, err := a.userManagementService.GetUserByID(ctx, schema, userData.UserID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
+	var userResponse dto.UserResponse
+	err = helpers.StructToStruct(updatedUser, &userResponse)
+	if err != nil {
+		return dto.UserResponse{}, app_errors.ErrStructToStruct
+	}
+
+	return userResponse, nil
+}
+
 func (a *authManagementService) RemoveUser(ctx context.Context, schema string, userID string) error {
 	// Local delete only
 	updateData := map[string]interface{}{

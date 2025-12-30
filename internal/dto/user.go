@@ -153,6 +153,16 @@ type AddUserRequest struct {
 	Membership []MembershipRequest   `json:"membership" mapstructure:"membership"`
 }
 
+// EditUserRequest for updating user details - all fields are optional
+type EditUserRequest struct {
+	UserID     string                `json:"user_id" mapstructure:"user_id" binding:"required"`
+	FirstName  *string               `form:"firstname" json:"firstname" mapstructure:"firstname"`
+	LastName   *string               `form:"lastname" json:"lastname" mapstructure:"lastname"`
+	ProfilePic *multipart.FileHeader `form:"profile_pic" json:"profile_pic" mapstructure:"profile_pic"`
+	IsCoOwner  *bool                 `form:"is_coowner" json:"is_coowner" mapstructure:"is_coowner"`
+	Membership []MembershipRequest   `json:"membership" mapstructure:"membership"`
+}
+
 type MembershipRequest struct {
 	WorkspaceID string           `json:"workspace_id" mapstructure:"workspace_id"`
 	Role        string           `json:"role" mapstructure:"role"`

@@ -124,6 +124,7 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
 
 		// Admin user management endpoints
 		user.POST("/create", handlers.Auth.AddUser)
+		user.POST("/edit", handlers.Auth.EditUser)
 		user.POST("/remove", handlers.Auth.RemoveUser)
 		user.POST("/activate", handlers.Auth.ActivateUser)
 		user.POST("/deactivate", handlers.Auth.DeactivateUser)

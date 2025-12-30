@@ -238,6 +238,69 @@ func (h *AuthHandler) AddUser(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UserAdded, nil)
 }
 
+func (h *AuthHandler) EditUser(c *gin.Context) {
+	var req dto.EditUserRequest
+
+	// Get user_id from form
+	userID := c.PostForm("user_id")
+	if userID == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+	req.UserID = userID
+
+	// Get optional firstname from form
+	firstname := c.PostForm("firstname")
+	if firstname != "" {
+		req.FirstName = &firstname
+	}
+
+	// Get optional lastname from form
+	lastname := c.PostForm("lastname")
+	if lastname != "" {
+		req.LastName = &lastname
+	}
+
+	// Get optional is_coowner from form
+	isCoOwnerStr := c.PostForm("is_coowner")
+	if isCoOwnerStr != "" {
+		isCoOwner := isCoOwnerStr == "true" || isCoOwnerStr == "1"
+		req.IsCoOwner = &isCoOwner
+	}
+
+	// Handle profile picture file upload if provided
+	fileHeader, err := c.FormFile("profile_pic")
+	if err == nil && fileHeader != nil {
+		req.ProfilePic = fileHeader
+		fmt.Println("File uploaded:", fileHeader.Filename, "Size:", fileHeader.Size)
+	}
+
+	// Parse membership JSON array from form field if provided
+	membershipStr := c.PostForm("membership")
+	if membershipStr != "" && membershipStr != "[]" {
+		var membership []dto.MembershipRequest
+		if err := json.Unmarshal([]byte(membershipStr), &membership); err != nil {
+			response.CheckAndSendError(c, fmt.Errorf("invalid membership format: %v", err))
+			return
+		}
+		req.Membership = membership
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	updatedUser, err := h.authManagementService.EditUser(c.Request.Context(), schemaName, req, reqBy)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedUser)
+}
+
 func (h *AuthHandler) RemoveUser(c *gin.Context) {
 	var req dto.RemoveUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

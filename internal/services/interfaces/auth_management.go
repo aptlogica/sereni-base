@@ -17,6 +17,7 @@ type AuthManagementService interface {
 
 	// crud user
 	AddUser(ctx context.Context, schema string, userData dto.AddUserRequest, reqBy string) (tenant.User, error)
+	EditUser(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) (dto.UserResponse, error)
 	RemoveUser(ctx context.Context, schema string, userID string) error
 	DeleteUserCompletely(ctx context.Context, schema string, userID string) error
 	GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error)
