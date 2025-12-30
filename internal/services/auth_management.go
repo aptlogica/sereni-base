@@ -549,7 +549,7 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 	}
 
 	// handle membership invitations if any
-	if roles == appConstant.RBACRoleNames.CoOwner || len(userData.Membership) == 0 {
+	if roles == appConstant.RBACRoleNames.CoOwner {
 		roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, roles)
 		if err != nil {
 			return tenant.User{}, err
@@ -568,7 +568,6 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 			return tenant.User{}, err
 		}
 	} else {
-		fmt.Println("-------------------")
 		_, err = a.rbacManagementService.ProcessUserMemberships(ctx, schema, user.ID.String(), user.ID.String(), userData.Membership)
 		if err != nil {
 			return tenant.User{}, err
@@ -623,6 +622,22 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 }
 
 func (a *authManagementService) DeactivateUser(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
+	// Check if user has Owner role - owners cannot be deactivated
+	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
+	if err == nil {
+		for _, member := range accessMembers {
+			if member.RoleID != "" {
+				roleUUID, parseErr := uuid.Parse(member.RoleID)
+				if parseErr == nil {
+					role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+					if roleErr == nil && role.Name == appConstant.RBACRoleNames.Owner {
+						return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
+					}
+				}
+			}
+		}
+	}
+
 	updateFields := map[string]interface{}{
 		"status":             "deactivated",
 		"last_modified_time": time.Now(),
@@ -769,6 +784,17 @@ func (a *authManagementService) GetBaseMembers(ctx context.Context, schema strin
 }
 
 func (a *authManagementService) DeleteUserCompletely(ctx context.Context, schema string, userID string) error {
+	// Check if user exists and has pending status
+	user, err := a.userManagementService.GetUserByID(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+
+	// Only allow deletion if user status is "pending"
+	if user.Status != "pending" {
+		return app_errors.OnlyPendingUsersCanBeDeleted
+	}
+
 	// Local delete only
 	deleteUserErr := a.userManagementService.DeleteUserCompletely(ctx, schema, userID)
 	if deleteUserErr != nil {

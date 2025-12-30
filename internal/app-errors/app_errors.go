@@ -64,10 +64,12 @@ var (
 
 // user management
 var (
-	UserAlreadyExists    = errors.New("user already exists")
-	UserNotFound         = errors.New("user not found")
-	EmailAlreadyVerified = errors.New("email already verified")
-	NewPasswordInvalid   = errors.New("new password is invalid")
+	UserAlreadyExists            = errors.New("user already exists")
+	UserNotFound                 = errors.New("user not found")
+	EmailAlreadyVerified         = errors.New("email already verified")
+	NewPasswordInvalid           = errors.New("new password is invalid")
+	OwnerCannotBeDeactivated     = errors.New("owner cannot be deactivated")
+	OnlyPendingUsersCanBeDeleted = errors.New("only users with pending status can be deleted")
 )
 
 // role management
