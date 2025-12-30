@@ -54,8 +54,10 @@ func (a *AuthProviderService) GenerateToken(ctx context.Context, user tenant.Use
 
 	// Create Refresh Token
 	refreshClaims := CustomClaims{
-		UserId: user.ID.String(),
-		Email:  user.Email,
+		UserId:        user.ID.String(),
+		Email:         user.Email,
+		Roles:         user.Roles,
+		EmailVerified: user.EmailVerified,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(a.AuthConfig.JWT.RefreshTokenExpiry) * time.Second)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
