@@ -169,20 +169,27 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers) {
 func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 	base := private.Group("/base")
 	{
-		// Full access operations
+		// Admin operations
 		base.POST("/create", handlers.Base.CreateBase)
-		base.PUT("/:id", handlers.Base.UpdateBase)
-		base.DELETE("/:id", handlers.Base.DeleteBase)
-		base.POST("/:id/image", handlers.Base.AddBaseImage)
-		base.DELETE("/:id/image", handlers.Base.RemoveBaseImage)
 
-		// All access operations
-		base.GET("/:id", handlers.Base.GetBaseByID)
-		base.GET("/:id/tables", handlers.Base.GetTablesByBaseId)
+		// Full access operations - member management with specific routes before dynamic :id routes
+		base.POST("/:id/remove", handlers.Auth.RemoveUserFromBase)
 		base.GET("/:id/members", handlers.Auth.GetBaseMembers)
 		base.GET("/:id/members-with-roles", handlers.Auth.GetBaseMembersWithRole)
 		base.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddBaseMembers)
 		base.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
+
+		// Image operations
+		base.POST("/:id/image", handlers.Base.AddBaseImage)
+		base.DELETE("/:id/image", handlers.Base.RemoveBaseImage)
+
+		// Base CRUD operations
+		base.PUT("/:id", handlers.Base.UpdateBase)
+		base.DELETE("/:id", handlers.Base.DeleteBase)
+
+		// All access operations
+		base.GET("/:id", handlers.Base.GetBaseByID)
+		base.GET("/:id/tables", handlers.Base.GetTablesByBaseId)
 	}
 }
 

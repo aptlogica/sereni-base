@@ -34,7 +34,8 @@ type AuthManagementService interface {
 
 	AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
 	// AddMultipleMembers(ctx context.Context, schema string, req dto.AddMultipleMembersRequest) (dto.AddMultipleMembersResponse, error)
-	RemoveUserFromWorkspace(ctx context.Context, schema string, req dto.RemoveMemberRequest, reqBy string) error
+	RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error
+	RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error
 	RemoveAccessMemberByID(ctx context.Context, schema string, accessMemberID string, reqBy string) error
 	InviteMemberToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
 	GetWorkspaceMembers(ctx context.Context, schema string, workspaceID string) ([]dto.WorkspaceMemberResponse, error)

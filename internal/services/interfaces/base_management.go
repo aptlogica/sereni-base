@@ -19,4 +19,5 @@ type BaseManagementService interface {
 	GetBasesByWorkspace(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error)
 	AddBaseImage(ctx context.Context, schema string, baseID string, fileHeader *multipart.FileHeader, userId string) (tenant.Base, error)
 	RemoveBaseImage(ctx context.Context, schema string, baseID string, userId string) (tenant.Base, error)
+	RemoveUserFromBase(ctx context.Context, schemaName string, baseID string, userID string) error
 }

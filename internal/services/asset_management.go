@@ -110,13 +110,17 @@ func (s *assetManagementService) processAndUploadFile(fileHeader *multipart.File
 
 // Sagrigated helper to upload main file
 func (s *assetManagementService) uploadMainFile(objectName string, file io.Reader, size int64, contentType string, schema string) (string, error) {
-	return s.storageProviderService.Upload(
+	response, err := s.storageProviderService.Upload(
 		context.Background(),
 		objectName,
 		file,
 		size,
 		contentType,
 	)
+	if err != nil {
+		return "", err
+	}
+	return response.Url, nil
 }
 
 // getThumbnailUrl generates a thumbnail for image files using the imaging library.
@@ -170,7 +174,7 @@ func (s *assetManagementService) getThumbnailUrl(
 	thumbFile := bytes.NewReader(thumbBytes)
 	thumbContentType := "image/jpeg"
 	thumbObjectName := filepath.Join(schema, "thumb_"+fileName)
-	thumbPath, thumbErr := s.storageProviderService.Upload(
+	thumbResp, thumbErr := s.storageProviderService.Upload(
 		context.Background(),
 		thumbObjectName,
 		thumbFile,
@@ -181,7 +185,8 @@ func (s *assetManagementService) getThumbnailUrl(
 		fmt.Println("getThumbnailUrl(imaging): upload failed:", thumbErr)
 		return filePath
 	}
-	return thumbPath
+
+	return thumbResp.Url
 }
 
 // Create a new function to scan files in req.Files using antivirusProvider (if present)
@@ -289,7 +294,11 @@ func (s *assetManagementService) DeleteAsset(ctx context.Context, assetId string
 	// Delete the main file
 	err = s.storageProviderService.Delete(ctx, asset.BasePath)
 	if err != nil {
-		return fmt.Errorf("failed to delete asset file: %w", err)
+		// If file not found, continue anyway - file may have been deleted manually
+		if !strings.Contains(err.Error(), "not found") {
+			return fmt.Errorf("failed to delete asset file: %w", err)
+		}
+		fmt.Printf("Warning: asset file not found at %s, continuing with deletion\n", asset.BasePath)
 	}
 
 	// Delete from database

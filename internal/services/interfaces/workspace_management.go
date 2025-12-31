@@ -21,4 +21,5 @@ type WorkspaceManagementService interface {
 	GetWorkspaceBaseMembers(ctx context.Context, schemaName string, baseID string) ([]tenant.WorkspaceMember, error)
 	DeleteUserMappings(ctx context.Context, schemaName string, userID string) error
 	UpdateWorkspaceMemberBases(ctx context.Context, schemaName string, workspaceID string, userID string, accessLevel string, basesIds string) error
+	RemoveUserFromWorkspace(ctx context.Context, schemaName string, workspaceID string, userID string) error
 }

@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"godbgrest/pkg"
+	dbModels "godbgrest/pkg/models"
 	"mime/multipart"
 	"path/filepath"
 	"serenibase/internal/dto"
@@ -284,4 +286,46 @@ func (s baseManagementService) RemoveBaseImage(ctx context.Context, schema strin
 	}
 
 	return updatedBase, nil
+}
+
+// RemoveUserFromBase removes a user from a base by deleting their access_members record
+func (s baseManagementService) RemoveUserFromBase(ctx context.Context, schemaName string, baseID string, userID string) error {
+	// Query access_members table to find the record for this user and base
+	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+
+	params := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "user_id",
+				Operator: "eq",
+				Value:    userID,
+			},
+			{
+				Column:   "scope_type",
+				Operator: "eq",
+				Value:    "base",
+			},
+			{
+				Column:   "scope_id",
+				Operator: "eq",
+				Value:    baseID,
+			},
+		},
+	}
+
+	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	if err != nil {
+		return err
+	}
+
+	if len(records) == 0 {
+		return app_errors.ErrRecordNotFound
+	}
+
+	// Extract the ID from the first record
+	accessMemberID := records[0]["id"].(string)
+
+	// Delete the access_members record
+	return s.repo.TableService.DeleteRecord(ctx, tableName, accessMemberID)
 }

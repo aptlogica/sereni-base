@@ -422,9 +422,8 @@ func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 		return
 	}
 
-	// Set workspaceID from URL parameter "id"
+	// Get workspaceID from URL parameter "id"
 	workspaceID := c.Param("id")
-	req.WorkspaceID = workspaceID
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -432,7 +431,37 @@ func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 	userIdVal, _ := c.Get("user_id")
 	reqBy, _ := userIdVal.(string)
 
-	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, req, reqBy)
+	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, workspaceID, req.UserID, reqBy)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromWorkspace, nil)
+}
+
+func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
+	var req dto.RemoveMemberRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RemoveMemberRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// Get baseID from URL parameter "id"
+	baseID := c.Param("id")
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+
+	err := h.authManagementService.RemoveUserFromBase(c.Request.Context(), schemaName, baseID, req.UserID, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"serenibase/internal/providers/storage/interfaces"
 	"time"
 )
 
@@ -41,14 +42,8 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
-// uploadResponse represents the response from the upload endpoint
-type uploadResponse struct {
-	Message string `json:"message"`
-	Path    string `json:"path"`
-}
-
 // Upload uploads a file to the storage service
-func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) (string, error) {
+func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) (interfaces.UploadResponse, error) {
 	// Create multipart form data
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -56,27 +51,27 @@ func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader
 	// Add the file
 	part, err := writer.CreateFormFile("file", objectName)
 	if err != nil {
-		return "", fmt.Errorf("storage http: failed to create form file: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to create form file: %w", err)
 	}
 
 	if _, err := io.Copy(part, reader); err != nil {
-		return "", fmt.Errorf("storage http: failed to copy file content: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to copy file content: %w", err)
 	}
 
 	// Add the path field
 	if err := writer.WriteField("path", objectName); err != nil {
-		return "", fmt.Errorf("storage http: failed to write path field: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to write path field: %w", err)
 	}
 
 	// Close the writer
 	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("storage http: failed to close writer: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to close writer: %w", err)
 	}
 
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.BaseURL+"/storage/upload", &buf)
 	if err != nil {
-		return "", fmt.Errorf("storage http: failed to create request: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -84,27 +79,24 @@ func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("storage http: failed to send request: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Handle non-200 responses
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("storage http: upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: upload failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	// Parse response
-	var result uploadResponse
+	var result interfaces.UploadResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("storage http: failed to decode response: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to decode response: %w", err)
 	}
 
-	// Return the path or objectName as the URL
-	if result.Path != "" {
-		return result.Path, nil
-	}
-	return objectName, nil
+	// Return the parsed response
+	return result, nil
 }
 
 // Download downloads a file from the storage service
