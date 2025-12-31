@@ -168,6 +168,7 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 }
 
 // GetUserRolesAndAccess retrieves user's roles and access information organized by workspace and base
+// Supports optional query parameter: scope_id to filter by specific scope (workspace or base)
 func (h *UserHandler) GetUserRolesAndAccess(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -178,7 +179,14 @@ func (h *UserHandler) GetUserRolesAndAccess(c *gin.Context) {
 		return
 	}
 
-	rolesAndAccess, err := h.userManagementService.GetUserRolesAndAccess(c.Request.Context(), schemaName, userID)
+	// Get optional scope_id query parameter
+	scopeID := c.Query("scope_id")
+	var scopeIDPtr *string
+	if scopeID != "" {
+		scopeIDPtr = &scopeID
+	}
+
+	rolesAndAccess, err := h.userManagementService.GetUserRolesAndAccess(c.Request.Context(), schemaName, userID, scopeIDPtr)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return

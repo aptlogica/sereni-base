@@ -560,7 +560,8 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 //	}
 //
 // ]
-func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schema string, userID string) ([]dto.UserRolesAccessResponse, error) {
+// If scopeID is provided, only returns access for that specific scope (workspace or base)
+func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schema string, userID string, scopeID *string) ([]dto.UserRolesAccessResponse, error) {
 	lg := logger.Get()
 
 	// Get all access members for this user
@@ -579,6 +580,13 @@ func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schem
 	workspaceAccessMap := make(map[string]*dto.UserRolesAccessResponse)
 
 	for _, member := range accessMembers {
+		// If scopeID filter is provided, only include matching scopes
+		if scopeID != nil && *scopeID != "" {
+			if member.ScopeID == nil || *member.ScopeID != *scopeID {
+				continue
+			}
+		}
+
 		switch member.ScopeType {
 		case "workspace":
 			// Workspace-level access
