@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"godbgrest/pkg"
+	dbModels "godbgrest/pkg/models"
 	"serenibase/internal/config"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
@@ -804,24 +805,158 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 	return nil
 }
 
-func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, req dto.RemoveMemberRequest, reqBy string) error {
-	// err := a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, req.WorkspaceID, req.UserID)
-	// if err != nil {
-	// 	return err
-	// }
+func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
+	// Try to remove from access_members table (RBAC system)
+	// Find all access_members records for this user-workspace combination
+	accessMembersTableName := fmt.Sprintf("\"%s\".access_members", schema)
+	params := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "user_id",
+				Operator: "eq",
+				Value:    userID,
+			},
+			{
+				Column:   "scope_type",
+				Operator: "eq",
+				Value:    "workspace",
+			},
+			{
+				Column:   "scope_id",
+				Operator: "eq",
+				Value:    workspaceID,
+			},
+		},
+	}
 
-	user, userErr := a.userManagementService.GetUserByID(ctx, schema, req.UserID)
+	accessRecords, err := a.repo.TableService.GetTableData(ctx, accessMembersTableName, params)
+	if err != nil {
+		// If RBAC doesn't exist, try legacy workspace_members table
+		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
+	}
+
+	if len(accessRecords) == 0 {
+		// If no RBAC records, try legacy workspace_members table
+		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
+	}
+
+	// Delete all access_members records for this user-workspace combination
+	for _, record := range accessRecords {
+		var accessMemberID string
+		// Handle both string and uuid.UUID types
+		switch v := record["id"].(type) {
+		case string:
+			accessMemberID = v
+		case uuid.UUID:
+			accessMemberID = v.String()
+		default:
+			return fmt.Errorf("unexpected type for id field: %T", v)
+		}
+
+		deleteErr := a.repo.TableService.DeleteRecord(ctx, accessMembersTableName, accessMemberID)
+		if deleteErr != nil {
+			return deleteErr
+		}
+	}
+
+	// Send email notification
+	user, userErr := a.userManagementService.GetUserByID(ctx, schema, userID)
 	if userErr != nil {
 		return nil
 	}
 
-	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, req.WorkspaceID)
-	workspaceLabel := req.WorkspaceID
+	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, workspaceID)
+	workspaceLabel := workspaceID
 	if workspaceErr == nil {
 		workspaceLabel = workspace.Title
 	}
 
 	emailData := a.emailTemplateService.RemovedFromWorkspaceBody(workspaceLabel)
+	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
+
+	return nil
+}
+
+func (a *authManagementService) RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error {
+	// For base removal, we need to find the access_member record and delete it
+	// Find the access_members record for this user-base combination
+	accessMembersTableName := fmt.Sprintf("\"%s\".access_members", schema)
+	params := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "user_id",
+				Operator: "eq",
+				Value:    userID,
+			},
+			{
+				Column:   "scope_type",
+				Operator: "eq",
+				Value:    "base",
+			},
+			{
+				Column:   "scope_id",
+				Operator: "eq",
+				Value:    baseID,
+			},
+		},
+	}
+
+	accessRecords, err := a.repo.TableService.GetTableData(ctx, accessMembersTableName, params)
+	if err != nil {
+		return err
+	}
+
+	if len(accessRecords) == 0 {
+		return app_errors.ErrRecordNotFound
+	}
+
+	// Delete the access_members record
+	var accessMemberID string
+	// Handle both string and uuid.UUID types
+	switch v := accessRecords[0]["id"].(type) {
+	case string:
+		accessMemberID = v
+	case uuid.UUID:
+		accessMemberID = v.String()
+	default:
+		return fmt.Errorf("unexpected type for id field: %T", v)
+	}
+
+	deleteErr := a.repo.TableService.DeleteRecord(ctx, accessMembersTableName, accessMemberID)
+	if deleteErr != nil {
+		return deleteErr
+	}
+
+	// Send email notification
+	user, userErr := a.userManagementService.GetUserByID(ctx, schema, userID)
+	if userErr != nil {
+		return nil
+	}
+
+	// Get the base title for the email
+	baseTableName := fmt.Sprintf("\"%s\".bases", schema)
+	baseParams := dbModels.QueryParams{
+		Select: []string{"title"},
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "id",
+				Operator: "eq",
+				Value:    baseID,
+			},
+		},
+	}
+
+	baseRecords, baseErr := a.repo.TableService.GetTableData(ctx, baseTableName, baseParams)
+	baseLabel := baseID
+	if baseErr == nil && len(baseRecords) > 0 {
+		if title, ok := baseRecords[0]["title"].(string); ok {
+			baseLabel = title
+		}
+	}
+
+	emailData := a.emailTemplateService.RemovedFromWorkspaceBody(baseLabel)
 	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
 
 	return nil
@@ -1031,6 +1166,8 @@ func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context,
 		lg.Error().Err(err).Msg("Failed to get workspace members with roles")
 		return nil, app_errors.DatabaseError
 	}
+
+	fmt.Println("Records from get_workspace_members_with_role:", records)
 
 	var result []dto.UserWithRole
 	for _, record := range records {
