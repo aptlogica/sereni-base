@@ -168,11 +168,11 @@ type CreateBaseRequest struct {
 }
 
 type BaseResponse struct {
-	ID          uuid.UUID `db:"id" json:"id,omitempty" mapstructure:"id"`
-	WorkspaceID string    `db:"workspace_id" json:"workspace_id,omitempty" mapstructure:"workspace_id"`
-	Title       string    `db:"title" json:"title,omitempty" mapstructure:"title"`
-	Description *string   `db:"description" json:"description,omitempty" mapstructure:"description"`
-	Image       string    `db:"image" json:"image,omitempty" mapstructure:"image"`
+	ID          uuid.UUID `db:"id" json:"id" mapstructure:"id"`
+	WorkspaceID string    `db:"workspace_id" json:"workspace_id" mapstructure:"workspace_id"`
+	Title       string    `db:"title" json:"title" mapstructure:"title"`
+	Description *string   `db:"description" json:"description" mapstructure:"description"`
+	Image       string    `db:"image" json:"image" mapstructure:"image"`
 
 	// Database connection (for external sources)
 	Type   string                 `db:"type" json:"type,omitempty" mapstructure:"type"`
