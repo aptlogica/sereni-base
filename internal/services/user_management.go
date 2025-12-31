@@ -581,8 +581,21 @@ func (s *userManagementService) GetUserRolesAndAccess(ctx context.Context, schem
 
 	for _, member := range accessMembers {
 		// If scopeID filter is provided, only include matching scopes
+		// Check both scope_id (for base-level access) and workspace_id (for workspace-level access)
 		if scopeID != nil && *scopeID != "" {
-			if member.ScopeID == nil || *member.ScopeID != *scopeID {
+			matchesScope := false
+
+			// Check if scopeID matches the scope_id column (base-level)
+			if member.ScopeID != nil && *member.ScopeID == *scopeID {
+				matchesScope = true
+			}
+
+			// Check if scopeID matches the workspace_id column (workspace-level)
+			if member.WorkspaceID != nil && *member.WorkspaceID == *scopeID {
+				matchesScope = true
+			}
+
+			if !matchesScope {
 				continue
 			}
 		}
