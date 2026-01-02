@@ -46,27 +46,30 @@ var (
 // )
 
 var (
-	DatabaseError          = errors.New("database error")
-	ErrInternal            = errors.New("internal error")
-	ErrMapToStruct         = errors.New("failed to map to struct")
-	ErrStructToStruct      = errors.New("failed to struct to struct")
-	ErrHashed              = errors.New("failed to hash value")
-	InvalidCredentials     = errors.New("invalid credentials")
-	InvalidPayload         = errors.New("invalid payload")
-	InvalidDriver          = errors.New("invalid driver")
-	InvalidOldPassword     = errors.New("invalid old password")
-	ErrRecordNotFound      = errors.New("record not found")
-	ErrJSONMarshal         = errors.New("failed to marshal JSON")
-	ErrHTTPRequestCreation = errors.New("failed to create HTTP request")
-	ErrHTTPDoRequest       = errors.New("failed to execute HTTP request")
+	DatabaseError            = errors.New("database error")
+	ErrInternal              = errors.New("internal error")
+	ErrMapToStruct           = errors.New("failed to map to struct")
+	ErrStructToStruct        = errors.New("failed to struct to struct")
+	ErrHashed                = errors.New("failed to hash value")
+	InvalidCredentials       = errors.New("invalid credentials")
+	InvalidPayload           = errors.New("invalid payload")
+	InvalidDriver            = errors.New("invalid driver")
+	InvalidOldPassword       = errors.New("invalid old password")
+	ErrRecordNotFound        = errors.New("record not found")
+	ErrJSONMarshal           = errors.New("failed to marshal JSON")
+	ErrHTTPRequestCreation   = errors.New("failed to create HTTP request")
+	ErrHTTPDoRequest         = errors.New("failed to execute HTTP request")
+	ErrServiceNotInitialized = errors.New("service not initialized")
 )
 
 // user management
 var (
-	UserAlreadyExists    = errors.New("user already exists")
-	UserNotFound         = errors.New("user not found")
-	EmailAlreadyVerified = errors.New("email already verified")
-	NewPasswordInvalid   = errors.New("new password is invalid")
+	UserAlreadyExists            = errors.New("user already exists")
+	UserNotFound                 = errors.New("user not found")
+	EmailAlreadyVerified         = errors.New("email already verified")
+	NewPasswordInvalid           = errors.New("new password is invalid")
+	OwnerCannotBeDeactivated     = errors.New("owner cannot be deactivated")
+	OnlyPendingUsersCanBeDeleted = errors.New("only users with pending status can be deleted")
 )
 
 // role management
@@ -159,3 +162,18 @@ var (
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
 )
+
+// APIError represents an error response from an external API
+type APIError struct {
+	Code    string
+	Message string
+	Details interface{}
+}
+
+// Error implements the error interface for APIError
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return e.Code
+}

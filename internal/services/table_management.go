@@ -1649,7 +1649,6 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, model.Alias)
 
 	data := map[string]interface{}{
-		"id":                 uuid.New().String(),
 		"created_by":         req.CreatedBy,
 		"last_modified_by":   req.CreatedBy,
 		"created_time":       time.Now().UTC(),
@@ -2385,6 +2384,7 @@ func (s tableManagementService) InsertRowData(ctx context.Context, schemaName st
 	} else {
 		value = nil
 	}
+
 	data := map[string]interface{}{
 		fmt.Sprintf("\"%s\"", columnData.ColumnName): value,
 		"last_modified_by":                           req.UpdatedBy,

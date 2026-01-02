@@ -6,7 +6,7 @@ import (
 	"godbgrest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"time"
@@ -26,9 +26,9 @@ func NewUserService(repo *pkg.DatabaseService) interfaces.UserService {
 	return &userService{repo: repo}
 }
 
-func (u *userService) CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (master.User, error) {
+func (u *userService) CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error) {
 	lg := logger.Get()
-	tableName := master.User{}.TableName(schema)
+	tableName := tenant.User{}.TableName(schema)
 
 	// Parse DateOfBirth if present
 	// var dateOfBirth *time.Time
@@ -37,7 +37,7 @@ func (u *userService) CreateUser(ctx context.Context, schema string, req dto.Reg
 	// 	// example format: "2025-11-03"
 	// 	parsed, err := time.Parse("2006-01-02", req.DateOfBirth)
 	// 	if err != nil {
-	// 		return master.User{}, fmt.Errorf("invalid date of birth format (expected YYYY-MM-DD): %v", err)
+	// 		return tenant.User{}, fmt.Errorf("invalid date of birth format (expected YYYY-MM-DD): %v", err)
 	// 	}
 	// 	onlyDate := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC)
 	// 	dateOfBirth = &onlyDate
@@ -56,7 +56,9 @@ func (u *userService) CreateUser(ctx context.Context, schema string, req dto.Reg
 		DateOfBirth:   req.DateOfBirth,
 		Country:       req.Country,
 		Timezone:      req.Timezone,
-		DeletedAt:     nil,
+		Status:        req.Status,
+		AuthProvider:  req.AuthProvider,
+		Roles:         req.Roles,
 	}
 
 	// Set fields conditionally
@@ -74,19 +76,19 @@ func (u *userService) CreateUser(ctx context.Context, schema string, req dto.Reg
 	insertedUserData, err := u.repo.TableService.CreateRecord(ctx, tableName, userData.Map())
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create user record")
-		return master.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.DatabaseError
 	}
 	lg.Debug().Interface("userData", insertedUserData).Msg("User record created successfully")
 
-	var insertedUser master.User
+	var insertedUser tenant.User
 	if err := helpers.MapToStruct(insertedUserData, &insertedUser); err != nil {
-		return master.User{}, app_errors.ErrMapToStruct
+		return tenant.User{}, app_errors.ErrMapToStruct
 	}
 	return insertedUser, nil
 }
 
-func (u *userService) GetUserByEmail(ctx context.Context, schema string, email string) (master.User, error) {
-	tableName := master.User{}.TableName(schema)
+func (u *userService) GetUserByEmail(ctx context.Context, schema string, email string) (tenant.User, error) {
+	tableName := tenant.User{}.TableName(schema)
 	limit := 1
 	query := dbModels.QueryParams{
 		Select: []string{"*"},
@@ -102,18 +104,18 @@ func (u *userService) GetUserByEmail(ctx context.Context, schema string, email s
 
 	usersData, err := u.repo.TableService.GetTableData(ctx, tableName, query)
 	if err != nil {
-		return master.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.DatabaseError
 	}
 
 	if len(usersData) == 0 {
-		return master.User{}, app_errors.UserNotFound
+		return tenant.User{}, app_errors.UserNotFound
 	}
 
 	userData := usersData[0]
 
-	var user master.User
+	var user tenant.User
 	if err := helpers.MapToStruct(userData, &user); err != nil {
-		return master.User{}, app_errors.ErrMapToStruct
+		return tenant.User{}, app_errors.ErrMapToStruct
 	}
 	// if user.DateOfBirth != nil {
 	// 	*user.DateOfBirth = user.DateOfBirth
@@ -121,9 +123,9 @@ func (u *userService) GetUserByEmail(ctx context.Context, schema string, email s
 	return user, nil
 }
 
-func (u *userService) GetUserByID(ctx context.Context, schema string, id string) (master.User, error) {
+func (u *userService) GetUserByID(ctx context.Context, schema string, id string) (tenant.User, error) {
 	lg := logger.Get()
-	tableName := master.User{}.TableName(schema)
+	tableName := tenant.User{}.TableName(schema)
 	limit := 1
 	query := dbModels.QueryParams{
 		Select: []string{"*"},
@@ -140,18 +142,18 @@ func (u *userService) GetUserByID(ctx context.Context, schema string, id string)
 	usersData, err := u.repo.TableService.GetTableData(ctx, tableName, query)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("schema", schema).Str("id", id).Msg("Failed to get user by ID")
-		return master.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.DatabaseError
 	}
 
 	if len(usersData) == 0 {
-		return master.User{}, app_errors.UserNotFound
+		return tenant.User{}, app_errors.UserNotFound
 	}
 
 	userData := usersData[0]
 
-	var user master.User
+	var user tenant.User
 	if err := helpers.MapToStruct(userData, &user); err != nil {
-		return master.User{}, app_errors.ErrMapToStruct
+		return tenant.User{}, app_errors.ErrMapToStruct
 	}
 	// if user.DateOfBirth != nil {
 	// 	*user.DateOfBirth = time.Date(user.DateOfBirth.Year(), user.DateOfBirth.Month(), user.DateOfBirth.Day(), 0, 0, 0, 0, time.UTC)
@@ -159,15 +161,15 @@ func (u *userService) GetUserByID(ctx context.Context, schema string, id string)
 	return user, nil
 }
 
-func (u *userService) UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (master.User, error) {
+func (u *userService) UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
 	lg := logger.Get()
-	tableName := master.User{}.TableName(schema)
+	tableName := tenant.User{}.TableName(schema)
 
 	if dob, ok := updateData["DateOfBirth"]; ok {
 		if strDob, isString := dob.(string); isString {
 			parsed, err := time.Parse("2006-01-02", strDob)
 			if err != nil {
-				return master.User{}, fmt.Errorf("invalid dob format (expected YYYY-MM-DD): %v", err)
+				return tenant.User{}, fmt.Errorf("invalid dob format (expected YYYY-MM-DD): %v", err)
 			}
 			onlyDate := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC)
 			updateData["date_of_birth"] = onlyDate
@@ -179,13 +181,13 @@ func (u *userService) UpdateUser(ctx context.Context, schema string, id string, 
 	lg.Debug().Interface("record", updatedRecord).Msg("Updated user record")
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to update user record")
-		return master.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.DatabaseError
 	}
 	lg.Debug().Interface("record", updatedRecord).Msg("User update completed")
 
-	var updatedUser master.User
+	var updatedUser tenant.User
 	if err := helpers.MapToStruct(updatedRecord, &updatedUser); err != nil {
-		return master.User{}, app_errors.ErrMapToStruct
+		return tenant.User{}, app_errors.ErrMapToStruct
 	}
 	// if updatedUser.DateOfBirth != nil {
 	// 	*updatedUser.DateOfBirth = time.Date(updatedUser.DateOfBirth.Year(), updatedUser.DateOfBirth.Month(), updatedUser.DateOfBirth.Day(), 0, 0, 0, 0, time.UTC)
@@ -193,8 +195,8 @@ func (u *userService) UpdateUser(ctx context.Context, schema string, id string, 
 	return updatedUser, nil
 }
 
-func (u *userService) GetAllUsers(ctx context.Context, schema string) ([]master.User, error) {
-	tableName := master.User{}.TableName(schema)
+func (u *userService) GetAllUsers(ctx context.Context, schema string) ([]tenant.User, error) {
+	tableName := tenant.User{}.TableName(schema)
 	query := dbModels.QueryParams{
 		Select: []string{"*"},
 		Filters: []dbModels.QueryFilter{
@@ -210,11 +212,11 @@ func (u *userService) GetAllUsers(ctx context.Context, schema string) ([]master.
 		return nil, app_errors.DatabaseError
 	}
 	if len(usersData) == 0 {
-		return []master.User{}, nil
+		return []tenant.User{}, nil
 	}
-	var users []master.User
+	var users []tenant.User
 	for _, userData := range usersData {
-		var user master.User
+		var user tenant.User
 		if err := helpers.MapToStruct(userData, &user); err != nil {
 			return nil, app_errors.ErrMapToStruct
 		}
@@ -223,12 +225,12 @@ func (u *userService) GetAllUsers(ctx context.Context, schema string) ([]master.
 	return users, nil
 }
 
-func (u *userService) GetBulkUsers(ctx context.Context, schema string, ids []string) ([]master.User, error) {
+func (u *userService) GetBulkUsers(ctx context.Context, schema string, ids []string) ([]tenant.User, error) {
 	if len(ids) == 0 {
-		return []master.User{}, nil
+		return []tenant.User{}, nil
 	}
 
-	tableName := master.User{}.TableName(schema)
+	tableName := tenant.User{}.TableName(schema)
 
 	filters := []dbModels.QueryFilter{
 		{
@@ -248,12 +250,12 @@ func (u *userService) GetBulkUsers(ctx context.Context, schema string, ids []str
 		return nil, app_errors.DatabaseError
 	}
 	if len(rows) == 0 {
-		return []master.User{}, nil
+		return []tenant.User{}, nil
 	}
 
-	users := make([]master.User, 0, len(rows))
+	users := make([]tenant.User, 0, len(rows))
 	for _, row := range rows {
-		var user master.User
+		var user tenant.User
 		if err := helpers.MapToStruct(row, &user); err != nil {
 			return nil, app_errors.ErrMapToStruct
 		}
@@ -264,6 +266,6 @@ func (u *userService) GetBulkUsers(ctx context.Context, schema string, ids []str
 }
 
 func (u *userService) DeleteUser(ctx context.Context, schema string, id string) error {
-	tableName := master.User{}.TableName(schema)
+	tableName := tenant.User{}.TableName(schema)
 	return u.repo.TableService.DeleteRecord(ctx, tableName, id)
 }

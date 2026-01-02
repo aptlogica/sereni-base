@@ -77,7 +77,11 @@ func (s *workspaceService) ensureAuditColumns(ctx context.Context, schemaName st
 			},
 		}
 		if err := s.repo.TableService.AddColumn(tableName, req); err != nil {
-			lg.Warn().Err(err).Str("column", col).Str("table", tableName).Msg("Failed to add audit column")
+			// Silently ignore "already exists" errors as columns are defined in TableSchema
+			errMsg := err.Error()
+			if !strings.Contains(errMsg, "already exists") {
+				lg.Warn().Err(err).Str("column", col).Str("table", tableName).Msg("Failed to add audit column")
+			}
 		}
 	}
 }

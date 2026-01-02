@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"godbgrest/pkg"
+	"strings"
 	"time"
 
 	dbModels "godbgrest/pkg/models"
@@ -93,7 +94,11 @@ func (s *columnService) ensureAuditColumns(ctx context.Context, schemaName strin
 			},
 		}
 		if err := s.repo.TableService.AddColumn(tableName, req); err != nil {
-			fmt.Printf("DEBUG: Failed to add column %s to %s: %v\n", col, tableName, err)
+			// Silently ignore "already exists" errors as columns are defined in TableSchema
+			errMsg := err.Error()
+			if !strings.Contains(errMsg, "already exists") {
+				fmt.Printf("DEBUG: Failed to add column %s to %s: %v\n", col, tableName, err)
+			}
 		}
 	}
 }
@@ -211,7 +216,6 @@ func (s *columnService) GetColumnByModelID(ctx context.Context, schemaName, mode
 	}
 	return cols, nil
 }
-
 
 func (s *columnService) BulkInsert(colDataList []dto.ColumnInsertion, schemaName string) ([]tenant.Column, error) {
 	tableName := tenant.Column{}.TableName(schemaName)

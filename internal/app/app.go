@@ -33,8 +33,9 @@ import (
 )
 
 type App struct {
-	config *config.Config
-	server *http.Server
+	config       *config.Config
+	server       *http.Server
+	authProvider auth.AuthProvider
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -86,11 +87,6 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Initialize services
 	userService := services.NewUserService(dbService)
-	roleService := services.NewRoleService(dbService)
-	subscriptionPlanService := services.NewSubscriptionPlanService(dbService)
-	tenantService := services.NewTenantService(dbService)
-	tenantMembershipService := services.NewTenantMembershipService(dbService)
-	tenantSubscriptionService := services.NewTenantSubscriptionService(dbService)
 	workspaceService := services.NewWorkspaceService(dbService)
 	workspaceMemberService := services.NewWorkspaceMemberService(dbService)
 	baseService := services.NewBaseService(dbService)
@@ -100,7 +96,12 @@ func New(cfg *config.Config) (*App, error) {
 	viewService := services.NewViewService(dbService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
-	userRoleService := services.NewUserRoleService(dbService)
+	resourceService := services.NewResourceService(dbService)
+	actionService := services.NewActionService(dbService)
+	permissionService := services.NewPermissionService(dbService)
+	rolePermissionService := services.NewRolePermissionService(dbService)
+	accessMemberService := services.NewAccessMemberService(dbService)
+	accessRoleService := services.NewAccessRoleService(dbService)
 
 	assetManagementService := services.NewAssetManagementService(
 		dbService,
@@ -119,38 +120,44 @@ func New(cfg *config.Config) (*App, error) {
 		assetManagementService,
 	)
 
-	importService := services.NewImportService(tableManagementService)
+	rbacManagementService := services.NewRBACManagementService(
+		dbService,
+		accessRoleService,
+		resourceService,
+		actionService,
+		permissionService,
+		rolePermissionService,
+		accessMemberService,
+		baseService,
+	)
 
 	baseManagementService := services.NewBaseManagementService(
 		dbService,
 		baseService,
+		tableManagementService,
 		modelService,
+		assetManagementService,
 	)
 
+	importService := services.NewImportService(tableManagementService, baseManagementService, antivirusProvider)
+
+	// Create workspaceManagementService first (no circular dependency needed here)
 	workspaceManagementService := services.NewWorkspaceManagementService(
 		dbService,
 		workspaceService,
 		workspaceMemberService,
 		baseManagementService,
 		tableManagementService,
-	)
-
-	tenantManagementService := services.NewTenantManagementService(
-		dbService,
-		tenantService,
-		tenantSubscriptionService,
-		tenantMembershipService,
+		rbacManagementService,
 	)
 
 	userManagementService := services.NewUserManagementService(
 		dbService,
 		userService,
-		tenantManagementService,
-		subscriptionPlanService,
 		assetManagementService,
 		userResetTokenService,
-		userRoleService,
-		workspaceManagementService,
+		workspaceManagementService, // Now pass the actual service
+		rbacManagementService,
 		authProvider,
 	)
 
@@ -158,34 +165,34 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.TemporaryAddedUserPassword,
 		dbService,
 		userManagementService,
-		tenantManagementService,
-		subscriptionPlanService,
-		roleService,
-		workspaceManagementService,
+		workspaceManagementService, // Now pass the actual service
 		userResetTokenService,
+		rbacManagementService,
 		otpProvider,
 		emailTemplateService,
 		emailProvider,
 		authProvider,
 	)
 
+	organizationService := services.NewOrganizationService(dbService)
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
-	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService)
+	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService, authService)
 	baseHandler := handlers.NewBaseHandler(baseManagementService)
 	assetHandler := handlers.NewAssetsHandler(assetManagementService)
 	tableHandler := handlers.NewTableHandler(tableManagementService, importService)
 	userHandler := handlers.NewUserHandler(userManagementService)
-	tenantHandler := handlers.NewTenantHandler(tenantManagementService)
+	organizationHandler := handlers.NewOrganizationHandler(organizationService)
 
 	handlerGroups := router.Handlers{
-		Auth:      authHandler,
-		Workspace: workspaceHandler,
-		Base:      baseHandler,
-		Asset:     assetHandler,
-		Table:     tableHandler,
-		User:      userHandler,
-		Tenant:    tenantHandler,
+		Auth:         authHandler,
+		Workspace:    workspaceHandler,
+		Base:         baseHandler,
+		Asset:        assetHandler,
+		Table:        tableHandler,
+		User:         userHandler,
+		Organization: organizationHandler,
 	}
 
 	middlewareGroups := router.Middlewares{
@@ -194,7 +201,6 @@ func New(cfg *config.Config) (*App, error) {
 		DatabaseQueryLogger:     middleware.DatabaseQueryLogger,
 		RequestSizeLimit:        middleware.RequestSizeLimit,
 		AuthMiddleware:          func() gin.HandlerFunc { return middleware.AuthMiddleware(authProvider) },
-		TenantSchemaMiddleware:  func() gin.HandlerFunc { return middleware.TenantSchemaMiddleware(tenantManagementService) },
 		FileSizeLimitMiddleware: middleware.FileSizeLimitMiddleware,
 		ScopeHeaderMiddleware:   func(scope string) gin.HandlerFunc { return middleware.ScopeHeaderMiddleware(scope) },
 		WorkspaceAndBaseAccessValidationMiddleware: func(allowedAccess []string) gin.HandlerFunc {
@@ -214,8 +220,9 @@ func New(cfg *config.Config) (*App, error) {
 	}
 
 	return &App{
-		config: cfg,
-		server: server,
+		config:       cfg,
+		server:       server,
+		authProvider: authProvider,
 	}, nil
 }
 
@@ -242,7 +249,7 @@ func (a *App) Run() error {
 		fmt.Printf("failed to init services: %v", err)
 	}
 
-	runBeforeServer(dbService)
+	runBeforeServer(dbService, a.authProvider, a.config)
 
 	fmt.Printf("🚀 Serenibase server starting on %s\n", a.server.Addr)
 	// fmt.Printf("📚 API Documentation available at http://%s/api/v1/health\n", a.server.Addr)
@@ -258,9 +265,17 @@ func (a *App) Run() error {
 	return a.server.ListenAndServe()
 }
 
-func runBeforeServer(repo *pkg.DatabaseService) {
+func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, cfg *config.Config) {
 	fmt.Println("Running script before Gin server starts...")
 
 	// Your custom logic like DB connection, migration, etc.
 	scripts.CreateMasterSchema(repo) // Example: Create database schema
+
+	if err := scripts.CreateDefaultRBAC(repo); err != nil {
+		fmt.Printf("⚠ Warning: Default RBAC creation failed: %v\n", err)
+	}
+	// Register predefined owner from configuration
+	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
+		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)
+	}
 }

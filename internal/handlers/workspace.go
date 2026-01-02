@@ -1,27 +1,25 @@
 package handlers
 
 import (
-	"fmt"
 	"serenibase/internal/dto"
 	"serenibase/internal/handlers/validators"
-	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/response"
 
-	appConstant "serenibase/internal/constant"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-
-	app_errors "serenibase/internal/app-errors"
 )
 
 type WorkspaceHandler struct {
 	workspaceManagementService interfaces.WorkspaceManagementService
+	authManagementService      interfaces.AuthManagementService
 }
 
-func NewWorkspaceHandler(workspaceManagementService interfaces.WorkspaceManagementService) *WorkspaceHandler {
-	return &WorkspaceHandler{workspaceManagementService: workspaceManagementService}
+func NewWorkspaceHandler(workspaceManagementService interfaces.WorkspaceManagementService, authManagementService interfaces.AuthManagementService) *WorkspaceHandler {
+	return &WorkspaceHandler{
+		workspaceManagementService: workspaceManagementService,
+		authManagementService:      authManagementService,
+	}
 }
 
 func (h *WorkspaceHandler) CreateWorkspace(c *gin.Context) {
@@ -144,26 +142,74 @@ func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 	rolesVal, _ := c.Get("roles")
 	roles, _ := rolesVal.(string)
 
+	userIDVal, _ := c.Get("user_id")
+	userID, _ := userIDVal.(string)
+
 	var bases interface{}
 	var err error
 
-	// Check if user is admin in workspace
-	if roles == appConstant.RoleNames.Admin {
-		bases, err = h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID)
-	} else {
-		workspaceMemberData, _ := c.Get("workspaceMemberData")
-		workspaceMemberDataMap, ok := workspaceMemberData.(*tenant.WorkspaceMember)
-		if !ok {
-			fmt.Println("invalid workspaceMemberData type")
-			response.CheckAndSendError(c, app_errors.ErrInvalidWorkspaceMemberData)
-			return
-		}
-		bases, err = h.workspaceManagementService.GetBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceMemberDataMap)
-	}
+	bases, err = h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID, roles, userID)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
 
 	response.SendSuccess(c, "Bases retrieved successfully", bases)
+}
+
+// BulkAddMembers adds multiple members to workspace with their memberships
+func (h *WorkspaceHandler) BulkAddMembers(c *gin.Context) {
+	var req dto.BulkAddMembersRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.WorkspaceCreationValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIDVal, _ := c.Get("user_id")
+	userID, _ := userIDVal.(string)
+
+	result, err := h.authManagementService.BulkAddMembers(c.Request.Context(), schemaName, req, userID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Members added to workspace", result)
+}
+
+// BulkAddBaseMembers adds multiple members to bases
+func (h *WorkspaceHandler) BulkAddBaseMembers(c *gin.Context) {
+	baseID := c.Param("id")
+	var req dto.BulkAddBaseMembersRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.WorkspaceCreationValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIDVal, _ := c.Get("user_id")
+	userID, _ := userIDVal.(string)
+
+	result, err := h.authManagementService.BulkAddBaseMembers(c.Request.Context(), schemaName, baseID, req, userID)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, "Members added to base", result)
 }

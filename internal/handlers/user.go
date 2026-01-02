@@ -115,7 +115,6 @@ func (h *UserHandler) RemoveAvatar(c *gin.Context) {
 }
 
 func (h *UserHandler) GetWorkspaces(c *gin.Context) {
-	fmt.Println("GetWorkspaces--------------------")
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
@@ -141,7 +140,7 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	// Check if user has Admin role
 	rolesVal, _ := c.Get("roles")
 	roles, _ := rolesVal.(string)
-	
+
 	if roles != "Admin" {
 		response.SendError(c, responseConst.Error.UnauthorizedAccess)
 		return
@@ -157,7 +156,7 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	// Get optional workspace_id from query parameter
 	workspaceId := c.Query("workspace_id")
 
-	fmt.Println("role-->",rolesVal)
+	fmt.Println("role-->", rolesVal)
 
 	accessDetails, err := h.userManagementService.GetUserAccessDetails(c.Request.Context(), schemaName, userId, roles, workspaceId)
 	if err != nil {
@@ -168,4 +167,30 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UserAccessDetailsFetched, accessDetails)
 }
 
+// GetUserRolesAndAccess retrieves user's roles and access information organized by workspace and base
+// Supports optional query parameter: scope_id to filter by specific scope (workspace or base)
+func (h *UserHandler) GetUserRolesAndAccess(c *gin.Context) {
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
 
+	userID := c.Param("id")
+	if userID == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	// Get optional scope_id query parameter
+	scopeID := c.Query("scope_id")
+	var scopeIDPtr *string
+	if scopeID != "" {
+		scopeIDPtr = &scopeID
+	}
+
+	rolesAndAccess, err := h.userManagementService.GetUserRolesAndAccess(c.Request.Context(), schemaName, userID, scopeIDPtr)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.UserSuccess.UserFetched, rolesAndAccess)
+}

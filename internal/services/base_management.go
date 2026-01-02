@@ -2,7 +2,11 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"godbgrest/pkg"
+	dbModels "godbgrest/pkg/models"
+	"mime/multipart"
+	"path/filepath"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -15,20 +19,26 @@ import (
 )
 
 type baseManagementService struct {
-	repo         *pkg.DatabaseService
-	baseService  interfaces.BaseService
-	modelService interfaces.ModelService
+	repo                   *pkg.DatabaseService
+	baseService            interfaces.BaseService
+	tableManagementService interfaces.TableManagementService
+	modelService           interfaces.ModelService
+	assetManagementService interfaces.AssetManagementService
 }
 
 func NewBaseManagementService(
 	repo *pkg.DatabaseService,
 	baseService interfaces.BaseService,
+	tableManagementService interfaces.TableManagementService,
 	modelService interfaces.ModelService,
+	assetManagementService interfaces.AssetManagementService,
 ) interfaces.BaseManagementService {
 	return &baseManagementService{
-		repo:         repo,
-		baseService:  baseService,
-		modelService: modelService,
+		repo:                   repo,
+		baseService:            baseService,
+		tableManagementService: tableManagementService,
+		modelService:           modelService,
+		assetManagementService: assetManagementService,
 	}
 }
 
@@ -46,12 +56,80 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 		Title:       req.Title,
 		Description: req.Description,
 		// ... copy other fields ...
-		CreatedBy:   req.CreatedBy,
-		UpdatedBy:   req.CreatedBy,
+		CreatedBy: req.CreatedBy,
+		UpdatedBy: req.CreatedBy,
 	}
 	insertedBase, err := s.baseService.BaseInsertion(ctx, insertionReq, schemaName)
 	if err != nil {
 		return tenant.Base{}, err
+	}
+
+	var base dto.BaseResponse
+	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
+		return tenant.Base{}, app_errors.ErrStructToStruct
+	}
+
+	tableInsertionData := dto.CreateTableRequest{
+		BaseID:      insertedBase.ID.String(),
+		WorkspaceID: id.String(),
+		Title:       "Default Table",
+		Description: "",
+		OrderIndex:  0,
+		CreatedBy:   req.CreatedBy,
+	}
+
+	_, err = s.tableManagementService.CreateTableWithDefaults(ctx, tableInsertionData, schemaName)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
+		return tenant.Base{}, app_errors.ErrStructToStruct
+	}
+
+	return insertedBase, nil
+}
+
+func (s baseManagementService) CreateBaseWithImage(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string, fileHeader *multipart.FileHeader) (tenant.Base, error) {
+	// First create the base
+	insertedBase, err := s.CreateBase(ctx, req, schemaName, userId)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	// If image file is provided, upload it
+	if fileHeader != nil {
+		filename := fileHeader.Filename
+		ext := strings.ToLower(filepath.Ext(filename))
+		allowedExtensions := map[string]bool{
+			".jpg":  true,
+			".jpeg": true,
+			".png":  true,
+		}
+		if !allowedExtensions[ext] {
+			return insertedBase, nil // Return base without image if extension not allowed
+		}
+
+		uploadReq := dto.UploadAssetRequest{
+			Files: []*multipart.FileHeader{fileHeader},
+		}
+		assets, err := s.assetManagementService.Upload(ctx, uploadReq, schemaName)
+		if err != nil || len(assets) == 0 {
+			return insertedBase, nil // Return base without image if upload fails
+		}
+		imagePath := assets[0].Url
+
+		updateReq := dto.BaseUpdate{
+			Image:     &imagePath,
+			UpdatedBy: userId,
+		}
+
+		updatedBase, err := s.baseService.UpdateBase(ctx, schemaName, insertedBase.ID.String(), updateReq)
+		if err != nil {
+			return insertedBase, nil // Return base without image if update fails
+		}
+
+		return updatedBase, nil
 	}
 
 	return insertedBase, nil
@@ -122,4 +200,132 @@ func (s baseManagementService) GetTablesByBaseId(ctx context.Context, schemaName
 
 func (s baseManagementService) GetBasesByWorkspace(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
 	return s.baseService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
+}
+
+func (s baseManagementService) AddBaseImage(ctx context.Context, schema string, baseID string, fileHeader *multipart.FileHeader, userId string) (tenant.Base, error) {
+	// Delete existing image if any
+	err := s.deleteBaseImageIfExists(ctx, schema, baseID)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	if fileHeader == nil {
+		return tenant.Base{}, app_errors.InvalidPayload
+	}
+
+	filename := fileHeader.Filename
+	ext := strings.ToLower(filepath.Ext(filename))
+	allowedExtensions := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+	}
+	if !allowedExtensions[ext] {
+		return tenant.Base{}, app_errors.InvalidPayload
+	}
+
+	uploadReq := dto.UploadAssetRequest{
+		Files: []*multipart.FileHeader{fileHeader},
+	}
+	assets, err := s.assetManagementService.Upload(ctx, uploadReq, schema)
+	if err != nil || len(assets) == 0 {
+		return tenant.Base{}, err
+	}
+	imagePath := assets[0].Url
+
+	updateReq := dto.BaseUpdate{
+		Image:     &imagePath,
+		UpdatedBy: userId,
+	}
+
+	updatedBase, err := s.baseService.UpdateBase(ctx, schema, baseID, updateReq)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	return updatedBase, nil
+}
+
+func (s baseManagementService) deleteBaseImageIfExists(ctx context.Context, schema string, baseID string) error {
+	base, err := s.baseService.GetBaseByID(ctx, schema, baseID)
+	if err != nil {
+		return err
+	}
+
+	if base.Image != "" {
+		asset, err := s.assetManagementService.GetAssetByURL(ctx, schema, base.Image)
+		if err == nil {
+			if asset.Url == base.Image {
+				imageAssetId := asset.ID.String()
+				err = s.assetManagementService.DeleteAsset(ctx, imageAssetId, schema)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s baseManagementService) RemoveBaseImage(ctx context.Context, schema string, baseID string, userId string) (tenant.Base, error) {
+	err := s.deleteBaseImageIfExists(ctx, schema, baseID)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	emptyImage := ""
+	updateReq := dto.BaseUpdate{
+		Image:     &emptyImage,
+		UpdatedBy: userId,
+	}
+
+	updatedBase, err := s.baseService.UpdateBase(ctx, schema, baseID, updateReq)
+	if err != nil {
+		return tenant.Base{}, err
+	}
+
+	return updatedBase, nil
+}
+
+// RemoveUserFromBase removes a user from a base by deleting their access_members record
+func (s baseManagementService) RemoveUserFromBase(ctx context.Context, schemaName string, baseID string, userID string) error {
+	// Query access_members table to find the record for this user and base
+	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+
+	params := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   "user_id",
+				Operator: "eq",
+				Value:    userID,
+			},
+			{
+				Column:   "scope_type",
+				Operator: "eq",
+				Value:    "base",
+			},
+			{
+				Column:   "scope_id",
+				Operator: "eq",
+				Value:    baseID,
+			},
+		},
+	}
+
+	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	if err != nil {
+		return err
+	}
+
+	if len(records) == 0 {
+		return app_errors.ErrRecordNotFound
+	}
+
+	// Extract the ID from the first record
+	accessMemberID := records[0]["id"].(string)
+
+	// Delete the access_members record
+	return s.repo.TableService.DeleteRecord(ctx, tableName, accessMemberID)
 }

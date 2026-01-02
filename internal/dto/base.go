@@ -48,10 +48,9 @@ func (b *BaseInsertion) Map() map[string]interface{} {
 		"row_count":          b.RowCount,
 		"storage_used_bytes": b.StorageUsedBytes,
 		"created_by":         b.CreatedBy,
-		"last_modified_by":         b.UpdatedBy,
+		"last_modified_by":   b.UpdatedBy,
 		"created_time":       b.CreatedAt,
 		"last_modified_time": b.UpdatedAt,
-
 	}
 }
 
@@ -101,6 +100,7 @@ func (b *BaseInsertion) SetMeta(meta string) error {
 type BaseUpdate struct {
 	Title            *string                 `db:"title" json:"title,omitempty"`
 	Description      *string                 `db:"description" json:"description,omitempty"`
+	Image            *string                 `db:"image" json:"image,omitempty"`
 	Type             *string                 `db:"type" json:"type,omitempty"`
 	Config           *map[string]interface{} `db:"config" json:"config,omitempty"`
 	Settings         *map[string]interface{} `db:"settings" json:"settings,omitempty"`
@@ -122,6 +122,9 @@ func (b *BaseUpdate) Map() map[string]interface{} {
 	}
 	if b.Description != nil {
 		result["description"] = *b.Description
+	}
+	if b.Image != nil {
+		result["image"] = *b.Image
 	}
 	if b.Type != nil {
 		result["type"] = *b.Type
@@ -165,10 +168,11 @@ type CreateBaseRequest struct {
 }
 
 type BaseResponse struct {
-	ID          uuid.UUID `db:"id" json:"id,omitempty" mapstructure:"id"`
-	WorkspaceID string    `db:"workspace_id" json:"workspace_id,omitempty" mapstructure:"workspace_id"`
-	Title       string    `db:"title" json:"title,omitempty" mapstructure:"title"`
-	Description *string   `db:"description" json:"description,omitempty" mapstructure:"description"`
+	ID          uuid.UUID `db:"id" json:"id" mapstructure:"id"`
+	WorkspaceID string    `db:"workspace_id" json:"workspace_id" mapstructure:"workspace_id"`
+	Title       string    `db:"title" json:"title" mapstructure:"title"`
+	Description *string   `db:"description" json:"description" mapstructure:"description"`
+	Image       string    `db:"image" json:"image" mapstructure:"image"`
 
 	// Database connection (for external sources)
 	Type   string                 `db:"type" json:"type,omitempty" mapstructure:"type"`
@@ -192,6 +196,8 @@ type BaseResponse struct {
 
 	CreatedAt time.Time `db:"created_time" json:"created_time,omitempty" mapstructure:"created_time"`
 	UpdatedAt time.Time `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
+
+	AccessLevel string `db:"access_level" json:"access_level" mapstructure:"access_level"`
 
 	Tables []TableResponse `db:"tables" json:"tables" mapstructure:"tables"`
 }

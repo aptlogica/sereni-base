@@ -46,7 +46,7 @@ func (w *WorkspaceInsertion) Map() map[string]interface{} {
 		"is_default":         w.IsDefault,
 		"status":             w.Status,
 		"created_by":         w.CreatedBy,
-		"last_modified_by":         w.UpdatedBy,
+		"last_modified_by":   w.UpdatedBy,
 		"created_time":       w.CreatedAt,
 		"last_modified_time": w.UpdatedAt,
 	}
@@ -131,15 +131,12 @@ func (wmi *WorkspaceMemberInsertion) Map() map[string]interface{} {
 }
 
 type CreateMemberRequest struct {
-	WorkspaceID string `db:"workspace_id" json:"workspace_id,omitempty" mapstructure:"workspace_id"`
-	UserID      string `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
-	AccessLevel string `db:"access_level" json:"access_level,omitempty" mapstructure:"access_level"`
-	BasesIds    string `db:"bases_ids" json:"bases_ids,omitempty" mapstructure:"bases_ids"`
+	UserID     string              `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
+	Membership []MembershipRequest `json:"membership" mapstructure:"membership"`
 }
 
 type RemoveMemberRequest struct {
-	WorkspaceID string `db:"workspace_id" json:"workspace_id,omitempty" mapstructure:"workspace_id"`
-	UserID      string `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
+	UserID string `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
 }
 
 // WorkspaceMemberResponse embeds UserResponse, so all UserResponse fields are included.
@@ -205,4 +202,33 @@ type MemberAddSuccess struct {
 type MemberAddFailure struct {
 	UserID string `json:"user_id"`
 	Error  string `json:"error"`
+}
+
+// BulkAddMembersRequest for adding multiple members at once
+type BulkAddMembersRequest struct {
+	Members []BulkMemberRequest `json:"members" binding:"required,min=1"`
+}
+
+// BulkMemberRequest contains user_id and their memberships
+type BulkMemberRequest struct {
+	UserID      string              `json:"user_id" binding:"required"`
+	Memberships []MembershipRequest `json:"memberships" binding:"required,min=1"`
+}
+
+// BulkAddMembersResponse contains results of bulk member addition
+type BulkAddMembersResponse struct {
+	Success []string           `json:"success"`
+	Failed  []MemberAddFailure `json:"failed"`
+	Total   int                `json:"total"`
+}
+
+// BulkAddBaseMembers for adding members to bases
+type BulkAddBaseMembersRequest struct {
+	Members []BulkMemberRequest `json:"members" binding:"required,min=1"`
+}
+
+// BulkBaseMemberRequest for adding user to bases
+type BulkBaseMemberRequest struct {
+	UserID   string           `json:"user_id" binding:"required"`
+	BaseRole []BaseMembership `json:"base_role" binding:"required,min=1"`
 }

@@ -119,4 +119,64 @@ var ErrorMapping = map[error]ResponseCode{
 	app_errors.ErrUserDisableFailed:          Error.UserDisableFailed,
 	app_errors.ErrInvalidWorkspaceMemberData: Error.InvalidWorkspaceMemberData,
 	app_errors.ErrUserContextNotFound:        Error.UserContextNotFound,
+
+	// RBAC (Role-Based Access Control) errors
+	// Using existing RoleNotFound and RoleAlreadyExists from role management
+	app_errors.RoleNotFound:         RBACError.RoleNotFound,      // Reuse from role management
+	app_errors.RoleAlreadyExists:    RBACError.RoleAlreadyExists, // Reuse from role management
+	app_errors.RoleDeleteFailed:     RBACError.RoleDeleteFailed,
+	app_errors.RoleUpdateFailed:     RBACError.RoleUpdateFailed,
+	app_errors.InvalidRolePriority:  RBACError.InvalidRolePriority,
+	app_errors.RoleAssignmentFailed: RBACError.RoleAssignmentFailed,
+	app_errors.RoleRemovalFailed:    RBACError.RoleRemovalFailed,
+
+	// Resource errors
+	app_errors.ResourceNotFound:      RBACError.ResourceNotFound,
+	app_errors.ResourceAlreadyExists: RBACError.ResourceAlreadyExists,
+	app_errors.ResourceCreateFailed:  RBACError.ResourceCreateFailed,
+	app_errors.ResourceDeleteFailed:  RBACError.ResourceDeleteFailed,
+	app_errors.InvalidResourceCode:   RBACError.InvalidResourceCode,
+
+	// Action errors
+	app_errors.ActionNotFound:      RBACError.ActionNotFound,
+	app_errors.ActionAlreadyExists: RBACError.ActionAlreadyExists,
+	app_errors.ActionCreateFailed:  RBACError.ActionCreateFailed,
+	app_errors.ActionDeleteFailed:  RBACError.ActionDeleteFailed,
+	app_errors.InvalidActionCode:   RBACError.InvalidActionCode,
+
+	// Permission errors
+	app_errors.PermissionNotFound:      RBACError.PermissionNotFound,
+	app_errors.PermissionAlreadyExists: RBACError.PermissionAlreadyExists,
+	app_errors.PermissionCreateFailed:  RBACError.PermissionCreateFailed,
+	app_errors.PermissionDeleteFailed:  RBACError.PermissionDeleteFailed,
+	app_errors.InvalidPermissionCombo:  RBACError.InvalidPermissionCombo,
+
+	// Role-Permission errors
+	app_errors.RolePermissionNotFound:     RBACError.RolePermissionNotFound,
+	app_errors.RolePermissionExists:       RBACError.RolePermissionExists,
+	app_errors.RolePermissionCreateFailed: RBACError.RolePermissionCreateFailed,
+	app_errors.RolePermissionDeleteFailed: RBACError.RolePermissionDeleteFailed,
+
+	// Access Member errors
+	app_errors.AccessMemberNotFound:      RBACError.AccessMemberNotFound,
+	app_errors.AccessMemberAlreadyExists: RBACError.AccessMemberAlreadyExists,
+	app_errors.AccessMemberCreateFailed:  RBACError.AccessMemberCreateFailed,
+	app_errors.AccessMemberDeleteFailed:  RBACError.AccessMemberDeleteFailed,
+	app_errors.InvalidAccessScope:        RBACError.InvalidAccessScope,
+	app_errors.MissingScopeID:            RBACError.MissingScopeID,
+	app_errors.UserNotInScope:            RBACError.UserNotInScope,
+
+	// Permission check errors
+	app_errors.PermissionDenied:       RBACError.PermissionDenied,
+	app_errors.AccessDenied:           RBACError.AccessDenied,
+	app_errors.InsufficientPrivileges: RBACError.InsufficientPrivileges,
+
+	// Bulk operation errors
+	app_errors.BulkAssignmentFailed: RBACError.BulkAssignmentFailed,
+	app_errors.BulkRemovalFailed:    RBACError.BulkRemovalFailed,
+	app_errors.EmptyUserList:        RBACError.EmptyUserList,
+
+	// Scope errors
+	app_errors.InvalidScopeType: RBACError.InvalidScopeType,
+	app_errors.ScopeNotFound:    RBACError.ScopeNotFound,
 }

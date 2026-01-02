@@ -3,11 +3,10 @@ package constant
 import (
 	"serenibase/internal/dto"
 	"serenibase/internal/utils/helpers"
-	"strings"
 )
 
 const (
-	MasterDatabase = "master"
+	MasterDatabase = "public"
 
 	// Email footer notice
 	EmailFooterNotice = `────────────────────────────────────
@@ -27,86 +26,137 @@ func strPtr(s string) *string {
 	return &s
 }
 
-var RoleNames = struct {
-	Admin string
-	User  string
+// ========== RBAC Scope Levels ==========
+var ScopeLevels = struct {
+	System    string
+	Workspace string
+	Base      string
 }{
-	Admin: "Admin",
-	User:  "User",
+	System:    "system",
+	Workspace: "workspace",
+	Base:      "base",
 }
 
-var AccessNames = struct {
-	FullAccess    string
-	LimitedAccess string
+// ========== RBAC Role Names ==========
+var RBACRoleNames = struct {
+	Owner                 string
+	CoOwner               string
+	WorkspaceMaintainer   string
+	WorkspaceMaintainerRO string
+	BaseMember            string
+	BaseMemberReadOnly    string
+	NoAccess              string
 }{
-	FullAccess:    "full_access",
-	LimitedAccess: "limited_access",
+	Owner:                 "owner",
+	CoOwner:               "co-owner",
+	WorkspaceMaintainer:   "maintainer",
+	WorkspaceMaintainerRO: "workspace-read",
+	BaseMember:            "base-member",
+	BaseMemberReadOnly:    "base-read",
+	NoAccess:              "user",
 }
 
-var DefaultRoles = []dto.RoleInsertion{
-	{
-		Name:        RoleNames.Admin,
-		Description: strPtr("Has full administrative privileges, including managing users, system settings, billings, and subscriptions."),
-		IsDefault:   false,
-	},
-	{
-		Name:        RoleNames.User,
-		Description: strPtr("Standard user with no access unless or until added to a workspace."),
-		IsDefault:   false,
-	},
-}
-
-var DefaultAccessLevels = []dto.RoleInsertion{
-	{
-		Name:        AccessNames.FullAccess,
-		Description: strPtr("Administrator of the workspace with elevated permissions specific to the workspace, can also invite other members who have already been added by the admin."),
-		IsDefault:   false,
-	},
-	{
-		Name:        AccessNames.LimitedAccess,
-		Description: strPtr("Member of the workspace with standard permissions."),
-		IsDefault:   false,
-	},
-}
-
-var PlanNames = struct {
-	Free    string
-	Premium string
+// ========== RBAC Resource Codes ==========
+var ResourceCodes = struct {
+	Workspace   string
+	Base        string
+	Table       string
+	Records     string
+	Members     string
+	Views       string
+	Settings    string
+	ApiTokens   string
+	Webhooks    string
+	Automations string
 }{
-	Free:    "Free",
-	Premium: "Premium",
+	Workspace:   "workspace",
+	Base:        "base",
+	Table:       "table",
+	Records:     "records",
+	Members:     "members",
+	Views:       "views",
+	Settings:    "settings",
+	ApiTokens:   "api_tokens",
+	Webhooks:    "webhooks",
+	Automations: "automations",
 }
 
-var DefaultPlans = []dto.PlanInsertion{
+// ========== RBAC Action Codes ==========
+var ActionCodes = struct {
+	Read    string
+	Create  string
+	Update  string
+	Delete  string
+	Share   string
+	Invite  string
+	Export  string
+	Import  string
+	Execute string
+	Manage  string
+}{
+	Read:    "read",
+	Create:  "create",
+	Update:  "update",
+	Delete:  "delete",
+	Share:   "share",
+	Invite:  "invite",
+	Export:  "export",
+	Import:  "import",
+	Execute: "execute",
+	Manage:  "manage",
+}
+
+// ========== Default RBAC Roles ==========
+// These roles are created by default and mapped to permissions
+var DefaultAccessRoles = []dto.AccessRoleDTO{
 	{
-		Name:                 PlanNames.Free,
-		Slug:                 strings.ToLower(PlanNames.Free),
-		Description:          strPtr("Free plan with limited features"),
-		Currency:             "USD",
-		MaxWorkspaces:        func() *int { v := 1; return &v }(),
-		MaxBasesPerWorkspace: func() *int { v := 2; return &v }(),
-		MaxTablesPerBase:     func() *int { v := 5; return &v }(),
-		MaxRowsPerTable:      func() *int { v := 1000; return &v }(),
-		MaxCollaborators:     func() *int { v := 3; return &v }(),
-		MaxAPICallsPerHour:   func() *int { v := 100; return &v }(),
-		StorageLimitGB:       func() *int { v := 1; return &v }(),
-		Features:             "[]",
-		IsActive:             true,
+		Name:        RBACRoleNames.Owner,
+		ScopeLevel:  ScopeLevels.System,
+		Priority:    100,
+		Description: strPtr("Workspace owner with full control and management capabilities"),
+		IsDefault:   false,
 	},
 	{
-		Name:                 PlanNames.Premium,
-		Slug:                 strings.ToLower(PlanNames.Premium),
-		Description:          strPtr("Premium plan with advanced features"),
-		Currency:             "USD",
-		MaxWorkspaces:        func() *int { v := 10; return &v }(),
-		MaxBasesPerWorkspace: func() *int { v := 20; return &v }(),
-		MaxTablesPerBase:     func() *int { v := 50; return &v }(),
-		MaxRowsPerTable:      func() *int { v := 100000; return &v }(),
-		MaxCollaborators:     func() *int { v := 50; return &v }(),
-		MaxAPICallsPerHour:   func() *int { v := 10000; return &v }(),
-		StorageLimitGB:       func() *int { v := 100; return &v }(),
-		Features:             "[\"priority_support\",\"advanced_analytics\"]",
-		IsActive:             true,
+		Name:        RBACRoleNames.CoOwner,
+		ScopeLevel:  ScopeLevels.System,
+		Priority:    90,
+		Description: strPtr("Co-owner with full access similar to owner"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.WorkspaceMaintainer,
+		ScopeLevel:  ScopeLevels.Workspace,
+		Priority:    80,
+		Description: strPtr("Workspace maintainer with elevated permissions to manage workspace"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.WorkspaceMaintainerRO,
+		ScopeLevel:  ScopeLevels.Workspace,
+		Priority:    70,
+		Description: strPtr("Workspace maintainer with read-only access"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.BaseMember,
+		ScopeLevel:  ScopeLevels.Base,
+		Priority:    60,
+		Description: strPtr("Base member with standard read and write permissions"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.BaseMemberReadOnly,
+		ScopeLevel:  ScopeLevels.Base,
+		Priority:    50,
+		Description: strPtr("Base member with read-only access"),
+		IsDefault:   false,
+	},
+	{
+		Name:        RBACRoleNames.NoAccess,
+		ScopeLevel:  ScopeLevels.System,
+		Priority:    10,
+		Description: strPtr("No workspace access - can only view and edit own profile"),
+		IsDefault:   true,
 	},
 }
 
@@ -114,8 +164,8 @@ var SystemColumns = []dto.AddColumnRequest{
 	{
 		Title:       "Id",
 		Description: "",
-		UIDT:        "uuid",
-		DT:          "UUID",
+		UIDT:        "number",
+		DT:          "BIGSERIAL",
 		OrderIndex:  helpers.Float64Ptr(0),
 		Virtual:     helpers.BoolPtr(false),
 		System:      helpers.BoolPtr(true),

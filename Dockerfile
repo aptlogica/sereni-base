@@ -42,7 +42,6 @@
     
     # Copy binary and required files from builder
     COPY --from=builder /app/main .
-    COPY --from=builder /app/config.yaml .
     COPY --from=builder /app/docs ./docs
     
     # Create assets directory for uploads or static files

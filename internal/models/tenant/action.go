@@ -1,0 +1,37 @@
+package tenant
+
+import (
+	"fmt"
+	"godbgrest/pkg/models"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Action represents a system action that can be performed on resources
+// Examples: read, create, update, delete, share, invite, etc.
+type Action struct {
+	ID          uuid.UUID `db:"id" json:"id,omitempty" mapstructure:"id"`
+	Code        string    `db:"code" json:"code,omitempty" mapstructure:"code"` // read, create, update, delete, share, etc.
+	Description *string   `db:"description" json:"description,omitempty" mapstructure:"description"`
+	CreatedAt   time.Time `db:"created_time" json:"created_time,omitempty" mapstructure:"created_time"`
+}
+
+func (Action) TableName(prefix string) string {
+	return fmt.Sprintf("\"%s\".actions", prefix)
+}
+
+func (tbl Action) TableSchema(prefix string) models.CreateTableRequest {
+	return models.CreateTableRequest{
+		Name: tbl.TableName(prefix),
+		Columns: []models.ColumnDefinition{
+			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
+			{Name: "code", DataType: "varchar", NotNull: true, Unique: true},
+			{Name: "description", DataType: "text"},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+		},
+		Indexes: []models.IndexDefinition{
+			{Name: "idx_actions_code", Columns: []string{"code"}},
+		},
+	}
+}

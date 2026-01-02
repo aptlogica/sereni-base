@@ -6,14 +6,11 @@ import (
 	"godbgrest/pkg"
 	dbModels "godbgrest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type workspaceMemberService struct {
@@ -26,36 +23,6 @@ func NewWorkspaceMemberService(
 	return &workspaceMemberService{
 		repo: repo,
 	}
-}
-
-// CreateWorkspaceMember inserts a new workspace member using WorkspaceMemberInsertion DTO.
-func (s *workspaceMemberService) CreateWorkspaceMember(ctx context.Context, workspaceMemberReq *dto.CreateMemberRequest, schemaName string) error {
-	lg := logger.Get()
-	workspaceData := dto.WorkspaceMemberInsertion{
-		ID:          uuid.New(),
-		AccessLevel: workspaceMemberReq.AccessLevel,
-		UserID:      workspaceMemberReq.UserID,
-		WorkspaceID: workspaceMemberReq.WorkspaceID,
-		BasesIds:    workspaceMemberReq.BasesIds,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
-
-	tableName := tenant.WorkspaceMember{}.TableName(schemaName)
-
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, workspaceData.Map())
-	if err != nil {
-		lg.Error().Stack().Err(err).Msg("Failed to insert workspace member record")
-		return app_errors.DatabaseError
-	}
-
-	var insertedWorkspace tenant.Workspace
-
-	if err := helpers.MapToStruct(insertedData, &insertedWorkspace); err != nil {
-		return app_errors.ErrMapToStruct
-	}
-
-	return nil
 }
 
 // GetAllWorkspaceMembers returns all workspace members for the given schema

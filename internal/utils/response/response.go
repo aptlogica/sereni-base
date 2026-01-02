@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
+	appErrors "serenibase/internal/app-errors"
 	"serenibase/internal/providers/logger"
 	responseConstants "serenibase/internal/utils/response/constants"
 )
@@ -99,6 +100,21 @@ func CheckAndSendError(ctx *gin.Context, err error) {
 	// Log the original error
 	logger.Get().Error().Err(err).Msg("API Error")
 
+	// Check if it's an APIError (from external API)
+	var apiErr *appErrors.APIError
+	if errors.As(err, &apiErr) {
+		// Send the error message from the API directly to the frontend
+		ctx.JSON(http.StatusBadRequest, StandardResponse{
+			Success: false,
+			Error: &ErrorInfo{
+				Code:    apiErr.Code,
+				Message: apiErr.Message,
+				Details: fmt.Sprintf("%v", apiErr.Details),
+			},
+		})
+		return
+	}
+
 	code, ok := responseConstants.ErrorMapping[err]
 	if !ok || code == "" {
 		code = responseConstants.Error.InternalError
@@ -133,7 +149,7 @@ type ErrorMetaInfoSwager struct {
 type SuccessResponseSwager struct {
 	Success bool                   `json:"success" example:"true"`
 	Message string                 `json:"message,omitempty" example:"User created successfully"`
-	Data    interface{}            `json:"data,omitempty"	`
+	Data    interface{}            `json:"data,omitempty"`
 	Meta    *SuccessMetaInfoSwager `json:"meta,omitempty"`
 }
 

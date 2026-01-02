@@ -3,17 +3,17 @@ package interfaces
 import (
 	"context"
 	"serenibase/internal/dto"
-	"serenibase/internal/models/master"
+	"serenibase/internal/models/tenant"
 )
 
 type UserService interface {
 	// CRUD
-	CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (master.User, error)
-	GetUserByEmail(ctx context.Context, schema string, email string) (master.User, error)
-	GetUserByID(ctx context.Context, schema string, id string) (master.User, error)
-	UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (master.User, error)
-	GetAllUsers(ctx context.Context, schema string) ([]master.User, error)
-	GetBulkUsers(ctx context.Context, schema string, ids []string) ([]master.User, error)
+	CreateUser(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error)
+	GetUserByEmail(ctx context.Context, schema string, email string) (tenant.User, error)
+	GetUserByID(ctx context.Context, schema string, id string) (tenant.User, error)
+	UpdateUser(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error)
+	GetAllUsers(ctx context.Context, schema string) ([]tenant.User, error)
+	GetBulkUsers(ctx context.Context, schema string, ids []string) ([]tenant.User, error)
 	DeleteUser(ctx context.Context, id string, schema string) error
 
 	// // Authentication
