@@ -131,8 +131,6 @@ func New(cfg *config.Config) (*App, error) {
 		baseService,
 	)
 
-	importService := services.NewImportService(tableManagementService)
-
 	baseManagementService := services.NewBaseManagementService(
 		dbService,
 		baseService,
@@ -140,6 +138,8 @@ func New(cfg *config.Config) (*App, error) {
 		modelService,
 		assetManagementService,
 	)
+
+	importService := services.NewImportService(tableManagementService, baseManagementService, antivirusProvider)
 
 	// Create workspaceManagementService first (no circular dependency needed here)
 	workspaceManagementService := services.NewWorkspaceManagementService(

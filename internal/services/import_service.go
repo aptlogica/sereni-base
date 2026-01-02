@@ -6,30 +6,76 @@ import (
 	"fmt"
 	"mime/multipart"
 	"serenibase/internal/dto"
+	antivirusProviderInterface "serenibase/internal/providers/antivirus/interfaces"
 	"serenibase/internal/providers/logger"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type importService struct {
-	tableService interfaces.TableManagementService
+	tableService          interfaces.TableManagementService
+	baseManagementService interfaces.BaseManagementService
+	antivirusProvider     antivirusProviderInterface.Provider
 }
 
-func NewImportService(tableService interfaces.TableManagementService) interfaces.ImportService {
+func NewImportService(tableService interfaces.TableManagementService, baseManagementService interfaces.BaseManagementService, antivirusProvider antivirusProviderInterface.Provider) interfaces.ImportService {
 	return &importService{
-		tableService: tableService,
+		tableService:          tableService,
+		baseManagementService: baseManagementService,
+		antivirusProvider:     antivirusProvider,
 	}
 }
 
 func (s *importService) Import(ctx context.Context, schemaName string, req dto.CreateTableRequest, file *multipart.FileHeader) (dto.ImportTableResponse, error) {
 	lg := logger.Get()
 
-	// 1. Open file
+	// 1. Scan file with antivirus before processing
+	if s.antivirusProvider != nil {
+		f, err := file.Open()
+		if err != nil {
+			lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file for antivirus scan")
+			return dto.ImportTableResponse{}, err
+		}
+		scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, file.Filename, f)
+		f.Close()
+		if scanErr != nil {
+			lg.Error().Stack().Err(scanErr).Str("file", file.Filename).Str("threat", scanResult.Threat).Msg("Antivirus scan detected threat")
+			return dto.ImportTableResponse{}, fmt.Errorf("file '%s' is infected or contains malicious content", file.Filename)
+		}
+		lg.Info().Str("file", file.Filename).Msg("Antivirus scan passed")
+	}
+
+	// 2. Create base if base_id is not provided
+	if req.BaseID == "" {
+		if req.WorkspaceID == "" {
+			lg.Error().Msg("workspace_id is required when base_id is not provided")
+			return dto.ImportTableResponse{}, fmt.Errorf("workspace_id is required when base_id is not provided")
+		}
+
+		baseName := req.Title + "_base"
+		lg.Info().Str("baseName", baseName).Str("workspaceID", req.WorkspaceID).Msg("Creating new base for import")
+
+		createBaseReq := dto.CreateBaseRequest{
+			Title:       baseName,
+			Description: helpers.StringPtr("Auto-created base for table import"),
+			WorkspaceID: req.WorkspaceID,
+			CreatedBy:   req.CreatedBy,
+		}
+
+		newBase, err := s.baseManagementService.CreateBase(ctx, createBaseReq, schemaName, req.CreatedBy)
+		if err != nil {
+			lg.Error().Stack().Err(err).Str("baseName", baseName).Msg("Failed to create base for import")
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to create base: %w", err)
+		}
+
+		req.BaseID = newBase.ID.String()
+		lg.Info().Str("baseID", req.BaseID).Str("baseName", baseName).Msg("Base created successfully for import")
+	}
+
+	// 3. Open file for processing
 	f, err := file.Open()
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file")
@@ -151,8 +197,8 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 	newRecords := []map[string]interface{}{}
 	for _, row := range dataRows {
 		// Compose a record (map) with all header-column values for this row
+		// Note: Do not set 'id' field - let the database auto-generate it (bigint auto-increment)
 		record := map[string]interface{}{
-			"id":                 uuid.New().String(),
 			"created_by":         req.CreatedBy,
 			"last_modified_by":   req.CreatedBy,
 			"created_time":       time.Now().UTC(),
