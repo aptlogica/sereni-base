@@ -10,12 +10,11 @@ type TableManagementService interface {
 	// table operations
 	CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error)
 	UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error)
-	GetTableByID(ctx context.Context, id string, schemaName string, page_size int, page_number int) (dto.TableResponse, error)
+	GetTableByID(ctx context.Context, id string, schemaName string) (dto.TableResponse, error)
 	GetAllTables(ctx context.Context, schemaName string) ([]dto.TableResponse, error)
 	GetModelByBaseID(ctx context.Context, schemaName string, baseID string) ([]dto.TableResponse, error)
 	GetModelByWorkspaceID(ctx context.Context, schemaName string, workspaceID string) ([]dto.TableResponse, error)
 	DeleteTable(ctx context.Context, schemaName string, modelID string) error
-	GetTableDataPagination(ctx context.Context, req dto.PaginationRequest, schemaName string) (dto.TablePageResponse, error)
 
 	// column operations
 	AddColumn(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error)

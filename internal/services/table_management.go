@@ -278,7 +278,7 @@ func (s tableManagementService) UpdateTable(ctx context.Context, id string, tabl
 	return tableResponse, nil
 }
 
-func (s tableManagementService) GetTableByID(ctx context.Context, id string, schemaName string, pageSize int, pageNumber int) (dto.TableResponse, error) {
+func (s tableManagementService) GetTableByID(ctx context.Context, id string, schemaName string) (dto.TableResponse, error) {
 	model, err := s.modelService.GetModelByID(ctx, schemaName, id)
 	if err != nil {
 		return dto.TableResponse{}, err
@@ -299,13 +299,7 @@ func (s tableManagementService) GetTableByID(ctx context.Context, id string, sch
 		return dto.TableResponse{}, err
 	}
 
-	var recordsData dto.RecordsResponse
-	if pageSize == 0 || pageNumber == 0 {
-		recordsData, err = s.GetAllRecords(ctx, schemaName, id)
-	} else {
-		recordsData, err = s.GetRecordsWithPagination(ctx, schemaName, model.Alias, columnsData, pageSize, pageNumber)
-	}
-	// recordsData, err := s.getAllRecordsIncludingAssets(ctx, schemaName, model.Alias, columnsData)
+	recordsData, err := s.GetRecordsWithLookups(ctx, schemaName, model.Alias, columnsData)
 	if err != nil {
 		return dto.TableResponse{}, err
 	}
@@ -314,30 +308,6 @@ func (s tableManagementService) GetTableByID(ctx context.Context, id string, sch
 		Model:   modelResponse,
 		Columns: columnsData,
 		Views:   viewsData,
-		Records: recordsData.Records,
-	}
-
-	return tableResponse, nil
-}
-
-func (s tableManagementService) GetTableDataPagination(ctx context.Context, req dto.PaginationRequest, schemaName string) (dto.TablePageResponse, error) {
-	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
-	if err != nil {
-		return dto.TablePageResponse{}, err
-	}
-
-	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
-	if err != nil {
-		return dto.TablePageResponse{}, err
-	}
-
-	recordsData, err := s.GetRecordsWithPagination(ctx, schemaName, model.Alias, columnsData, req.PageSize, req.PageNumber)
-	if err != nil {
-		return dto.TablePageResponse{}, err
-	}
-
-	tableResponse := dto.TablePageResponse{
-		Columns: columnsData,
 		Records: recordsData.Records,
 	}
 
@@ -1672,17 +1642,18 @@ func (s tableManagementService) GetAllRecords(ctx context.Context, schemaName st
 		return dto.RecordsResponse{}, err
 	}
 
-	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, model.Alias)
-	params := dbModels.QueryParams{
-		OrderBy: []string{"created_time"},
-	}
-	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, modelID)
 	if err != nil {
-		return dto.RecordsResponse{}, app_errors.DatabaseError
+		return dto.RecordsResponse{}, err
+	}
+
+	recordsData, err := s.GetRecordsWithLookups(ctx, schemaName, model.Alias, columnsData)
+	if err != nil {
+		return dto.RecordsResponse{}, err
 	}
 
 	return dto.RecordsResponse{
-		Records: records,
+		Records: recordsData.Records,
 	}, nil
 }
 
@@ -1743,11 +1714,10 @@ func (s tableManagementService) checkLookuup(columnsData []dto.ColumnResponse) [
 	return relationIds
 }
 
-func (s tableManagementService) GetRecordsWithPagination(ctx context.Context, schemaName string, tableName string, columnsData []dto.ColumnResponse, page_size int, page_number int) (dto.RecordsResponse, error) {
+func (s tableManagementService) GetRecordsWithLookups(ctx context.Context, schemaName string, tableName string, columnsData []dto.ColumnResponse) (dto.RecordsResponse, error) {
 	lg := logger.Get()
-	functionName := "get_paginated_relations"
+	functionName := "get_table_data_with_relation"
 	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, functionName)
-	lg.Debug().Int("pageSize", page_size).Int("pageNumber", page_number).Msg("Fetching paginated records")
 
 	// check if lookup available
 	relationIds := s.checkLookuup(columnsData)
@@ -1816,8 +1786,6 @@ func (s tableManagementService) GetRecordsWithPagination(ctx context.Context, sc
 		"schema_name":       schemaName,
 		"source_table_name": tableName,
 		"relation_data":     relation_data,
-		"page_size":         page_size,
-		"page_number":       page_number,
 	}
 
 	lg.Debug().Interface("args", args).Msg("Executing pagination function with args")
@@ -1836,7 +1804,7 @@ func (s tableManagementService) GetRecordsWithPagination(ctx context.Context, sc
 	}
 
 	var normalizedRecord []map[string]interface{}
-	getPaginated, ok := records[0]["get_paginated_relations"]
+	getPaginated, ok := records[0]["get_table_data_with_relation"]
 	if ok {
 		switch val := getPaginated.(type) {
 		case []map[string]interface{}:

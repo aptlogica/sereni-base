@@ -95,8 +95,8 @@ var DefinedFunctions = []Function{
 		`,
 	},
 	{
-		FunctionName:   "get_paginated_relations",
-		FunctionParams: "schema_name TEXT, source_table_name TEXT, relation_data JSON[], page_size INT DEFAULT 10, page_number INT DEFAULT 1",
+		FunctionName:   "get_table_data_with_relation",
+		FunctionParams: "schema_name TEXT, source_table_name TEXT, relation_data JSON[]",
 		FunctionSQL: `
 			RETURNS JSON
 			LANGUAGE plpgsql AS
@@ -112,11 +112,7 @@ var DefinedFunctions = []Function{
 				relation_sql TEXT := '';
 				cols TEXT;
 				result JSON;
-				offset_val INT;
 			BEGIN
-				-- Calculate offset for pagination
-				offset_val := (page_number - 1) * page_size;
-
 				-- Loop through each relation object in relation_data array
 				FOR rel IN SELECT * FROM unnest(relation_data)
 				LOOP
@@ -153,18 +149,16 @@ var DefinedFunctions = []Function{
 					relation_sql := relation_sql || ', ' || cols;
 				END LOOP;
 
-				-- Build final query with pagination
+				-- Build final query without pagination
 				query := format(
 					'SELECT COALESCE(JSON_AGG(row_to_json(row)), ''[]''::JSON)
 					 FROM (
 						 SELECT s.* %s
 						 FROM %I.%I s
 						 ORDER BY s.created_time
-						 LIMIT %s OFFSET %s
 					 ) row',
 					relation_sql,
-					schema_name, source_table_name,
-					page_size, offset_val
+					schema_name, source_table_name
 				);
 
 				-- Execute dynamic query into a JSON array

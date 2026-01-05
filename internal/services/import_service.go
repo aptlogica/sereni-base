@@ -252,7 +252,7 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 
 	// Refresh table response to include new columns and records
 	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Refreshing table response")
-	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName, 0, 0)
+	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName)
 	if err != nil {
 		lg.Warn().Stack().Err(err).Str("tableID", tableResp.Model.ID.String()).Msg("Failed to refresh table response, returning cached response")
 		return dto.ImportTableResponse{TableResponse: tableResp}, nil

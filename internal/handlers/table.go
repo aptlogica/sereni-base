@@ -110,36 +110,7 @@ func (h *TableHandler) GetTableByID(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	// Explicitly initialize pageSize, pageNumber to 0 first
-	pageStr, pageSizeStr := c.Query("page"), c.Query("page_size")
-	pageSize, pageNumber := 0, 0
-
-	if len(pageStr) > 0 {
-		pn, err := strconv.Atoi(pageStr)
-		if err != nil {
-			response.SendError(c, responseConst.TableError.PageRequired)
-			return
-		}
-		if pn < 1 {
-			response.SendError(c, responseConst.TableError.PageInvalid)
-			return
-		}
-		pageNumber = pn
-	}
-
-	if len(pageSizeStr) > 0 {
-		ps, err := strconv.Atoi(pageSizeStr)
-		if err != nil {
-			response.SendError(c, responseConst.TableError.LimitRequired)
-			return
-		}
-		if ps < 1 {
-			response.SendError(c, responseConst.TableError.LimitInvalid)
-			return
-		}
-		pageSize = ps
-	}
-	table, err := h.tableManagementService.GetTableByID(c, id, schemaName, pageSize, pageNumber)
+	table, err := h.tableManagementService.GetTableByID(c, id, schemaName)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -537,43 +508,6 @@ func (h *TableHandler) GetAllRecords(c *gin.Context) {
 	schemaName, _ := c.Get("schema")
 	schemaNameStr := schemaName.(string)
 
-	pageStr, pageSizeStr := c.Query("page"), c.Query("page_size")
-	hasPagination := pageStr != "" || pageSizeStr != ""
-
-	if hasPagination {
-		var req dto.PaginationRequest
-		req.ModelID = id
-		pageNumber, err := strconv.Atoi(pageStr)
-		if err != nil {
-			response.SendError(c, responseConst.TableError.PageInvalid)
-			return
-		}
-		req.PageNumber = pageNumber
-		pageSize, err := strconv.Atoi(pageSizeStr)
-		if err != nil {
-			response.SendError(c, responseConst.TableError.LimitRequired)
-			return
-		}
-		req.PageSize = pageSize
-
-		if req.PageNumber < 1 {
-			response.SendError(c, responseConst.TableError.PageInvalid)
-			return
-		}
-		if req.PageSize < 1 {
-			response.SendError(c, responseConst.TableError.LimitInvalid)
-			return
-		}
-
-		records, err := h.tableManagementService.GetTableDataPagination(c, req, schemaNameStr)
-		if err != nil {
-			response.CheckAndSendError(c, err)
-			return
-		}
-		response.SendSuccess(c, responseConst.TableSuccess.RecordsFetched, records)
-		return
-	}
-
 	records, err := h.tableManagementService.GetAllRecords(c, schemaNameStr, id)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -656,29 +590,6 @@ func (h *TableHandler) DeleteTable(c *gin.Context) {
 	}
 
 	response.SendSuccess(c, responseConst.TableSuccess.TableDeleted, nil)
-}
-
-func (h *TableHandler) GetTableDataPagination(c *gin.Context) {
-	var req dto.PaginationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.PaginationRequestValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	tableResponse, err := h.tableManagementService.GetTableDataPagination(c, req, schemaName)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, responseConst.TableSuccess.TableFetched, tableResponse)
 }
 
 func (h *TableHandler) ReorderColumn(c *gin.Context) {
