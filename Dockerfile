@@ -13,7 +13,7 @@
     
     # Copy the local module required by 'replace' directive in go.mod
     # Ensure go-db-rest exists inside your build context
-    COPY go-db-rest ./go-db-rest
+    COPY go-postgres-rest ./go-postgres-rest
     
     # Download dependencies
     RUN go mod download
@@ -43,6 +43,7 @@
     # Copy binary and required files from builder
     COPY --from=builder /app/main .
     COPY --from=builder /app/docs ./docs
+    COPY --from=builder /app/.env .
     
     # Create assets directory for uploads or static files
     RUN mkdir -p /root/assets
