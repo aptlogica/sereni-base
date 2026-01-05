@@ -519,13 +519,13 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 		return tenant.User{}, err
 	}
 
-	// // Handle profile picture file upload
-	// if userData.ProfilePic != nil {
-	// 	_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
-	// 	if err != nil {
-	// 		return tenant.User{}, err
-	// 	}
-	// }
+	// Handle profile picture file upload
+	if userData.ProfilePic != nil {
+		_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
+		if err != nil {
+			return tenant.User{}, err
+		}
+	}
 
 	// Send invitation
 	tokenAttrs := map[string]interface{}{
@@ -698,15 +698,13 @@ func (a *authManagementService) EditUser(ctx context.Context, schema string, use
 	}
 
 	// 4. Handle Membership updates (only if IsCoOwner is not being changed to true)
-	if userData.IsCoOwner == nil && len(userData.Membership) > 0 {
+	if len(userData.Membership) > 0 {
 		// Just update memberships using existing functionality
 		_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
 		if err != nil {
 			return dto.UserResponse{}, err
 		}
-	} else if userData.IsCoOwner != nil && !*userData.IsCoOwner && len(userData.Membership) > 0 {
-		// Handled in step 3, no need to process again
-	}
+	} 
 
 	// Fetch updated user data
 	updatedUser, err := a.userManagementService.GetUserByID(ctx, schema, userData.UserID)

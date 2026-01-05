@@ -77,7 +77,7 @@ func (h *UserHandler) AddAvatar(c *gin.Context) {
 		return
 	}
 
-	file, err := c.FormFile("avatar")
+	file, err := c.FormFile("file")
 	if err != nil {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return

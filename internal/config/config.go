@@ -20,6 +20,7 @@ type Config struct {
 	Antivirus                  AntivirusConfig                  `mapstructure:"antivirus"`
 	TemporaryAddedUserPassword TemporaryAddedUserPasswordConfig `mapstructure:"temporary_added_user_password"`
 	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
+	CORS                       CORSConfig                       `mapstructure:"cors"`
 }
 
 type ServerConfig struct {
@@ -95,6 +96,14 @@ type OwnerRegistrationConfig struct {
 	Password  string `mapstructure:"password"`
 }
 
+// CORSConfig holds CORS configuration
+type CORSConfig struct {
+	AllowedOrigins   string `mapstructure:"allowed_origins"`
+	AllowedMethods   string `mapstructure:"allowed_methods"`
+	AllowedHeaders   string `mapstructure:"allowed_headers"`
+	AllowCredentials bool   `mapstructure:"allow_credentials"`
+}
+
 func Load() (*Config, error) {
 	// Load .env file
 	_ = godotenv.Load()
@@ -167,6 +176,12 @@ func Load() (*Config, error) {
 	viper.BindEnv("owner_registration.email", "OWNER_EMAIL")
 	viper.BindEnv("owner_registration.password", "OWNER_PASSWORD")
 
+	// CORS Config
+	viper.BindEnv("cors.allowed_origins", "CORS_ALLOWED_ORIGINS")
+	viper.BindEnv("cors.allowed_methods", "CORS_ALLOWED_METHODS")
+	viper.BindEnv("cors.allowed_headers", "CORS_ALLOWED_HEADERS")
+	viper.BindEnv("cors.allow_credentials", "CORS_ALLOW_CREDENTIALS")
+
 	// Set defaults
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -231,6 +246,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("owner_registration.last_name", "User")
 	viper.SetDefault("owner_registration.email", "admin@example.com")
 	viper.SetDefault("owner_registration.password", "Admin@123")
+
+	viper.SetDefault("cors.allowed_origins", "*")
+	viper.SetDefault("cors.allowed_methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
+	viper.SetDefault("cors.allowed_headers", "Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization,accept,origin,Cache-Control,X-Requested-With,schema,workspace,base")
+	viper.SetDefault("cors.allow_credentials", true)
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
