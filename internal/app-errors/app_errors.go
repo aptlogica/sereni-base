@@ -60,6 +60,7 @@ var (
 	ErrHTTPRequestCreation   = errors.New("failed to create HTTP request")
 	ErrHTTPDoRequest         = errors.New("failed to execute HTTP request")
 	ErrServiceNotInitialized = errors.New("service not initialized")
+	UserNotActive            = errors.New("user is not active")
 )
 
 // user management
