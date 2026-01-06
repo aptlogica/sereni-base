@@ -30,6 +30,7 @@ var ErrorMapping = map[error]ResponseCode{
 	app_errors.ErrJSONMarshal:         Error.JSONMarshalError,
 	app_errors.ErrHTTPRequestCreation: Error.HTTPRequestCreationError,
 	app_errors.ErrHTTPDoRequest:       Error.HTTPDoRequestError,
+	app_errors.UserNotActive:          Error.UserNotActive,
 
 	// user management
 	app_errors.UserAlreadyExists:    UserError.UserAlreadyExists,

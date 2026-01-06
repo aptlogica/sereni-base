@@ -32,6 +32,7 @@ var Error = struct {
 	JSONMarshalError         ResponseCode
 	HTTPRequestCreationError ResponseCode
 	HTTPDoRequestError       ResponseCode
+	UserNotActive            ResponseCode
 
 	// file handling
 	FileNotFound           ResponseCode
@@ -86,6 +87,7 @@ var Error = struct {
 	JSONMarshalError:         "ERR_0027",
 	HTTPRequestCreationError: "ERR_0028",
 	HTTPDoRequestError:       "ERR_0029",
+	UserNotActive:            "ERR_0030",
 
 	FileNotFound:           "ERR_1001",
 	FileAlreadyExists:      "ERR_1002",
@@ -140,6 +142,7 @@ var CoreErrorCodes = map[ResponseCode]MetaResponse{
 	Error.JSONMarshalError:         {HTTPStatus: http.StatusInternalServerError, Message: "JSON marshal error", Description: "Failed to marshal data to JSON"},
 	Error.HTTPRequestCreationError: {HTTPStatus: http.StatusInternalServerError, Message: "HTTP request creation error", Description: "Failed to create HTTP request"},
 	Error.HTTPDoRequestError:       {HTTPStatus: http.StatusInternalServerError, Message: "HTTP do request error", Description: "Failed to execute HTTP request"},
+	Error.UserNotActive:            {HTTPStatus: http.StatusForbidden, Message: "User not active", Description: "The user account is not active"},
 
 	Error.FileNotFound:           {HTTPStatus: http.StatusNotFound, Message: "File not found", Description: "The requested file was not found"},
 	Error.FileAlreadyExists:      {HTTPStatus: http.StatusConflict, Message: "File already exists", Description: "The file already exists"},

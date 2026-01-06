@@ -207,6 +207,10 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 		return dto.LoginResponse{}, err
 	}
 
+	if masterUser.Status != "active" {
+		return dto.LoginResponse{}, app_errors.UserNotActive
+	}
+
 	// Verify Password
 	if !helpers.CheckPasswordHash(password, masterUser.Password) {
 		return dto.LoginResponse{}, app_errors.InvalidCredentials
@@ -496,6 +500,18 @@ func (a *authManagementService) Logout(ctx context.Context, refreshToken string)
 }
 
 func (a *authManagementService) AddUser(ctx context.Context, schema string, userData dto.AddUserRequest, reqBy string) (tenant.User, error) {
+
+	// Check if email already exists
+	_, err := a.userManagementService.GetUserByEmail(ctx, schema, userData.Email)
+	if err == nil {
+		// User exists with this email
+		return tenant.User{}, app_errors.UserAlreadyExists
+	} else if err != app_errors.UserNotFound {
+		// Some other error occurred
+		return tenant.User{}, err
+	}
+	// If err == app_errors.UserNotFound, the email is available, continue
+
 	// Admin adding user
 	roles := appConstant.RBACRoleNames.NoAccess
 	if userData.IsCoOwner {
@@ -704,7 +720,7 @@ func (a *authManagementService) EditUser(ctx context.Context, schema string, use
 		if err != nil {
 			return dto.UserResponse{}, err
 		}
-	} 
+	}
 
 	// Fetch updated user data
 	updatedUser, err := a.userManagementService.GetUserByID(ctx, schema, userData.UserID)
