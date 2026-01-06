@@ -886,6 +886,8 @@ func (s tableManagementService) removeLookupColumnInRelation(
 		}
 	}
 
+	fmt.Println("Updating relation with removal of lookup column:", relationUpdation)
+
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
 		lg := logger.Get()
@@ -1232,22 +1234,17 @@ func (s tableManagementService) updateColumnForLookup(
 		return dto.ColumnResponse{}, err
 	}
 
-	updatedLookupColumnID, updatedRelationID, ok := s.validateMetaForLookup(updatedColumn.Meta)
+	updatedLookupColumnID, _, ok := s.validateMetaForLookup(updatedColumn.Meta)
 	if ok {
-		udpatedLookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, updatedLookupColumnID)
+		updatedLookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, updatedLookupColumnID)
 		if err != nil {
 			return dto.ColumnResponse{}, err
 		}
 
-		err = s.addLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, udpatedLookupColumn.ColumnName)
+		err = s.addLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, updatedLookupColumn.ColumnName)
 		if err != nil {
 			return dto.ColumnResponse{}, err
 		}
-	}
-
-	err = s.addLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), updatedRelationID, columnData.ColumnName)
-	if err != nil {
-		return dto.ColumnResponse{}, err
 	}
 
 	var updatedColumnResponse dto.ColumnResponse
