@@ -102,6 +102,7 @@ type UpdateUserProfileRequest struct {
 	DateOfBirth  *string                 `json:"dob" mapstructure:"date_of_birth"`
 	Country      *string                 `json:"country" mapstructure:"country"`
 	Timezone     *string                 `json:"timezone" mapstructure:"timezone"`
+	Locale       *string                 `json:"locale" mapstructure:"locale"`
 }
 
 func (u *UpdateUserProfileRequest) Map() map[string]interface{} {
@@ -126,6 +127,9 @@ func (u *UpdateUserProfileRequest) Map() map[string]interface{} {
 	}
 	if u.Timezone != nil {
 		m["timezone"] = *u.Timezone
+	}
+	if u.Locale != nil {
+		m["locale"] = *u.Locale
 	}
 	// Always add UpdatedAt as it is not a pointer and presumably always set.
 	m["last_modified_time"] = u.UpdatedAt
