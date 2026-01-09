@@ -259,6 +259,31 @@ func DeleteRowDataRequestValidationError(e validator.FieldError) responseConst.R
 	}
 }
 
+func BulkDeleteRowsRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "RowIds":
+		switch tag {
+		case "required":
+			return responseConst.TableError.RowIdRequired
+		case "min":
+			return responseConst.TableError.RowIdRequired
+		default:
+			return responseConst.TableError.RowIdInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
 func UpdateRowDataLinksRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()

@@ -80,6 +80,11 @@ type DeleteRowDataRequest struct {
 	RowId   int    `json:"row_id" binding:"required" example:"1"`
 }
 
+type BulkDeleteRowsRequest struct {
+	ModelID string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	RowIds  []int  `json:"row_ids" binding:"required,min=1" example:"[1,2,3,4,5]"`
+}
+
 type UpdateRowDataLinksRequest struct {
 	ModelID     string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
 	ColumnId    string `json:"column_id" binding:"required" example:"col-123"`

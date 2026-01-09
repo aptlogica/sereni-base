@@ -2651,6 +2651,49 @@ func (s tableManagementService) AddAttachment(
 	}, nil
 }
 
+func (s tableManagementService) BulkDeleteRows(ctx context.Context, schemaName string, req dto.BulkDeleteRowsRequest) (int, error) {
+	lg := logger.Get()
+	// Get the model to retrieve table name
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		lg.Error().Stack().Err(err).Str("modelID", req.ModelID).Msg("Failed to get model for bulk delete")
+		return 0, err
+	}
+	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, model.Alias)
+	deletedCount := 0
+	// Process each row for link cleanup before bulk delete
+	for _, rowId := range req.RowIds {
+		rowData, err := s.getRowByID(ctx, tableName, rowId)
+		if err != nil {
+			lg.Warn().Err(err).Int("rowId", rowId).Msg("Row not found, skipping")
+			continue
+		}
+		// Handle link cleanup for this row
+		deleteReq := dto.DeleteRowDataRequest{
+			ModelID: req.ModelID,
+			RowId:   rowId,
+		}
+		if err := s.handleDeleteRowForLinks(ctx, model, rowData, schemaName, deleteReq); err != nil {
+			lg.Error().Stack().Err(err).Int("rowId", rowId).Msg("Failed to handle links for row")
+			return deletedCount, err
+		}
+	}
+	// Convert row IDs to interface{} slice for BulkDelete
+	ids := make([]interface{}, len(req.RowIds))
+	for i, id := range req.RowIds {
+		ids[i] = id
+	}
+	// Use BulkService to delete all rows at once
+	count, err := s.repo.BulkService.BulkDelete(tableName, ids, "id")
+	if err != nil {
+		lg.Error().Stack().Err(err).Str("tableName", tableName).Msg("Failed to bulk delete rows")
+		return deletedCount, app_errors.DatabaseError
+	}
+	deletedCount = int(count)
+	lg.Info().Int("deletedCount", deletedCount).Str("tableName", tableName).Msg("Successfully bulk deleted rows")
+	return deletedCount, nil
+}
+
 func (s tableManagementService) RemoveAttachments(
 	ctx context.Context,
 	schemaName string,

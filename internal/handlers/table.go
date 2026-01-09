@@ -657,3 +657,25 @@ func (h *TableHandler) ImportTable(c *gin.Context) {
 
 	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, table)
 }
+func (h *TableHandler) BulkDeleteRows(c *gin.Context) {
+	var req dto.BulkDeleteRowsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.BulkDeleteRowsRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+	deletedCount, err := h.tableManagementService.BulkDeleteRows(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	response.SendSuccess(c, responseConst.TableSuccess.RowDeleted, gin.H{
+		"deleted_count": deletedCount,
+		"message":       fmt.Sprintf("Successfully deleted %d rows", deletedCount),
+	})
+}

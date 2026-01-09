@@ -228,6 +228,7 @@ func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mid
 	{
 		row.POST("/create", handlers.Table.CreateRow)
 		row.POST("/remove", handlers.Table.DeleteRow)
+		row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
 		row.POST("/data/insert", handlers.Table.InsertRowData)
 		row.POST("/data/relation", handlers.Table.InsertRowDataForLinks)
 
