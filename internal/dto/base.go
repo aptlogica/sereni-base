@@ -98,20 +98,20 @@ func (b *BaseInsertion) SetMeta(meta string) error {
 
 // BaseUpdate is used when updating an existing base
 type BaseUpdate struct {
-	Title            *string                 `db:"title" json:"title"`
-	Description      *string                 `db:"description" json:"description"`
-	Image            *string                 `db:"image" json:"image"`
-	Type             *string                 `db:"type" json:"type"`
-	Config           *map[string]interface{} `db:"config" json:"config"`
-	Settings         *map[string]interface{} `db:"settings" json:"settings"`
-	Meta             *map[string]interface{} `db:"meta" json:"meta"`
-	Status           *string                 `db:"status" json:"status"`
-	Visibility       *string                 `db:"visibility" json:"visibility"`
-	TableCount       *int                    `db:"table_count" json:"table_count"`
-	RowCount         *int64                  `db:"row_count" json:"row_count"`
-	StorageUsedBytes *int64                  `db:"storage_used_bytes" json:"storage_used_bytes"`
-	UpdatedBy        string                  `db:"last_modified_by" json:"last_modified_by"`
-	UpdatedAt        time.Time               `db:"last_modified_time" json:"last_modified_time"`
+	Title            *string                 `db:"title" json:"title,omitempty"`
+	Description      *string                 `db:"description" json:"description,omitempty"`
+	Image            *string                 `db:"image" json:"image,omitempty"`
+	Type             *string                 `db:"type" json:"type,omitempty"`
+	Config           *map[string]interface{} `db:"config" json:"config,omitempty"`
+	Settings         *map[string]interface{} `db:"settings" json:"settings,omitempty"`
+	Meta             *map[string]interface{} `db:"meta" json:"meta,omitempty"`
+	Status           *string                 `db:"status" json:"status,omitempty"`
+	Visibility       *string                 `db:"visibility" json:"visibility,omitempty"`
+	TableCount       *int                    `db:"table_count" json:"table_count,omitempty"`
+	RowCount         *int64                  `db:"row_count" json:"row_count,omitempty"`
+	StorageUsedBytes *int64                  `db:"storage_used_bytes" json:"storage_used_bytes,omitempty"`
+	UpdatedBy        string                  `db:"last_modified_by" json:"last_modified_by,omitempty"`
+	UpdatedAt        time.Time               `db:"last_modified_time" json:"last_modified_time,omitempty"`
 }
 
 // Map converts BaseUpdate → map[string]interface{} for DB update
@@ -161,10 +161,10 @@ func (b *BaseUpdate) Map() map[string]interface{} {
 }
 
 type CreateBaseRequest struct {
-	Title       string  `db:"title" json:"title"`
-	Description *string `db:"description" json:"description"`
-	WorkspaceID string  `db:"workspace_id" json:"workspace_id"`
-	CreatedBy   string  `json:"created_by"`
+	Title       string  `db:"title" json:"title,omitempty"`
+	Description *string `db:"description" json:"description,omitempty"`
+	WorkspaceID string  `db:"workspace_id" json:"workspace_id,omitempty"`
+	CreatedBy   string  `json:"created_by,omitempty"`
 }
 
 type BaseResponse struct {
@@ -175,27 +175,27 @@ type BaseResponse struct {
 	Image       string    `db:"image" json:"image" mapstructure:"image"`
 
 	// Database connection (for external sources)
-	Type   string                 `db:"type" json:"type" mapstructure:"type"`
-	Config map[string]interface{} `db:"config" json:"config" mapstructure:"config"`
+	Type   string                 `db:"type" json:"type,omitempty" mapstructure:"type"`
+	Config map[string]interface{} `db:"config" json:"config,omitempty" mapstructure:"config"`
 
 	// Settings and metadata
-	Settings map[string]interface{} `db:"settings" json:"settings" mapstructure:"settings"`
+	Settings map[string]interface{} `db:"settings" json:"settings,omitempty" mapstructure:"settings"`
 	Meta     map[string]interface{} `db:"meta" json:"meta" mapstructure:"meta"`
 
 	// Status and visibility
-	Status     string `db:"status" json:"status" mapstructure:"status"`
-	Visibility string `db:"visibility" json:"visibility" mapstructure:"visibility"`
+	Status     string `db:"status" json:"status,omitempty" mapstructure:"status"`
+	Visibility string `db:"visibility" json:"visibility,omitempty" mapstructure:"visibility"`
 
 	// Resource tracking
-	TableCount       int   `db:"table_count" json:"table_count" mapstructure:"table_count"`
-	RowCount         int64 `db:"row_count" json:"row_count" mapstructure:"row_count"`
-	StorageUsedBytes int64 `db:"storage_used_bytes" json:"storage_used_bytes" mapstructure:"storage_used_bytes"`
+	TableCount       int   `db:"table_count" json:"table_count,omitempty" mapstructure:"table_count"`
+	RowCount         int64 `db:"row_count" json:"row_count,omitempty" mapstructure:"row_count"`
+	StorageUsedBytes int64 `db:"storage_used_bytes" json:"storage_used_bytes,omitempty" mapstructure:"storage_used_bytes"`
 
 	CreatedBy string `db:"created_by" json:"created_by" mapstructure:"created_by"`
 	UpdatedBy string `db:"last_modified_by" json:"last_modified_by" mapstructure:"last_modified_by"`
 
-	CreatedAt time.Time `db:"created_time" json:"created_time" mapstructure:"created_time"`
-	UpdatedAt time.Time `db:"last_modified_time" json:"last_modified_time" mapstructure:"last_modified_time"`
+	CreatedAt time.Time `db:"created_time" json:"created_time,omitempty" mapstructure:"created_time"`
+	UpdatedAt time.Time `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
 
 	AccessLevel string `db:"access_level" json:"access_level" mapstructure:"access_level"`
 
