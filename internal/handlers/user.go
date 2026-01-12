@@ -53,18 +53,65 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	}
 
 	var updatePayload dto.UpdateUserProfileRequest
-	if err := c.ShouldBindJSON(&updatePayload); err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
-		return
+
+	// Manually bind form fields
+	if firstName := c.PostForm("first_name"); firstName != "" {
+		updatePayload.FirstName = &firstName
+	}
+	if lastName := c.PostForm("last_name"); lastName != "" {
+		updatePayload.LastName = &lastName
+	}
+	if displayName := c.PostForm("display_name"); displayName != "" {
+		updatePayload.DisplayName = &displayName
+	}
+	if dob := c.PostForm("dob"); dob != "" {
+		updatePayload.DateOfBirth = &dob
+	}
+	if country := c.PostForm("country"); country != "" {
+		updatePayload.Country = &country
+	}
+	if timezone := c.PostForm("timezone"); timezone != "" {
+		updatePayload.Timezone = &timezone
+	}
+	if locale := c.PostForm("locale"); locale != "" {
+		updatePayload.Locale = &locale
+	}
+
+	// Bind file if present
+	if file, err := c.FormFile("avatar"); err == nil {
+		updatePayload.ProfilePic = file
 	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	updatedProfile, err := h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
+	var updatedProfile dto.UserResponse
+	var err error
+
+	if updatePayload.ProfilePic != nil {
+		// Handle avatar upload
+		updatedProfile, err = h.userManagementService.AddAvatar(c.Request.Context(), schemaName, id, updatePayload.ProfilePic)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		// Update other profile fields if provided
+		updatePayload.ProfilePic = nil
+		updateFields := updatePayload.Map()
+		if len(updateFields) > 0 {
+			updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
+			if err != nil {
+				response.CheckAndSendError(c, err)
+				return
+			}
+		}
+	} else {
+		// Update profile fields only
+		updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
 	}
 
 	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)

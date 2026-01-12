@@ -180,7 +180,7 @@ type BaseResponse struct {
 
 	// Settings and metadata
 	Settings map[string]interface{} `db:"settings" json:"settings,omitempty" mapstructure:"settings"`
-	Meta     map[string]interface{} `db:"meta" json:"meta,omitempty" mapstructure:"meta"`
+	Meta     map[string]interface{} `db:"meta" json:"meta" mapstructure:"meta"`
 
 	// Status and visibility
 	Status     string `db:"status" json:"status,omitempty" mapstructure:"status"`
