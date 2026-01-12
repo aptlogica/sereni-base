@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"math"
 	"mime/multipart"
 	"serenibase/internal/dto"
 	antivirusProviderInterface "serenibase/internal/providers/antivirus/interfaces"
@@ -293,8 +294,12 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
-			if _, err := strconv.ParseInt(val, 10, 64); err != nil {
+			if v, err := strconv.ParseInt(val, 10, 64); err != nil {
 				isNumber = false
+			} else {
+				if v > math.MaxInt32 || v < math.MinInt32 {
+					isNumber = false
+				}
 			}
 			if _, err := strconv.ParseFloat(val, 64); err != nil {
 				isDecimal = false
