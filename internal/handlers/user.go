@@ -53,9 +53,33 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	}
 
 	var updatePayload dto.UpdateUserProfileRequest
-	if err := c.ShouldBind(&updatePayload); err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
-		return
+
+	// Manually bind form fields
+	if firstName := c.PostForm("first_name"); firstName != "" {
+		updatePayload.FirstName = &firstName
+	}
+	if lastName := c.PostForm("last_name"); lastName != "" {
+		updatePayload.LastName = &lastName
+	}
+	if displayName := c.PostForm("display_name"); displayName != "" {
+		updatePayload.DisplayName = &displayName
+	}
+	if dob := c.PostForm("dob"); dob != "" {
+		updatePayload.DateOfBirth = &dob
+	}
+	if country := c.PostForm("country"); country != "" {
+		updatePayload.Country = &country
+	}
+	if timezone := c.PostForm("timezone"); timezone != "" {
+		updatePayload.Timezone = &timezone
+	}
+	if locale := c.PostForm("locale"); locale != "" {
+		updatePayload.Locale = &locale
+	}
+
+	// Bind file if present
+	if file, err := c.FormFile("avatar"); err == nil {
+		updatePayload.ProfilePic = file
 	}
 
 	schemaNameVal, _ := c.Get("schema")
