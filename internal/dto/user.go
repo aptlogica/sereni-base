@@ -94,15 +94,15 @@ func (u *UserInsertion) Map() map[string]interface{} {
 }
 
 type UpdateUserProfileRequest struct {
-	FirstName    *string                 `json:"first_name" mapstructure:"first_name"`
-	LastName     *string                 `json:"last_name" mapstructure:"last_name"`
-	DisplayName  *string                 `json:"display_name" mapstructure:"display_name"`
-	ActivityData *map[string]interface{} `json:"activity_data,omitempty" mapstructure:"activity_data"`
+	FirstName    *string                 `json:"first_name" form:"first_name" mapstructure:"first_name"`
+	LastName     *string                 `json:"last_name" form:"last_name" mapstructure:"last_name"`
+	DisplayName  *string                 `json:"display_name" form:"display_name" mapstructure:"display_name"`
+	ActivityData *map[string]interface{} `json:"activity_data,omitempty" form:"activity_data" mapstructure:"activity_data"`
 	UpdatedAt    time.Time               `json:"last_modified_time" mapstructure:"last_modified_time"`
-	DateOfBirth  *string                 `json:"dob" mapstructure:"date_of_birth"`
-	Country      *string                 `json:"country" mapstructure:"country"`
-	Timezone     *string                 `json:"timezone" mapstructure:"timezone"`
-	Locale       *string                 `json:"locale" mapstructure:"locale"`
+	DateOfBirth  *string                 `json:"dob" form:"dob" mapstructure:"date_of_birth"`
+	Country      *string                 `json:"country" form:"country" mapstructure:"country"`
+	Timezone     *string                 `json:"timezone" form:"timezone" mapstructure:"timezone"`
+	Locale       *string                 `json:"locale" form:"locale" mapstructure:"locale"`
 }
 
 func (u *UpdateUserProfileRequest) Map() map[string]interface{} {

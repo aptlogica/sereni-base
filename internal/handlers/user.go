@@ -53,7 +53,7 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	}
 
 	var updatePayload dto.UpdateUserProfileRequest
-	if err := c.ShouldBindJSON(&updatePayload); err != nil {
+	if err := c.ShouldBind(&updatePayload); err != nil {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
 	}
