@@ -61,10 +61,33 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
-	updatedProfile, err := h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
+	var updatedProfile dto.UserResponse
+	var err error
+
+	if updatePayload.ProfilePic != nil {
+		// Handle avatar upload
+		updatedProfile, err = h.userManagementService.AddAvatar(c.Request.Context(), schemaName, id, updatePayload.ProfilePic)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		// Update other profile fields if provided
+		updatePayload.ProfilePic = nil
+		updateFields := updatePayload.Map()
+		if len(updateFields) > 0 {
+			updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
+			if err != nil {
+				response.CheckAndSendError(c, err)
+				return
+			}
+		}
+	} else {
+		// Update profile fields only
+		updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
 	}
 
 	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)

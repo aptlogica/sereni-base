@@ -103,6 +103,7 @@ type UpdateUserProfileRequest struct {
 	Country      *string                 `json:"country" form:"country" mapstructure:"country"`
 	Timezone     *string                 `json:"timezone" form:"timezone" mapstructure:"timezone"`
 	Locale       *string                 `json:"locale" form:"locale" mapstructure:"locale"`
+	ProfilePic   *multipart.FileHeader   `form:"avatar"`
 }
 
 func (u *UpdateUserProfileRequest) Map() map[string]interface{} {
