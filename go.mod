@@ -4,7 +4,7 @@ go 1.24.0
 
 toolchain go1.24.4
 
-replace godbgrest => ./go-postgres-rest
+replace go-postgres-rest => ../go-postgres-rest
 
 require (
 	github.com/disintegration/imaging v1.6.2
@@ -20,7 +20,6 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0
-	godbgrest v0.0.0-00010101000000-000000000000
 	golang.org/x/crypto v0.44.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
@@ -77,6 +76,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
+	go-postgres-rest v0.0.0-00010101000000-000000000000 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

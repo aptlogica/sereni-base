@@ -2,10 +2,10 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	"time"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 	// "serenibase/internal/dto"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
@@ -81,9 +81,9 @@ func (s *baseService) BaseInsertion(ctx context.Context, req dto.BaseInsertion, 
 	tableName := tenant.Base{}.TableName(schemaName)
 
 	// Insert into DB
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, baseData.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, baseData.Map())
 	if err != nil {
-		return tenant.Base{}, app_errors.DatabaseError
+		return tenant.Base{}, app_errors.LogDatabaseError(err, "failed to create base record")
 	}
 
 	// Convert map → struct directly
@@ -135,9 +135,9 @@ func (s *baseService) GetAllBases(ctx context.Context, schemaName string) ([]ten
 func (s *baseService) fetchBases(ctx context.Context, schemaName string, params dbModels.QueryParams) ([]tenant.Base, error) {
 
 	tableName := tenant.Base{}.TableName(schemaName)
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch bases")
 	}
 
 	bases := make([]tenant.Base, 0, len(rows))
@@ -158,7 +158,7 @@ func (s *baseService) UpdateBase(ctx context.Context, schemaName string, id stri
 	// Check if base exists
 	existingBase, err := s.GetBaseByID(ctx, schemaName, id)
 	if err != nil {
-		return tenant.Base{}, app_errors.DatabaseError
+		return tenant.Base{}, app_errors.LogDatabaseError(err, "failed to get base by id for update")
 	}
 	// Prepare update data
 	updateData := req.Map()
@@ -170,9 +170,9 @@ func (s *baseService) UpdateBase(ctx context.Context, schemaName string, id stri
 		updateData["last_modified_by"] = req.UpdatedBy
 	}
 	// Perform update
-	updatedRows, err := s.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
+	updatedRows, err := s.repo.TableService.UpdateRecord(tableName, id, updateData)
 	if err != nil {
-		return tenant.Base{}, app_errors.DatabaseError
+		return tenant.Base{}, app_errors.LogDatabaseError(err, "failed to update base")
 	}
 	if updatedRows == nil || len(updatedRows) == 0 {
 		return tenant.Base{}, app_errors.InvalidPayload
@@ -190,8 +190,8 @@ func (s *baseService) DeleteBase(ctx context.Context, schemaName string, id stri
 		return err
 	}
 	// Perform deletion
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
-		return app_errors.DatabaseError
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to delete base")
 	}
 	return nil
 }
@@ -203,11 +203,10 @@ func (s *baseService) GetBasesByWorkspace(ctx context.Context, schemaName, works
 		},
 	})
 	if err != nil {
-		return []tenant.Base{}, app_errors.DatabaseError
+		return []tenant.Base{}, app_errors.LogDatabaseError(err, "failed to get bases by workspace")
 	}
 	return bases, nil
 }
-
 
 func (s *baseService) GetBulkbases(ctx context.Context, schemaName string, ids []string) ([]tenant.Base, error) {
 	if len(ids) == 0 {
@@ -229,9 +228,9 @@ func (s *baseService) GetBulkbases(ctx context.Context, schemaName string, ids [
 		Filters: filters,
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get bulk bases")
 	}
 	if len(rows) == 0 {
 		return []tenant.Base{}, nil

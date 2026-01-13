@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	"time"
 
 	app_errors "serenibase/internal/app-errors"
@@ -25,9 +25,9 @@ func NewAssetsService(repo *pkg.DatabaseService) interfaces.AssetService {
 func (s *assetsService) AssetInsertion(ctx context.Context, assetData dto.AssetInsertion, schemaName string) (tenant.Assets, error) {
 	tableName := tenant.Assets{}.TableName(schemaName)
 
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, assetData.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, assetData.Map())
 	if err != nil {
-		return tenant.Assets{}, app_errors.DatabaseError
+		return tenant.Assets{}, app_errors.LogDatabaseError(err, "failed to insert asset")
 	}
 
 	var insertedAsset tenant.Assets
@@ -58,9 +58,9 @@ func (s *assetsService) GetBulkAssets(ctx context.Context, schemaName string, id
 		Filters: filters,
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch bulk assets")
 	}
 	if len(rows) == 0 {
 		return []tenant.Assets{}, nil
@@ -88,7 +88,7 @@ func (s *assetsService) AssetBulkInsertion(ctx context.Context, assetData []dto.
 
 	insertedData, err := s.repo.BulkService.BulkInsert(tableName, assetMaps)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to bulk insert assets")
 	}
 
 	assets := make([]tenant.Assets, 0, len(insertedData))
@@ -115,9 +115,9 @@ func (s *assetsService) AssetUpdate(ctx context.Context, assetId string, assetDa
 		return tenant.Assets{}, app_errors.InvalidPayload
 	}
 
-	updatedData, err := s.repo.TableService.UpdateRecord(ctx, tableName, assetId, assetDataMap)
+	updatedData, err := s.repo.TableService.UpdateRecord(tableName, assetId, assetDataMap)
 	if err != nil {
-		return tenant.Assets{}, app_errors.DatabaseError
+		return tenant.Assets{}, app_errors.LogDatabaseError(err, "failed to update asset")
 	}
 
 	var asset tenant.Assets
@@ -143,9 +143,9 @@ func (s *assetsService) GetAssetByID(ctx context.Context, id string, schemaName 
 		Limit: &limit,
 	}
 
-	assetsData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	assetsData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Assets{}, app_errors.DatabaseError
+		return tenant.Assets{}, app_errors.LogDatabaseError(err, "failed to get asset by id")
 	}
 
 	if len(assetsData) == 0 {
@@ -164,9 +164,9 @@ func (s *assetsService) GetAssetByID(ctx context.Context, id string, schemaName 
 func (s *assetsService) DeleteAsset(ctx context.Context, assetId string, schemaName string) error {
 	tableName := tenant.Assets{}.TableName(schemaName)
 
-	err := s.repo.TableService.DeleteRecord(ctx, tableName, assetId)
+	err := s.repo.TableService.DeleteRecord(tableName, assetId)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to delete asset")
 	}
 
 	return nil
@@ -187,9 +187,9 @@ func (s *assetsService) GetAssetByURL(ctx context.Context, url string, schemaNam
 		Limit: &limit,
 	}
 
-	assetsData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	assetsData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Assets{}, app_errors.DatabaseError
+		return tenant.Assets{}, app_errors.LogDatabaseError(err, "failed to get asset by url")
 	}
 
 	if len(assetsData) == 0 {

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"regexp"
 
@@ -279,54 +278,6 @@ func TimeAgo(t time.Time) string {
 		return fmt.Sprintf("%d years ago", years)
 	}
 }
-
-func generateTimestampedFilename(filename string) string {
-	ext := filepath.Ext(filename)
-	name := strings.TrimSuffix(filename, ext)
-	timestamp := time.Now().Format("20060102_150405") // e.g., 20250804_143210
-	return fmt.Sprintf("%s_%s%s", name, timestamp, ext)
-}
-
-// func MapToStruct(input map[string]interface{}, target interface{}) error {
-// 	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-// 		TagName: "mapstructure",
-// 		Result:  target,
-// 		// DecodeHook: mapstructure.ComposeDecodeHookFunc(
-// 		// 	func(_, to reflect.Type, data interface{}) (interface{}, error) {
-// 		// 		if to == reflect.TypeOf(uuid.UUID{}) {
-// 		// 			switch v := data.(type) {
-// 		// 			case string:
-// 		// 				return uuid.Parse(v)
-// 		// 			case []byte:
-// 		// 				if len(v) == 16 {
-// 		// 					return uuid.FromBytes(v)
-// 		// 				}
-// 		// 				return uuid.Parse(string(v))
-// 		// 			}
-// 		// 		}
-// 		// 		if to.Kind() == reflect.Int64 {
-// 		// 			switch v := data.(type) {
-// 		// 			case int64:
-// 		// 				return v, nil
-// 		// 			case int:
-// 		// 				return int64(v), nil
-// 		// 			case float64:
-// 		// 				return int64(v), nil
-// 		// 			case string:
-// 		// 				return strconv.ParseInt(v, 10, 64)
-// 		// 			case []byte:
-// 		// 				return strconv.ParseInt(string(v), 10, 64)
-// 		// 			}
-// 		// 		}
-// 		// 		return data, nil
-// 		// 	},
-// 		// ),
-// 	})
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return dec.Decode(input)
-// }
 
 func MapToStruct(input map[string]interface{}, target interface{}) error {
 	// debug print (keeps your original print from the snippet)

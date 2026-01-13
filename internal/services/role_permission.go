@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -28,7 +28,7 @@ func (s *rolePermissionService) AssignPermissionToRole(ctx context.Context, sche
 	}
 
 	tableName := tenant.RolePermission{}.TableName(schemaName)
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.RolePermission{}, err
 	}
@@ -59,9 +59,9 @@ func (s *rolePermissionService) RemovePermissionFromRole(ctx context.Context, sc
 	}
 
 	// Get the role permission to delete
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to fetch role permission for removal")
 	}
 
 	if len(data) == 0 {
@@ -73,7 +73,7 @@ func (s *rolePermissionService) RemovePermissionFromRole(ctx context.Context, sc
 		Operator: "eq",
 		Value:    roleID.String(),
 	}
-	return s.repo.TableService.DeleteRecord(ctx, tableName, filter)
+	return s.repo.TableService.DeleteRecord(tableName, filter)
 }
 
 func (s *rolePermissionService) GetRolePermissions(ctx context.Context, schemaName string, roleID uuid.UUID) ([]tenant.RolePermission, error) {
@@ -88,9 +88,9 @@ func (s *rolePermissionService) GetRolePermissions(ctx context.Context, schemaNa
 		},
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get role permissions")
 	}
 
 	var rolePermissions []tenant.RolePermission
@@ -148,9 +148,9 @@ func (s *rolePermissionService) GetRolesByPermission(ctx context.Context, schema
 		},
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get roles by permission")
 	}
 
 	var roles []tenant.AccessRole
@@ -190,9 +190,9 @@ func (s *rolePermissionService) CheckRoleHasPermission(ctx context.Context, sche
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return false, app_errors.DatabaseError
+		return false, app_errors.LogDatabaseError(err, "failed to check role permission")
 	}
 
 	return len(data) > 0, nil

@@ -162,13 +162,46 @@ func (h *AuthHandler) HealthReady(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-// TODO: Implement proper logic for these
 func (h *AuthHandler) ValidateToken(c *gin.Context) {
-	c.Status(http.StatusOK)
+	var req dto.TokenValidationRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ValidateTokenRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	resp, err := h.authManagementService.ValidateToken(c.Request.Context(), req.Token)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.ValidateToken, resp)
 }
 
 func (h *AuthHandler) VerifyToken(c *gin.Context) {
-	c.Status(http.StatusOK)
+	var req dto.TokenValidationRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ValidateTokenRequestError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	resp, err := h.authManagementService.VerifyToken(c.Request.Context(), req.Token)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AuthSuccess.VerifyToken, resp)
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -468,29 +501,6 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 	}
 
 	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromWorkspace, nil)
-}
-
-// add into workspace handler
-func (h *AuthHandler) InviteUser(c *gin.Context) {
-	var req dto.CreateMemberRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
-
-	if err := h.authManagementService.InviteMemberToWorkspace(c.Request.Context(), schemaName, req, reqBy); err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, "User invited to workspace successfully", nil)
 }
 
 func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {

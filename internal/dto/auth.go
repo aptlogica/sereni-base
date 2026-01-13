@@ -60,6 +60,16 @@ type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=8" example:"newstrongpassword456" format:"string"`
 }
 
+type TokenValidationRequest struct {
+	Token string `json:"token" binding:"required" format:"jwt"`
+}
+
+type TokenValidationResponse struct {
+	Valid  bool   `json:"valid"`
+	UserID string `json:"user_id,omitempty"`
+	Roles  string `json:"roles,omitempty"`
+}
+
 type LogoutRequest struct {
 	Token string `json:"token" binding:"required" format:"jwt"`
 }

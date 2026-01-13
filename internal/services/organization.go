@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"godbgrest/pkg"
-	"godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	"go-postgres-rest/pkg/models"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -91,10 +91,10 @@ func (s *organizationService) CreateOrganization(ctx context.Context, schemaName
 		orgData["meta"] = string(jsonBytes)
 	}
 
-	_, err := s.repo.TableService.CreateRecord(ctx, tblName, orgData)
+	_, err := s.repo.TableService.CreateRecord(tblName, orgData)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to create organization: %v\n", err)
-		return tenant.Organization{}, app_errors.DatabaseError
+		return tenant.Organization{}, app_errors.LogDatabaseError(err, "failed to create organization")
 	}
 
 	fmt.Printf("DEBUG: Organization created successfully with ID: %s\n", organization.ID.String())
@@ -123,10 +123,10 @@ func (s *organizationService) GetOrganizationByID(ctx context.Context, schemaNam
 	}
 
 	// Fetch organization row(s)
-	organizationData, err := s.repo.TableService.GetTableData(ctx, tblName, query)
+	organizationData, err := s.repo.TableService.GetTableData(tblName, query)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to get organization by ID %s: %v\n", id, err)
-		return tenant.Organization{}, app_errors.DatabaseError
+		return tenant.Organization{}, app_errors.LogDatabaseError(err, "failed to get organization by id")
 	}
 
 	if len(organizationData) == 0 {
@@ -153,10 +153,10 @@ func (s *organizationService) GetAllOrganizations(ctx context.Context, schemaNam
 		Select: []string{"*"},
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tblName, query)
+	records, err := s.repo.TableService.GetTableData(tblName, query)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to get all organizations: %v\n", err)
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get all organizations")
 	}
 
 	var organizations []tenant.Organization
@@ -183,10 +183,10 @@ func (s *organizationService) GetOrganization(ctx context.Context, schemaName st
 		Limit:  ptrInt(1),
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tblName, query)
+	records, err := s.repo.TableService.GetTableData(tblName, query)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to get organization: %v\n", err)
-		return tenant.Organization{}, app_errors.DatabaseError
+		return tenant.Organization{}, app_errors.LogDatabaseError(err, "failed to get organization")
 	}
 
 	if len(records) == 0 {
@@ -294,10 +294,10 @@ func (s *organizationService) UpdateOrganization(ctx context.Context, schemaName
 		orgData["meta"] = string(jsonBytes)
 	}
 
-	_, err = s.repo.TableService.UpdateRecord(ctx, tblName, id, orgData)
+	_, err = s.repo.TableService.UpdateRecord(tblName, id, orgData)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to update organization %s: %v\n", id, err)
-		return tenant.Organization{}, app_errors.DatabaseError
+		return tenant.Organization{}, app_errors.LogDatabaseError(err, "failed to update organization")
 	}
 
 	fmt.Printf("DEBUG: Organization updated successfully with ID: %s\n", id)
@@ -308,10 +308,10 @@ func (s *organizationService) DeleteOrganization(ctx context.Context, schemaName
 	organization := tenant.Organization{}
 	tblName := organization.TableName(schemaName)
 
-	err := s.repo.TableService.DeleteRecord(ctx, tblName, id)
+	err := s.repo.TableService.DeleteRecord(tblName, id)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to delete organization %s: %v\n", id, err)
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to delete organization")
 	}
 
 	fmt.Printf("DEBUG: Organization deleted successfully with ID: %s\n", id)
@@ -335,10 +335,10 @@ func (s *organizationService) GetOrganizationByEmail(ctx context.Context, schema
 		Limit: &limit,
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tblName, query)
+	records, err := s.repo.TableService.GetTableData(tblName, query)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to get organization by email %s: %v\n", email, err)
-		return tenant.Organization{}, app_errors.DatabaseError
+		return tenant.Organization{}, app_errors.LogDatabaseError(err, "failed to get organization by email")
 	}
 
 	if len(records) == 0 {

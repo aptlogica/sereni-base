@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -28,7 +28,7 @@ func (s *actionService) CreateAction(ctx context.Context, schemaName string, req
 	}
 
 	tableName := tenant.Action{}.TableName(schemaName)
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.Action{}, err
 	}
@@ -54,9 +54,9 @@ func (s *actionService) GetActionByID(ctx context.Context, schemaName string, ac
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Action{}, app_errors.DatabaseError
+		return tenant.Action{}, app_errors.LogDatabaseError(err, "failed to get action by id")
 	}
 
 	if len(data) == 0 {
@@ -84,9 +84,9 @@ func (s *actionService) GetActionByCode(ctx context.Context, schemaName string, 
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Action{}, app_errors.DatabaseError
+		return tenant.Action{}, app_errors.LogDatabaseError(err, "failed to get action by code")
 	}
 
 	if len(data) == 0 {
@@ -108,9 +108,9 @@ func (s *actionService) ListActions(ctx context.Context, schemaName string, limi
 		OrderBy: []string{"code"},
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to list actions")
 	}
 
 	countQuery := dbModels.QueryParams{
@@ -122,9 +122,9 @@ func (s *actionService) ListActions(ctx context.Context, schemaName string, limi
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to count actions")
 	}
 
 	count := int64(0)
@@ -151,7 +151,7 @@ func (s *actionService) UpdateAction(ctx context.Context, schemaName string, act
 	// Remove ID from update data to prevent modifying the primary key
 	delete(updateData, "id")
 
-	updatedData, err := s.repo.TableService.UpdateRecord(ctx, tableName, actionID, updateData)
+	updatedData, err := s.repo.TableService.UpdateRecord(tableName, actionID, updateData)
 	if err != nil {
 		return tenant.Action{}, err
 	}
@@ -170,7 +170,7 @@ func (s *actionService) DeleteAction(ctx context.Context, schemaName string, act
 		Operator: "eq",
 		Value:    actionID.String(),
 	}
-	return s.repo.TableService.DeleteRecord(ctx, tableName, filter)
+	return s.repo.TableService.DeleteRecord(tableName, filter)
 }
 
 func (s *actionService) GetOrCreateAction(ctx context.Context, schemaName string, code string, description *string) (tenant.Action, error) {

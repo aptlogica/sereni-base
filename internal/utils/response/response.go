@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -30,60 +31,78 @@ type ErrorInfo struct {
 }
 
 // CreatedResponse sends a created response
-func CreatedResponse(c *gin.Context, data interface{}, message ...string) {
-	response := StandardResponse{
-		Success: true,
-		Data:    data,
-	}
-
-	if len(message) > 0 {
-		response.Message = message[0]
-	} else {
-		response.Message = "Resource created successfully"
-	}
-
-	c.JSON(http.StatusCreated, response)
-}
-
 type MetaInfo struct {
 	Code       string `json:"code"`
 	HTTPStatus int    `json:"http_status"`
 }
 
-func SendSuccess(ctx *gin.Context, code responseConstants.ResponseCode, data interface{}) {
-	meta := MetaInfo{
+func CreatedResponse(c *gin.Context, data interface{}, message ...string) {
+	response := StandardResponse{
+		Success: true,
+		Data:    data,
+		Message: defaultMessage(message, "Resource created successfully"),
+	}
+
+	c.JSON(http.StatusCreated, response)
+}
+
+func defaultMessage(message []string, fallback string) string {
+	if len(message) > 0 {
+		return message[0]
+	}
+	return fallback
+}
+
+func buildSuccessMeta(code responseConstants.ResponseCode) (MetaInfo, bool) {
+	meta, ok := responseConstants.SuccessCodes[code]
+	if !ok {
+		return MetaInfo{
+			Code:       string(code),
+			HTTPStatus: http.StatusOK,
+		}, false
+	}
+	return MetaInfo{
 		Code:       string(code),
-		HTTPStatus: responseConstants.SuccessCodes[code].HTTPStatus,
+		HTTPStatus: meta.HTTPStatus,
+	}, true
+}
+
+func buildErrorMeta(code responseConstants.ResponseCode) (MetaInfo, bool) {
+	meta, ok := responseConstants.ErrorCodes[code]
+	if !ok {
+		return MetaInfo{
+			Code:       string(responseConstants.Error.InternalError),
+			HTTPStatus: http.StatusInternalServerError,
+		}, false
+	}
+	return MetaInfo{
+		Code:       string(code),
+		HTTPStatus: meta.HTTPStatus,
+	}, true
+}
+
+func SendSuccess(ctx *gin.Context, code responseConstants.ResponseCode, data interface{}) {
+	meta, ok := buildSuccessMeta(code)
+	message := responseConstants.SuccessCodes[code].Message
+	if !ok {
+		// keep predictable output even if code is not registered
+		message = "success"
 	}
 	response := StandardResponse{
 		Success: true,
-		Message: responseConstants.SuccessCodes[code].Message,
+		Message: message,
 		Data:    data,
 		Meta:    &meta,
 	}
-	ctx.JSON(responseConstants.SuccessCodes[code].HTTPStatus, response)
+	ctx.JSON(meta.HTTPStatus, response)
 }
 
 func SendError(ctx *gin.Context, code responseConstants.ResponseCode) {
-	meta := MetaInfo{
-		Code:       string(code),
-		HTTPStatus: responseConstants.ErrorCodes[code].HTTPStatus,
-	}
-	response := StandardResponse{
-		Success: false,
-		Error: &ErrorInfo{
-			Code:    string(code),
-			Message: responseConstants.ErrorCodes[code].Message,
-		},
-		Meta: &meta,
-	}
-	ctx.JSON(responseConstants.ErrorCodes[code].HTTPStatus, response)
-}
-
-func SendErrorWithMessage(ctx *gin.Context, code responseConstants.ResponseCode, message string) {
-	meta := MetaInfo{
-		Code:       string(code),
-		HTTPStatus: responseConstants.ErrorCodes[code].HTTPStatus,
+	meta, ok := buildErrorMeta(code)
+	message := responseConstants.ErrorCodes[code].Message
+	if !ok {
+		message = "Internal server error"
+		code = responseConstants.Error.InternalError
 	}
 	response := StandardResponse{
 		Success: false,
@@ -93,31 +112,74 @@ func SendErrorWithMessage(ctx *gin.Context, code responseConstants.ResponseCode,
 		},
 		Meta: &meta,
 	}
-	ctx.JSON(responseConstants.ErrorCodes[code].HTTPStatus, response)
+	ctx.JSON(meta.HTTPStatus, response)
+}
+
+func SendErrorWithMessage(ctx *gin.Context, code responseConstants.ResponseCode, message string) {
+	meta, ok := buildErrorMeta(code)
+	if !ok {
+		code = responseConstants.Error.InternalError
+	}
+	response := StandardResponse{
+		Success: false,
+		Error: &ErrorInfo{
+			Code:    string(code),
+			Message: message,
+		},
+		Meta: &meta,
+	}
+	ctx.JSON(meta.HTTPStatus, response)
 }
 
 func CheckAndSendError(ctx *gin.Context, err error) {
 	// Log the original error
 	logger.Get().Error().Err(err).Msg("API Error")
 
+	// Validation errors: return validation code and aggregated details
+	var ve validator.ValidationErrors
+	if errors.As(err, &ve) {
+		details := strings.Join(FormatValidationError(err), "; ")
+		code := responseConstants.Error.ValidationFailed
+		meta, _ := buildErrorMeta(code)
+		ctx.JSON(meta.HTTPStatus, StandardResponse{
+			Success: false,
+			Error: &ErrorInfo{
+				Code:    string(code),
+				Message: responseConstants.ErrorCodes[code].Message,
+				Details: details,
+			},
+			Meta: &meta,
+		})
+		return
+	}
+
 	// Check if it's an APIError (from external API)
 	var apiErr *appErrors.APIError
 	if errors.As(err, &apiErr) {
 		// Send the error message from the API directly to the frontend
-		ctx.JSON(http.StatusBadRequest, StandardResponse{
+		status := apiErr.StatusCode
+		if status == 0 {
+			status = http.StatusBadRequest
+		}
+		meta := MetaInfo{Code: apiErr.Code, HTTPStatus: status}
+		ctx.JSON(status, StandardResponse{
 			Success: false,
 			Error: &ErrorInfo{
 				Code:    apiErr.Code,
 				Message: apiErr.Message,
 				Details: fmt.Sprintf("%v", apiErr.Details),
 			},
+			Meta: &meta,
 		})
 		return
 	}
 
-	code, ok := responseConstants.ErrorMapping[err]
-	if !ok || code == "" {
+	code := responseConstants.MapError(err)
+	if code == "" {
+		// No mapped code: surface the original error message instead of a generic internal error
 		code = responseConstants.Error.InternalError
+		SendErrorWithMessage(ctx, code, err.Error())
+		return
 	}
 	SendError(ctx, code)
 }

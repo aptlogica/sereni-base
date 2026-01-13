@@ -40,8 +40,8 @@ func (s *Service) Start(workers int) {
 // Stop gracefully shuts down workers
 func (s *Service) Stop() {
 	close(s.workerStop) // signal workers to stop
+	close(s.queue)      // unblock workers waiting on queue
 	s.workerWg.Wait()   // wait for workers to finish
-	close(s.queue)      // close queue after workers exit
 }
 
 // Enqueue adds a new email job to the queue
@@ -55,14 +55,15 @@ func (s *Service) Enqueue(job EmailJob) {
 
 // worker processes email jobs
 func (s *Service) worker(id int) {
-	fmt.Println("Worker is running...", id)
 	defer s.workerWg.Done()
 	for {
 		select {
 		case <-s.workerStop:
-			log.Printf("Email worker %d stopping", id)
 			return
-		case job := <-s.queue:
+		case job, ok := <-s.queue:
+			if !ok {
+				return
+			}
 			if err := s.sendEmail(job); err != nil {
 				fmt.Printf("Worker %d: failed to send email to %s: %v\n", id, job.To, err)
 				log.Printf("Worker %d: failed to send email to %s: %v", id, job.To, err)
@@ -81,7 +82,6 @@ func (s *Service) sendEmail(job EmailJob) error {
 		"body":    job.Body,
 		"is_html": true,
 	}
-	fmt.Println("payload: ", payload)
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {

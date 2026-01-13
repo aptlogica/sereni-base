@@ -26,8 +26,8 @@ import (
 
 	// _ "serenibase/docs"
 
-	"godbgrest/pkg"
-	dbConfig "godbgrest/pkg/config"
+	"go-postgres-rest/pkg"
+	dbConfig "go-postgres-rest/pkg/config"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,6 +36,7 @@ type App struct {
 	config       *config.Config
 	server       *http.Server
 	authProvider auth.AuthProvider
+	dbService    *pkg.DatabaseService
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -43,19 +44,14 @@ func New(cfg *config.Config) (*App, error) {
 	logger.Init(cfg)
 
 	dbCfg, err := dbConfig.Load()
-
-	// Initialize database service for repository
-	dbService := pkg.NewDatabaseService()
-
-	db, err := dbService.Connect(dbCfg)
 	if err != nil {
-		fmt.Printf("failed to connect to db: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("load db config: %w", err)
 	}
 
-	// Initialize services
-	if err := dbService.InitServices(db); err != nil {
-		fmt.Printf("failed to init services: %v", err)
+	// Initialize database service for repository
+	dbService, err := pkg.NewDatabaseServiceWithInit(dbCfg)
+	if err != nil {
+		fmt.Printf("failed to initialize database service: %v", err)
 		return nil, err
 	}
 
@@ -223,33 +219,17 @@ func New(cfg *config.Config) (*App, error) {
 		config:       cfg,
 		server:       server,
 		authProvider: authProvider,
+		dbService:    dbService,
 	}, nil
 }
 
 func (a *App) Run() error {
 	// Run any pre-server logic, like migrations or initializations
-	// conn = database.NewDb(&cfg.Database)
-	dbCfg, err := dbConfig.Load()
-	if err != nil {
-		fmt.Printf("Failed to load database configuration: %v\n", err)
+	if a.dbService == nil {
+		return fmt.Errorf("database service not initialized")
 	}
 
-	fmt.Println(dbCfg)
-
-	dbService := pkg.NewDatabaseService()
-
-	db, err := dbService.Connect(dbCfg)
-	if err != nil {
-		fmt.Printf("failed to connect to db: %v", err)
-		return err
-	}
-
-	// Initialize services
-	if err := dbService.InitServices(db); err != nil {
-		fmt.Printf("failed to init services: %v", err)
-	}
-
-	runBeforeServer(dbService, a.authProvider, a.config)
+	runBeforeServer(a.dbService, a.authProvider, a.config)
 
 	fmt.Printf("🚀 Serenibase server starting on %s\n", a.server.Addr)
 	// fmt.Printf("📚 API Documentation available at http://%s/api/v1/health\n", a.server.Addr)

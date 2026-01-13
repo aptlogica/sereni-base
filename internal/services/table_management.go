@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	"mime/multipart"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/constant"
@@ -68,7 +68,8 @@ func (s tableManagementService) createTableWithDefaultsInDB(schemaName string, t
 
 	err := s.repo.TableService.CreateTable(creationReq)
 	if err != nil {
-		return []dto.AddColumnRequest{}, app_errors.DatabaseError
+		fmt.Println("CreateTable error:", err)
+		return []dto.AddColumnRequest{}, app_errors.LogDatabaseError(err, "failed to create table in DB")
 	}
 
 	return columnsData, nil
@@ -118,6 +119,7 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 
 	insertedColumns, err := s.columnsService.BulkInsert(colDataList, schemaName)
 	if err != nil {
+		fmt.Println("BulkInsert system columns error:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -171,21 +173,25 @@ func (s tableManagementService) CreateTableWithDefaultsImport(ctx context.Contex
 func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	insertedModel, err := s.createModel(ctx, tableData, schemaName)
 	if err != nil {
+		fmt.Println("createModel:", err)
 		return dto.TableResponse{}, err
 	}
 
 	columnsResponse, err := s.setupSystemColumns(ctx, schemaName, insertedModel)
 	if err != nil {
+		fmt.Println("setupSystemColumns:", err)
 		return dto.TableResponse{}, err
 	}
 
 	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
 	if err != nil {
+		fmt.Println("createDefaultView:", err)
 		return dto.TableResponse{}, err
 	}
 
 	recordsData, err := s.GetAllRecords(ctx, schemaName, insertedModel.ID.String())
 	if err != nil {
+		fmt.Println("GetAllRecords:", err)
 		return dto.TableResponse{}, err
 	}
 
@@ -233,11 +239,13 @@ func (s tableManagementService) createModel(ctx context.Context, tableData dto.C
 func (s tableManagementService) setupSystemColumns(ctx context.Context, schemaName string, model tenant.Model) ([]dto.ColumnResponse, error) {
 	systemColumns, err := s.createTableWithDefaultsInDB(schemaName, model.Alias)
 	if err != nil {
+		fmt.Println("createTableWithDefaultsInDB:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
 	columnsResponse, err := s.insertSystemColumns(schemaName, model, systemColumns)
 	if err != nil {
+		fmt.Println("insertSystemColumns:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -377,7 +385,7 @@ func (s tableManagementService) GetModelByWorkspaceID(ctx context.Context, schem
 func (s tableManagementService) deleteTableInDB(ctx context.Context, schemaName string, tableName string) error {
 	err := s.repo.TableService.DropTable(ctx, fmt.Sprintf("\"%s\".\"%s\"", schemaName, tableName))
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to drop table")
 	}
 	return nil
 }
@@ -450,7 +458,7 @@ func (s tableManagementService) addColumnInTableDb(schemaName string, tableName 
 
 	err := s.repo.TableService.AddColumn(schematableName, addColumnReq)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to add column in DB")
 	}
 	return nil
 }
@@ -495,16 +503,13 @@ func (s tableManagementService) validateMetaForLink(meta map[string]interface{})
 	if !ok {
 		return "", "", false
 	}
-	// Accept only "many-to-many", "has-many", or "one-to-one"
 	switch rType {
 	case "many-to-many", "has-many", "one-to-one":
 		// valid
 	default:
 		return "", "", false
 	}
-	if !ok {
-		return "", "", false
-	}
+
 	return rType, withStr, true
 }
 
@@ -522,58 +527,6 @@ func (s tableManagementService) validateMetaForLookup(meta map[string]interface{
 	}
 	return lookupColumnID, relationID, true
 }
-
-// func (s tableManagementService) linkWithTargetTable(ctx context.Context, schemaName string, srcColumnData tenant.Column, metaMap map[string]interface{}) error {
-
-// 	trgModelId, _ := metaMap["with"].(string)
-// 	relatioinType, _ := metaMap["type"].(string)
-
-// 	trgTable, err := s.modelService.GetModelByID(ctx, schemaName, trgModelId)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	now := time.Now()
-// 	entity_role := "target"
-// 	trgMetaMap := map[string]interface{}{
-// 		"relation": map[string]interface{}{
-// 			"with":        srcColumnData.ModelID,
-// 			"type":        relatioinType,
-// 			"entity_role": entity_role,
-// 		},
-// 	}
-
-// 	metaBytes, err := helpers.MarshalJSON(trgMetaMap)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	meta := string(metaBytes)
-// 	var tempUidt string
-// 	if srcColumnData.DT != nil {
-// 		tempUidt = *srcColumnData.DT + fmt.Sprintf("%v", metaMap["type"]) + entity_role
-// 	}
-// 	dt, err := s.getDataBaseType(tempUidt)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	trgColumnCreateData := dto.ColumnInsertion{
-// 		ID:          uuid.New(),
-// 		ModelID:     trgTable.ID,
-// 		BaseID:      trgTable.BaseID,
-// 		Title:       trgTable.Alias,
-// 		ColumnName:  s.slugify(trgTable.Alias),
-// 		Description: nil,
-// 		Meta:        helpers.StringPtr(meta),
-// 		UIDT:        srcColumnData.UIDT,
-// 		DT:          helpers.StringPtr(dt),
-// 		Virtual:     srcColumnData.Virtual,
-// 		System:      srcColumnData.System,
-// 		Deleted:     false,
-// 		OrderIndex:  ,
-// 		CreatedAt:   now,
-// 		UpdatedAt:   now,
-// 	}
 
 // 	s.addColumnInTableDb(schemaName, trgTable.Alias)
 // 	// create column in target table (alter table)
@@ -1352,7 +1305,7 @@ func (s tableManagementService) removeColumnInTableDb(schemaName string, tableNa
 
 	err := s.repo.TableService.AlterTable(schematableName, addColumnReq)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to drop column in DB")
 	}
 	return nil
 }
@@ -1540,7 +1493,7 @@ func (s tableManagementService) reorderColumnsAfterDelete(ctx context.Context, s
 		args,
 	)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to reorder columns after delete")
 	}
 
 	return nil
@@ -1622,10 +1575,10 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 		"last_modified_time": time.Now().UTC(),
 	}
 
-	createdRecord, err := s.repo.TableService.CreateRecord(ctx, tableName, data)
+	createdRecord, err := s.repo.TableService.CreateRecord(tableName, data)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row record")
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to create row record")
 	}
 
 	return dto.RecordResponse{
@@ -1653,46 +1606,6 @@ func (s tableManagementService) GetAllRecords(ctx context.Context, schemaName st
 		Records: recordsData.Records,
 	}, nil
 }
-
-// func (s tableManagementService) getAllRecordsIncludingAssets(ctx context.Context, schemaName string, tableName string, columnsData []dto.ColumnResponse) (dto.RecordsResponse, error) {
-// 	functionName := "dynamic_array_join_assets_jsonb"
-// 	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, functionName)
-// 	// Prepare the parameters for the function: schema_name TEXT, source_table TEXT, source_columns TEXT[], target_table TEXT
-// 	sourceColumns := []string{}
-// 	for _, col := range columnsData {
-// 		if col.UIDT == "attachment" {
-// 			sourceColumns = append(sourceColumns, col.ColumnName)
-// 		}
-// 	}
-
-// 	args := map[string]interface{}{
-// 		"schema_name":    schemaName,
-// 		"source_table":   tableName,
-// 		"source_columns": sourceColumns,
-// 		"target_table":   "assets",
-// 	}
-
-// 	records, err := s.repo.TableService.GetByFunction(
-// 		ctx,
-// 		schemaFunctionName,
-// 		args,
-// 	)
-
-// 	var normalizedRecord []map[string]interface{}
-// 	for _, record := range records {
-// 		if rec, ok := record[functionName].(map[string]interface{}); ok {
-// 			normalizedRecord = append(normalizedRecord, rec)
-// 		}
-// 	}
-
-// 	if err != nil {
-// 		return dto.RecordsResponse{}, err
-// 	}
-
-// 	return dto.RecordsResponse{
-// 		Records: normalizedRecord,
-// 	}, nil
-// }
 
 func (s tableManagementService) checkLookuup(columnsData []dto.ColumnResponse) []string {
 	relationIdsSet := make(map[string]struct{})
@@ -1840,9 +1753,9 @@ func (s tableManagementService) getRowByID(ctx context.Context, tableName string
 		Limit: &limit,
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	records, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get row by id")
 	}
 	if len(records) == 0 {
 		return nil, app_errors.RowNotFound
@@ -1863,9 +1776,9 @@ func (s tableManagementService) getRowByRelationColumn(ctx context.Context, tabl
 		Limit: &limit,
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	records, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get row by relation column")
 	}
 	if len(records) == 0 {
 		return nil, app_errors.RowNotFound
@@ -1886,9 +1799,9 @@ func (s tableManagementService) getRowByRelationColumnHasMany(ctx context.Contex
 		Limit: &limit,
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	records, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get row by relation column (has many)")
 	}
 	if len(records) == 0 {
 		return nil, app_errors.RowNotFound
@@ -1976,7 +1889,7 @@ func (s tableManagementService) linkRecord(
 		if updatedBy != "" {
 			data["last_modified_by"] = updatedBy
 		}
-		return s.repo.TableService.UpdateRecord(ctx, tableName, rowId, data)
+		return s.repo.TableService.UpdateRecord(tableName, rowId, data)
 
 	case "INT":
 		data := map[string]interface{}{
@@ -1986,7 +1899,7 @@ func (s tableManagementService) linkRecord(
 		if updatedBy != "" {
 			data["last_modified_by"] = updatedBy
 		}
-		return s.repo.TableService.UpdateRecord(ctx, tableName, rowId, data)
+		return s.repo.TableService.UpdateRecord(tableName, rowId, data)
 
 	default:
 		return nil, fmt.Errorf("unsupported datatype: %s", datatype)
@@ -2051,7 +1964,7 @@ func (s tableManagementService) unlinkRecord(
 		if updatedBy != "" {
 			data["last_modified_by"] = updatedBy
 		}
-		return s.repo.TableService.UpdateRecord(ctx, tableName, rowId, data)
+		return s.repo.TableService.UpdateRecord(tableName, rowId, data)
 
 	case "INT":
 		val, ok := rowData[columnName].(int64)
@@ -2070,7 +1983,7 @@ func (s tableManagementService) unlinkRecord(
 			if updatedBy != "" {
 				data["last_modified_by"] = updatedBy
 			}
-			return s.repo.TableService.UpdateRecord(ctx, tableName, rowId, data)
+			return s.repo.TableService.UpdateRecord(tableName, rowId, data)
 		}
 		return rowData, nil
 
@@ -2101,7 +2014,7 @@ func (s tableManagementService) updateLinkData(
 		sourceInsertedRecord, err = s.unlinkRecord(ctx, sourceDataType, sourceTableName, req.SourceRowId, sourceColumnName, req.TargetRowId, req.UpdatedBy)
 	}
 	if err != nil {
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update link data (source side)")
 	}
 
 	switch req.Action {
@@ -2111,7 +2024,7 @@ func (s tableManagementService) updateLinkData(
 		_, err = s.unlinkRecord(ctx, targetDataType, targetTableName, req.TargetRowId, targetColumnName, req.SourceRowId, req.UpdatedBy)
 	}
 	if err != nil {
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update link data (target side)")
 	}
 
 	return dto.RecordResponse{
@@ -2150,10 +2063,6 @@ func (s tableManagementService) updateIfExist(
 			if err := s.handleHasManyIntArrayRelation(ctx, c, req); err != nil {
 				return err
 			}
-			// case relationType == "has-many" && c.srcDatatype == "INT":
-			// 	if err := s.handleHasManyIntRelation(ctx, c, req); err != nil {
-			// 		return err
-			// 	}
 		}
 	}
 	return nil
@@ -2213,32 +2122,6 @@ func (s tableManagementService) handleHasManyIntArrayRelation(
 	return nil
 }
 
-func (s tableManagementService) handleHasManyIntRelation(
-	ctx context.Context,
-	c struct {
-		srcTable, srcColumn, srcDatatype, trgTable, trgColumn, trgDataType string
-		id                                                                 int
-	},
-	req dto.UpdateRowDataLinksRequest,
-) error {
-	data, err := s.getRowByRelationColumn(ctx, c.srcTable, c.srcColumn, c.id)
-	if err != nil && err != app_errors.RowNotFound {
-		return err
-	}
-	if data != nil {
-		srcID, _ := data["id"].(int64)
-		tgtID := c.id
-		req.SourceRowId = int(srcID)
-		req.TargetRowId = int(tgtID)
-		req.Action = "unlink"
-		_, err = s.updateLinkData(ctx, c.srcTable, c.trgTable, c.srcColumn, c.trgColumn, c.srcDatatype, c.trgDataType, req)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s tableManagementService) UpdateRawDataForLinks(
 	ctx context.Context,
 	schemaName string,
@@ -2264,7 +2147,7 @@ func (s tableManagementService) UpdateRawDataForLinks(
 
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationId, schemaName)
 	if err != nil {
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to fetch relation by id")
 	}
 
 	srcEntityRole := sourceColumnData.Meta["entity_role"]
@@ -2356,9 +2239,9 @@ func (s tableManagementService) InsertRowData(ctx context.Context, schemaName st
 		"last_modified_time":                         time.Now().UTC(),
 	}
 
-	insertedRecord, err := s.repo.TableService.UpdateRecord(ctx, tableName, req.RowId, data)
+	insertedRecord, err := s.repo.TableService.UpdateRecord(tableName, req.RowId, data)
 	if err != nil {
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update record for column")
 	}
 
 	return dto.RecordResponse{
@@ -2370,10 +2253,10 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	lg := logger.Get()
 	tableName := fmt.Sprintf("\"%s\".\"%s\"", schemaName, modelAlias)
 
-	createdRecord, err := s.repo.TableService.CreateRecord(ctx, tableName, record)
+	createdRecord, err := s.repo.TableService.CreateRecord(tableName, record)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to create row with records")
 	}
 
 	return dto.RecordResponse{
@@ -2388,7 +2271,7 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to bulk insert rows")
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to bulk insert rows")
 	}
 
 	var response []dto.RecordResponse
@@ -2572,8 +2455,8 @@ func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string
 		return err
 	}
 
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, req.RowId); err != nil {
-		return app_errors.DatabaseError
+	if err := s.repo.TableService.DeleteRecord(tableName, req.RowId); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to delete record")
 	}
 
 	return nil
@@ -2640,10 +2523,10 @@ func (s tableManagementService) AddAttachment(
 		"last_modified_time": time.Now().UTC(),
 	}
 
-	insertedRecord, err := s.repo.TableService.UpdateRecord(ctx, tableName, req.RowId, data)
+	insertedRecord, err := s.repo.TableService.UpdateRecord(tableName, req.RowId, data)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to add attachment to record")
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to add attachment to record")
 	}
 
 	return dto.RecordResponse{
@@ -2687,7 +2570,7 @@ func (s tableManagementService) BulkDeleteRows(ctx context.Context, schemaName s
 	count, err := s.repo.BulkService.BulkDelete(tableName, ids, "id")
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("tableName", tableName).Msg("Failed to bulk delete rows")
-		return deletedCount, app_errors.DatabaseError
+		return deletedCount, app_errors.LogDatabaseError(err, "failed to bulk delete rows")
 	}
 	deletedCount = int(count)
 	lg.Info().Int("deletedCount", deletedCount).Str("tableName", tableName).Msg("Successfully bulk deleted rows")
@@ -2749,9 +2632,9 @@ func (s tableManagementService) RemoveAttachments(
 		"last_modified_time":                         time.Now().UTC(),
 	}
 
-	updatedRecord, err := s.repo.TableService.UpdateRecord(ctx, tableName, req.RowId, data)
+	updatedRecord, err := s.repo.TableService.UpdateRecord(tableName, req.RowId, data)
 	if err != nil {
-		return dto.RecordResponse{}, app_errors.DatabaseError
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to remove attachments from record")
 	}
 
 	return dto.RecordResponse{

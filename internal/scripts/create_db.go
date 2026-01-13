@@ -3,8 +3,8 @@ package scripts
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	"godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	"go-postgres-rest/pkg/models"
 	appConstant "serenibase/internal/constant"
 	"serenibase/internal/models/tenant"
 	"strings"

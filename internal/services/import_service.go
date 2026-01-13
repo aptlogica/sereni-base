@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 type importService struct {
@@ -33,129 +35,182 @@ func NewImportService(tableService interfaces.TableManagementService, baseManage
 func (s *importService) Import(ctx context.Context, schemaName string, req dto.CreateTableRequest, file *multipart.FileHeader) (dto.ImportTableResponse, error) {
 	lg := logger.Get()
 
-	// 1. Scan file with antivirus before processing
-	if s.antivirusProvider != nil {
-		f, err := file.Open()
-		if err != nil {
-			lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file for antivirus scan")
-			return dto.ImportTableResponse{}, err
-		}
-		scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, file.Filename, f)
-		f.Close()
-		if scanErr != nil {
-			lg.Error().Stack().Err(scanErr).Str("file", file.Filename).Str("threat", scanResult.Threat).Msg("Antivirus scan detected threat")
-			return dto.ImportTableResponse{}, fmt.Errorf("file '%s' is infected or contains malicious content", file.Filename)
-		}
-		lg.Info().Str("file", file.Filename).Msg("Antivirus scan passed")
+	if err := s.scanFile(ctx, file, lg); err != nil {
+		return dto.ImportTableResponse{}, err
 	}
 
-	// 2. Create base if base_id is not provided
-	if req.BaseID == "" {
-		if req.WorkspaceID == "" {
-			lg.Error().Msg("workspace_id is required when base_id is not provided")
-			return dto.ImportTableResponse{}, fmt.Errorf("workspace_id is required when base_id is not provided")
-		}
-
-		baseName := req.Title + "_base"
-		lg.Info().Str("baseName", baseName).Str("workspaceID", req.WorkspaceID).Msg("Creating new base for import")
-
-		createBaseReq := dto.CreateBaseRequest{
-			Title:       baseName,
-			Description: helpers.StringPtr("Auto-created base for table import"),
-			WorkspaceID: req.WorkspaceID,
-			CreatedBy:   req.CreatedBy,
-		}
-
-		newBase, err := s.baseManagementService.CreateBase(ctx, createBaseReq, schemaName, req.CreatedBy)
-		if err != nil {
-			lg.Error().Stack().Err(err).Str("baseName", baseName).Msg("Failed to create base for import")
-			return dto.ImportTableResponse{}, fmt.Errorf("failed to create base: %w", err)
-		}
-
-		req.BaseID = newBase.ID.String()
-		lg.Info().Str("baseID", req.BaseID).Str("baseName", baseName).Msg("Base created successfully for import")
+	if err := s.ensureBase(ctx, schemaName, &req, lg); err != nil {
+		return dto.ImportTableResponse{}, err
 	}
 
-	// 3. Open file for processing
+	headers, dataRows, err := s.parseCSV(file, lg)
+	if err != nil {
+		return dto.ImportTableResponse{}, err
+	}
+
+	columnTypes := s.inferColumnTypes(headers, dataRows)
+	lg.Info().Strs("headers", headers).Strs("columnTypes", columnTypes).Msg("Column types inferred")
+
+	titleColumnName := ""
+	if len(headers) > 0 && headers[0] != "" {
+		titleColumnName = headers[0]
+	}
+
+	tableResp, err := s.createTable(ctx, schemaName, req, lg)
+	if err != nil {
+		return dto.ImportTableResponse{}, err
+	}
+
+	if err := s.updateTitleColumn(ctx, schemaName, lg, titleColumnName, &tableResp); err != nil {
+		return dto.ImportTableResponse{}, err
+	}
+
+	columnMap, err := s.addColumns(ctx, schemaName, req, headers, columnTypes, tableResp, lg)
+	if err != nil {
+		return dto.ImportTableResponse{}, err
+	}
+
+	newRecords := s.buildRecords(dataRows, columnTypes, columnMap, req, lg)
+	lg.Info().Int("recordsCreated", len(newRecords)).Msg("Records prepared for insertion")
+
+	if err := s.insertBatches(ctx, schemaName, tableResp, newRecords, lg); err != nil {
+		return dto.ImportTableResponse{}, err
+	}
+
+	finalTableResp, err := s.refreshTable(ctx, schemaName, tableResp, lg)
+	if err != nil {
+		return dto.ImportTableResponse{TableResponse: tableResp}, nil
+	}
+
+	return dto.ImportTableResponse{TableResponse: finalTableResp}, nil
+}
+
+func (s *importService) scanFile(ctx context.Context, file *multipart.FileHeader, lg *zerolog.Logger) error {
+	if s.antivirusProvider == nil {
+		return nil
+	}
+
+	f, err := file.Open()
+	if err != nil {
+		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file for antivirus scan")
+		return err
+	}
+	scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, file.Filename, f)
+	f.Close()
+	if scanErr != nil {
+		lg.Error().Stack().Err(scanErr).Str("file", file.Filename).Str("threat", scanResult.Threat).Msg("Antivirus scan detected threat")
+		return fmt.Errorf("file '%s' is infected or contains malicious content", file.Filename)
+	}
+
+	lg.Info().Str("file", file.Filename).Msg("Antivirus scan passed")
+	return nil
+}
+
+func (s *importService) ensureBase(ctx context.Context, schemaName string, req *dto.CreateTableRequest, lg *zerolog.Logger) error {
+	if req.BaseID != "" {
+		return nil
+	}
+
+	if req.WorkspaceID == "" {
+		lg.Error().Msg("workspace_id is required when base_id is not provided")
+		return fmt.Errorf("workspace_id is required when base_id is not provided")
+	}
+
+	baseName := req.Title + "_base"
+	lg.Info().Str("baseName", baseName).Str("workspaceID", req.WorkspaceID).Msg("Creating new base for import")
+
+	createBaseReq := dto.CreateBaseRequest{
+		Title:       baseName,
+		Description: helpers.StringPtr("Auto-created base for table import"),
+		WorkspaceID: req.WorkspaceID,
+		CreatedBy:   req.CreatedBy,
+	}
+
+	newBase, err := s.baseManagementService.CreateBase(ctx, createBaseReq, schemaName, req.CreatedBy)
+	if err != nil {
+		lg.Error().Stack().Err(err).Str("baseName", baseName).Msg("Failed to create base for import")
+		return fmt.Errorf("failed to create base: %w", err)
+	}
+
+	req.BaseID = newBase.ID.String()
+	lg.Info().Str("baseID", req.BaseID).Str("baseName", baseName).Msg("Base created successfully for import")
+	return nil
+}
+
+func (s *importService) parseCSV(file *multipart.FileHeader, lg *zerolog.Logger) ([]string, [][]string, error) {
 	f, err := file.Open()
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file")
-		return dto.ImportTableResponse{}, err
+		return nil, nil, err
 	}
 	defer f.Close()
 
-	// 2. Parse CSV
-	// TODO: Handle other extensions based on file.Filename
 	reader := csv.NewReader(f)
 	records, err := reader.ReadAll()
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to parse CSV file")
-		return dto.ImportTableResponse{}, err
+		return nil, nil, err
 	}
 
 	if len(records) < 1 {
 		errMsg := "empty csv file"
 		lg.Error().Str("file", file.Filename).Msg(errMsg)
-		return dto.ImportTableResponse{}, fmt.Errorf("%s", errMsg)
+		return nil, nil, fmt.Errorf("%s", errMsg)
 	}
 
 	lg.Info().Str("file", file.Filename).Int("rows", len(records)).Msg("CSV file parsed successfully")
 
 	headers := records[0]
 	dataRows := records[1:]
+	return headers, dataRows, nil
+}
 
-	// 3. Infer Types
-	columnTypes := s.inferColumnTypes(headers, dataRows)
-	lg.Info().Strs("headers", headers).Strs("columnTypes", columnTypes).Msg("Column types inferred")
-
-	// Store first CSV column header to use as the title column name
-	titleColumnName := ""
-	if len(headers) > 0 && headers[0] != "" {
-		titleColumnName = headers[0]
-	}
-
-	// 4. Create Table
-	// Keep the original req.Title for the model title, don't override with CSV column name
+func (s *importService) createTable(ctx context.Context, schemaName string, req dto.CreateTableRequest, lg *zerolog.Logger) (dto.TableResponse, error) {
 	lg.Info().Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Creating table with defaults")
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
+		fmt.Println("Error creating table:", err)
 		lg.Error().Stack().Err(err).Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Failed to create table with defaults")
-		return dto.ImportTableResponse{}, err
+		return dto.TableResponse{}, err
 	}
 	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Table created successfully")
+	return tableResp, nil
+}
 
-	// Update the Title column with the first CSV header name
-	if titleColumnName != "" {
-		titleColumnID := ""
-		// Find the Title column ID from the default columns
-		for _, col := range tableResp.Columns {
-			if col.Title == "Title" {
-				titleColumnID = col.ID.String()
-				break
-			}
-		}
+func (s *importService) updateTitleColumn(ctx context.Context, schemaName string, lg *zerolog.Logger, titleColumnName string, tableResp *dto.TableResponse) error {
+	if titleColumnName == "" {
+		return nil
+	}
 
-		// Update the Title column with the first CSV header name
-		if titleColumnID != "" {
-			lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Updating title column name")
-			updateColReq := dto.ColumnUpdate{
-				Title: &titleColumnName,
-			}
-			_, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq)
-			if err != nil {
-				lg.Error().Stack().Err(err).Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Failed to update title column")
-				return dto.ImportTableResponse{}, err
-			}
-			lg.Info().Str("columnID", titleColumnID).Msg("Title column updated successfully")
+	titleColumnID := ""
+	for _, col := range tableResp.Columns {
+		if col.Title == "Title" {
+			titleColumnID = col.ID.String()
+			break
 		}
 	}
 
-	// 5. Add Columns
+	if titleColumnID == "" {
+		return nil
+	}
+
+	lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Updating title column name")
+	updateColReq := dto.ColumnUpdate{Title: &titleColumnName}
+	if _, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq); err != nil {
+		lg.Error().Stack().Err(err).Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Failed to update title column")
+		return err
+	}
+
+	lg.Info().Str("columnID", titleColumnID).Msg("Title column updated successfully")
+	return nil
+}
+
+func (s *importService) addColumns(ctx context.Context, schemaName string, req dto.CreateTableRequest, headers []string, columnTypes []string, tableResp dto.TableResponse, lg *zerolog.Logger) (map[int]dto.ColumnResponse, error) {
 	lg.Info().Int("columnCount", len(headers)-1).Msg("Starting to add columns")
-	columnMap := make(map[int]dto.ColumnResponse) // Index -> Column
+	columnMap := make(map[int]dto.ColumnResponse)
 	systemFieldAdded := false
+
 	for i, header := range headers {
-		// Skip first column as it's used for the title field
 		if i == 0 {
 			continue
 		}
@@ -165,7 +220,6 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 			systemFieldAdded = true
 		}
 
-		// Skip empty headers
 		if header == "" {
 			continue
 		}
@@ -178,27 +232,30 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 			Meta:        map[string]interface{}{},
 			UIDT:        colType,
 			DT:          colType,
-			OrderIndex:  helpers.Float64Ptr(float64(i + 6)), // Start after system columns (0-5)
+			OrderIndex:  helpers.Float64Ptr(float64(i + 6)),
 			Virtual:     helpers.BoolPtr(false),
 			System:      helpers.BoolPtr(false),
 			CreatedBy:   req.CreatedBy,
 		}
 		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
 		if err != nil {
+			fmt.Println("Error adding column:", err)
 			lg.Error().Stack().Err(err).Str("columnTitle", header).Str("columnType", colType).Msg("Failed to add column")
-			return dto.ImportTableResponse{}, err
+			return nil, err
 		}
 		columnMap[i] = colResp
 		lg.Debug().Str("columnTitle", header).Str("columnType", colType).Msg("Column added successfully")
 	}
-	lg.Info().Int("columnsAdded", len(columnMap)).Msg("All columns added")
 
-	// 6. Insert Data
+	lg.Info().Int("columnsAdded", len(columnMap)).Msg("All columns added")
+	return columnMap, nil
+}
+
+func (s *importService) buildRecords(dataRows [][]string, columnTypes []string, columnMap map[int]dto.ColumnResponse, req dto.CreateTableRequest, lg *zerolog.Logger) []map[string]interface{} {
 	lg.Info().Int("recordCount", len(dataRows)).Msg("Starting to insert records")
+
 	newRecords := []map[string]interface{}{}
 	for _, row := range dataRows {
-		// Compose a record (map) with all header-column values for this row
-		// Note: Do not set 'id' field - let the database auto-generate it (bigint auto-increment)
 		record := map[string]interface{}{
 			"created_by":         req.CreatedBy,
 			"last_modified_by":   req.CreatedBy,
@@ -211,7 +268,6 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 				continue
 			}
 
-			// Map first column to title field
 			if i == 0 {
 				val := s.convertValue(cellVal, columnTypes[i])
 				record["title"] = val
@@ -227,8 +283,11 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		}
 		newRecords = append(newRecords, record)
 	}
-	lg.Info().Int("recordsCreated", len(newRecords)).Msg("Records prepared for insertion")
 
+	return newRecords
+}
+
+func (s *importService) insertBatches(ctx context.Context, schemaName string, tableResp dto.TableResponse, newRecords []map[string]interface{}, lg *zerolog.Logger) error {
 	batchSize := 50
 	totalBatches := (len(newRecords) + batchSize - 1) / batchSize
 	lg.Info().Int("batchSize", batchSize).Int("totalBatches", totalBatches).Msg("Starting batch insertion")
@@ -242,25 +301,27 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		batchNum := (i / batchSize) + 1
 
 		lg.Info().Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Inserting batch")
-		_, err := s.tableService.CreateRowsWithRecordsBulk(ctx, schemaName, tableResp.Model.Alias, batch)
-		if err != nil {
+		if _, err := s.tableService.CreateRowsWithRecordsBulk(ctx, schemaName, tableResp.Model.Alias, batch); err != nil {
 			lg.Error().Stack().Err(err).Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Failed to insert batch")
-			return dto.ImportTableResponse{}, err
+			return err
 		}
 		lg.Debug().Int("batchNumber", batchNum).Msg("Batch inserted successfully")
 	}
-	lg.Info().Msg("All batches inserted successfully")
 
-	// Refresh table response to include new columns and records
+	lg.Info().Msg("All batches inserted successfully")
+	return nil
+}
+
+func (s *importService) refreshTable(ctx context.Context, schemaName string, tableResp dto.TableResponse, lg *zerolog.Logger) (dto.TableResponse, error) {
 	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Refreshing table response")
 	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName)
 	if err != nil {
 		lg.Warn().Stack().Err(err).Str("tableID", tableResp.Model.ID.String()).Msg("Failed to refresh table response, returning cached response")
-		return dto.ImportTableResponse{TableResponse: tableResp}, nil
+		return tableResp, err
 	}
 
 	lg.Info().Str("tableID", finalTableResp.Model.ID.String()).Int("columns", len(finalTableResp.Columns)).Int("records", len(finalTableResp.Records)).Msg("Import completed successfully")
-	return dto.ImportTableResponse{TableResponse: finalTableResp}, nil
+	return finalTableResp, nil
 }
 
 func (s *importService) inferColumnTypes(headers []string, rows [][]string) []string {
@@ -271,87 +332,113 @@ func (s *importService) inferColumnTypes(headers []string, rows [][]string) []st
 	return types
 }
 
-func (s *importService) inferType(rows [][]string, colIndex int) string {
-	isNumber := true
-	isDecimal := true
-	isBool := true
-	isDate := true
-	isLongText := false
+type typeCheckState struct {
+	isNumber   bool
+	isDecimal  bool
+	isBool     bool
+	isDate     bool
+	isLongText bool
+	hasData    bool
+}
 
-	hasData := false
-	totalLength := 0
+func newTypeCheckState() typeCheckState {
+	return typeCheckState{
+		isNumber:   true,
+		isDecimal:  true,
+		isBool:     true,
+		isDate:     true,
+		isLongText: false,
+		hasData:    false,
+	}
+}
+
+func updateTypeChecks(val string, state *typeCheckState) {
+	state.hasData = true
+	updateNumberAndDecimal(val, state)
+	updateBool(val, state)
+	updateDate(val, state)
+	updateLongText(val, state)
+}
+
+func updateNumberAndDecimal(val string, state *typeCheckState) {
+	if !state.isNumber && !state.isDecimal {
+		return
+	}
+
+	if parsedInt, err := strconv.ParseInt(val, 10, 64); err != nil {
+		state.isNumber = false
+	} else {
+		if parsedInt > math.MaxInt32 || parsedInt < math.MinInt32 {
+			state.isNumber = false
+		}
+	}
+	if _, err := strconv.ParseFloat(val, 64); err != nil {
+		state.isDecimal = false
+	}
+}
+
+func updateBool(val string, state *typeCheckState) {
+	if !state.isBool {
+		return
+	}
+
+	lower := strings.ToLower(val)
+	if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
+		state.isBool = false
+	}
+}
+
+func updateDate(val string, state *typeCheckState) {
+	if !state.isDate {
+		return
+	}
+
+	formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
+	for _, f := range formats {
+		if _, err := time.Parse(f, val); err == nil {
+			return
+		}
+	}
+	state.isDate = false
+}
+
+func updateLongText(val string, state *typeCheckState) {
+	if len(val) > 255 {
+		state.isLongText = true
+	}
+}
+
+func (s *importService) inferType(rows [][]string, colIndex int) string {
+	state := newTypeCheckState()
 
 	for _, row := range rows {
 		if colIndex >= len(row) {
 			continue
 		}
+
 		val := row[colIndex]
 		if val == "" {
 			continue
 		}
-		hasData = true
-		totalLength += len(val)
-
-		// Check Number (integer or decimal)
-		if isNumber || isDecimal {
-			if v, err := strconv.ParseInt(val, 10, 64); err != nil {
-				isNumber = false
-			} else {
-				if v > math.MaxInt32 || v < math.MinInt32 {
-					isNumber = false
-				}
-			}
-			if _, err := strconv.ParseFloat(val, 64); err != nil {
-				isDecimal = false
-			}
-		}
-
-		// Check Bool
-		if isBool {
-			lower := strings.ToLower(val)
-			if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
-				isBool = false
-			}
-		}
-
-		// Check Date (Simple check)
-		if isDate {
-			formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
-			parsed := false
-			for _, f := range formats {
-				if _, err := time.Parse(f, val); err == nil {
-					parsed = true
-					break
-				}
-			}
-			if !parsed {
-				isDate = false
-			}
-		}
-
-		// Check if long text (avg length > 255)
-		if len(val) > 255 {
-			isLongText = true
-		}
+		updateTypeChecks(val, &state)
 	}
 
-	if !hasData {
+	if !state.hasData {
 		return "text"
 	}
-
-	if isBool {
+	if state.isBool {
 		return "boolean"
 	}
-	if isNumber {
+	if state.isNumber {
 		return "number"
 	}
-	if isDecimal {
+	if state.isDecimal {
 		return "decimal"
 	}
-	if isDate {
+	if state.isDate {
 		return "date"
 	}
-	if isLongText {
+	if state.isLongText {
 		return "longText"
 	}
 	return "text"

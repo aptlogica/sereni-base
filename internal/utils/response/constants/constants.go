@@ -32,6 +32,8 @@ var ErrorCodes = mergeMaps(
 	RoleErrorCodes,
 	AssetErrorCodes,
 	TableErrorCodes,
+	SubscriptionPlanErrorCodes,
+	RBACErrorCodeDetails,
 )
 
 var SuccessCodes = mergeMaps(
@@ -44,6 +46,7 @@ var SuccessCodes = mergeMaps(
 	RoleSuccessCodes,
 	AssetSuccessCodes,
 	TableSuccessCodes,
+	SubscriptionPlanSuccessCodes,
 )
 
 // 	CoreErrorCodes,

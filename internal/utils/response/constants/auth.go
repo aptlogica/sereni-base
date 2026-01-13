@@ -225,6 +225,8 @@ var AuthSuccess = struct {
 	RefreshToken   ResponseCode
 	ForgotPassword ResponseCode
 	ResetPassword  ResponseCode
+	ValidateToken  ResponseCode
+	VerifyToken    ResponseCode
 }{
 	UserRegister:   "AUTH_SUCCESS_1001",
 	UserLogin:      "AUTH_SUCCESS_1002",
@@ -234,6 +236,8 @@ var AuthSuccess = struct {
 	ForgotPassword: "AUTH_SUCCESS_1006",
 	ResetPassword:  "AUTH_SUCCESS_1007",
 	UserLogout:     "AUTH_SUCCESS_1008",
+	ValidateToken:  "AUTH_SUCCESS_1009",
+	VerifyToken:    "AUTH_SUCCESS_1010",
 }
 
 var AuthSuccessCodes = map[ResponseCode]MetaResponse{
@@ -245,4 +249,6 @@ var AuthSuccessCodes = map[ResponseCode]MetaResponse{
 	AuthSuccess.ForgotPassword: {HTTPStatus: http.StatusOK, Message: "Forgot password request successful", Description: "Password recovery instructions have been sent successfully"},
 	AuthSuccess.ResetPassword:  {HTTPStatus: http.StatusOK, Message: "Password reset successful", Description: "The user's password has been reset successfully"},
 	AuthSuccess.UserLogout:     {HTTPStatus: http.StatusOK, Message: "Logout successful", Description: "The user has been logged out successfully"},
+	AuthSuccess.ValidateToken:  {HTTPStatus: http.StatusOK, Message: "Token valid", Description: "The provided token is valid"},
+	AuthSuccess.VerifyToken:    {HTTPStatus: http.StatusOK, Message: "Token verified", Description: "The provided token has been verified"},
 }

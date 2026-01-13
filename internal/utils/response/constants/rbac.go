@@ -348,16 +348,4 @@ var RBACErrorCodeDetails = map[ResponseCode]MetaResponse{
 	},
 }
 
-// Merge RBAC error codes into ErrorCodes
-func init() {
-	// Merge RBAC error codes with existing error codes
-	allErrorMaps := []map[ResponseCode]MetaResponse{
-		RBACErrorCodeDetails,
-	}
-
-	// Create a new merged map
-	mergedRBAC := mergeMaps(append([]map[ResponseCode]MetaResponse{ErrorCodes}, allErrorMaps...)...)
-
-	// Update the ErrorCodes map
-	ErrorCodes = mergedRBAC
-}
+// RBAC codes are merged into ErrorCodes in constants.go to keep a single merge point.

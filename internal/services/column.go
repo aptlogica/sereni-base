@@ -3,11 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	"strings"
 	"time"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
@@ -69,9 +69,9 @@ func (s *columnService) Create(ctx context.Context, req dto.ColumnInsertion, sch
 	s.ensureAuditColumns(ctx, schemaName)
 
 	// Insert into DB
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, colData.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, colData.Map())
 	if err != nil {
-		return tenant.Column{}, app_errors.DatabaseError
+		return tenant.Column{}, app_errors.LogDatabaseError(err, "failed to create column")
 	}
 
 	// Convert map → struct
@@ -140,9 +140,9 @@ func (s *columnService) GetAllColumns(ctx context.Context, schemaName string) ([
 // --- shared private helper ---
 func (s *columnService) fetchColumns(ctx context.Context, schemaName string, params dbModels.QueryParams) ([]tenant.Column, error) {
 	tableName := tenant.Column{}.TableName(schemaName)
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch columns")
 	}
 
 	cols := make([]tenant.Column, 0, len(rows))
@@ -175,7 +175,7 @@ func (s *columnService) UpdateColumn(ctx context.Context, schemaName string, id 
 	updateData["last_modified_time"] = time.Now()
 
 	// Perform update
-	updatedRows, err := s.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
+	updatedRows, err := s.repo.TableService.UpdateRecord(tableName, id, updateData)
 	if err != nil {
 		return tenant.Column{}, app_errors.ColumnUpdateFailed
 	}
@@ -198,8 +198,8 @@ func (s *columnService) DeleteColumn(ctx context.Context, schemaName string, id 
 	}
 
 	// Perform deletion
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
-		return app_errors.DatabaseError
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to delete column")
 	}
 	return nil
 }
@@ -227,7 +227,7 @@ func (s *columnService) BulkInsert(colDataList []dto.ColumnInsertion, schemaName
 
 	insertedRows, err := s.repo.BulkService.BulkInsert(tableName, colDataMaps)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to bulk insert columns")
 	}
 
 	cols := make([]tenant.Column, 0, len(insertedRows))
@@ -263,7 +263,7 @@ func (s *columnService) GetMaxOrderIndexOfColumn(ctx context.Context, schemaName
 		Aggregates: []dbModels.AggregateFunction{{Function: "MAX", Column: "order_index"}},
 		Filters:    []dbModels.QueryFilter{{Column: "model_id", Operator: "eq", Value: modelId}},
 	}
-	data, err := s.repo.TableService.GetTableData(context.Background(), tableName, params)
+	data, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil || len(data) == 0 {
 		return 0, err
 	}
