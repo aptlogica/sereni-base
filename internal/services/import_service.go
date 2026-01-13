@@ -276,10 +276,10 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	isDecimal := true
 	isBool := true
 	isDate := true
-	isLongText := false
 
 	hasData := false
 	totalLength := 0
+	count := 0
 
 	for _, row := range rows {
 		if colIndex >= len(row) {
@@ -291,6 +291,7 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 		}
 		hasData = true
 		totalLength += len(val)
+		count++
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
@@ -328,15 +329,15 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 				isDate = false
 			}
 		}
-
-		// Check if long text (avg length > 255)
-		if len(val) > 255 {
-			isLongText = true
-		}
 	}
 
 	if !hasData {
 		return "text"
+	}
+
+	avgLength := 0
+	if count > 0 {
+		avgLength = totalLength / count
 	}
 
 	if isBool {
@@ -351,7 +352,7 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	if isDate {
 		return "date"
 	}
-	if isLongText {
+	if avgLength > 255 {
 		return "longText"
 	}
 	return "text"
