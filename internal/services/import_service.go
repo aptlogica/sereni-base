@@ -332,91 +332,15 @@ func (s *importService) inferColumnTypes(headers []string, rows [][]string) []st
 	return types
 }
 
-type typeCheckState struct {
-	isNumber   bool
-	isDecimal  bool
-	isBool     bool
-	isDate     bool
-	isLongText bool
-	hasData    bool
-}
-
-func newTypeCheckState() typeCheckState {
-	return typeCheckState{
-		isNumber:   true,
-		isDecimal:  true,
-		isBool:     true,
-		isDate:     true,
-		isLongText: false,
-		hasData:    false,
-	}
-}
-
-func updateTypeChecks(val string, state *typeCheckState) {
-	state.hasData = true
-	updateNumberAndDecimal(val, state)
-	updateBool(val, state)
-	updateDate(val, state)
-	updateLongText(val, state)
-}
-
-func updateNumberAndDecimal(val string, state *typeCheckState) {
-	if !state.isNumber && !state.isDecimal {
-		return
-	}
-
-	if parsedInt, err := strconv.ParseInt(val, 10, 64); err != nil {
-		state.isNumber = false
-	} else {
-		if parsedInt > math.MaxInt32 || parsedInt < math.MinInt32 {
-			state.isNumber = false
-		}
-	}
-	if _, err := strconv.ParseFloat(val, 64); err != nil {
-		state.isDecimal = false
-	}
-}
-
-func updateBool(val string, state *typeCheckState) {
-	if !state.isBool {
-		return
-	}
-
-	lower := strings.ToLower(val)
-	if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
-		state.isBool = false
-	}
-}
-
-func updateDate(val string, state *typeCheckState) {
-	if !state.isDate {
-		return
-	}
-
-	formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
-	for _, f := range formats {
-		if _, err := time.Parse(f, val); err == nil {
-			return
-		}
-	}
-	state.isDate = false
-}
-
-func updateLongText(val string, state *typeCheckState) {
-	if len(val) > 255 {
-		state.isLongText = true
-	}
-}
-
 func (s *importService) inferType(rows [][]string, colIndex int) string {
 	isNumber := true
 	isDecimal := true
 	isBool := true
 	isDate := true
-	isLongText := false
 
 	hasData := false
 	totalLength := 0
+	count := 0
 
 	for _, row := range rows {
 		if colIndex >= len(row) {
@@ -466,30 +390,25 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 				isDate = false
 			}
 		}
-
-		// Check if long text (avg length > 255)
-		if len(val) > 255 {
-			isLongText = true
-		}
 	}
 
 	if !hasData {
 		return "text"
 	}
-
-	if isBool {
-		return "boolean"
+	avgLength := 0
+	if count > 0 {
+		avgLength = totalLength / count
 	}
-	if state.isNumber {
+	if isNumber {
 		return "number"
 	}
-	if state.isDecimal {
+	if isDecimal {
 		return "decimal"
 	}
-	if state.isDate {
+	if isDate {
 		return "date"
 	}
-	if isLongText {
+	if avgLength > 255 {
 		return "longText"
 	}
 	return "text"
