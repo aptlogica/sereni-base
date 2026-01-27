@@ -45,11 +45,15 @@ func New(cfg *config.Config) (*App, error) {
 
 	dfConfig := dbConfig.Config{
 		Database: dbConfig.DatabaseConfig{
+			Host:         cfg.Database.Host,
 			Driver:       cfg.Database.Driver,
 			Port:         cfg.Database.Port,
 			Username:     cfg.Database.Username,
 			Password:     cfg.Database.Password,
 			DatabaseName: cfg.Database.DatabaseName,
+			SSLMode: 	cfg.Database.SSLMode,
+			MaxOpenConns: cfg.Database.MaxOpenConns,
+			MaxIdleConns: cfg.Database.MaxIdleConns,
 		},
 	}
 
