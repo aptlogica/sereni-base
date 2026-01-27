@@ -409,7 +409,14 @@ func updateLongText(val string, state *typeCheckState) {
 }
 
 func (s *importService) inferType(rows [][]string, colIndex int) string {
-	state := newTypeCheckState()
+	isNumber := true
+	isDecimal := true
+	isBool := true
+	isDate := true
+	isLongText := false
+
+	hasData := false
+	totalLength := 0
 
 	for _, row := range rows {
 		if colIndex >= len(row) {
@@ -420,13 +427,57 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 		if val == "" {
 			continue
 		}
-		updateTypeChecks(val, &state)
+		hasData = true
+		totalLength += len(val)
+
+		// Check Number (integer or decimal)
+		if isNumber || isDecimal {
+			if v, err := strconv.ParseInt(val, 10, 64); err != nil {
+				isNumber = false
+			} else {
+				if v > math.MaxInt32 || v < math.MinInt32 {
+					isNumber = false
+				}
+			}
+			if _, err := strconv.ParseFloat(val, 64); err != nil {
+				isDecimal = false
+			}
+		}
+
+		// Check Bool
+		if isBool {
+			lower := strings.ToLower(val)
+			if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
+				isBool = false
+			}
+		}
+
+		// Check Date (Simple check)
+		if isDate {
+			formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
+			parsed := false
+			for _, f := range formats {
+				if _, err := time.Parse(f, val); err == nil {
+					parsed = true
+					break
+				}
+			}
+			if !parsed {
+				isDate = false
+			}
+		}
+
+		// Check if long text (avg length > 255)
+		if len(val) > 255 {
+			isLongText = true
+		}
 	}
 
-	if !state.hasData {
+	if !hasData {
 		return "text"
 	}
-	if state.isBool {
+
+	if isBool {
 		return "boolean"
 	}
 	if state.isNumber {
@@ -438,7 +489,7 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	if state.isDate {
 		return "date"
 	}
-	if state.isLongText {
+	if isLongText {
 		return "longText"
 	}
 	return "text"
