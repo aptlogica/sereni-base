@@ -43,13 +43,22 @@ func New(cfg *config.Config) (*App, error) {
 
 	logger.Init(cfg)
 
-	dbCfg, err := dbConfig.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load db config: %w", err)
+	dfConfig := dbConfig.Config{
+		Database: dbConfig.DatabaseConfig{
+			Host:         cfg.Database.Host,
+			Driver:       cfg.Database.Driver,
+			Port:         cfg.Database.Port,
+			Username:     cfg.Database.Username,
+			Password:     cfg.Database.Password,
+			DatabaseName: cfg.Database.DatabaseName,
+			SSLMode: 	cfg.Database.SSLMode,
+			MaxOpenConns: cfg.Database.MaxOpenConns,
+			MaxIdleConns: cfg.Database.MaxIdleConns,
+		},
 	}
 
 	// Initialize database service for repository
-	dbService, err := pkg.NewDatabaseServiceWithInit(dbCfg)
+	dbService, err := pkg.NewDatabaseServiceWithInit(&dfConfig)
 	if err != nil {
 		fmt.Printf("failed to initialize database service: %v", err)
 		return nil, err
@@ -107,7 +116,7 @@ func New(cfg *config.Config) (*App, error) {
 	)
 
 	tableManagementService := services.NewTableManagementService(
-		dbCfg.Database.Driver,
+		dfConfig.Database.Driver,
 		dbService,
 		modelService,
 		columnService,
