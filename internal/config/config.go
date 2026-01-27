@@ -21,6 +21,7 @@ type Config struct {
 	TemporaryAddedUserPassword TemporaryAddedUserPasswordConfig `mapstructure:"temporary_added_user_password"`
 	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
 	CORS                       CORSConfig                       `mapstructure:"cors"`
+	Database                   DatabaseConfig                   `mapstructure:"database"`
 }
 
 type ServerConfig struct {
@@ -30,6 +31,18 @@ type ServerConfig struct {
 	WriteTimeout int    `mapstructure:"write_timeout"`
 	Scheme       string `mapstructure:"scheme"` // "http" or "https"
 	Env          string `mapstructure:"env"`    // "dev" or "prod"
+}
+
+type DatabaseConfig struct {
+	Host         string `mapstructure:"host"`
+	Port         int    `mapstructure:"port"`
+	Username     string `mapstructure:"username"`
+	Password     string `mapstructure:"password"`
+	DatabaseName string `mapstructure:"database_name"`
+	SSLMode      string `mapstructure:"ssl_mode"`
+	MaxOpenConns int    `mapstructure:"max_open_conns"`
+	MaxIdleConns int    `mapstructure:"max_idle_conns"`
+	Driver       string `mapstructure:"driver"`
 }
 
 type EmailConfig struct {
