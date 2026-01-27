@@ -1,6 +1,10 @@
 package app_errors
 
-import "errors"
+import (
+	"errors"
+
+	"serenibase/internal/providers/logger"
+)
 
 // var (
 // 	KeycloakAdminLoginFailed   = errors.New("keycloak admin login failed")
@@ -62,6 +66,18 @@ var (
 	ErrServiceNotInitialized = errors.New("service not initialized")
 	UserNotActive            = errors.New("user is not active")
 )
+
+// LogDatabaseError logs the original database error and returns the generic DatabaseError sentinel
+// so callers can keep returning the standardized error while still capturing the root cause.
+// Use this whenever wrapping a DB failure as DatabaseError.
+func LogDatabaseError(err error, msg string) error {
+	if err == nil {
+		return DatabaseError
+	}
+	lg := logger.Get()
+	lg.Error().Stack().Err(err).Msg(msg)
+	return DatabaseError
+}
 
 // user management
 var (
@@ -166,9 +182,10 @@ var (
 
 // APIError represents an error response from an external API
 type APIError struct {
-	Code    string
-	Message string
-	Details interface{}
+	Code       string
+	Message    string
+	Details    interface{}
+	StatusCode int // optional HTTP status to forward from upstream
 }
 
 // Error implements the error interface for APIError

@@ -57,58 +57,25 @@ type ColumnInsertion struct {
 // Map converts ColumnInsertion → map[string]interface{} for DB insert
 func (c *ColumnInsertion) Map() map[string]interface{} {
 	return map[string]interface{}{
-		"id":          c.ID,
-		"model_id":    c.ModelID,
-		"base_id":     c.BaseID,
-		"column_name": c.ColumnName,
-		"title":       c.Title,
-		"uidt":        c.UIDT,
-		"dt":          c.DT,
-		"description": c.Description,
-		"meta":        helpers.InterfaceToJSONString(c.Meta),
-		// "pk":                c.PK,
-		// "pv":                c.PV,
-		// "rqd":               c.RQD,
-		// "un":                c.UN,
-		// "ai":                c.AI,
-		// "unique_constraint": c.UniqueConstraint,
-		// "max_length":        c.MaxLength,
-		// "precision_value":   c.PrecisionValue,
-		// "scale_value":       c.ScaleValue,
-		// "default_value":     c.DefaultValue,
-		// "validation_rules":  c.validationRulesToString(),
-		"virtual":     c.Virtual,
-		"system":      c.System,
-		"deleted":     c.Deleted,
-		"order_index": c.OrderIndex,
-		"created_by":  c.CreatedBy,
-		"last_modified_by":  c.UpdatedBy,
-		"created_time":  c.CreatedAt,
-		"last_modified_time":  c.UpdatedAt,
+		"id":                 c.ID,
+		"model_id":           c.ModelID,
+		"base_id":            c.BaseID,
+		"column_name":        c.ColumnName,
+		"title":              c.Title,
+		"uidt":               c.UIDT,
+		"dt":                 c.DT,
+		"description":        c.Description,
+		"meta":               helpers.InterfaceToJSONString(c.Meta),
+		"virtual":            c.Virtual,
+		"system":             c.System,
+		"deleted":            c.Deleted,
+		"order_index":        c.OrderIndex,
+		"created_by":         c.CreatedBy,
+		"last_modified_by":   c.UpdatedBy,
+		"created_time":       c.CreatedAt,
+		"last_modified_time": c.UpdatedAt,
 	}
 }
-
-// // Helper: Convert ValidationRules to *string
-// func (c *ColumnInsertion) validationRulesToString() *string {
-// 	if c.ValidationRules == nil || len(c.ValidationRules) == 0 {
-// 		return nil
-// 	}
-// 	str := string(c.ValidationRules)
-// 	return &str
-// }
-
-// // SetValidationRules sets the ValidationRules field from a JSON string
-// func (c *ColumnInsertion) SetValidationRules(rules string) error {
-// 	if rules == "" {
-// 		c.ValidationRules = nil
-// 		return nil
-// 	}
-// 	if !json.Valid([]byte(rules)) {
-// 		return fmt.Errorf("invalid JSON for validation_rules")
-// 	}
-// 	c.ValidationRules = json.RawMessage(rules)
-// 	return nil
-// }
 
 // ColumnUpdate is used when updating an existing column
 type ColumnUpdate struct {
@@ -117,23 +84,12 @@ type ColumnUpdate struct {
 	Meta        *map[string]interface{} `db:"meta" json:"meta,omitempty"`
 	UIDT        *string                 `db:"uidt" json:"uidt,omitempty"`
 	DT          *string                 `db:"dt" json:"dt,omitempty"`
-	// PK               *bool     `db:"pk" json:"pk,omitempty"`
-	// PV               *bool     `db:"pv" json:"pv,omitempty"`
-	// RQD              *bool     `db:"rqd" json:"rqd,omitempty"`
-	// UN               *bool     `db:"un" json:"un,omitempty"`
-	// AI               *bool     `db:"ai" json:"ai,omitempty"`
-	// UniqueConstraint *bool     `db:"unique_constraint" json:"unique_constraint,omitempty"`
-	// MaxLength        *int      `db:"max_length" json:"max_length,omitempty"`
-	// PrecisionValue   *int      `db:"precision_value" json:"precision_value,omitempty"`
-	// ScaleValue       *int      `db:"scale_value" json:"scale_value,omitempty"`
-	// DefaultValue     *string   `db:"default_value" json:"default_value,omitempty"`
-	// ValidationRules  *string   `db:"validation_rules" json:"validation_rules,omitempty"`
-	Virtual    *bool     `db:"virtual" json:"virtual,omitempty"`
-	System     *bool     `db:"system" json:"system,omitempty"`
-	Deleted    *bool     `db:"deleted" json:"deleted,omitempty"`
-	OrderIndex *float64  `db:"order_index" json:"order_index,omitempty"`
-	UpdatedBy  string    `db:"last_modified_by" json:"last_modified_by,omitempty"`
-	UpdatedAt  time.Time `db:"last_modified_time" json:"last_modified_time,omitempty"`
+	Virtual     *bool                   `db:"virtual" json:"virtual,omitempty"`
+	System      *bool                   `db:"system" json:"system,omitempty"`
+	Deleted     *bool                   `db:"deleted" json:"deleted,omitempty"`
+	OrderIndex  *float64                `db:"order_index" json:"order_index,omitempty"`
+	UpdatedBy   string                  `db:"last_modified_by" json:"last_modified_by,omitempty"`
+	UpdatedAt   time.Time               `db:"last_modified_time" json:"last_modified_time,omitempty"`
 }
 
 // Map converts ColumnUpdate → map[string]interface{} for DB update

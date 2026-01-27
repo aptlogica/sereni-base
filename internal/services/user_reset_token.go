@@ -2,7 +2,8 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"fmt"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
@@ -11,7 +12,7 @@ import (
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 )
 
 type userResetTokenService struct {
@@ -39,10 +40,10 @@ func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dt
 		Limit: &limit,
 	}
 
-	existing, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	existing, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to fetch existing reset tokens")
-		return tenant.UserResetToken{}, app_errors.DatabaseError
+		return tenant.UserResetToken{}, app_errors.LogDatabaseError(err, "failed to fetch existing reset tokens")
 	}
 
 	// Always insert new record, delete any existing record for this user_id first
@@ -52,18 +53,19 @@ func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dt
 			idVal, ok := record["id"]
 			if !ok {
 				lg.Warn().Msg("ID field not found in reset token record")
-				return tenant.UserResetToken{}, app_errors.DatabaseError
+				errMissingID := fmt.Errorf("id field missing in reset token record")
+				return tenant.UserResetToken{}, app_errors.LogDatabaseError(errMissingID, "reset token record missing id")
 			}
-			if err := s.repo.TableService.DeleteRecord(ctx, tableName, idVal); err != nil {
+			if err := s.repo.TableService.DeleteRecord(tableName, idVal); err != nil {
 				lg.Error().Stack().Err(err).Msg("Failed to delete existing reset token")
-				return tenant.UserResetToken{}, app_errors.DatabaseError
+				return tenant.UserResetToken{}, app_errors.LogDatabaseError(err, "failed to delete existing reset token")
 			}
 		}
 	}
-	recordData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	recordData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create reset token record")
-		return tenant.UserResetToken{}, app_errors.DatabaseError
+		return tenant.UserResetToken{}, app_errors.LogDatabaseError(err, "failed to create reset token record")
 	}
 
 	var out tenant.UserResetToken
@@ -87,9 +89,9 @@ func (s *userResetTokenService) GetUserResetToken(ctx context.Context, token str
 		Limit: &limit,
 	}
 
-	tokensData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	tokensData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.UserResetToken{}, app_errors.DatabaseError
+		return tenant.UserResetToken{}, app_errors.LogDatabaseError(err, "failed to fetch reset token by token")
 	}
 
 	if len(tokensData) == 0 {
@@ -119,9 +121,9 @@ func (s *userResetTokenService) DeleteTokensByUserId(ctx context.Context, userId
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{filter},
 	}
-	records, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	records, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to fetch reset tokens by user id")
 	}
 	if len(records) > 0 {
 
@@ -129,11 +131,12 @@ func (s *userResetTokenService) DeleteTokensByUserId(ctx context.Context, userId
 			idVal, ok := record["id"]
 			if !ok {
 				lg.Warn().Msg("ID field not found in reset token record")
-				return app_errors.DatabaseError
+				errMissingID := fmt.Errorf("id field missing in reset token record")
+				return app_errors.LogDatabaseError(errMissingID, "reset token record missing id during delete")
 			}
-			if err := s.repo.TableService.DeleteRecord(ctx, tableName, idVal); err != nil {
+			if err := s.repo.TableService.DeleteRecord(tableName, idVal); err != nil {
 				lg.Error().Stack().Err(err).Msg("Failed to delete reset token by user ID")
-				return app_errors.DatabaseError
+				return app_errors.LogDatabaseError(err, "failed to delete reset token by user id")
 			}
 		}
 	}

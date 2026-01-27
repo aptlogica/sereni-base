@@ -3,14 +3,14 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -29,7 +29,7 @@ func (s *accessMemberService) AssignRoleToUser(ctx context.Context, schemaName s
 	}
 
 	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return nil, err
 	}
@@ -75,9 +75,9 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 		})
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to get access members for removal")
 	}
 
 	if len(data) == 0 {
@@ -96,7 +96,7 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 			Operator: "eq",
 			Value:    am.ID.String(),
 		}
-		deleteErr := s.repo.TableService.DeleteRecord(ctx, tableName, filter)
+		deleteErr := s.repo.TableService.DeleteRecord(tableName, filter)
 		if deleteErr != nil {
 			return app_errors.AccessMemberDeleteFailed
 		}
@@ -117,7 +117,7 @@ func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schema
 	fmt.Printf("DEBUG: RemoveAccessMemberByID - Deleting from table: %s with ID: %s\n", tableName, memberID)
 
 	// Pass just the ID string, not a QueryFilter struct
-	deleteErr := s.repo.TableService.DeleteRecord(ctx, tableName, memberID)
+	deleteErr := s.repo.TableService.DeleteRecord(tableName, memberID)
 	if deleteErr != nil {
 		fmt.Printf("DEBUG: RemoveAccessMemberByID - DeleteRecord failed with error: %v (type: %T)\n", deleteErr, deleteErr)
 		return deleteErr
@@ -139,9 +139,9 @@ func (s *accessMemberService) GetUserAccessMembers(ctx context.Context, schemaNa
 		},
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch user access members")
 	}
 
 	var members []dto.AccessMemberDTO
@@ -187,9 +187,9 @@ func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaNa
 		})
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch user access by scope")
 	}
 
 	var members []dto.AccessMemberDTO
@@ -223,9 +223,9 @@ func (s *accessMemberService) GetScopeMembers(ctx context.Context, schemaName st
 		})
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch scope members")
 	}
 
 	var members []dto.AccessMemberDTO
@@ -453,9 +453,9 @@ func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName 
 		})
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to fetch access member for role update")
 	}
 
 	if len(data) == 0 {
@@ -472,9 +472,9 @@ func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName 
 		"role_id": newRoleID,
 	}
 
-	_, err = s.repo.TableService.UpdateRecord(ctx, tableName, am.ID.String(), updateData)
+	_, err = s.repo.TableService.UpdateRecord(tableName, am.ID.String(), updateData)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to update role for user")
 	}
 
 	return nil

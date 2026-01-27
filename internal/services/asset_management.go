@@ -3,12 +3,10 @@ package services
 import (
 	"bytes"
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	"image"
 	_ "image/gif"
-	"image/jpeg"
 	_ "image/jpeg"
-	"image/png"
 	_ "image/png"
 	"io"
 	"mime/multipart"
@@ -312,41 +310,4 @@ func (s *assetManagementService) DeleteAsset(ctx context.Context, assetId string
 
 func (s *assetManagementService) GetAssetByURL(ctx context.Context, schemaName string, url string) (tenant.Assets, error) {
 	return s.assetsService.GetAssetByURL(ctx, url, schemaName)
-}
-
-func (s *assetManagementService) compressImage(fileHeader *multipart.FileHeader, quality int) ([]byte, error) {
-	file, err := fileHeader.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	// Decode the image
-	img, format, err := image.Decode(file)
-	if err != nil {
-		return nil, err
-	}
-
-	var buf bytes.Buffer
-	switch format {
-	case "jpeg", "jpg":
-		// Quality range: 1-100
-		var opt jpeg.Options
-		if quality < 1 {
-			opt.Quality = 75
-		} else if quality > 100 {
-			opt.Quality = 100
-		} else {
-			opt.Quality = quality
-		}
-		err = jpeg.Encode(&buf, img, &opt)
-	case "png":
-		err = png.Encode(&buf, img) // PNG doesn't use quality, so just encode
-	default:
-		return nil, fmt.Errorf("unsupported image format: %s", format)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }

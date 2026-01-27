@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
@@ -57,10 +57,10 @@ func (s *modelService) Create(ctx context.Context, tableData dto.ModelInsertion,
 	s.ensureAuditColumns(ctx, schemaName)
 	modelData := tableData.Map()
 	fmt.Println("modelData", modelData)
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, modelData)
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, modelData)
 	if err != nil {
 		fmt.Println("----------------", err)
-		return tenant.Model{}, app_errors.DatabaseError
+		return tenant.Model{}, app_errors.LogDatabaseError(err, "failed to create model")
 	}
 
 	var insertedModel tenant.Model
@@ -101,7 +101,7 @@ func (s *modelService) fetchModels(ctx context.Context, schemaName string, param
 	}
 
 	tableName := tenant.Model{}.TableName(schemaName)
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch models: %w", err)
 	}
@@ -130,9 +130,9 @@ func (s *modelService) Update(ctx context.Context, schemaName string, id string,
 	tableName := tenant.Model{}.TableName(schemaName)
 
 	// Update in DB
-	updatedRow, err := s.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
+	updatedRow, err := s.repo.TableService.UpdateRecord(tableName, id, updateData)
 	if err != nil {
-		return tenant.Model{}, app_errors.DatabaseError
+		return tenant.Model{}, app_errors.LogDatabaseError(err, "failed to update model")
 	}
 
 	// Convert map → struct
@@ -156,7 +156,7 @@ func (s *modelService) DeleteModels(ctx context.Context, schemaName string, id s
 	tableName := tenant.Model{}.TableName(schemaName)
 
 	// Perform delete
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
 		return fmt.Errorf("failed to delete model: %w", err)
 	}
 
@@ -171,7 +171,7 @@ func (s *modelService) GetModelByBaseID(ctx context.Context, schemaName string, 
 		OrderBy: []string{"order_index"},
 	})
 	if err != nil {
-		return []tenant.Model{}, app_errors.DatabaseError
+		return []tenant.Model{}, app_errors.LogDatabaseError(err, "failed to get models by base id")
 	}
 	return models, nil
 }
@@ -183,7 +183,7 @@ func (s *modelService) GetModelByWorkspaceID(ctx context.Context, schemaName str
 		},
 	})
 	if err != nil {
-		return []tenant.Model{}, app_errors.DatabaseError
+		return []tenant.Model{}, app_errors.LogDatabaseError(err, "failed to get models by workspace id")
 	}
 	return models, nil
 }
@@ -192,7 +192,7 @@ func (s *modelService) DeleteModel(ctx context.Context, schemaName string, id st
 
 	tableName := tenant.Model{}.TableName(schemaName)
 
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
 		return fmt.Errorf("failed to delete model: %w", err)
 	}
 

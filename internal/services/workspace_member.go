@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/providers/logger"
@@ -40,9 +40,9 @@ func (s *workspaceMemberService) GetAllWorkspaceMembersByUser(ctx context.Contex
 		},
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch workspace members by user")
 	}
 	if len(rows) == 0 {
 		return []tenant.WorkspaceMember{}, app_errors.WorkspaceMemberNotFound
@@ -79,9 +79,9 @@ func (s *workspaceMemberService) GetWorkspaceMemberByUserAndWorkspace(ctx contex
 		},
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch workspace member by user and workspace")
 	}
 	if len(rows) == 0 {
 		return nil, app_errors.WorkspaceMemberNotFound
@@ -98,7 +98,7 @@ func (s *workspaceMemberService) GetWorkspaceMemberByUserAndWorkspace(ctx contex
 func (s *workspaceMemberService) DeleteWorkspaceMember(ctx context.Context, schemaName string, id string) error {
 	tableName := tenant.WorkspaceMember{}.TableName(schemaName)
 
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
 		return fmt.Errorf("failed to delete workspace member: %w", err)
 	}
 
@@ -120,9 +120,9 @@ func (s *workspaceMemberService) GetWorkspaceMemberByUser(ctx context.Context, s
 		},
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch workspace members for user")
 	}
 	if len(rows) == 0 {
 		return nil, app_errors.WorkspaceMemberNotFound
@@ -156,9 +156,9 @@ func (s *workspaceMemberService) GetWorkspaceMembersByWorkspace(ctx context.Cont
 		},
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch workspace members by workspace")
 	}
 	lg.Debug().Interface("rows", rows).Msg("Retrieved workspace members data")
 
@@ -189,8 +189,8 @@ func (s *workspaceMemberService) DeleteUserMappings(ctx context.Context, schemaN
 	tableName := tenant.WorkspaceMember{}.TableName(schemaName)
 
 	for _, member := range members {
-		if err := s.repo.TableService.DeleteRecord(ctx, tableName, member.ID); err != nil {
-			return app_errors.DatabaseError
+		if err := s.repo.TableService.DeleteRecord(tableName, member.ID); err != nil {
+			return app_errors.LogDatabaseError(err, "failed to delete workspace member mapping")
 		}
 	}
 
@@ -228,10 +228,10 @@ func (s *workspaceMemberService) UpdateWorkspaceMemberBases(ctx context.Context,
 	// Update the record - convert UUID to string
 	recordID := existingMember.ID.String()
 	lg.Debug().Str("id", recordID).Interface("updateData", updateData).Msg("Updating workspace member bases")
-	_, err = s.repo.TableService.UpdateRecord(ctx, tableName, recordID, updateData)
+	_, err = s.repo.TableService.UpdateRecord(tableName, recordID, updateData)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to update workspace member bases")
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to update workspace member bases")
 	}
 
 	lg.Info().Str("id", recordID).Msg("Successfully updated workspace member")

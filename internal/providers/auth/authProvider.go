@@ -33,6 +33,7 @@ type CustomClaims struct {
 }
 
 func (a *AuthProviderService) GenerateToken(ctx context.Context, user tenant.User) (Tokens, error) {
+	now := time.Now()
 	// Create Access Token
 	accessClaims := CustomClaims{
 		UserId:        user.ID.String(),
@@ -40,8 +41,8 @@ func (a *AuthProviderService) GenerateToken(ctx context.Context, user tenant.Use
 		EmailVerified: user.EmailVerified,
 		Roles:         user.Roles,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(a.AuthConfig.JWT.AccessTokenExpiry) * time.Second)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(a.AuthConfig.JWT.AccessTokenExpiry) * time.Second)),
+			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    a.AuthConfig.JWT.Issuer,
 		},
 	}
@@ -59,8 +60,8 @@ func (a *AuthProviderService) GenerateToken(ctx context.Context, user tenant.Use
 		Roles:         user.Roles,
 		EmailVerified: user.EmailVerified,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(a.AuthConfig.JWT.RefreshTokenExpiry) * time.Second)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(a.AuthConfig.JWT.RefreshTokenExpiry) * time.Second)),
+			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    a.AuthConfig.JWT.Issuer,
 		},
 	}
@@ -107,6 +108,9 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string) (Tokens, error) {
 	// Validate the refresh token
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return []byte(a.AuthConfig.JWT.Secret), nil
 	})
 

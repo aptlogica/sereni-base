@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	"mime/multipart"
 	"path/filepath"
 	"serenibase/internal/dto"
@@ -314,7 +314,7 @@ func (s baseManagementService) RemoveUserFromBase(ctx context.Context, schemaNam
 		},
 	}
 
-	records, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	records, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
 		return err
 	}
@@ -327,5 +327,5 @@ func (s baseManagementService) RemoveUserFromBase(ctx context.Context, schemaNam
 	accessMemberID := records[0]["id"].(string)
 
 	// Delete the access_members record
-	return s.repo.TableService.DeleteRecord(ctx, tableName, accessMemberID)
+	return s.repo.TableService.DeleteRecord(tableName, accessMemberID)
 }

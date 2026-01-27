@@ -11,9 +11,10 @@ import (
 	emailProvider "serenibase/internal/providers/email"
 	otpProvider "serenibase/internal/providers/otp"
 	"serenibase/internal/services"
+	"serenibase/internal/services/interfaces"
 	"time"
 
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 
 	"github.com/google/uuid"
 )
@@ -25,9 +26,7 @@ func RegisterOwner(
 	authProvider auth.AuthProvider,
 	cfg *config.Config,
 ) error {
-	// Check if owner registration is configured
-	if cfg.OwnerRegistration.Email == "" {
-		fmt.Println("⚠ Owner registration skipped: no email configured")
+	if skip := maybeSkipOwnerRegistration(cfg); skip {
 		return nil
 	}
 
@@ -37,104 +36,58 @@ func RegisterOwner(
 		cfg.OwnerRegistration.LastName,
 		cfg.OwnerRegistration.Email)
 
+	if err := validateOwnerConfig(cfg); err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
-	// Initialize required services
-	userService := services.NewUserService(dbService)
-	workspaceService := services.NewWorkspaceService(dbService)
-	workspaceMemberService := services.NewWorkspaceMemberService(dbService)
-	baseService := services.NewBaseService(dbService)
-	modelService := services.NewModelService(dbService)
-	columnService := services.NewColumnService(dbService)
-	viewService := services.NewViewService(dbService)
-	relationshipService := services.NewRelationshipService(dbService)
-	userResetTokenService := services.NewUserResetTokenService(dbService)
-	resourceService := services.NewResourceService(dbService)
-	actionService := services.NewActionService(dbService)
-	permissionService := services.NewPermissionService(dbService)
-	rolePermissionService := services.NewRolePermissionService(dbService)
-	accessMemberService := services.NewAccessMemberService(dbService)
-	accessRoleService := services.NewAccessRoleService(dbService)
-	assetService := services.NewAssetsService(dbService)
-
-	// Create management services
-	assetManagementService := services.NewAssetManagementService(
-		dbService,
-		assetService,
-		nil, // storageProvider not needed for user registration
-		nil, // antivirusProvider not needed for user registration
-	)
-
-	tableManagementService := services.NewTableManagementService(
-		"postgres",
-		dbService,
-		modelService,
-		columnService,
-		viewService,
-		relationshipService,
-		assetManagementService,
-	)
-
-	baseManagementService := services.NewBaseManagementService(
-		dbService,
-		baseService,
-		tableManagementService,
-		modelService,
-		assetManagementService,
-	)
-
-	rbacManagementService := services.NewRBACManagementService(
-		dbService,
-		accessRoleService,
-		resourceService,
-		actionService,
-		permissionService,
-		rolePermissionService,
-		accessMemberService,
-		baseService,
-	)
-
-	workspaceManagementService := services.NewWorkspaceManagementService(
-		dbService,
-		workspaceService,
-		workspaceMemberService,
-		baseManagementService,
-		tableManagementService,
-		rbacManagementService,
-	)
-
-	userManagementService := services.NewUserManagementService(
-		dbService,
-		userService,
-		assetManagementService,
-		userResetTokenService,
-		workspaceManagementService,
-		rbacManagementService,
-		authProvider,
-	)
-
-	// Initialize provider services for AuthManagementService
-	emailTemplateService := emailProvider.NewEmailTemplateService()
-	emailProviderService := emailProvider.NewService(cfg.Email, 100, emailTemplateService)
-	emailProviderService.Start(5)
-
-	otpProviderService := otpProvider.NewService(5 * time.Minute)
-
-	// Create AuthManagementService
+	core := initCoreServices(dbService)
+	mgmt := initManagementServices(dbService, core, authProvider)
+	providers := initAuthProviders(cfg)
 	authManagementService := services.NewAuthManagementService(
 		cfg.TemporaryAddedUserPassword,
 		dbService,
-		userManagementService,
-		workspaceManagementService,
-		userResetTokenService,
-		rbacManagementService,
-		otpProviderService,
-		emailTemplateService,
-		emailProviderService,
+		mgmt.userManagementService,
+		mgmt.workspaceManagementService,
+		core.userResetTokenService,
+		mgmt.rbacManagementService,
+		providers.otpProviderService,
+		providers.emailTemplateService,
+		providers.emailProviderService,
 		authProvider,
 	)
 
-	// Validate required configuration
+	registerReq := prepareOwnerRegisterRequest(cfg)
+
+	fmt.Println("\nStep 1: Registering owner using AuthManagementService...")
+	loginResponse, err := authManagementService.RegisterOwner(ctx, registerReq)
+	if err != nil {
+		return fmt.Errorf("failed to register owner: %w", err)
+	}
+
+	printOwnerSuccess(loginResponse, cfg)
+
+	fmt.Println("\n=== Creating Default Organization ===")
+	err = CreateDefaultOrganization(dbService, cfg, loginResponse.User.Email)
+	if err != nil {
+		fmt.Printf("⚠ Warning: Failed to create default organization: %v\n", err)
+	}
+
+	fmt.Println()
+
+	return nil
+}
+
+func maybeSkipOwnerRegistration(cfg *config.Config) bool {
+	if cfg.OwnerRegistration.Email == "" {
+		fmt.Println("⚠ Owner registration skipped: no email configured")
+		return true
+	}
+	return false
+}
+
+func validateOwnerConfig(cfg *config.Config) error {
 	if cfg.OwnerRegistration.Password == "" {
 		return fmt.Errorf("owner password is required in config.yaml")
 	}
@@ -144,21 +97,160 @@ func RegisterOwner(
 	if cfg.OwnerRegistration.LastName == "" {
 		return fmt.Errorf("owner last name is required in config.yaml")
 	}
+	return nil
+}
 
-	// Get country from local machine (use environment variable or default)
+type coreServices struct {
+	userService            interfaces.UserService
+	workspaceService       interfaces.WorkspaceService
+	workspaceMemberService interfaces.WorkspaceMemberService
+	baseService            interfaces.BaseService
+	modelService           interfaces.ModelService
+	columnService          interfaces.ColumnService
+	viewService            interfaces.ViewService
+	relationshipService    interfaces.RelationshipService
+	userResetTokenService  interfaces.UserResetTokenService
+	resourceService        interfaces.ResourceService
+	actionService          interfaces.ActionService
+	permissionService      interfaces.PermissionService
+	rolePermissionService  interfaces.RolePermissionService
+	accessMemberService    interfaces.AccessMemberService
+	accessRoleService      interfaces.AccessRoleService
+	assetService           interfaces.AssetService
+}
+
+func initCoreServices(dbService *pkg.DatabaseService) coreServices {
+	return coreServices{
+		userService:            services.NewUserService(dbService),
+		workspaceService:       services.NewWorkspaceService(dbService),
+		workspaceMemberService: services.NewWorkspaceMemberService(dbService),
+		baseService:            services.NewBaseService(dbService),
+		modelService:           services.NewModelService(dbService),
+		columnService:          services.NewColumnService(dbService),
+		viewService:            services.NewViewService(dbService),
+		relationshipService:    services.NewRelationshipService(dbService),
+		userResetTokenService:  services.NewUserResetTokenService(dbService),
+		resourceService:        services.NewResourceService(dbService),
+		actionService:          services.NewActionService(dbService),
+		permissionService:      services.NewPermissionService(dbService),
+		rolePermissionService:  services.NewRolePermissionService(dbService),
+		accessMemberService:    services.NewAccessMemberService(dbService),
+		accessRoleService:      services.NewAccessRoleService(dbService),
+		assetService:           services.NewAssetsService(dbService),
+	}
+}
+
+type managementServices struct {
+	assetManagementService     interfaces.AssetManagementService
+	tableManagementService     interfaces.TableManagementService
+	baseManagementService      interfaces.BaseManagementService
+	rbacManagementService      interfaces.RBACManagementService
+	workspaceManagementService interfaces.WorkspaceManagementService
+	userManagementService      interfaces.UserManagementService
+}
+
+func initManagementServices(
+	dbService *pkg.DatabaseService,
+	core coreServices,
+	authProvider auth.AuthProvider,
+) managementServices {
+	assetManagementService := services.NewAssetManagementService(
+		dbService,
+		core.assetService,
+		nil,
+		nil,
+	)
+
+	tableManagementService := services.NewTableManagementService(
+		"postgres",
+		dbService,
+		core.modelService,
+		core.columnService,
+		core.viewService,
+		core.relationshipService,
+		assetManagementService,
+	)
+
+	baseManagementService := services.NewBaseManagementService(
+		dbService,
+		core.baseService,
+		tableManagementService,
+		core.modelService,
+		assetManagementService,
+	)
+
+	rbacManagementService := services.NewRBACManagementService(
+		dbService,
+		core.accessRoleService,
+		core.resourceService,
+		core.actionService,
+		core.permissionService,
+		core.rolePermissionService,
+		core.accessMemberService,
+		core.baseService,
+	)
+
+	workspaceManagementService := services.NewWorkspaceManagementService(
+		dbService,
+		core.workspaceService,
+		core.workspaceMemberService,
+		baseManagementService,
+		tableManagementService,
+		rbacManagementService,
+	)
+
+	userManagementService := services.NewUserManagementService(
+		dbService,
+		core.userService,
+		assetManagementService,
+		core.userResetTokenService,
+		workspaceManagementService,
+		rbacManagementService,
+		authProvider,
+	)
+
+	return managementServices{
+		assetManagementService:     assetManagementService,
+		tableManagementService:     tableManagementService,
+		baseManagementService:      baseManagementService,
+		rbacManagementService:      rbacManagementService,
+		workspaceManagementService: workspaceManagementService,
+		userManagementService:      userManagementService,
+	}
+}
+
+type authProviders struct {
+	emailTemplateService emailProvider.EmailTemplateService
+	emailProviderService emailProvider.EmailService
+	otpProviderService   otpProvider.OtpService
+}
+
+func initAuthProviders(cfg *config.Config) authProviders {
+	emailTemplateService := emailProvider.NewEmailTemplateService()
+	emailProviderService := emailProvider.NewService(cfg.Email, 100, emailTemplateService)
+	emailProviderService.Start(5)
+
+	otpProviderService := otpProvider.NewService(5 * time.Minute)
+
+	return authProviders{
+		emailTemplateService: emailTemplateService,
+		emailProviderService: emailProviderService,
+		otpProviderService:   otpProviderService,
+	}
+}
+
+func prepareOwnerRegisterRequest(cfg *config.Config) dto.RegisterRequest {
 	country := os.Getenv("COUNTRY")
 	if country == "" {
-		country = "US" // Default to US if not set
+		country = "US"
 	}
 
-	// Prepare registration request
-	userID := uuid.New()
-	registerReq := dto.RegisterRequest{
-		ID:            userID,
+	return dto.RegisterRequest{
+		ID:            uuid.New(),
 		Email:         cfg.OwnerRegistration.Email,
 		FirstName:     cfg.OwnerRegistration.FirstName,
 		LastName:      cfg.OwnerRegistration.LastName,
-		Password:      cfg.OwnerRegistration.Password, // RegisterOwner will hash it
+		Password:      cfg.OwnerRegistration.Password,
 		AuthProvider:  "local",
 		Status:        "active",
 		EmailVerified: true,
@@ -166,15 +258,9 @@ func RegisterOwner(
 		Timezone:      time.Now().Location().String(),
 		Roles:         constant.RBACRoleNames.Owner,
 	}
+}
 
-	// Use AuthManagementService.RegisterOwner to handle the registration
-	fmt.Println("\nStep 1: Registering owner using AuthManagementService...")
-	loginResponse, err := authManagementService.RegisterOwner(ctx, registerReq)
-	if err != nil {
-		return fmt.Errorf("failed to register owner: %w", err)
-	}
-
-	// Success!
+func printOwnerSuccess(loginResponse dto.LoginResponse, cfg *config.Config) {
 	fmt.Println("\n==================================================")
 	fmt.Println("✓ Owner registration completed successfully!")
 	fmt.Println("==================================================")
@@ -190,18 +276,6 @@ func RegisterOwner(
 	fmt.Printf("\nYou can now login with:\n")
 	fmt.Printf("  Email:    %s\n", cfg.OwnerRegistration.Email)
 	fmt.Printf("  Password: <configured password>\n")
-
-	// Create default organization after owner registration
-	fmt.Println("\n=== Creating Default Organization ===")
-	err = CreateDefaultOrganization(dbService, cfg, loginResponse.User.Email)
-	if err != nil {
-		fmt.Printf("⚠ Warning: Failed to create default organization: %v\n", err)
-		// Don't fail the entire flow if organization creation fails
-	}
-
-	fmt.Println()
-
-	return nil
 }
 
 // CreateDefaultOrganization creates a default organization with the owner's email

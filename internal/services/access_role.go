@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -28,7 +28,7 @@ func (s *accessRoleService) CreateAccessRole(ctx context.Context, schemaName str
 	}
 
 	tableName := tenant.AccessRole{}.TableName(schemaName)
-	insertedRoleData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedRoleData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.AccessRole{}, err
 	}
@@ -54,9 +54,9 @@ func (s *accessRoleService) GetAccessRoleByID(ctx context.Context, schemaName st
 		Limit: &limit,
 	}
 
-	rolesData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	rolesData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.AccessRole{}, app_errors.DatabaseError
+		return tenant.AccessRole{}, app_errors.LogDatabaseError(err, "failed to get access role by id")
 	}
 
 	if len(rolesData) == 0 {
@@ -84,9 +84,9 @@ func (s *accessRoleService) GetAccessRoleByName(ctx context.Context, schemaName 
 		Limit: &limit,
 	}
 
-	rolesData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	rolesData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.AccessRole{}, app_errors.DatabaseError
+		return tenant.AccessRole{}, app_errors.LogDatabaseError(err, "failed to get access role by name")
 	}
 
 	if len(rolesData) == 0 {
@@ -113,9 +113,9 @@ func (s *accessRoleService) GetAccessRolesByScope(ctx context.Context, schemaNam
 		OrderBy: []string{"priority"},
 	}
 
-	rolesData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	rolesData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get access roles by scope")
 	}
 
 	var roles []tenant.AccessRole
@@ -137,9 +137,9 @@ func (s *accessRoleService) ListAccessRoles(ctx context.Context, schemaName stri
 		OrderBy: []string{"priority"},
 	}
 
-	rolesData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	rolesData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to list access roles")
 	}
 
 	// Get count
@@ -152,9 +152,9 @@ func (s *accessRoleService) ListAccessRoles(ctx context.Context, schemaName stri
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to count access roles")
 	}
 
 	var count int64
@@ -179,7 +179,7 @@ func (s *accessRoleService) UpdateAccessRole(ctx context.Context, schemaName str
 	tableName := tenant.AccessRole{}.TableName(schemaName)
 	updateData := req.Map()
 
-	updatedRoleData, err := s.repo.TableService.UpdateRecord(ctx, tableName, roleID, updateData)
+	updatedRoleData, err := s.repo.TableService.UpdateRecord(tableName, roleID, updateData)
 	if err != nil {
 		return tenant.AccessRole{}, err
 	}
@@ -199,5 +199,5 @@ func (s *accessRoleService) DeleteAccessRole(ctx context.Context, schemaName str
 		Value:    roleID.String(),
 	}
 
-	return s.repo.TableService.DeleteRecord(ctx, tableName, filter)
+	return s.repo.TableService.DeleteRecord(tableName, filter)
 }

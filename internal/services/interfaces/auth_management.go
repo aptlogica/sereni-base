@@ -25,6 +25,8 @@ type AuthManagementService interface {
 
 	// Token Management
 	RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (dto.TokenResponse, error)
+	ValidateToken(ctx context.Context, token string) (dto.TokenValidationResponse, error)
+	VerifyToken(ctx context.Context, token string) (dto.TokenValidationResponse, error)
 
 	// Password
 	ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error
@@ -33,11 +35,9 @@ type AuthManagementService interface {
 	GetAuthProviderUrl(provider string) string
 
 	AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
-	// AddMultipleMembers(ctx context.Context, schema string, req dto.AddMultipleMembersRequest) (dto.AddMultipleMembersResponse, error)
 	RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error
 	RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error
 	RemoveAccessMemberByID(ctx context.Context, schema string, accessMemberID string, reqBy string) error
-	InviteMemberToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
 	GetWorkspaceMembers(ctx context.Context, schema string, workspaceID string) ([]dto.WorkspaceMemberResponse, error)
 	GetBaseMembers(ctx context.Context, schema string, baseID string) ([]dto.WorkspaceMemberResponse, error)
 	GetWorkspaceMembersWithRole(ctx context.Context, schema string, workspaceID string) ([]dto.UserWithRole, error)

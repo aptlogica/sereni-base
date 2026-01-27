@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
@@ -22,10 +22,10 @@ func NewRelationshipService(repo *pkg.DatabaseService) interfaces.RelationshipSe
 
 func (s *relationshipService) Create(ctx context.Context, req dto.RelationInsertion, schemaName string) (tenant.Relation, error) {
 	tableName := tenant.Relation{}.TableName(schemaName)
-	insertedRelationshipData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedRelationshipData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		fmt.Println("err", err)
-		return tenant.Relation{}, app_errors.DatabaseError
+		return tenant.Relation{}, app_errors.LogDatabaseError(err, "failed to create relation")
 	}
 
 	var insertedRelationship tenant.Relation
@@ -51,9 +51,9 @@ func (s *relationshipService) GetRelationByID(ctx context.Context, id string, sc
 		Limit: &limit,
 	}
 
-	relationsData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	relationsData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Relation{}, app_errors.DatabaseError
+		return tenant.Relation{}, app_errors.LogDatabaseError(err, "failed to get relation by id")
 	}
 
 	if len(relationsData) == 0 {
@@ -71,9 +71,9 @@ func (s *relationshipService) GetRelationByID(ctx context.Context, id string, sc
 func (s *relationshipService) DeleteRelation(ctx context.Context, relationId string, schemaName string) error {
 	tableName := tenant.Relation{}.TableName(schemaName)
 
-	err := s.repo.TableService.DeleteRecord(ctx, tableName, relationId)
+	err := s.repo.TableService.DeleteRecord(tableName, relationId)
 	if err != nil {
-		return app_errors.DatabaseError
+		return app_errors.LogDatabaseError(err, "failed to delete relation")
 	}
 
 	return nil
@@ -87,9 +87,9 @@ func (s *relationshipService) UpdateRelation(ctx context.Context, relationId str
 		return tenant.Relation{}, app_errors.InvalidPayload
 	}
 
-	updatedData, err := s.repo.TableService.UpdateRecord(ctx, tableName, relationId, updateData)
+	updatedData, err := s.repo.TableService.UpdateRecord(tableName, relationId, updateData)
 	if err != nil {
-		return tenant.Relation{}, app_errors.DatabaseError
+		return tenant.Relation{}, app_errors.LogDatabaseError(err, "failed to update relation")
 	}
 
 	var relation tenant.Relation

@@ -2,7 +2,7 @@ package tenant
 
 import (
 	"fmt"
-	"godbgrest/pkg/models"
+	"go-postgres-rest/pkg/models"
 	"time"
 
 	"github.com/google/uuid"

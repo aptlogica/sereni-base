@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -28,7 +28,7 @@ func (s *permissionService) CreatePermission(ctx context.Context, schemaName str
 	}
 
 	tableName := tenant.Permission{}.TableName(schemaName)
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.Permission{}, err
 	}
@@ -54,9 +54,9 @@ func (s *permissionService) GetPermissionByID(ctx context.Context, schemaName st
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Permission{}, app_errors.DatabaseError
+		return tenant.Permission{}, app_errors.LogDatabaseError(err, "failed to get permission by id")
 	}
 
 	if len(data) == 0 {
@@ -89,9 +89,9 @@ func (s *permissionService) GetPermissionByResourceAndAction(ctx context.Context
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Permission{}, app_errors.DatabaseError
+		return tenant.Permission{}, app_errors.LogDatabaseError(err, "failed to get permission by resource and action")
 	}
 
 	if len(data) == 0 {
@@ -112,9 +112,9 @@ func (s *permissionService) ListPermissions(ctx context.Context, schemaName stri
 		Offset: &offset,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to list permissions")
 	}
 
 	countQuery := dbModels.QueryParams{
@@ -127,9 +127,9 @@ func (s *permissionService) ListPermissions(ctx context.Context, schemaName stri
 		},
 	}
 
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to count permissions")
 	}
 
 	count := int64(0)
@@ -157,7 +157,7 @@ func (s *permissionService) DeletePermission(ctx context.Context, schemaName str
 		Operator: "eq",
 		Value:    permissionID.String(),
 	}
-	return s.repo.TableService.DeleteRecord(ctx, tableName, filter)
+	return s.repo.TableService.DeleteRecord(tableName, filter)
 }
 
 func (s *permissionService) GetOrCreatePermission(ctx context.Context, schemaName string, resourceID, actionID uuid.UUID) (tenant.Permission, error) {
@@ -188,9 +188,9 @@ func (s *permissionService) GetPermissionsByResource(ctx context.Context, schema
 		},
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get permissions by resource")
 	}
 
 	var permissions []tenant.Permission

@@ -130,6 +130,8 @@ func VerifyResendOtpRequestError(e validator.FieldError) responseConst.ResponseC
 		switch tag {
 		case "required":
 			return responseConst.AuthError.TokenRequired
+		case "jwt":
+			return responseConst.AuthError.TokenInvalidFormat
 		default:
 			return responseConst.AuthError.TokenInvalid
 		}
@@ -194,6 +196,23 @@ func ResetPasswordRequestError(e validator.FieldError) responseConst.ResponseCod
 			return responseConst.AuthError.NewPasswordRequired
 		default:
 			return responseConst.AuthError.NewPasswordInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func ValidateTokenRequestError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	switch field {
+	case "Token":
+		switch tag {
+		case "required":
+			return responseConst.AuthError.TokenRequired
+		default:
+			return responseConst.AuthError.TokenInvalid
 		}
 	default:
 		return responseConst.Error.ValidationFailed
@@ -363,7 +382,6 @@ func AddMultipleMembersRequestError(e validator.FieldError) responseConst.Respon
 		return responseConst.Error.ValidationFailed
 	}
 }
-
 
 func ActivateUserRequestError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()

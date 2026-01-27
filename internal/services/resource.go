@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -28,7 +28,7 @@ func (s *resourceService) CreateResource(ctx context.Context, schemaName string,
 	}
 
 	tableName := tenant.Resource{}.TableName(schemaName)
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, req.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.Resource{}, err
 	}
@@ -54,9 +54,9 @@ func (s *resourceService) GetResourceByID(ctx context.Context, schemaName string
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Resource{}, app_errors.DatabaseError
+		return tenant.Resource{}, app_errors.LogDatabaseError(err, "failed to get resource by id")
 	}
 
 	if len(data) == 0 {
@@ -84,9 +84,9 @@ func (s *resourceService) GetResourceByCode(ctx context.Context, schemaName stri
 		Limit: &limit,
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.Resource{}, app_errors.DatabaseError
+		return tenant.Resource{}, app_errors.LogDatabaseError(err, "failed to get resource by code")
 	}
 
 	if len(data) == 0 {
@@ -108,9 +108,9 @@ func (s *resourceService) ListResources(ctx context.Context, schemaName string, 
 		OrderBy: []string{"code"},
 	}
 
-	data, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to list resources")
 	}
 
 	countQuery := dbModels.QueryParams{
@@ -122,9 +122,9 @@ func (s *resourceService) ListResources(ctx context.Context, schemaName string, 
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return nil, 0, app_errors.DatabaseError
+		return nil, 0, app_errors.LogDatabaseError(err, "failed to count resources")
 	}
 
 	count := int64(len(countData))
@@ -153,7 +153,7 @@ func (s *resourceService) UpdateResource(ctx context.Context, schemaName string,
 	// Remove ID from update data to prevent modifying the primary key
 	delete(updateData, "id")
 
-	updatedData, err := s.repo.TableService.UpdateRecord(ctx, tableName, resourceID, updateData)
+	updatedData, err := s.repo.TableService.UpdateRecord(tableName, resourceID, updateData)
 	if err != nil {
 		return tenant.Resource{}, err
 	}
@@ -172,7 +172,7 @@ func (s *resourceService) DeleteResource(ctx context.Context, schemaName string,
 		Operator: "eq",
 		Value:    resourceID.String(),
 	}
-	return s.repo.TableService.DeleteRecord(ctx, tableName, filter)
+	return s.repo.TableService.DeleteRecord(tableName, filter)
 }
 
 func (s *resourceService) GetOrCreateResource(ctx context.Context, schemaName string, code string, description *string) (tenant.Resource, error) {

@@ -2,7 +2,7 @@ package scripts
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	appConstant "serenibase/internal/constant"
 	"serenibase/internal/services"
 )

@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -288,7 +288,7 @@ func (s workspaceManagementService) GetWorkspaceBaseMembers(ctx context.Context,
 	)
 
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get workspace base users")
 	}
 
 	var result []tenant.WorkspaceMember

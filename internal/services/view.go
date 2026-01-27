@@ -3,11 +3,11 @@ package services
 
 import (
 	"context"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	"strings"
 	"time"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
@@ -29,9 +29,9 @@ func (s *viewService) Create(ctx context.Context, viewData dto.ViewInsertion, sc
 	tableName := tenant.View{}.TableName(schemaName)
 	s.ensureAuditColumns(ctx, schemaName)
 
-	inserted, err := s.repo.TableService.CreateRecord(ctx, tableName, viewData.Map())
+	inserted, err := s.repo.TableService.CreateRecord(tableName, viewData.Map())
 	if err != nil {
-		return tenant.View{}, app_errors.DatabaseError
+		return tenant.View{}, app_errors.LogDatabaseError(err, "failed to create view")
 	}
 
 	var out tenant.View
@@ -71,7 +71,7 @@ func (s *viewService) GetViewByID(ctx context.Context, schemaName, id string) (t
 		Limit: &limit,
 	})
 	if err != nil {
-		return tenant.View{}, app_errors.DatabaseError
+		return tenant.View{}, app_errors.LogDatabaseError(err, "failed to get view by id")
 	}
 	if len(views) == 0 {
 		return tenant.View{}, app_errors.ViewNotFound
@@ -86,9 +86,9 @@ func (s *viewService) GetAllViews(ctx context.Context, schemaName string) ([]ten
 // --- shared private helper (same as fetchColumns) ---
 func (s *viewService) fetchViews(ctx context.Context, schemaName string, params dbModels.QueryParams) ([]tenant.View, error) {
 	tableName := tenant.View{}.TableName(schemaName)
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch views")
 	}
 
 	views := make([]tenant.View, 0, len(rows))
@@ -119,7 +119,7 @@ func (s *viewService) UpdateView(ctx context.Context, schemaName string, id stri
 	}
 	update["last_modified_time"] = time.Now()
 
-	updatedRows, err := s.repo.TableService.UpdateRecord(ctx, tableName, id, update)
+	updatedRows, err := s.repo.TableService.UpdateRecord(tableName, id, update)
 	if err != nil {
 		return tenant.View{}, app_errors.ViewUploadFailed
 	}
@@ -144,8 +144,8 @@ func (s *viewService) DeleteView(ctx context.Context, schemaName string, id stri
 	}
 
 	// Delete
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
-		return app_errors.DatabaseError
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to delete view")
 	}
 	return nil
 }

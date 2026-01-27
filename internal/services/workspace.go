@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/providers/logger"
@@ -49,11 +49,11 @@ func (s *workspaceService) WorkspaceInsertion(ctx context.Context, req dto.Creat
 	tableName := tenant.Workspace{}.TableName(schemaName)
 	s.ensureAuditColumns(ctx, schemaName)
 
-	insertedData, err := s.repo.TableService.CreateRecord(ctx, tableName, workspaceData.Map())
+	insertedData, err := s.repo.TableService.CreateRecord(tableName, workspaceData.Map())
 	if err != nil {
 		lg := logger.Get()
 		lg.Error().Stack().Err(err).Msg("Failed to insert workspace record")
-		return tenant.Workspace{}, app_errors.DatabaseError
+		return tenant.Workspace{}, app_errors.LogDatabaseError(err, "failed to insert workspace record")
 	}
 
 	var insertedWorkspace tenant.Workspace
@@ -124,7 +124,7 @@ func (s *workspaceService) GetWorkspaceByID(ctx context.Context, schemaName stri
 	}
 
 	// Fetch workspace row(s)
-	workspacesData, err := s.repo.TableService.GetTableData(ctx, tableName, query)
+	workspacesData, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		return tenant.Workspace{}, fmt.Errorf("failed to fetch workspace: %w", err)
 	}
@@ -150,7 +150,7 @@ func (s *workspaceService) GetAllWorkspaces(ctx context.Context, schemaName stri
 		Select: []string{"*"},
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch workspaces: %w", err)
 	}
@@ -193,10 +193,10 @@ func (s *workspaceService) UpdateWorkspace(ctx context.Context, schemaName strin
 
 	lg.Debug().Interface("updateData", updateData).Msg("Updating workspace")
 	// Perform update
-	updatedRows, err := s.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
+	updatedRows, err := s.repo.TableService.UpdateRecord(tableName, id, updateData)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to update workspace")
-		return tenant.Workspace{}, app_errors.DatabaseError
+		return tenant.Workspace{}, app_errors.LogDatabaseError(err, "failed to update workspace")
 	}
 	if updatedRows == nil || len(updatedRows) == 0 {
 		return tenant.Workspace{}, app_errors.InvalidPayload
@@ -220,7 +220,7 @@ func (s *workspaceService) DeleteWorkspace(ctx context.Context, schemaName strin
 	}
 
 	// Perform deletion
-	if err := s.repo.TableService.DeleteRecord(ctx, tableName, id); err != nil {
+	if err := s.repo.TableService.DeleteRecord(tableName, id); err != nil {
 		return fmt.Errorf("failed to delete workspace: %w", err)
 	}
 
@@ -247,9 +247,9 @@ func (s *workspaceService) GetBulkWorkspaces(ctx context.Context, schemaName str
 		Filters: filters,
 	}
 
-	rows, err := s.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch bulk workspaces")
 	}
 	if len(rows) == 0 {
 		return []tenant.Workspace{}, nil

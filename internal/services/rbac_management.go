@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
-	dbModels "godbgrest/pkg/models"
+	"go-postgres-rest/pkg"
+	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
@@ -54,6 +54,17 @@ func NewRBACManagementService(
 func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema string) error {
 	fmt.Println("Initializing RBAC System...")
 
+	resourceMap := s.createDefaultResources(ctx, schema)
+	actionMap := s.createDefaultActions(ctx, schema)
+	roleMap := s.createDefaultRoles(ctx, schema)
+	permissionMap := s.createDefaultPermissions(ctx, schema, resourceMap, actionMap)
+	s.assignDefaultRolePermissions(ctx, schema, roleMap, permissionMap)
+
+	fmt.Println("\n✓ RBAC System initialization completed successfully!")
+	return nil
+}
+
+func (s *rbacManagementService) createDefaultResources(ctx context.Context, schema string) map[string]uuid.UUID {
 	// Step 1: Create default resources
 	fmt.Println("Creating resources...")
 	resourceMap := make(map[string]uuid.UUID)
@@ -84,6 +95,10 @@ func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema
 		fmt.Printf("✓ Created resource: %s\n", r.code)
 	}
 
+	return resourceMap
+}
+
+func (s *rbacManagementService) createDefaultActions(ctx context.Context, schema string) map[string]uuid.UUID {
 	// Step 2: Create default actions
 	fmt.Println("\nCreating actions...")
 	actionMap := make(map[string]uuid.UUID)
@@ -114,6 +129,10 @@ func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema
 		fmt.Printf("✓ Created action: %s\n", a.code)
 	}
 
+	return actionMap
+}
+
+func (s *rbacManagementService) createDefaultRoles(ctx context.Context, schema string) map[string]uuid.UUID {
 	// Step 3: Create default roles
 	fmt.Println("\nCreating roles...")
 	roleMap := make(map[string]uuid.UUID)
@@ -127,6 +146,15 @@ func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema
 		fmt.Printf("✓ Created role: %s (scope: %s, priority: %d)\n", roleReq.Name, roleReq.ScopeLevel, roleReq.Priority)
 	}
 
+	return roleMap
+}
+
+func (s *rbacManagementService) createDefaultPermissions(
+	ctx context.Context,
+	schema string,
+	resourceMap map[string]uuid.UUID,
+	actionMap map[string]uuid.UUID,
+) map[string]uuid.UUID {
 	// Step 4: Create permissions (resource × action)
 	fmt.Println("\nCreating permissions...")
 	permissionMap := make(map[string]uuid.UUID)
@@ -203,10 +231,18 @@ func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema
 		fmt.Printf("✓ Created permission: %s.%s\n", combo.resource, combo.action)
 	}
 
+	return permissionMap
+}
+
+func (s *rbacManagementService) assignDefaultRolePermissions(
+	ctx context.Context,
+	schema string,
+	roleMap map[string]uuid.UUID,
+	permissionMap map[string]uuid.UUID,
+) {
 	// Step 5: Assign permissions to roles
 	fmt.Println("\nAssigning permissions to roles...")
 
-	// Owner role permissions (all workspace and base permissions)
 	ownerPermissions := []string{
 		"workspace.read", "workspace.create", "workspace.update", "workspace.delete", "workspace.share", "workspace.invite",
 		"base.read", "base.create", "base.update", "base.delete",
@@ -218,51 +254,45 @@ func (s *rbacManagementService) InitializeRBACSystem(ctx context.Context, schema
 		"webhooks.read", "webhooks.create", "webhooks.update", "webhooks.delete",
 	}
 
-	ownerRoleID, ok := roleMap[constant.RBACRoleNames.Owner]
-	if ok {
-		for _, permName := range ownerPermissions {
-			if permID, ok := permissionMap[permName]; ok {
-				_, err := s.rolePermissionService.AssignPermissionToRole(ctx, schema, dto.RolePermissionDTO{
-					ID:           uuid.New(),
-					RoleID:       ownerRoleID,
-					PermissionID: permID,
-				})
-				if err != nil {
-					fmt.Printf("Error assigning permission %s to owner: %v\n", permName, err)
-					continue
-				}
-				fmt.Printf("✓ Assigned permission %s to owner\n", permName)
-			}
-		}
-	}
+	s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.Owner, ownerPermissions, "owner")
 
-	// Base Member role permissions
 	memberPermissions := []string{
 		"base.read",
 		"records.read", "records.create", "records.update", "records.delete", "records.export",
 		"views.read", "views.create", "views.update", "views.delete",
 	}
 
-	memberRoleID, ok := roleMap[constant.RBACRoleNames.BaseMember]
-	if ok {
-		for _, permName := range memberPermissions {
-			if permID, ok := permissionMap[permName]; ok {
-				_, err := s.rolePermissionService.AssignPermissionToRole(ctx, schema, dto.RolePermissionDTO{
-					ID:           uuid.New(),
-					RoleID:       memberRoleID,
-					PermissionID: permID,
-				})
-				if err != nil {
-					fmt.Printf("Error assigning permission %s to member: %v\n", permName, err)
-					continue
-				}
-				fmt.Printf("✓ Assigned permission %s to member\n", permName)
-			}
-		}
+	s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.BaseMember, memberPermissions, "member")
+}
+
+func (s *rbacManagementService) assignPermissionsToRole(
+	ctx context.Context,
+	schema string,
+	roleMap map[string]uuid.UUID,
+	permissionMap map[string]uuid.UUID,
+	roleName string,
+	permissionNames []string,
+	roleLabel string,
+) {
+	roleID, ok := roleMap[roleName]
+	if !ok {
+		return
 	}
 
-	fmt.Println("\n✓ RBAC System initialization completed successfully!")
-	return nil
+	for _, permName := range permissionNames {
+		if permID, ok := permissionMap[permName]; ok {
+			_, err := s.rolePermissionService.AssignPermissionToRole(ctx, schema, dto.RolePermissionDTO{
+				ID:           uuid.New(),
+				RoleID:       roleID,
+				PermissionID: permID,
+			})
+			if err != nil {
+				fmt.Printf("Error assigning permission %s to %s: %v\n", permName, roleLabel, err)
+				continue
+			}
+			fmt.Printf("✓ Assigned permission %s to %s\n", permName, roleLabel)
+		}
+	}
 }
 
 func (s *rbacManagementService) GetRBACSystemStatus(ctx context.Context, schemaName string) (dto.RBACSystemStatus, error) {
@@ -343,9 +373,9 @@ func (s *rbacManagementService) CountRoles(ctx context.Context, schemaName strin
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return 0, app_errors.DatabaseError
+		return 0, app_errors.LogDatabaseError(err, "failed to count roles")
 	}
 
 	if len(countData) == 0 {
@@ -400,9 +430,9 @@ func (s *rbacManagementService) CountResources(ctx context.Context, schemaName s
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return 0, app_errors.DatabaseError
+		return 0, app_errors.LogDatabaseError(err, "failed to count resources")
 	}
 
 	if len(countData) == 0 {
@@ -457,9 +487,9 @@ func (s *rbacManagementService) CountActions(ctx context.Context, schemaName str
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return 0, app_errors.DatabaseError
+		return 0, app_errors.LogDatabaseError(err, "failed to count actions")
 	}
 
 	if len(countData) == 0 {
@@ -514,9 +544,9 @@ func (s *rbacManagementService) CountPermissions(ctx context.Context, schemaName
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return 0, app_errors.DatabaseError
+		return 0, app_errors.LogDatabaseError(err, "failed to count permissions")
 	}
 
 	if len(countData) == 0 {
@@ -588,9 +618,9 @@ func (s *rbacManagementService) CountRolePermissions(ctx context.Context, schema
 			},
 		},
 	}
-	countData, err := s.repo.TableService.GetTableData(ctx, tableName, countQuery)
+	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
 	if err != nil {
-		return 0, app_errors.DatabaseError
+		return 0, app_errors.LogDatabaseError(err, "failed to count role permissions")
 	}
 
 	if len(countData) == 0 {
@@ -1007,6 +1037,14 @@ func separateByScope(records []dto.AccessMemberDTO) (base, workspace []dto.Acces
 	return
 }
 
+type membershipProcessingContext struct {
+	ctx        context.Context
+	schema     string
+	userID     string
+	assignedBy string
+	summary    *MembershipProcessingSummary
+}
+
 // ProcessUserMemberships processes user membership assignments across workspaces and bases
 // Handles four scenarios:
 // 1. User has base-level access, switching to workspace-level: remove all base records, add workspace
@@ -1031,406 +1069,26 @@ func (s *rbacManagementService) ProcessUserMemberships(
 		FailedMembers:    []FailedMember{},
 	}
 
-	// Handle empty membership
 	if len(memberships) == 0 {
 		fmt.Println("No memberships to process")
 		return summary, nil
 	}
 
-	// Process each membership request
+	ctxData := membershipProcessingContext{ctx: ctx, schema: schema, userID: userID, assignedBy: assignedBy, summary: summary}
+
 	for i, membership := range memberships {
-		// Validate role is not base-level with workspace-id (common mistake)
-		if (membership.Role == constant.RBACRoleNames.BaseMember || membership.Role == constant.RBACRoleNames.BaseMemberReadOnly) && membership.WorkspaceID != "" {
-			summary.SkippedCount++
-			summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-				Index:  i,
-				Reason: fmt.Sprintf("invalid request: role '%s' is a base-level role but WorkspaceID is provided. For base-level roles, use the 'bases' array instead", membership.Role),
-				Role:   membership.Role,
-			})
+		if s.isInvalidBaseRoleWithWorkspace(membership) {
+			s.summarySkipInvalidBaseRole(summary, i, membership)
 			continue
 		}
 
-		// Case A: Workspace-level membership (role is maintainer or workspace-read)
-		if membership.Role == constant.RBACRoleNames.WorkspaceMaintainer || membership.Role == constant.RBACRoleNames.WorkspaceMaintainerRO {
-			if membership.WorkspaceID == "" {
-				summary.SkippedCount++
-				summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-					Index:  i,
-					Reason: "workspace_id is required for workspace-level roles",
-					Role:   membership.Role,
-				})
-				continue
-			}
-
-			// Get the workspace role
-			roleData, err := s.GetRoleByName(ctx, schema, membership.Role)
-			if err != nil {
-				summary.FailedCount++
-				summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-					Index:  i,
-					Reason: fmt.Sprintf("failed to get role: %v", err),
-					Role:   membership.Role,
-					Error:  err,
-				})
-				continue
-			}
-
-			// Get ALL existing access for user in this workspace (both base and workspace level)
-			allExistingAccess, err := s.GetAllUserAccessInWorkspace(ctx, schema, userID, membership.WorkspaceID)
-			if err == nil && len(allExistingAccess) > 0 {
-				// Separate records by scope type
-				baseRecords, workspaceRecords := separateByScope(allExistingAccess)
-
-				fmt.Printf("DEBUG: SCOPE-UPDATE - Found %d base records and %d workspace records for user %s in workspace %s\n",
-					len(baseRecords), len(workspaceRecords), userID, membership.WorkspaceID)
-
-				// SCENARIO 1: User has base-level records (need to convert to workspace-level)
-				if len(baseRecords) > 0 {
-					fmt.Printf("DEBUG: SCOPE-UPDATE - Deleting %d base-level record(s) before converting to workspace-level\n", len(baseRecords))
-
-					// Delete ALL base records from this workspace by ID (more reliable than composite key)
-					removalErrors := []error{}
-					for idx, baseRecord := range baseRecords {
-						fmt.Printf("DEBUG: SCOPE-UPDATE - Base Record %d Details:\n", idx)
-						fmt.Printf("  - ID: %v\n", baseRecord.ID)
-						fmt.Printf("  - ScopeID: %v\n", baseRecord.ScopeID)
-						fmt.Printf("  - WorkspaceID: %v\n", baseRecord.WorkspaceID)
-						fmt.Printf("  - RoleID: %s\n", baseRecord.RoleID)
-						fmt.Printf("  - ScopeType: %s\n", baseRecord.ScopeType)
-
-						// Delete by ID instead of by composite key (user_id, scope_id, scope_type)
-						// This is more reliable and avoids mismatch issues
-						fmt.Printf("DEBUG: SCOPE-UPDATE - Attempting to remove base record by ID: %s\n", baseRecord.ID.String())
-						errRemove := s.RemoveAccessMemberByID(ctx, schema, baseRecord.ID.String())
-						if errRemove != nil {
-							fmt.Printf("DEBUG: SCOPE-UPDATE - Failed to remove base record %s: %v (error type: %T)\n", baseRecord.ID.String(), errRemove, errRemove)
-							removalErrors = append(removalErrors, errRemove)
-						} else {
-							fmt.Printf("DEBUG: SCOPE-UPDATE - Successfully removed base record %s\n", baseRecord.ID.String())
-						}
-					}
-
-					// If deletions failed, log warning but continue
-					// Don't abort the operation - attempting to remove may have partially succeeded
-					if len(removalErrors) > 0 {
-						fmt.Printf("DEBUG: SCOPE-UPDATE - WARNING: Failed to remove %d base-level record(s), but continuing with workspace assignment\n", len(removalErrors))
-						for idx, err := range removalErrors {
-							fmt.Printf("  - Error %d: %v\n", idx, err)
-						}
-					}
-
-					fmt.Printf("DEBUG: SCOPE-UPDATE - Proceeding with workspace assignment.\n")
-				}
-
-				// SCENARIO 2: User already has workspace-level record (check if role matches)
-				if len(workspaceRecords) > 0 {
-					existingRecord := workspaceRecords[0]
-					newRoleID := roleData.ID.String()
-
-					if isSameRole(existingRecord.RoleID, newRoleID) {
-						// Role is already correct - skip
-						fmt.Printf("DEBUG: SCOPE-UPDATE - User already has role '%s' in workspace %s. Skipping.\n", membership.Role, membership.WorkspaceID)
-
-						summary.SkippedCount++
-						summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-							Index:  i,
-							Reason: fmt.Sprintf("user already has role '%s' in this workspace", membership.Role),
-							Role:   membership.Role,
-						})
-						continue
-					} else {
-						// Role is different - update it
-						fmt.Printf("DEBUG: SCOPE-UPDATE - Role changed from %s to %s. Updating.\n", existingRecord.RoleID, newRoleID)
-
-						errUpdate := s.UpdateRoleForUser(ctx, schema, userID, constant.ScopeLevels.Workspace, &membership.WorkspaceID, newRoleID)
-						if errUpdate != nil {
-							summary.FailedCount++
-							summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-								Index:  i,
-								Reason: fmt.Sprintf("failed to update workspace role: %v", errUpdate),
-								Role:   membership.Role,
-								Error:  errUpdate,
-							})
-							continue
-						}
-
-						fmt.Printf("DEBUG: SCOPE-UPDATE - Role updated successfully\n")
-
-						summary.ProcessedCount++
-						summary.ProcessedMembers = append(summary.ProcessedMembers, ProcessedMember{
-							Index:     i,
-							ScopeType: constant.ScopeLevels.Workspace,
-							ScopeID:   membership.WorkspaceID,
-							Role:      membership.Role,
-							Type:      "workspace-level-updated",
-						})
-						continue
-					}
-				}
-
-				// If we deleted base records but no workspace record exists, create one
-				if len(baseRecords) > 0 && len(workspaceRecords) == 0 {
-					fmt.Printf("DEBUG: SCOPE-UPDATE - Creating new workspace-level record after deleting base records\n")
-
-					accessMemberReq := dto.AccessMemberDTO{
-						UserID:     userID,
-						ScopeType:  constant.ScopeLevels.Workspace,
-						ScopeID:    &membership.WorkspaceID,
-						RoleID:     roleData.ID.String(),
-						AssignedBy: &assignedBy,
-					}
-
-					_, err := s.AssignRoleToUser(ctx, schema, accessMemberReq)
-					if err != nil {
-						summary.FailedCount++
-						summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-							Index:  i,
-							Reason: fmt.Sprintf("failed to assign workspace role: %v", err),
-							Role:   membership.Role,
-							Error:  err,
-						})
-						continue
-					}
-
-					fmt.Printf("DEBUG: SCOPE-UPDATE - Workspace-level record created successfully\n")
-
-					summary.ProcessedCount++
-					summary.ProcessedMembers = append(summary.ProcessedMembers, ProcessedMember{
-						Index:     i,
-						ScopeType: constant.ScopeLevels.Workspace,
-						ScopeID:   membership.WorkspaceID,
-						Role:      membership.Role,
-						Type:      "base-to-workspace-conversion",
-					})
-					continue
-				}
-			}
-
-			// SCENARIO 3: No existing records in this workspace - create new workspace-level record
-			fmt.Printf("DEBUG: SCOPE-UPDATE - No existing records. Creating new workspace-level access for user %s\n", userID)
-
-			accessMemberReq := dto.AccessMemberDTO{
-				UserID:     userID,
-				ScopeType:  constant.ScopeLevels.Workspace,
-				ScopeID:    &membership.WorkspaceID,
-				RoleID:     roleData.ID.String(),
-				AssignedBy: &assignedBy,
-			}
-
-			_, err = s.AssignRoleToUser(ctx, schema, accessMemberReq)
-			if err != nil {
-				summary.FailedCount++
-				summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-					Index:  i,
-					Reason: fmt.Sprintf("failed to assign role: %v", err),
-					Role:   membership.Role,
-					Error:  err,
-				})
-				continue
-			}
-
-			fmt.Printf("DEBUG: SCOPE-UPDATE - Workspace-level record created successfully\n")
-
-			summary.ProcessedCount++
-			summary.ProcessedMembers = append(summary.ProcessedMembers, ProcessedMember{
-				Index:     i,
-				ScopeType: constant.ScopeLevels.Workspace,
-				ScopeID:   membership.WorkspaceID,
-				Role:      membership.Role,
-				Type:      "workspace-level",
-			})
-
+		if s.isWorkspaceRole(membership.Role) {
+			s.handleWorkspaceMembership(ctxData, membership, i)
 			continue
 		}
 
-		// Case B: Base-level membership (role is empty, check bases array)
 		if membership.Role == "" {
-			if len(membership.Bases) == 0 {
-				summary.SkippedCount++
-				summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-					Index:  i,
-					Reason: "when role is empty, bases array must not be empty",
-					Role:   "",
-				})
-				continue
-			}
-
-			// Check if user has workspace-level access - CASE 3: Convert from workspace to base
-			workspaceMembers, err := s.GetUserAccessByScope(ctx, schema, userID, constant.ScopeLevels.Workspace, nil)
-			if err == nil && len(workspaceMembers) > 0 {
-				fmt.Printf("DEBUG: CASE 3 - Found workspace-level access for user %s. Will convert to base-level.\n", userID)
-
-				// For Case 3, we need to determine which workspace we're converting from
-				// User is requesting to add bases, so first workspace they mention will tell us which workspace to remove
-				if len(membership.Bases) > 0 {
-					firstBase := membership.Bases[0]
-					if firstBase.BaseID != "" {
-						// Get the workspace that owns the first base to determine which workspace to remove from
-						baseData, errGetBase := s.baseService.GetBaseByID(ctx, schema, firstBase.BaseID)
-						if errGetBase == nil {
-							targetWorkspaceID := baseData.WorkspaceID
-
-							// Filter workspace members to find the one we're converting from
-							for _, wsMember := range workspaceMembers {
-								if wsMember.ScopeID != nil && *wsMember.ScopeID == targetWorkspaceID {
-									// Remove workspace-level access for this specific workspace
-									fmt.Printf("DEBUG: CASE 3 - Removing workspace-level access from workspace %s (Record ID: %s)\n", targetWorkspaceID, wsMember.ID.String())
-									// Use ID-based deletion instead of composite key
-									errRemove := s.RemoveAccessMemberByID(ctx, schema, wsMember.ID.String())
-									if errRemove != nil {
-										fmt.Printf("DEBUG: CASE 3 - Failed to remove workspace-level access: %v\n", errRemove)
-										summary.FailedCount++
-										summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-											Index:  i,
-											Reason: fmt.Sprintf("failed to remove workspace-level access: %v", errRemove),
-											Role:   "",
-											Error:  errRemove,
-										})
-										continue
-									}
-									fmt.Printf("DEBUG: CASE 3 - Successfully removed workspace-level access\n")
-									break
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// Process each base
-			for j, baseMembership := range membership.Bases {
-				if baseMembership.BaseID == "" {
-					summary.SkippedCount++
-					summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-						Index:  i,
-						Reason: fmt.Sprintf("base_id is required (bases[%d])", j),
-						Role:   "",
-					})
-					continue
-				}
-
-				if baseMembership.Role != "base-member" && baseMembership.Role != "base-read" {
-					summary.SkippedCount++
-					summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-						Index:  i,
-						Reason: fmt.Sprintf("invalid base role: %s (bases[%d]), must be 'base-member' or 'base-read'", baseMembership.Role, j),
-						Role:   "",
-					})
-					continue
-				}
-
-				// Get the base to find its workspace
-				baseData, errGetBase := s.baseService.GetBaseByID(ctx, schema, baseMembership.BaseID)
-				if errGetBase != nil {
-					summary.FailedCount++
-					summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-						Index:  i,
-						Reason: fmt.Sprintf("failed to get base details: %v (bases[%d])", errGetBase, j),
-						Role:   baseMembership.Role,
-						Error:  errGetBase,
-					})
-					continue
-				}
-
-				// Get the base role
-				roleData, err := s.GetRoleByName(ctx, schema, baseMembership.Role)
-				if err != nil {
-					summary.FailedCount++
-					summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-						Index:  i,
-						Reason: fmt.Sprintf("failed to get base role: %v (bases[%d])", err, j),
-						Role:   baseMembership.Role,
-						Error:  err,
-					})
-					continue
-				}
-
-				// Check if user has existing access in this base
-				existingBaseMembers, err := s.GetUserAccessByScope(ctx, schema, userID, constant.ScopeLevels.Base, &baseMembership.BaseID)
-				if err == nil && len(existingBaseMembers) > 0 {
-					// CASE 2: User has base-level access and changing only the role
-					existingRoleID := existingBaseMembers[0].RoleID
-					newRoleID := roleData.ID.String()
-
-					fmt.Printf("DEBUG: Comparing roles - Existing: %s, New: %s\n", existingRoleID, newRoleID)
-
-					// Normalize UUIDs for comparison (remove hyphens and convert to lowercase)
-					existingRoleIDNorm := strings.ToLower(strings.ReplaceAll(existingRoleID, "-", ""))
-					newRoleIDNorm := strings.ToLower(strings.ReplaceAll(newRoleID, "-", ""))
-
-					if existingRoleIDNorm != newRoleIDNorm {
-						// Role changed - update the role directly in the database
-						fmt.Printf("DEBUG: Role has changed for user %s in base %s. Updating from %s to %s\n", userID, baseMembership.BaseID, existingRoleID, newRoleID)
-
-						errUpdate := s.UpdateRoleForUser(ctx, schema, userID, constant.ScopeLevels.Base, &baseMembership.BaseID, newRoleID)
-						if errUpdate != nil {
-							fmt.Printf("DEBUG: Update failed with error: %v\n", errUpdate)
-							summary.FailedCount++
-							summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-								Index:  i,
-								Reason: fmt.Sprintf("failed to update base role (bases[%d]): %v", j, errUpdate),
-								Role:   baseMembership.Role,
-								Error:  errUpdate,
-							})
-							continue
-						}
-
-						fmt.Printf("DEBUG: Role updated successfully for user %s in base %s\n", userID, baseMembership.BaseID)
-
-						summary.ProcessedCount++
-						summary.ProcessedMembers = append(summary.ProcessedMembers, ProcessedMember{
-							Index:     i,
-							ScopeType: constant.ScopeLevels.Base,
-							ScopeID:   baseMembership.BaseID,
-							Role:      baseMembership.Role,
-							Type:      "base-level-updated",
-						})
-					} else {
-						// Same role - skip
-						fmt.Printf("DEBUG: Same role '%s' already exists for user %s in base %s. Skipping.\n", baseMembership.Role, userID, baseMembership.BaseID)
-
-						summary.SkippedCount++
-						summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
-							Index:  i,
-							Reason: fmt.Sprintf("user already has same role '%s' in this base (bases[%d])", baseMembership.Role, j),
-							Role:   baseMembership.Role,
-						})
-					}
-					continue
-				}
-
-				// No existing access - assign new base-level role
-				accessMemberReq := dto.AccessMemberDTO{
-					UserID:      userID,
-					ScopeType:   constant.ScopeLevels.Base,
-					ScopeID:     &baseMembership.BaseID,
-					RoleID:      roleData.ID.String(),
-					WorkspaceID: &baseData.WorkspaceID,
-					AssignedBy:  &assignedBy,
-				}
-
-				_, err = s.AssignRoleToUser(ctx, schema, accessMemberReq)
-				if err != nil {
-					summary.FailedCount++
-					summary.FailedMembers = append(summary.FailedMembers, FailedMember{
-						Index:  i,
-						Reason: fmt.Sprintf("failed to assign base role: %v (bases[%d])", err, j),
-						Role:   baseMembership.Role,
-						Error:  err,
-					})
-					continue
-				}
-
-				summary.ProcessedCount++
-				summary.ProcessedMembers = append(summary.ProcessedMembers, ProcessedMember{
-					Index:     i,
-					ScopeType: constant.ScopeLevels.Base,
-					ScopeID:   baseMembership.BaseID,
-					Role:      baseMembership.Role,
-					Type:      "base-level",
-				})
-			}
-
+			s.handleBaseMembership(ctxData, membership, i)
 			continue
 		}
 
@@ -1444,6 +1102,436 @@ func (s *rbacManagementService) ProcessUserMemberships(
 	}
 
 	return summary, nil
+}
+
+func (s *rbacManagementService) isWorkspaceRole(role string) bool {
+	return role == constant.RBACRoleNames.WorkspaceMaintainer || role == constant.RBACRoleNames.WorkspaceMaintainerRO
+}
+
+func (s *rbacManagementService) isInvalidBaseRoleWithWorkspace(membership dto.MembershipRequest) bool {
+	return (membership.Role == constant.RBACRoleNames.BaseMember || membership.Role == constant.RBACRoleNames.BaseMemberReadOnly) && membership.WorkspaceID != ""
+}
+
+func (s *rbacManagementService) summarySkipInvalidBaseRole(summary *MembershipProcessingSummary, index int, membership dto.MembershipRequest) {
+	summary.SkippedCount++
+	summary.SkippedMembers = append(summary.SkippedMembers, SkippedMember{
+		Index:  index,
+		Reason: fmt.Sprintf("invalid request: role '%s' is a base-level role but WorkspaceID is provided. For base-level roles, use the 'bases' array instead", membership.Role),
+		Role:   membership.Role,
+	})
+}
+
+func (s *rbacManagementService) handleWorkspaceMembership(
+	ctxData membershipProcessingContext,
+	membership dto.MembershipRequest,
+	index int,
+) {
+	if membership.WorkspaceID == "" {
+		ctxData.summary.SkippedCount++
+		ctxData.summary.SkippedMembers = append(ctxData.summary.SkippedMembers, SkippedMember{
+			Index:  index,
+			Reason: "workspace_id is required for workspace-level roles",
+			Role:   membership.Role,
+		})
+		return
+	}
+
+	roleData, err := s.GetRoleByName(ctxData.ctx, ctxData.schema, membership.Role)
+	if err != nil {
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to get role: %v", err),
+			Role:   membership.Role,
+			Error:  err,
+		})
+		return
+	}
+
+	allExistingAccess, err := s.GetAllUserAccessInWorkspace(ctxData.ctx, ctxData.schema, ctxData.userID, membership.WorkspaceID)
+	if err == nil && len(allExistingAccess) > 0 {
+		baseRecords, workspaceRecords := separateByScope(allExistingAccess)
+		s.deleteBaseRecordsForWorkspace(ctxData.ctx, ctxData.schema, baseRecords, ctxData.userID, membership.WorkspaceID, len(workspaceRecords))
+
+		if len(workspaceRecords) > 0 {
+			s.handleExistingWorkspaceRecord(ctxData, membership, index, roleData, workspaceRecords[0])
+			return
+		}
+
+		if len(baseRecords) > 0 {
+			s.createWorkspaceAccess(ctxData, membership, index, roleData, "base-to-workspace-conversion")
+			return
+		}
+	}
+
+	s.createWorkspaceAccess(ctxData, membership, index, roleData, "workspace-level")
+}
+
+func (s *rbacManagementService) deleteBaseRecordsForWorkspace(
+	ctx context.Context,
+	schema string,
+	baseRecords []dto.AccessMemberDTO,
+	userID string,
+	workspaceID string,
+	workspaceRecordCount int,
+) {
+	if len(baseRecords) == 0 {
+		return
+	}
+
+	fmt.Printf("DEBUG: SCOPE-UPDATE - Found %d base records and %d workspace records for user %s in workspace %s\n",
+		len(baseRecords), workspaceRecordCount, userID, workspaceID)
+	fmt.Printf("DEBUG: SCOPE-UPDATE - Deleting %d base-level record(s) before converting to workspace-level\n", len(baseRecords))
+
+	removalErrors := []error{}
+	for idx, baseRecord := range baseRecords {
+		fmt.Printf("DEBUG: SCOPE-UPDATE - Base Record %d Details:\n", idx)
+		fmt.Printf("  - ID: %v\n", baseRecord.ID)
+		fmt.Printf("  - ScopeID: %v\n", baseRecord.ScopeID)
+		fmt.Printf("  - WorkspaceID: %v\n", baseRecord.WorkspaceID)
+		fmt.Printf("  - RoleID: %s\n", baseRecord.RoleID)
+		fmt.Printf("  - ScopeType: %s\n", baseRecord.ScopeType)
+
+		fmt.Printf("DEBUG: SCOPE-UPDATE - Attempting to remove base record by ID: %s\n", baseRecord.ID.String())
+		errRemove := s.RemoveAccessMemberByID(ctx, schema, baseRecord.ID.String())
+		if errRemove != nil {
+			fmt.Printf("DEBUG: SCOPE-UPDATE - Failed to remove base record %s: %v (error type: %T)\n", baseRecord.ID.String(), errRemove, errRemove)
+			removalErrors = append(removalErrors, errRemove)
+		} else {
+			fmt.Printf("DEBUG: SCOPE-UPDATE - Successfully removed base record %s\n", baseRecord.ID.String())
+		}
+	}
+
+	if len(removalErrors) > 0 {
+		fmt.Printf("DEBUG: SCOPE-UPDATE - WARNING: Failed to remove %d base-level record(s), but continuing with workspace assignment\n", len(removalErrors))
+		for idx, err := range removalErrors {
+			fmt.Printf("  - Error %d: %v\n", idx, err)
+		}
+	}
+
+	fmt.Printf("DEBUG: SCOPE-UPDATE - Proceeding with workspace assignment.\n")
+}
+
+func (s *rbacManagementService) handleExistingWorkspaceRecord(
+	ctxData membershipProcessingContext,
+	membership dto.MembershipRequest,
+	index int,
+	roleData tenant.AccessRole,
+	existingRecord dto.AccessMemberDTO,
+) {
+	newRoleID := roleData.ID.String()
+
+	if isSameRole(existingRecord.RoleID, newRoleID) {
+		fmt.Printf("DEBUG: SCOPE-UPDATE - User already has role '%s' in workspace %s. Skipping.\n", membership.Role, membership.WorkspaceID)
+
+		ctxData.summary.SkippedCount++
+		ctxData.summary.SkippedMembers = append(ctxData.summary.SkippedMembers, SkippedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("user already has role '%s' in this workspace", membership.Role),
+			Role:   membership.Role,
+		})
+		return
+	}
+
+	fmt.Printf("DEBUG: SCOPE-UPDATE - Role changed from %s to %s. Updating.\n", existingRecord.RoleID, newRoleID)
+
+	errUpdate := s.UpdateRoleForUser(ctxData.ctx, ctxData.schema, ctxData.userID, constant.ScopeLevels.Workspace, &membership.WorkspaceID, newRoleID)
+	if errUpdate != nil {
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to update workspace role: %v", errUpdate),
+			Role:   membership.Role,
+			Error:  errUpdate,
+		})
+		return
+	}
+
+	fmt.Printf("DEBUG: SCOPE-UPDATE - Role updated successfully\n")
+
+	ctxData.summary.ProcessedCount++
+	ctxData.summary.ProcessedMembers = append(ctxData.summary.ProcessedMembers, ProcessedMember{
+		Index:     index,
+		ScopeType: constant.ScopeLevels.Workspace,
+		ScopeID:   membership.WorkspaceID,
+		Role:      membership.Role,
+		Type:      "workspace-level-updated",
+	})
+}
+
+func (s *rbacManagementService) createWorkspaceAccess(
+	ctxData membershipProcessingContext,
+	membership dto.MembershipRequest,
+	index int,
+	roleData tenant.AccessRole,
+	entryType string,
+) {
+	if entryType == "workspace-level" {
+		fmt.Printf("DEBUG: SCOPE-UPDATE - No existing records. Creating new workspace-level access for user %s\n", ctxData.userID)
+	} else {
+		fmt.Printf("DEBUG: SCOPE-UPDATE - Creating new workspace-level record after deleting base records\n")
+	}
+
+	accessMemberReq := dto.AccessMemberDTO{
+		UserID:     ctxData.userID,
+		ScopeType:  constant.ScopeLevels.Workspace,
+		ScopeID:    &membership.WorkspaceID,
+		RoleID:     roleData.ID.String(),
+		AssignedBy: &ctxData.assignedBy,
+	}
+
+	_, err := s.AssignRoleToUser(ctxData.ctx, ctxData.schema, accessMemberReq)
+	if err != nil {
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to assign workspace role: %v", err),
+			Role:   membership.Role,
+			Error:  err,
+		})
+		return
+	}
+
+	fmt.Printf("DEBUG: SCOPE-UPDATE - Workspace-level record created successfully\n")
+
+	ctxData.summary.ProcessedCount++
+	ctxData.summary.ProcessedMembers = append(ctxData.summary.ProcessedMembers, ProcessedMember{
+		Index:     index,
+		ScopeType: constant.ScopeLevels.Workspace,
+		ScopeID:   membership.WorkspaceID,
+		Role:      membership.Role,
+		Type:      entryType,
+	})
+}
+
+func (s *rbacManagementService) handleBaseMembership(
+	ctxData membershipProcessingContext,
+	membership dto.MembershipRequest,
+	index int,
+) {
+	if len(membership.Bases) == 0 {
+		ctxData.summary.SkippedCount++
+		ctxData.summary.SkippedMembers = append(ctxData.summary.SkippedMembers, SkippedMember{
+			Index:  index,
+			Reason: "when role is empty, bases array must not be empty",
+			Role:   "",
+		})
+		return
+	}
+
+	if err := s.convertWorkspaceToBaseIfNeeded(ctxData, membership, index); err != nil {
+		return
+	}
+
+	for j, baseMembership := range membership.Bases {
+		if baseMembership.BaseID == "" {
+			ctxData.summary.SkippedCount++
+			ctxData.summary.SkippedMembers = append(ctxData.summary.SkippedMembers, SkippedMember{
+				Index:  index,
+				Reason: fmt.Sprintf("base_id is required (bases[%d])", j),
+				Role:   "",
+			})
+			continue
+		}
+
+		if baseMembership.Role != "base-member" && baseMembership.Role != "base-read" {
+			ctxData.summary.SkippedCount++
+			ctxData.summary.SkippedMembers = append(ctxData.summary.SkippedMembers, SkippedMember{
+				Index:  index,
+				Reason: fmt.Sprintf("invalid base role: %s (bases[%d]), must be 'base-member' or 'base-read'", baseMembership.Role, j),
+				Role:   "",
+			})
+			continue
+		}
+
+		s.processBaseMembership(ctxData, index, j, baseMembership)
+	}
+}
+
+func (s *rbacManagementService) convertWorkspaceToBaseIfNeeded(
+	ctxData membershipProcessingContext,
+	membership dto.MembershipRequest,
+	index int,
+) error {
+	workspaceMembers, err := s.GetUserAccessByScope(ctxData.ctx, ctxData.schema, ctxData.userID, constant.ScopeLevels.Workspace, nil)
+	if err != nil || len(workspaceMembers) == 0 {
+		return nil
+	}
+
+	fmt.Printf("DEBUG: CASE 3 - Found workspace-level access for user %s. Will convert to base-level.\n", ctxData.userID)
+
+	if len(membership.Bases) == 0 {
+		return nil
+	}
+
+	firstBase := membership.Bases[0]
+	if firstBase.BaseID == "" {
+		return nil
+	}
+
+	baseData, errGetBase := s.baseService.GetBaseByID(ctxData.ctx, ctxData.schema, firstBase.BaseID)
+	if errGetBase != nil {
+		return nil
+	}
+
+	targetWorkspaceID := baseData.WorkspaceID
+
+	for _, wsMember := range workspaceMembers {
+		if wsMember.ScopeID != nil && *wsMember.ScopeID == targetWorkspaceID {
+			fmt.Printf("DEBUG: CASE 3 - Removing workspace-level access from workspace %s (Record ID: %s)\n", targetWorkspaceID, wsMember.ID.String())
+
+			errRemove := s.RemoveAccessMemberByID(ctxData.ctx, ctxData.schema, wsMember.ID.String())
+			if errRemove != nil {
+				fmt.Printf("DEBUG: CASE 3 - Failed to remove workspace-level access: %v\n", errRemove)
+				ctxData.summary.FailedCount++
+				ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+					Index:  index,
+					Reason: fmt.Sprintf("failed to remove workspace-level access: %v", errRemove),
+					Role:   "",
+					Error:  errRemove,
+				})
+				return errRemove
+			}
+
+			fmt.Printf("DEBUG: CASE 3 - Successfully removed workspace-level access\n")
+			break
+		}
+	}
+
+	return nil
+}
+
+func (s *rbacManagementService) processBaseMembership(
+	ctxData membershipProcessingContext,
+	index int,
+	baseIndex int,
+	baseMembership dto.BaseMembership,
+) {
+	baseData, errGetBase := s.baseService.GetBaseByID(ctxData.ctx, ctxData.schema, baseMembership.BaseID)
+	if errGetBase != nil {
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to get base details: %v (bases[%d])", errGetBase, baseIndex),
+			Role:   baseMembership.Role,
+			Error:  errGetBase,
+		})
+		return
+	}
+
+	roleData, err := s.GetRoleByName(ctxData.ctx, ctxData.schema, baseMembership.Role)
+	if err != nil {
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to get base role: %v (bases[%d])", err, baseIndex),
+			Role:   baseMembership.Role,
+			Error:  err,
+		})
+		return
+	}
+
+	existingBaseMembers, err := s.GetUserAccessByScope(ctxData.ctx, ctxData.schema, ctxData.userID, constant.ScopeLevels.Base, &baseMembership.BaseID)
+	if err == nil && len(existingBaseMembers) > 0 {
+		s.updateExistingBaseRole(ctxData, index, baseIndex, baseMembership, existingBaseMembers[0], roleData)
+		return
+	}
+
+	s.assignBaseAccess(ctxData, index, baseIndex, baseMembership, baseData, roleData)
+}
+
+func (s *rbacManagementService) updateExistingBaseRole(
+	ctxData membershipProcessingContext,
+	index int,
+	baseIndex int,
+	baseMembership dto.BaseMembership,
+	existingBaseMember dto.AccessMemberDTO,
+	roleData tenant.AccessRole,
+) {
+	existingRoleID := existingBaseMember.RoleID
+	newRoleID := roleData.ID.String()
+
+	fmt.Printf("DEBUG: Comparing roles - Existing: %s, New: %s\n", existingRoleID, newRoleID)
+
+	existingRoleIDNorm := strings.ToLower(strings.ReplaceAll(existingRoleID, "-", ""))
+	newRoleIDNorm := strings.ToLower(strings.ReplaceAll(newRoleID, "-", ""))
+
+	if existingRoleIDNorm == newRoleIDNorm {
+		fmt.Printf("DEBUG: Same role '%s' already exists for user %s in base %s. Skipping.\n", baseMembership.Role, ctxData.userID, baseMembership.BaseID)
+
+		ctxData.summary.SkippedCount++
+		ctxData.summary.SkippedMembers = append(ctxData.summary.SkippedMembers, SkippedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("user already has same role '%s' in this base (bases[%d])", baseMembership.Role, baseIndex),
+			Role:   baseMembership.Role,
+		})
+		return
+	}
+
+	fmt.Printf("DEBUG: Role has changed for user %s in base %s. Updating from %s to %s\n", ctxData.userID, baseMembership.BaseID, existingRoleID, newRoleID)
+
+	errUpdate := s.UpdateRoleForUser(ctxData.ctx, ctxData.schema, ctxData.userID, constant.ScopeLevels.Base, &baseMembership.BaseID, newRoleID)
+	if errUpdate != nil {
+		fmt.Printf("DEBUG: Update failed with error: %v\n", errUpdate)
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to update base role (bases[%d]): %v", baseIndex, errUpdate),
+			Role:   baseMembership.Role,
+			Error:  errUpdate,
+		})
+		return
+	}
+
+	fmt.Printf("DEBUG: Role updated successfully for user %s in base %s\n", ctxData.userID, baseMembership.BaseID)
+
+	ctxData.summary.ProcessedCount++
+	ctxData.summary.ProcessedMembers = append(ctxData.summary.ProcessedMembers, ProcessedMember{
+		Index:     index,
+		ScopeType: constant.ScopeLevels.Base,
+		ScopeID:   baseMembership.BaseID,
+		Role:      baseMembership.Role,
+		Type:      "base-level-updated",
+	})
+}
+
+func (s *rbacManagementService) assignBaseAccess(
+	ctxData membershipProcessingContext,
+	index int,
+	baseIndex int,
+	baseMembership dto.BaseMembership,
+	baseData tenant.Base,
+	roleData tenant.AccessRole,
+) {
+	accessMemberReq := dto.AccessMemberDTO{
+		UserID:      ctxData.userID,
+		ScopeType:   constant.ScopeLevels.Base,
+		ScopeID:     &baseMembership.BaseID,
+		RoleID:      roleData.ID.String(),
+		WorkspaceID: &baseData.WorkspaceID,
+		AssignedBy:  &ctxData.assignedBy,
+	}
+
+	_, err := s.AssignRoleToUser(ctxData.ctx, ctxData.schema, accessMemberReq)
+	if err != nil {
+		ctxData.summary.FailedCount++
+		ctxData.summary.FailedMembers = append(ctxData.summary.FailedMembers, FailedMember{
+			Index:  index,
+			Reason: fmt.Sprintf("failed to assign base role: %v (bases[%d])", err, baseIndex),
+			Role:   baseMembership.Role,
+			Error:  err,
+		})
+		return
+	}
+
+	ctxData.summary.ProcessedCount++
+	ctxData.summary.ProcessedMembers = append(ctxData.summary.ProcessedMembers, ProcessedMember{
+		Index:     index,
+		ScopeType: constant.ScopeLevels.Base,
+		ScopeID:   baseMembership.BaseID,
+		Role:      baseMembership.Role,
+		Type:      "base-level",
+	})
 }
 
 // MembershipProcessingSummary contains the summary of membership processing

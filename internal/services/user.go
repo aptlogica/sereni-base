@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"godbgrest/pkg"
+	"go-postgres-rest/pkg"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
@@ -13,7 +13,7 @@ import (
 
 	"serenibase/internal/utils/helpers"
 
-	dbModels "godbgrest/pkg/models"
+	dbModels "go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )
@@ -73,10 +73,10 @@ func (u *userService) CreateUser(ctx context.Context, schema string, req dto.Reg
 		userData.AuthProvider = req.AuthProvider
 	}
 
-	insertedUserData, err := u.repo.TableService.CreateRecord(ctx, tableName, userData.Map())
+	insertedUserData, err := u.repo.TableService.CreateRecord(tableName, userData.Map())
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create user record")
-		return tenant.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.LogDatabaseError(err, "failed to create user record")
 	}
 	lg.Debug().Interface("userData", insertedUserData).Msg("User record created successfully")
 
@@ -102,9 +102,9 @@ func (u *userService) GetUserByEmail(ctx context.Context, schema string, email s
 		Limit: &limit,
 	}
 
-	usersData, err := u.repo.TableService.GetTableData(ctx, tableName, query)
+	usersData, err := u.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return tenant.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.LogDatabaseError(err, "failed to get user by email")
 	}
 
 	if len(usersData) == 0 {
@@ -139,10 +139,10 @@ func (u *userService) GetUserByID(ctx context.Context, schema string, id string)
 		Limit: &limit,
 	}
 
-	usersData, err := u.repo.TableService.GetTableData(ctx, tableName, query)
+	usersData, err := u.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("schema", schema).Str("id", id).Msg("Failed to get user by ID")
-		return tenant.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.LogDatabaseError(err, "failed to get user by id")
 	}
 
 	if len(usersData) == 0 {
@@ -177,11 +177,11 @@ func (u *userService) UpdateUser(ctx context.Context, schema string, id string, 
 		delete(updateData, "DateOfBirth")
 	}
 
-	updatedRecord, err := u.repo.TableService.UpdateRecord(ctx, tableName, id, updateData)
+	updatedRecord, err := u.repo.TableService.UpdateRecord(tableName, id, updateData)
 	lg.Debug().Interface("record", updatedRecord).Msg("Updated user record")
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to update user record")
-		return tenant.User{}, app_errors.DatabaseError
+		return tenant.User{}, app_errors.LogDatabaseError(err, "failed to update user record")
 	}
 	lg.Debug().Interface("record", updatedRecord).Msg("User update completed")
 
@@ -207,9 +207,9 @@ func (u *userService) GetAllUsers(ctx context.Context, schema string) ([]tenant.
 			},
 		},
 	}
-	usersData, err := u.repo.TableService.GetTableData(ctx, tableName, query)
+	usersData, err := u.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get all users")
 	}
 	if len(usersData) == 0 {
 		return []tenant.User{}, nil
@@ -245,9 +245,9 @@ func (u *userService) GetBulkUsers(ctx context.Context, schema string, ids []str
 		Filters: filters,
 	}
 
-	rows, err := u.repo.TableService.GetTableData(ctx, tableName, params)
+	rows, err := u.repo.TableService.GetTableData(tableName, params)
 	if err != nil {
-		return nil, app_errors.DatabaseError
+		return nil, app_errors.LogDatabaseError(err, "failed to get bulk users")
 	}
 	if len(rows) == 0 {
 		return []tenant.User{}, nil
@@ -267,5 +267,5 @@ func (u *userService) GetBulkUsers(ctx context.Context, schema string, ids []str
 
 func (u *userService) DeleteUser(ctx context.Context, schema string, id string) error {
 	tableName := tenant.User{}.TableName(schema)
-	return u.repo.TableService.DeleteRecord(ctx, tableName, id)
+	return u.repo.TableService.DeleteRecord(tableName, id)
 }
