@@ -22,86 +22,72 @@ func NewResourceService(repo *pkg.DatabaseService) interfaces.ResourceService {
 	return &resourceService{repo: repo}
 }
 
+// Helper functions to reduce duplication
+func (s *resourceService) getTableName(schemaName string) string {
+	return tenant.Resource{}.TableName(schemaName)
+}
+
+func (s *resourceService) mapToResource(data map[string]interface{}) (tenant.Resource, error) {
+	var resource tenant.Resource
+	if err := helpers.MapToStruct(data, &resource); err != nil {
+		return tenant.Resource{}, app_errors.ErrMapToStruct
+	}
+	return resource, nil
+}
+
+func (s *resourceService) createSingleFilterQuery(column, operator, value string, limit int) dbModels.QueryParams {
+	return dbModels.QueryParams{
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   column,
+				Operator: operator,
+				Value:    value,
+			},
+		},
+		Limit: &limit,
+	}
+}
+
+func (s *resourceService) getSingleRecord(ctx context.Context, schemaName string, query dbModels.QueryParams, errorMsg string) (tenant.Resource, error) {
+	tableName := s.getTableName(schemaName)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
+	if err != nil {
+		return tenant.Resource{}, app_errors.LogDatabaseError(err, errorMsg)
+	}
+
+	if len(data) == 0 {
+		return tenant.Resource{}, app_errors.ErrRecordNotFound
+	}
+
+	return s.mapToResource(data[0])
+}
+
 func (s *resourceService) CreateResource(ctx context.Context, schemaName string, req dto.ResourceDTO) (tenant.Resource, error) {
 	if req.ID == uuid.Nil {
 		req.ID = uuid.New()
 	}
 
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.Resource{}, err
 	}
 
-	var resource tenant.Resource
-	if err := helpers.MapToStruct(insertedData, &resource); err != nil {
-		return tenant.Resource{}, err
-	}
-	return resource, nil
+	return s.mapToResource(insertedData)
 }
 
 func (s *resourceService) GetResourceByID(ctx context.Context, schemaName string, resourceID uuid.UUID) (tenant.Resource, error) {
-	limit := 1
-	tableName := tenant.Resource{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "id",
-				Operator: "eq",
-				Value:    resourceID.String(),
-			},
-		},
-		Limit: &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Resource{}, app_errors.LogDatabaseError(err, "failed to get resource by id")
-	}
-
-	if len(data) == 0 {
-		return tenant.Resource{}, app_errors.ErrRecordNotFound
-	}
-
-	var resource tenant.Resource
-	if err := helpers.MapToStruct(data[0], &resource); err != nil {
-		return tenant.Resource{}, app_errors.ErrMapToStruct
-	}
-	return resource, nil
+	query := s.createSingleFilterQuery("id", "eq", resourceID.String(), 1)
+	return s.getSingleRecord(ctx, schemaName, query, "failed to get resource by id")
 }
 
 func (s *resourceService) GetResourceByCode(ctx context.Context, schemaName string, code string) (tenant.Resource, error) {
-	limit := 1
-	tableName := tenant.Resource{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "code",
-				Operator: "eq",
-				Value:    code,
-			},
-		},
-		Limit: &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Resource{}, app_errors.LogDatabaseError(err, "failed to get resource by code")
-	}
-
-	if len(data) == 0 {
-		return tenant.Resource{}, app_errors.ErrRecordNotFound
-	}
-
-	var resource tenant.Resource
-	if err := helpers.MapToStruct(data[0], &resource); err != nil {
-		return tenant.Resource{}, app_errors.ErrMapToStruct
-	}
-	return resource, nil
+	query := s.createSingleFilterQuery("code", "eq", code, 1)
+	return s.getSingleRecord(ctx, schemaName, query, "failed to get resource by code")
 }
 
 func (s *resourceService) ListResources(ctx context.Context, schemaName string, limit, offset int) ([]tenant.Resource, int64, error) {
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	query := dbModels.QueryParams{
 		Limit:   &limit,
 		Offset:  &offset,
@@ -127,20 +113,18 @@ func (s *resourceService) ListResources(ctx context.Context, schemaName string, 
 		return nil, 0, app_errors.LogDatabaseError(err, "failed to count resources")
 	}
 
-	count := int64(len(countData))
+	count := int64(0)
 	if len(countData) > 0 {
 		if total, ok := countData[0]["total"]; ok {
-			if totalVal, ok := total.(float64); ok {
-				count = int64(totalVal)
-			}
+			count = int64(total.(float64))
 		}
 	}
 
 	var resources []tenant.Resource
 	for _, item := range data {
-		var resource tenant.Resource
-		if err := helpers.MapToStruct(item, &resource); err != nil {
-			return nil, 0, app_errors.ErrMapToStruct
+		resource, err := s.mapToResource(item)
+		if err != nil {
+			return nil, 0, err
 		}
 		resources = append(resources, resource)
 	}
@@ -148,7 +132,7 @@ func (s *resourceService) ListResources(ctx context.Context, schemaName string, 
 }
 
 func (s *resourceService) UpdateResource(ctx context.Context, schemaName string, resourceID uuid.UUID, req dto.ResourceDTO) (tenant.Resource, error) {
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	updateData := req.Map()
 	// Remove ID from update data to prevent modifying the primary key
 	delete(updateData, "id")
@@ -158,15 +142,11 @@ func (s *resourceService) UpdateResource(ctx context.Context, schemaName string,
 		return tenant.Resource{}, err
 	}
 
-	var resource tenant.Resource
-	if err := helpers.MapToStruct(updatedData, &resource); err != nil {
-		return tenant.Resource{}, app_errors.ErrMapToStruct
-	}
-	return resource, nil
+	return s.mapToResource(updatedData)
 }
 
 func (s *resourceService) DeleteResource(ctx context.Context, schemaName string, resourceID uuid.UUID) error {
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	filter := dbModels.QueryFilter{
 		Column:   "id",
 		Operator: "eq",

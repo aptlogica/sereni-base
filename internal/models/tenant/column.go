@@ -71,6 +71,11 @@ func createColumnFK(prefix, column, table string) models.ForeignKeyDef {
 	}
 }
 
+// createBooleanColumn creates a boolean column with default false
+func createBooleanColumn(name string) models.ColumnDefinition {
+	return models.ColumnDefinition{Name: name, DataType: "boolean", DefaultValue: StrPtr("false")}
+}
+
 func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -84,25 +89,25 @@ func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "description", DataType: "text"},
 			{Name: "meta", DataType: "jsonb"},
 			{Name: "dt", DataType: "varchar"},
-			// {Name: "pk", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "pv", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "rqd", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "un", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "ai", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "unique_constraint", DataType: "boolean", DefaultValue: strPtr("false")},
+			// {Name: "pk", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "pv", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "rqd", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "un", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "ai", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "unique_constraint", DataType: "boolean", DefaultValue: StrPtr("false")},
 			// {Name: "max_length", DataType: "varchar"},
 			// {Name: "precision_value", DataType: "varchar"},
 			// {Name: "scale_value", DataType: "varchar"},
 			// {Name: "default_value", DataType: "text"},
 			// {Name: "validation_rules", DataType: "text"},
-			{Name: "virtual", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "system", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "deleted", DataType: "boolean", DefaultValue: strPtr("false")},
+			createBooleanColumn("virtual"),
+			createBooleanColumn("system"),
+			createBooleanColumn("deleted"),
 			{Name: "order_index", DataType: "real"},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("created_time", true, false),
+			createTimestampColumn("last_modified_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_columns_model_id", Columns: []string{"model_id"}},

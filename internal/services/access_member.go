@@ -27,12 +27,28 @@ func NewAccessMemberService(repo *pkg.DatabaseService) interfaces.AccessMemberSe
 	return &accessMemberService{repo: repo}
 }
 
+func (s *accessMemberService) getTableName(schemaName string) string {
+	return fmt.Sprintf(AccessMembersTableFormat, schemaName)
+}
+
+func (s *accessMemberService) mapToAccessMemberDTOs(data []map[string]interface{}) []dto.AccessMemberDTO {
+	var members []dto.AccessMemberDTO
+	for _, item := range data {
+		var member dto.AccessMemberDTO
+		if err := helpers.MapToStruct(item, &member); err != nil {
+			continue
+		}
+		members = append(members, member)
+	}
+	return members
+}
+
 func (s *accessMemberService) AssignRoleToUser(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error) {
 	if req.ID == uuid.Nil {
 		req.ID = uuid.New()
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return nil, err
@@ -53,7 +69,7 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 		return app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 
 	// Delete all access members for user in this scope
 	query := dbModels.QueryParams{
@@ -117,7 +133,7 @@ func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schema
 		return app_errors.ErrRecordNotFound
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 	fmt.Printf("DEBUG: RemoveAccessMemberByID - Deleting from table: %s with ID: %s\n", tableName, memberID)
 
 	// Pass just the ID string, not a QueryFilter struct
@@ -132,7 +148,7 @@ func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schema
 }
 
 func (s *accessMemberService) GetUserAccessMembers(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -148,15 +164,7 @@ func (s *accessMemberService) GetUserAccessMembers(ctx context.Context, schemaNa
 		return nil, app_errors.LogDatabaseError(err, "failed to fetch user access members")
 	}
 
-	var members []dto.AccessMemberDTO
-	for _, item := range data {
-		var member dto.AccessMemberDTO
-		if err := helpers.MapToStruct(item, &member); err != nil {
-			continue
-		}
-		members = append(members, member)
-	}
-	return members, nil
+	return s.mapToAccessMemberDTOs(data), nil
 }
 
 func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error) {
@@ -167,7 +175,7 @@ func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaNa
 		return nil, app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -196,19 +204,11 @@ func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaNa
 		return nil, app_errors.LogDatabaseError(err, "failed to fetch user access by scope")
 	}
 
-	var members []dto.AccessMemberDTO
-	for _, item := range data {
-		var member dto.AccessMemberDTO
-		if err := helpers.MapToStruct(item, &member); err != nil {
-			continue
-		}
-		members = append(members, member)
-	}
-	return members, nil
+	return s.mapToAccessMemberDTOs(data), nil
 }
 
 func (s *accessMemberService) GetScopeMembers(ctx context.Context, schemaName string, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error) {
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -232,15 +232,7 @@ func (s *accessMemberService) GetScopeMembers(ctx context.Context, schemaName st
 		return nil, app_errors.LogDatabaseError(err, "failed to fetch scope members")
 	}
 
-	var members []dto.AccessMemberDTO
-	for _, item := range data {
-		var member dto.AccessMemberDTO
-		if err := helpers.MapToStruct(item, &member); err != nil {
-			continue
-		}
-		members = append(members, member)
-	}
-	return members, nil
+	return s.mapToAccessMemberDTOs(data), nil
 }
 
 func (s *accessMemberService) GetUserPermissions(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string) ([]dto.PermissionWithDetails, error) {
@@ -431,7 +423,7 @@ func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName 
 		return app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 
 	// Find existing access member record
 	query := dbModels.QueryParams{

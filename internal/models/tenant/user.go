@@ -70,35 +70,35 @@ func (tbl User) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "activity_data", DataType: "jsonb"},
 
 			// Authentication
-			{Name: "auth_provider", DataType: constant.DBTypeVarchar50, DefaultValue: strPtr("'email'")},
+			{Name: "auth_provider", DataType: constant.DBTypeVarchar50, DefaultValue: StrPtr("'email'")},
 			{Name: "external_id", DataType: "uuid"},
-			{Name: "mfa_enabled", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "mfa_enabled", DataType: "boolean", DefaultValue: StrPtr("false")},
 			{Name: "mfa_secret", DataType: constant.DBTypeVarchar255Lower},
-			{Name: "email_verified", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "email_verified", DataType: "boolean", DefaultValue: StrPtr("false")},
 			{Name: "phone", DataType: constant.DBTypeVarchar50},
-			{Name: "phone_verified", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "phone_verified", DataType: "boolean", DefaultValue: StrPtr("false")},
 
 			// Account status
-			{Name: "status", DataType: constant.DBTypeVarchar50, DefaultValue: strPtr("'pending'")},
+			{Name: "status", DataType: constant.DBTypeVarchar50, DefaultValue: StrPtr("'pending'")},
 			{Name: "last_login_at", DataType: "timestamptz", DefaultValue: &null},
 			{Name: "last_active_at", DataType: "timestamptz", DefaultValue: &null},
-			{Name: "timezone", DataType: constant.DBTypeVarchar50, DefaultValue: strPtr("'UTC'")},
-			{Name: "locale", DataType: "varchar(10)", DefaultValue: strPtr("'en'")},
+			{Name: "timezone", DataType: constant.DBTypeVarchar50, DefaultValue: StrPtr("'UTC'")},
+			{Name: "locale", DataType: "varchar(10)", DefaultValue: StrPtr("'en'")},
 
 			// Security
-			{Name: "failed_login_attempts", DataType: "int", DefaultValue: strPtr("0")},
+			{Name: "failed_login_attempts", DataType: "int", DefaultValue: StrPtr("0")},
 			{Name: "locked_until", DataType: "timestamptz", DefaultValue: &null},
 			{Name: "password_changed_at", DataType: "timestamptz", DefaultValue: &null},
-			{Name: "roles", DataType: constant.DBTypeVarchar255Lower, NotNull: true, DefaultValue: strPtr("'user'")},
+			{Name: "roles", DataType: constant.DBTypeVarchar255Lower, NotNull: true, DefaultValue: StrPtr("'user'")},
 
 			{Name: "date_of_birth", DataType: "TEXT"},
 			{Name: "country", DataType: constant.DBTypeVarchar100},
 
 			// Timestamps
-			{Name: "created_time", DataType: "timestamptz", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamptz", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamptz", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamptz", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 			{Name: "deleted_at", DataType: "timestamptz", DefaultValue: &null},
-			{Name: "is_deleted", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "is_deleted", DataType: "boolean", DefaultValue: StrPtr("false")},
 		},
 	}
 }

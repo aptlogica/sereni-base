@@ -36,10 +36,10 @@ func (tbl RolePermission) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
+			createIDColumn(),
 			{Name: "role_id", DataType: "uuid", NotNull: true},
 			{Name: "permission_id", DataType: "uuid", NotNull: true},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("created_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_role_permissions_role_id", Columns: []string{"role_id"}},
