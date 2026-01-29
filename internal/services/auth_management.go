@@ -25,6 +25,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// AuthManagementServiceDeps holds all service dependencies
+type AuthManagementServiceDeps struct {
+	UserManagementService      interfaces.UserManagementService
+	WorkspaceManagementService interfaces.WorkspaceManagementService
+	UserResetTokenService      interfaces.UserResetTokenService
+	RBACManagementService      interfaces.RBACManagementService
+}
+
+// AuthManagementProviderDeps holds all provider dependencies
+type AuthManagementProviderDeps struct {
+	OTPProviderService   otpProvider.OtpService
+	EmailTemplateService emailProvider.EmailTemplateService
+	EmailProviderService emailProvider.EmailService
+	AuthProviderService  authProviderInterface.AuthProvider
+}
+
 type authManagementService struct {
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig
 	repo                *pkg.DatabaseService
@@ -43,26 +59,20 @@ type authManagementService struct {
 func NewAuthManagementService(
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig,
 	repo *pkg.DatabaseService,
-	userManagementService interfaces.UserManagementService,
-	workspaceManagementService interfaces.WorkspaceManagementService,
-	userResetTokenService interfaces.UserResetTokenService,
-	rbacManagementService interfaces.RBACManagementService,
-	otpProviderService otpProvider.OtpService,
-	emailTemplateService emailProvider.EmailTemplateService,
-	emailProviderService emailProvider.EmailService,
-	authProviderService authProviderInterface.AuthProvider,
+	serviceDeps AuthManagementServiceDeps,
+	providerDeps AuthManagementProviderDeps,
 ) interfaces.AuthManagementService {
 	return &authManagementService{
 		userDefaultPassword:        userDefaultPassword,
 		repo:                       repo,
-		userManagementService:      userManagementService,
-		workspaceManagementService: workspaceManagementService,
-		userResetTokenService:      userResetTokenService,
-		rbacManagementService:      rbacManagementService,
-		otpProviderService:         otpProviderService,
-		emailTemplateService:       emailTemplateService,
-		emailProviderService:       emailProviderService,
-		authProviderService:        authProviderService,
+		userManagementService:      serviceDeps.UserManagementService,
+		workspaceManagementService: serviceDeps.WorkspaceManagementService,
+		userResetTokenService:      serviceDeps.UserResetTokenService,
+		rbacManagementService:      serviceDeps.RBACManagementService,
+		otpProviderService:         providerDeps.OTPProviderService,
+		emailTemplateService:       providerDeps.EmailTemplateService,
+		emailProviderService:       providerDeps.EmailProviderService,
+		authProviderService:        providerDeps.AuthProviderService,
 	}
 }
 
@@ -858,20 +868,35 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 
 func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) error {
 	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
-	if err == nil {
-		for _, member := range accessMembers {
-			if member.RoleID != "" {
-				roleUUID, parseErr := uuid.Parse(member.RoleID)
-				if parseErr == nil {
-					role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
-					if roleErr == nil && role.Name == appConstant.RBACRoleNames.Owner {
-						return app_errors.OwnerCannotBeDeactivated
-					}
-				}
-			}
+	if err != nil {
+		return nil
+	}
+
+	for _, member := range accessMembers {
+		if a.isUserOwner(ctx, schema, member.RoleID) {
+			return app_errors.OwnerCannotBeDeactivated
 		}
 	}
 	return nil
+}
+
+// isUserOwner checks if the given role ID corresponds to an owner role
+func (a *authManagementService) isUserOwner(ctx context.Context, schema string, roleID string) bool {
+	if roleID == "" {
+		return false
+	}
+
+	roleUUID, parseErr := uuid.Parse(roleID)
+	if parseErr != nil {
+		return false
+	}
+
+	role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+	if roleErr != nil {
+		return false
+	}
+
+	return role.Name == appConstant.RBACRoleNames.Owner
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {

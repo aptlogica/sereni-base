@@ -25,6 +25,17 @@ func (ViewColumn) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".view_columns", prefix)
 }
 
+// createViewColumnFK creates a foreign key definition for view_columns table
+func createViewColumnFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_view_columns_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
 func (tbl ViewColumn) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -43,20 +54,8 @@ func (tbl ViewColumn) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_view_columns_column_id", Columns: []string{"column_id"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_view_columns_view_id",
-				Columns:           []string{"view_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".views", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_view_columns_column_id",
-				Columns:           []string{"column_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".columns", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createViewColumnFK(prefix, "view_id", "views"),
+			createViewColumnFK(prefix, "column_id", "columns"),
 		},
 	}
 }

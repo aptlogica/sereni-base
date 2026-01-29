@@ -21,13 +21,15 @@ func CreateDefaultRBAC(dbService *pkg.DatabaseService) error {
 
 	rbacManagementService := services.NewRBACManagementService(
 		dbService,
-		accessRoleService,
-		resourceService,
-		actionService,
-		permissionService,
-		rolePermissionService,
-		accessMemberService,
-		baseService,
+		services.RBACManagementServiceDeps{
+			RoleService:           accessRoleService,
+			ResourceService:       resourceService,
+			ActionService:         actionService,
+			PermissionService:     permissionService,
+			RolePermissionService: rolePermissionService,
+			AccessMemberService:   accessMemberService,
+			BaseService:           baseService,
+		},
 	)
 
 	err := rbacManagementService.InitializeRBACSystem(ctx, appConstant.MasterDatabase)

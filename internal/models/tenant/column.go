@@ -60,6 +60,17 @@ func (Column) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".columns", prefix)
 }
 
+// createColumnFK creates a foreign key definition for columns table
+func createColumnFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_columns_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
 func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -99,20 +110,8 @@ func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_columns_column_name", Columns: []string{"column_name"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_columns_model_id",
-				Columns:           []string{"model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_columns_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createColumnFK(prefix, "model_id", "models"),
+			createColumnFK(prefix, "base_id", "bases"),
 		},
 	}
 }

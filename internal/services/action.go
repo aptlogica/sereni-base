@@ -22,86 +22,72 @@ func NewActionService(repo *pkg.DatabaseService) interfaces.ActionService {
 	return &actionService{repo: repo}
 }
 
+// Helper functions to reduce duplication
+func (s *actionService) getTableName(schemaName string) string {
+	return tenant.Action{}.TableName(schemaName)
+}
+
+func (s *actionService) mapToAction(data map[string]interface{}) (tenant.Action, error) {
+	var action tenant.Action
+	if err := helpers.MapToStruct(data, &action); err != nil {
+		return tenant.Action{}, app_errors.ErrMapToStruct
+	}
+	return action, nil
+}
+
+func (s *actionService) createSingleFilterQuery(column, operator, value string, limit int) dbModels.QueryParams {
+	return dbModels.QueryParams{
+		Filters: []dbModels.QueryFilter{
+			{
+				Column:   column,
+				Operator: operator,
+				Value:    value,
+			},
+		},
+		Limit: &limit,
+	}
+}
+
+func (s *actionService) getSingleRecord(ctx context.Context, schemaName string, query dbModels.QueryParams, errorMsg string) (tenant.Action, error) {
+	tableName := s.getTableName(schemaName)
+	data, err := s.repo.TableService.GetTableData(tableName, query)
+	if err != nil {
+		return tenant.Action{}, app_errors.LogDatabaseError(err, errorMsg)
+	}
+
+	if len(data) == 0 {
+		return tenant.Action{}, app_errors.ErrRecordNotFound
+	}
+
+	return s.mapToAction(data[0])
+}
+
 func (s *actionService) CreateAction(ctx context.Context, schemaName string, req dto.ActionDTO) (tenant.Action, error) {
 	if req.ID == uuid.Nil {
 		req.ID = uuid.New()
 	}
 
-	tableName := tenant.Action{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.Action{}, err
 	}
 
-	var action tenant.Action
-	if err := helpers.MapToStruct(insertedData, &action); err != nil {
-		return tenant.Action{}, err
-	}
-	return action, nil
+	return s.mapToAction(insertedData)
 }
 
 func (s *actionService) GetActionByID(ctx context.Context, schemaName string, actionID uuid.UUID) (tenant.Action, error) {
-	limit := 1
-	tableName := tenant.Action{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "id",
-				Operator: "eq",
-				Value:    actionID.String(),
-			},
-		},
-		Limit: &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Action{}, app_errors.LogDatabaseError(err, "failed to get action by id")
-	}
-
-	if len(data) == 0 {
-		return tenant.Action{}, app_errors.ErrRecordNotFound
-	}
-
-	var action tenant.Action
-	if err := helpers.MapToStruct(data[0], &action); err != nil {
-		return tenant.Action{}, app_errors.ErrMapToStruct
-	}
-	return action, nil
+	query := s.createSingleFilterQuery("id", "eq", actionID.String(), 1)
+	return s.getSingleRecord(ctx, schemaName, query, "failed to get action by id")
 }
 
 func (s *actionService) GetActionByCode(ctx context.Context, schemaName string, code string) (tenant.Action, error) {
-	limit := 1
-	tableName := tenant.Action{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "code",
-				Operator: "eq",
-				Value:    code,
-			},
-		},
-		Limit: &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Action{}, app_errors.LogDatabaseError(err, "failed to get action by code")
-	}
-
-	if len(data) == 0 {
-		return tenant.Action{}, app_errors.ErrRecordNotFound
-	}
-
-	var action tenant.Action
-	if err := helpers.MapToStruct(data[0], &action); err != nil {
-		return tenant.Action{}, app_errors.ErrMapToStruct
-	}
-	return action, nil
+	query := s.createSingleFilterQuery("code", "eq", code, 1)
+	return s.getSingleRecord(ctx, schemaName, query, "failed to get action by code")
 }
 
 func (s *actionService) ListActions(ctx context.Context, schemaName string, limit, offset int) ([]tenant.Action, int64, error) {
-	tableName := tenant.Action{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	query := dbModels.QueryParams{
 		Limit:   &limit,
 		Offset:  &offset,
@@ -136,9 +122,9 @@ func (s *actionService) ListActions(ctx context.Context, schemaName string, limi
 
 	var actions []tenant.Action
 	for _, item := range data {
-		var action tenant.Action
-		if err := helpers.MapToStruct(item, &action); err != nil {
-			return nil, 0, app_errors.ErrMapToStruct
+		action, err := s.mapToAction(item)
+		if err != nil {
+			return nil, 0, err
 		}
 		actions = append(actions, action)
 	}
@@ -146,7 +132,7 @@ func (s *actionService) ListActions(ctx context.Context, schemaName string, limi
 }
 
 func (s *actionService) UpdateAction(ctx context.Context, schemaName string, actionID uuid.UUID, req dto.ActionDTO) (tenant.Action, error) {
-	tableName := tenant.Action{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	updateData := req.Map()
 	// Remove ID from update data to prevent modifying the primary key
 	delete(updateData, "id")
@@ -156,15 +142,11 @@ func (s *actionService) UpdateAction(ctx context.Context, schemaName string, act
 		return tenant.Action{}, err
 	}
 
-	var action tenant.Action
-	if err := helpers.MapToStruct(updatedData, &action); err != nil {
-		return tenant.Action{}, app_errors.ErrMapToStruct
-	}
-	return action, nil
+	return s.mapToAction(updatedData)
 }
 
 func (s *actionService) DeleteAction(ctx context.Context, schemaName string, actionID uuid.UUID) error {
-	tableName := tenant.Action{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	filter := dbModels.QueryFilter{
 		Column:   "id",
 		Operator: "eq",

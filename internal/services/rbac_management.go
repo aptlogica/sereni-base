@@ -15,6 +15,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// RBACManagementServiceDeps holds all RBAC service dependencies
+type RBACManagementServiceDeps struct {
+	RoleService           interfaces.AccessRoleService
+	ResourceService       interfaces.ResourceService
+	ActionService         interfaces.ActionService
+	PermissionService     interfaces.PermissionService
+	RolePermissionService interfaces.RolePermissionService
+	AccessMemberService   interfaces.AccessMemberService
+	BaseService           interfaces.BaseService
+}
+
 type rbacManagementService struct {
 	repo                  *pkg.DatabaseService
 	roleService           interfaces.AccessRoleService
@@ -29,23 +40,17 @@ type rbacManagementService struct {
 // NewRBACManagementService creates a new RBAC management service that consolidates all RBAC operations
 func NewRBACManagementService(
 	repo *pkg.DatabaseService,
-	roleService interfaces.AccessRoleService,
-	resourceService interfaces.ResourceService,
-	actionService interfaces.ActionService,
-	permissionService interfaces.PermissionService,
-	rolePermissionService interfaces.RolePermissionService,
-	accessMemberService interfaces.AccessMemberService,
-	baseService interfaces.BaseService,
+	deps RBACManagementServiceDeps,
 ) interfaces.RBACManagementService {
 	return &rbacManagementService{
 		repo:                  repo,
-		roleService:           roleService,
-		resourceService:       resourceService,
-		actionService:         actionService,
-		permissionService:     permissionService,
-		rolePermissionService: rolePermissionService,
-		accessMemberService:   accessMemberService,
-		baseService:           baseService,
+		roleService:           deps.RoleService,
+		resourceService:       deps.ResourceService,
+		actionService:         deps.ActionService,
+		permissionService:     deps.PermissionService,
+		rolePermissionService: deps.RolePermissionService,
+		accessMemberService:   deps.AccessMemberService,
+		baseService:           deps.BaseService,
 	}
 }
 
