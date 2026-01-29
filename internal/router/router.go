@@ -7,6 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	RouteCreate = "/create"
+)
+
 type Middlewares struct {
 	CORS                                       func() gin.HandlerFunc
 	RequestLogger                              func() gin.HandlerFunc
@@ -123,7 +127,7 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
 		user.PUT("/access/update", handlers.Auth.UpdateUserAccess)
 
 		// Admin user management endpoints
-		user.POST("/create", handlers.Auth.AddUser)
+		user.POST(RouteCreate, handlers.Auth.AddUser)
 		user.POST("/edit", handlers.Auth.EditUser)
 		user.POST("/remove", handlers.Auth.RemoveUser)
 		user.POST("/activate", handlers.Auth.ActivateUser)
@@ -147,7 +151,7 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers) {
 	workspace := private.Group("/workspace")
 	{
 		// Admin operations
-		workspace.POST("/create", handlers.Workspace.CreateWorkspace)
+		workspace.POST(RouteCreate, handlers.Workspace.CreateWorkspace)
 		workspace.GET("/", handlers.Workspace.GetAllWorkspaces)
 		workspace.GET("/:id/tables", handlers.Workspace.GetTablesByWorkspaceId)
 		workspace.PUT("/:id", handlers.Workspace.UpdateWorkspace)
@@ -170,7 +174,7 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 	base := private.Group("/base")
 	{
 		// Admin operations
-		base.POST("/create", handlers.Base.CreateBase)
+		base.POST(RouteCreate, handlers.Base.CreateBase)
 
 		// Full access operations - member management with specific routes before dynamic :id routes
 		base.POST("/:id/remove", handlers.Auth.RemoveUserFromBase)
@@ -197,7 +201,7 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 func setupTableRoutes(private *gin.RouterGroup, handlers Handlers) {
 	table := private.Group("/table")
 	{
-		table.POST("/create", handlers.Table.CreateTable)
+		table.POST(RouteCreate, handlers.Table.CreateTable)
 		table.POST("/import", handlers.Table.ImportTable)
 		table.PATCH("/:id", handlers.Table.UpdateTable)
 		table.GET("/:id", handlers.Table.GetTableByID)
@@ -213,7 +217,7 @@ func setupTableRoutes(private *gin.RouterGroup, handlers Handlers) {
 func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers) {
 	column := private.Group("/column")
 	{
-		column.POST("/create", handlers.Table.AddColumn)
+		column.POST(RouteCreate, handlers.Table.AddColumn)
 		column.GET("/:id", handlers.Table.GetColumnById)
 		column.GET("/", handlers.Table.GetAllColumns)
 		column.PATCH("/:id", handlers.Table.UpdateColumn)
@@ -226,7 +230,7 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers) {
 func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	row := private.Group("/row")
 	{
-		row.POST("/create", handlers.Table.CreateRow)
+		row.POST(RouteCreate, handlers.Table.CreateRow)
 		row.POST("/remove", handlers.Table.DeleteRow)
 		row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
 		row.POST("/data/insert", handlers.Table.InsertRowData)
@@ -245,7 +249,7 @@ func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mid
 func setupViewRoutes(private *gin.RouterGroup, handlers Handlers) {
 	view := private.Group("/view")
 	{
-		view.POST("/create", handlers.Table.CreateView)
+		view.POST(RouteCreate, handlers.Table.CreateView)
 		view.GET("/:id", handlers.Table.GetViewByID)
 		view.GET("/", handlers.Table.GetAllViews)
 		view.PATCH("/:id", handlers.Table.UpdateView)

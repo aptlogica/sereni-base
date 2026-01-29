@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go-postgres-rest/pkg"
 	dbModels "go-postgres-rest/pkg/models"
+	"mime/multipart"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -493,21 +494,12 @@ func (a *authManagementService) Logout(ctx context.Context, refreshToken string)
 func (a *authManagementService) AddUser(ctx context.Context, schema string, userData dto.AddUserRequest, reqBy string) (tenant.User, error) {
 
 	// Check if email already exists
-	_, err := a.userManagementService.GetUserByEmail(ctx, schema, userData.Email)
-	if err == nil {
-		// User exists with this email
-		return tenant.User{}, app_errors.UserAlreadyExists
-	} else if err != app_errors.UserNotFound {
-		// Some other error occurred
+	if err := a.validateEmailAvailability(ctx, schema, userData.Email); err != nil {
 		return tenant.User{}, err
 	}
-	// If err == app_errors.UserNotFound, the email is available, continue
 
 	// Admin adding user
-	roles := appConstant.RBACRoleNames.NoAccess
-	if userData.IsCoOwner {
-		roles = appConstant.RBACRoleNames.CoOwner
-	}
+	roles := a.determineUserRole(userData.IsCoOwner)
 
 	userCreationReq := dto.RegisterRequest{
 		ID:            uuid.New(),
@@ -527,44 +519,88 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 	}
 
 	// Handle profile picture file upload
-	if userData.ProfilePic != nil {
-		_, err := a.userManagementService.AddAvatar(ctx, schema, user.ID.String(), userData.ProfilePic)
-		if err != nil {
-			return tenant.User{}, err
-		}
+	if err := a.handleProfilePicture(ctx, schema, user.ID.String(), userData.ProfilePic); err != nil {
+		return tenant.User{}, err
 	}
 
 	// Send invitation
-	tokenAttrs := map[string]interface{}{
-		"user_id": user.ID.String(),
-	}
-
-	token, err := helpers.GenerateCustomJWT(tokenAttrs, user.ID.String(), 3600)
+	token, err := a.generateInvitationToken(ctx, user.ID.String())
 	if err != nil {
 		return tenant.User{}, err
 	}
 
+	// handle membership invitations if any
+	if err := a.handleMembershipSetup(ctx, schema, user.ID.String(), roles, reqBy, userData.Membership); err != nil {
+		return tenant.User{}, err
+	}
+
+	// Send invitation email
+	a.sendInvitationEmail(user, token)
+
+	return user, nil
+}
+
+func (a *authManagementService) validateEmailAvailability(ctx context.Context, schema string, email string) error {
+	_, err := a.userManagementService.GetUserByEmail(ctx, schema, email)
+	if err == nil {
+		return app_errors.UserAlreadyExists
+	} else if err != app_errors.UserNotFound {
+		return err
+	}
+	return nil
+}
+
+func (a *authManagementService) determineUserRole(isCoOwner bool) string {
+	if isCoOwner {
+		return appConstant.RBACRoleNames.CoOwner
+	}
+	return appConstant.RBACRoleNames.NoAccess
+}
+
+func (a *authManagementService) handleProfilePicture(ctx context.Context, schema, userID string, profilePic *multipart.FileHeader) error {
+	if profilePic != nil {
+		_, err := a.userManagementService.AddAvatar(ctx, schema, userID, profilePic)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *authManagementService) generateInvitationToken(ctx context.Context, userID string) (string, error) {
+	tokenAttrs := map[string]interface{}{
+		"user_id": userID,
+	}
+
+	token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 3600)
+	if err != nil {
+		return "", err
+	}
+
 	dataToInsert := dto.UserResetTokenInsertion{
 		ID:     uuid.NewString(),
-		UserID: user.ID.String(),
+		UserID: userID,
 		Token:  token,
 		Expiry: time.Now().Add(1 * time.Hour),
 	}
 
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
 	if err != nil {
-		return tenant.User{}, err
+		return "", err
 	}
 
-	// handle membership invitations if any
+	return data.Token, nil
+}
+
+func (a *authManagementService) handleMembershipSetup(ctx context.Context, schema, userID, roles, reqBy string, membership []dto.MembershipRequest) error {
 	if roles == appConstant.RBACRoleNames.CoOwner {
 		roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, roles)
 		if err != nil {
-			return tenant.User{}, err
+			return err
 		}
 
 		accessMemberReq := dto.AccessMemberDTO{
-			UserID:     user.ID.String(),
+			UserID:     userID,
 			ScopeType:  appConstant.ScopeLevels.System,
 			ScopeID:    nil,
 			RoleID:     roleData.ID.String(),
@@ -573,30 +609,27 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 
 		_, err = a.rbacManagementService.AssignRoleToUser(ctx, appConstant.MasterDatabase, accessMemberReq)
 		if err != nil {
-			return tenant.User{}, err
+			return err
 		}
 	} else {
-		_, err = a.rbacManagementService.ProcessUserMemberships(ctx, schema, user.ID.String(), user.ID.String(), userData.Membership)
+		_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, userID, userID, membership)
 		if err != nil {
-			return tenant.User{}, err
+			return err
 		}
-
 	}
+	return nil
+}
 
+func (a *authManagementService) sendInvitationEmail(user tenant.User, token string) {
 	resetURLTemplate := appConfig.AppConfig.Auth.ResetPasswordURL
 	if resetURLTemplate == "" {
 		resetURLTemplate = "http://localhost:5050/reset-password?token=%s"
 	}
-	resetLink := fmt.Sprintf(resetURLTemplate, data.Token)
+	resetLink := fmt.Sprintf(resetURLTemplate, token)
 
-	// Assuming PlatformInvitationBody expects (FirstName, OrganizationName, Link).
-	// Since tenantData.Name is gone, we can use a hardcoded name or config name.
-	// For now, using empty string or "SereniBase" placeholder until config is better.
 	emailData := a.emailTemplateService.PlatformInvitationBody(user.FirstName, "SereniBase", resetLink)
 
 	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
-
-	return user, nil
 }
 
 // EditUser updates user details with support for profile, avatar, membership, and co-owner status changes
@@ -800,19 +833,8 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 
 func (a *authManagementService) DeactivateUser(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
 	// Check if user has Owner role - owners cannot be deactivated
-	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
-	if err == nil {
-		for _, member := range accessMembers {
-			if member.RoleID != "" {
-				roleUUID, parseErr := uuid.Parse(member.RoleID)
-				if parseErr == nil {
-					role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
-					if roleErr == nil && role.Name == appConstant.RBACRoleNames.Owner {
-						return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
-					}
-				}
-			}
-		}
+	if err := a.checkIfUserIsOwner(ctx, schema, userID); err != nil {
+		return dto.UserResponse{}, err
 	}
 
 	updateFields := map[string]interface{}{
@@ -834,6 +856,24 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 	return userResponse, nil
 }
 
+func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) error {
+	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
+	if err == nil {
+		for _, member := range accessMembers {
+			if member.RoleID != "" {
+				roleUUID, parseErr := uuid.Parse(member.RoleID)
+				if parseErr == nil {
+					role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+					if roleErr == nil && role.Name == appConstant.RBACRoleNames.Owner {
+						return app_errors.OwnerCannotBeDeactivated
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
 	return a.userManagementService.GetUsersWithRole(ctx, schema)
 }
@@ -853,7 +893,7 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
 	// Try to remove from access_members table (RBAC system)
 	// Find all access_members records for this user-workspace combination
-	accessMembersTableName := fmt.Sprintf("\"%s\".access_members", schema)
+	accessMembersTableName := fmt.Sprintf(AccessMembersTableFormat, schema)
 	params := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -926,7 +966,7 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 func (a *authManagementService) RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error {
 	// For base removal, we need to find the access_member record and delete it
 	// Find the access_members record for this user-base combination
-	accessMembersTableName := fmt.Sprintf("\"%s\".access_members", schema)
+	accessMembersTableName := fmt.Sprintf(AccessMembersTableFormat, schema)
 	params := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -1257,7 +1297,7 @@ func (a *authManagementService) RemoveAccessMemberByID(ctx context.Context, sche
 	lg := logger.Get()
 
 	// Delete from access_members table using TableService
-	tableName := fmt.Sprintf("\"%s\".access_members", schema)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schema)
 	err := a.repo.TableService.DeleteRecord(tableName, accessMemberID)
 	if err != nil {
 		lg.Error().Err(err).Str("access_member_id", accessMemberID).Msg("Failed to remove access member")

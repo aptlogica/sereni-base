@@ -356,45 +356,57 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
-			if v, err := strconv.ParseInt(val, 10, 64); err != nil {
-				isNumber = false
-			} else {
-				if v > math.MaxInt32 || v < math.MinInt32 {
-					isNumber = false
-				}
-			}
-			if _, err := strconv.ParseFloat(val, 64); err != nil {
-				isDecimal = false
-			}
+			isNumber, isDecimal = s.checkNumericTypes(val, isNumber, isDecimal)
 		}
 
 		// Check Bool
 		if isBool {
-			lower := strings.ToLower(val)
-			if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
-				isBool = false
-			}
+			isBool = s.checkBoolType(val)
 		}
 
 		// Check Date (Simple check)
 		if isDate {
-			formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
-			parsed := false
-			for _, f := range formats {
-				if _, err := time.Parse(f, val); err == nil {
-					parsed = true
-					break
-				}
-			}
-			if !parsed {
-				isDate = false
-			}
+			isDate = s.checkDateType(val)
 		}
 	}
 
 	if !hasData {
 		return "text"
 	}
+
+	return s.determineTypeFromFlags(isBool, isNumber, isDecimal, isDate, totalLength, count)
+}
+
+func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {
+	if v, err := strconv.ParseInt(val, 10, 64); err != nil {
+		isNumber = false
+	} else {
+		if v > math.MaxInt32 || v < math.MinInt32 {
+			isNumber = false
+		}
+	}
+	if _, err := strconv.ParseFloat(val, 64); err != nil {
+		isDecimal = false
+	}
+	return isNumber, isDecimal
+}
+
+func (s *importService) checkBoolType(val string) bool {
+	lower := strings.ToLower(val)
+	return lower == "true" || lower == "false" || lower == "0" || lower == "1" || lower == "yes" || lower == "no"
+}
+
+func (s *importService) checkDateType(val string) bool {
+	formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
+	for _, f := range formats {
+		if _, err := time.Parse(f, val); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDate bool, totalLength, count int) string {
 	avgLength := 0
 	if count > 0 {
 		avgLength = totalLength / count

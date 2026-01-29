@@ -278,23 +278,7 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 	lg := logger.Get()
 	lg.Debug().Str("roles", roles).Msg("Fetching workspaces for user")
 	if roles == appConstant.RBACRoleNames.CoOwner || roles == appConstant.RBACRoleNames.Owner {
-		fmt.Println("User is Owner or CoOwner, fetching all workspaces")
-		workspaces, err := s.workspaceManagementService.GetAll(ctx, schema)
-		if err != nil {
-			return nil, err
-		}
-		var res []dto.UserWorkspaceResponse
-		for _, ws := range workspaces {
-			var wsResp dto.UserWorkspaceResponse
-			err := helpers.StructToStruct(ws, &wsResp)
-			if err != nil {
-				return nil, app_errors.ErrStructToStruct
-			}
-			wsResp.AccessLevel = roles
-			res = append(res, wsResp)
-		}
-
-		return res, nil
+		return s.getAllWorkspacesForOwner(ctx, schema, roles)
 	}
 
 	// Get user's workspace access from RBAC access_members table
@@ -304,10 +288,52 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 		return []dto.UserWorkspaceResponse{}, nil
 	}
 
+	workspaceAccess := s.buildWorkspaceAccessMapForWorkspaces(accessMembers)
+
+	// If no workspace access found, return empty list
+	if len(workspaceAccess) == 0 {
+		return []dto.UserWorkspaceResponse{}, nil
+	}
+
+	// Get unique workspace IDs
+	workspaceIDs := make([]string, 0, len(workspaceAccess))
+	for wsID := range workspaceAccess {
+		workspaceIDs = append(workspaceIDs, wsID)
+	}
+
+	// Get workspace details in bulk
+	workspaces, err := s.workspaceManagementService.GetBulkWorkspaces(ctx, schema, workspaceIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build response with workspace details and access roles
+	return s.buildWorkspaceResponses(ctx, schema, workspaces, workspaceAccess)
+}
+
+func (s *userManagementService) getAllWorkspacesForOwner(ctx context.Context, schema string, roles string) ([]dto.UserWorkspaceResponse, error) {
+	fmt.Println("User is Owner or CoOwner, fetching all workspaces")
+	workspaces, err := s.workspaceManagementService.GetAll(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
+	var res []dto.UserWorkspaceResponse
+	for _, ws := range workspaces {
+		var wsResp dto.UserWorkspaceResponse
+		err := helpers.StructToStruct(ws, &wsResp)
+		if err != nil {
+			return nil, app_errors.ErrStructToStruct
+		}
+		wsResp.AccessLevel = roles
+		res = append(res, wsResp)
+	}
+	return res, nil
+}
+
+func (s *userManagementService) buildWorkspaceAccessMapForWorkspaces(accessMembers []dto.AccessMemberDTO) map[string]string {
 	// Map to store workspace IDs and their access levels
 	// Key: workspace_id, Value: role_id or "base"
 	workspaceAccess := map[string]string{}
-
 	for _, member := range accessMembers {
 		switch member.ScopeType {
 		case "base":
@@ -328,25 +354,10 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 			}
 		}
 	}
+	return workspaceAccess
+}
 
-	// If no workspace access found, return empty list
-	if len(workspaceAccess) == 0 {
-		return []dto.UserWorkspaceResponse{}, nil
-	}
-
-	// Get unique workspace IDs
-	workspaceIDs := make([]string, 0, len(workspaceAccess))
-	for wsID := range workspaceAccess {
-		workspaceIDs = append(workspaceIDs, wsID)
-	}
-
-	// Get workspace details in bulk
-	workspaces, err := s.workspaceManagementService.GetBulkWorkspaces(ctx, schema, workspaceIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build response with workspace details and access roles
+func (s *userManagementService) buildWorkspaceResponses(ctx context.Context, schema string, workspaces []tenant.Workspace, workspaceAccess map[string]string) ([]dto.UserWorkspaceResponse, error) {
 	var res []dto.UserWorkspaceResponse
 	for _, ws := range workspaces {
 		var wsResp dto.UserWorkspaceResponse
@@ -381,7 +392,6 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 
 		res = append(res, wsResp)
 	}
-
 	return res, nil
 }
 
@@ -466,32 +476,13 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 	}
 
 	// Filter memberships by workspace_id if provided
-	if workspaceID != "" {
-		filteredMemberships := []tenant.WorkspaceMember{}
-		for _, membership := range memberships {
-			if membership.WorkspaceID == workspaceID {
-				filteredMemberships = append(filteredMemberships, membership)
-				break
-			}
-		}
-		memberships = filteredMemberships
-
-		// If no membership found for the specified workspace, return empty response
-		if len(memberships) == 0 {
-			return response, nil
-		}
+	memberships = s.filterMembershipsByWorkspaceID(memberships, workspaceID)
+	if len(memberships) == 0 {
+		return response, nil
 	}
 
 	// Build workspace IDs and access map from memberships
-	workspaceIDs := make([]string, 0, len(memberships))
-	workspaceAccess := make(map[string]string)
-	membershipMap := make(map[string]*tenant.WorkspaceMember)
-
-	for i := range memberships {
-		workspaceIDs = append(workspaceIDs, memberships[i].WorkspaceID)
-		workspaceAccess[memberships[i].WorkspaceID] = memberships[i].AccessLevel
-		membershipMap[memberships[i].WorkspaceID] = &memberships[i]
-	}
+	workspaceIDs, workspaceAccess, membershipMap := s.buildWorkspaceData(memberships)
 
 	// Get workspaces
 	workspaces, err := s.workspaceManagementService.GetBulkWorkspaces(ctx, schema, workspaceIDs)
@@ -504,29 +495,10 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 		accessLevel := workspaceAccess[ws.ID.String()]
 		membership := membershipMap[ws.ID.String()]
 
-		// Only get bases for limited_access users
-		baseAccessInfos := []dto.BaseAccessInfo{}
-
-		// For full_access and admin users, return empty bases array (they have access to all bases)
-		if accessLevel == appConstant.RBACRoleNames.Owner && membership != nil {
-			// Get bases only for limited access users
-			bases, err := s.workspaceManagementService.GetBasesByWorkspaceId(ctx, schema, membership)
-			if err != nil && err != app_errors.BaseNotFound {
-				return dto.UserAccessDetailsResponse{}, err
-			}
-
-			// Build base access info for limited access users
-			for _, base := range bases {
-				// Check if this base is in the user's allowed bases
-				if membership.BasesIds == "*" || strings.Contains(membership.BasesIds, base.ID.String()) {
-					baseAccessInfos = append(baseAccessInfos, dto.BaseAccessInfo{
-						ID:    base.ID,
-						Title: base.Title,
-					})
-				}
-			}
+		baseAccessInfos, err := s.getBaseAccessInfos(ctx, schema, accessLevel, membership)
+		if err != nil {
+			return dto.UserAccessDetailsResponse{}, err
 		}
-		// For full_access and admin: bases array remains empty to indicate full workspace access
 
 		response.Workspaces = append(response.Workspaces, dto.WorkspaceAccessInfo{
 			ID:          ws.ID,
@@ -537,6 +509,51 @@ func (s *userManagementService) GetUserAccessDetails(ctx context.Context, schema
 	}
 
 	return response, nil
+}
+
+func (s *userManagementService) filterMembershipsByWorkspaceID(memberships []tenant.WorkspaceMember, workspaceID string) []tenant.WorkspaceMember {
+	if workspaceID == "" {
+		return memberships
+	}
+	filteredMemberships := []tenant.WorkspaceMember{}
+	for _, membership := range memberships {
+		if membership.WorkspaceID == workspaceID {
+			filteredMemberships = append(filteredMemberships, membership)
+			break
+		}
+	}
+	return filteredMemberships
+}
+
+func (s *userManagementService) buildWorkspaceData(memberships []tenant.WorkspaceMember) ([]string, map[string]string, map[string]*tenant.WorkspaceMember) {
+	workspaceIDs := make([]string, 0, len(memberships))
+	workspaceAccess := make(map[string]string)
+	membershipMap := make(map[string]*tenant.WorkspaceMember)
+	for i := range memberships {
+		workspaceIDs = append(workspaceIDs, memberships[i].WorkspaceID)
+		workspaceAccess[memberships[i].WorkspaceID] = memberships[i].AccessLevel
+		membershipMap[memberships[i].WorkspaceID] = &memberships[i]
+	}
+	return workspaceIDs, workspaceAccess, membershipMap
+}
+
+func (s *userManagementService) getBaseAccessInfos(ctx context.Context, schema string, accessLevel string, membership *tenant.WorkspaceMember) ([]dto.BaseAccessInfo, error) {
+	baseAccessInfos := []dto.BaseAccessInfo{}
+	if accessLevel == appConstant.RBACRoleNames.Owner && membership != nil {
+		bases, err := s.workspaceManagementService.GetBasesByWorkspaceId(ctx, schema, membership)
+		if err != nil && err != app_errors.BaseNotFound {
+			return nil, err
+		}
+		for _, base := range bases {
+			if membership.BasesIds == "*" || strings.Contains(membership.BasesIds, base.ID.String()) {
+				baseAccessInfos = append(baseAccessInfos, dto.BaseAccessInfo{
+					ID:    base.ID,
+					Title: base.Title,
+				})
+			}
+		}
+	}
+	return baseAccessInfos, nil
 }
 
 // If scopeID is provided, only returns access for that specific scope (workspace or base)

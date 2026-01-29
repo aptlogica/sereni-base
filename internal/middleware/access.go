@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"serenibase/internal/constant"
+	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/response"
 	responseConst "serenibase/internal/utils/response/constants"
@@ -18,6 +19,12 @@ const (
 	ScopeBase      = "base"
 )
 
+// Header constants
+const (
+	HeaderScopeType = "scope-type"
+	HeaderScopeID   = "scope-id"
+)
+
 func ScopeHeaderMiddleware(scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		fmt.Println("ScopeHeaderMiddleware-------------------")
@@ -28,103 +35,106 @@ func ScopeHeaderMiddleware(scope string) gin.HandlerFunc {
 
 func WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService interfaces.WorkspaceMemberService, allowedAccess []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		_, hasRole := c.Get("roles")
-		if !hasRole {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		strSchema, strUserId, ok := validateUserAndSchema(c)
+		if !ok {
 			return
 		}
 
-		// roleStr, _ := role.(string)
-
-		// if roleStr == appConstant.RoleNames.Admin {
-		// 	c.Next()
-		// 	return
-		// }
-
-		// if roleStr == appConstant.RoleNames.User && len(allowedAccess) == 0 {
-		// 	response.SendError(c, responseConst.Error.UnauthorizedAccess)
-		// 	c.Abort()
-		// 	return
-		// }
-
-		userId, hasUser := c.Get("user_id")
-		schema, hasSchema := c.Get("schema")
-		if !hasUser || !hasSchema {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		if !validateWorkspaceAccess(c, workspaceMemberService, strSchema, strUserId, allowedAccess) {
 			return
 		}
 
-		workspaceID := c.GetHeader("workspace")
-		if workspaceID == "" {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		workspaceMemberData, _ := c.Get("workspaceMemberData")
+
+		if !validateBaseAccess(c, workspaceMemberData.(tenant.WorkspaceMember)) {
 			return
-		}
-
-		strSchema, _ := schema.(string)
-		strUserId, _ := userId.(string)
-
-		workspaceMemberData, err := workspaceMemberService.GetWorkspaceMemberByUserAndWorkspace(
-			c.Request.Context(),
-			strSchema,
-			strUserId,
-			workspaceID,
-		)
-
-		if err != nil {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
-			return
-		}
-
-		// Check allowed access
-		accessAllowed := false
-		for _, a := range allowedAccess {
-			if a == workspaceMemberData.AccessLevel {
-				accessAllowed = true
-				break
-			}
-		}
-		if !accessAllowed {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
-			return
-		}
-
-		c.Set("workspaceMemberData", workspaceMemberData)
-
-		scope, hasScope := c.Get("scope")
-		_ = hasScope
-
-		if scope == ScopeBase {
-			baseID := c.GetHeader("base")
-			if baseID == "" {
-				response.SendError(c, responseConst.Error.UnauthorizedAccess)
-				c.Abort()
-				return
-			}
-
-			if workspaceMemberData.BasesIds != "*" {
-				baseIDs := strings.Split(workspaceMemberData.BasesIds, ",")
-				baseAllowed := false
-				for _, id := range baseIDs {
-					if strings.TrimSpace(id) == baseID {
-						baseAllowed = true
-						break
-					}
-				}
-				if !baseAllowed {
-					response.SendError(c, responseConst.Error.UnauthorizedAccess)
-					c.Abort()
-					return
-				}
-			}
 		}
 
 		c.Next()
 	}
+}
+
+func validateUserAndSchema(c *gin.Context) (string, string, bool) {
+	userId, hasUser := c.Get("user_id")
+	schema, hasSchema := c.Get("schema")
+	if !hasUser || !hasSchema {
+		response.SendError(c, responseConst.Error.UnauthorizedAccess)
+		c.Abort()
+		return "", "", false
+	}
+	strSchema, _ := schema.(string)
+	strUserId, _ := userId.(string)
+	return strSchema, strUserId, true
+}
+
+func validateWorkspaceAccess(c *gin.Context, workspaceMemberService interfaces.WorkspaceMemberService, strSchema, strUserId string, allowedAccess []string) bool {
+	workspaceID := c.GetHeader("workspace")
+	if workspaceID == "" {
+		response.SendError(c, responseConst.Error.UnauthorizedAccess)
+		c.Abort()
+		return false
+	}
+
+	workspaceMemberData, err := workspaceMemberService.GetWorkspaceMemberByUserAndWorkspace(
+		c.Request.Context(),
+		strSchema,
+		strUserId,
+		workspaceID,
+	)
+
+	if err != nil {
+		response.SendError(c, responseConst.Error.UnauthorizedAccess)
+		c.Abort()
+		return false
+	}
+
+	// Check allowed access
+	accessAllowed := false
+	for _, a := range allowedAccess {
+		if a == workspaceMemberData.AccessLevel {
+			accessAllowed = true
+			break
+		}
+	}
+	if !accessAllowed {
+		response.SendError(c, responseConst.Error.UnauthorizedAccess)
+		c.Abort()
+		return false
+	}
+
+	c.Set("workspaceMemberData", workspaceMemberData)
+	return true
+}
+
+func validateBaseAccess(c *gin.Context, workspaceMemberData tenant.WorkspaceMember) bool {
+	scope, hasScope := c.Get("scope")
+	_ = hasScope
+
+	if scope == ScopeBase {
+		baseID := c.GetHeader("base")
+		if baseID == "" {
+			response.SendError(c, responseConst.Error.UnauthorizedAccess)
+			c.Abort()
+			return false
+		}
+
+		if workspaceMemberData.BasesIds != "*" {
+			baseIDs := strings.Split(workspaceMemberData.BasesIds, ",")
+			baseAllowed := false
+			for _, id := range baseIDs {
+				if strings.TrimSpace(id) == baseID {
+					baseAllowed = true
+					break
+				}
+			}
+			if !baseAllowed {
+				response.SendError(c, responseConst.Error.UnauthorizedAccess)
+				c.Abort()
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // ========== RBAC Middleware Functions ==========
@@ -146,12 +156,12 @@ func CheckPermissionMiddleware(accessMemberService interfaces.AccessMemberServic
 		schemaStr, _ := schema.(string)
 
 		// Get scope from context or headers
-		scopeType := c.GetHeader("scope-type")
+		scopeType := c.GetHeader(HeaderScopeType)
 		if scopeType == "" {
 			scopeType = constant.ScopeLevels.Workspace
 		}
 
-		scopeID := c.GetHeader("scope-id")
+		scopeID := c.GetHeader(HeaderScopeID)
 
 		// Check if user has permission
 		hasPermission, err := accessMemberService.CheckUserPermission(
@@ -189,12 +199,12 @@ func CheckRoleMiddleware(accessMemberService interfaces.AccessMemberService, req
 		userIDStr, _ := userID.(string)
 		schemaStr, _ := schema.(string)
 
-		scopeType := c.GetHeader("scope-type")
+		scopeType := c.GetHeader(HeaderScopeType)
 		if scopeType == "" {
 			scopeType = constant.ScopeLevels.Workspace
 		}
 
-		scopeID := c.GetHeader("scope-id")
+		scopeID := c.GetHeader(HeaderScopeID)
 
 		// Get user's highest role for this scope
 		highestRole, err := accessMemberService.GetUserHighestRole(
@@ -247,8 +257,8 @@ func ValidateAccessScopeMiddleware(accessMemberService interfaces.AccessMemberSe
 		userIDStr, _ := userID.(string)
 		schemaStr, _ := schema.(string)
 
-		scopeType := c.GetHeader("scope-type")
-		scopeID := c.GetHeader("scope-id")
+		scopeType := c.GetHeader(HeaderScopeType)
+		scopeID := c.GetHeader(HeaderScopeID)
 
 		if scopeType == "" || scopeID == "" {
 			response.SendError(c, responseConst.Error.UnauthorizedAccess)
@@ -293,12 +303,12 @@ func RequirePermissionsMiddleware(accessMemberService interfaces.AccessMemberSer
 		userIDStr, _ := userID.(string)
 		schemaStr, _ := schema.(string)
 
-		scopeType := c.GetHeader("scope-type")
+		scopeType := c.GetHeader(HeaderScopeType)
 		if scopeType == "" {
 			scopeType = constant.ScopeLevels.Workspace
 		}
 
-		scopeID := c.GetHeader("scope-id")
+		scopeID := c.GetHeader(HeaderScopeID)
 
 		ctx := context.Background()
 

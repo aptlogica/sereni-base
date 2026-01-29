@@ -3,6 +3,7 @@ package tenant
 import (
 	"fmt"
 	"go-postgres-rest/pkg/models"
+	"serenibase/internal/constant"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,38 +61,38 @@ func (tbl User) TableSchema(prefix string) models.CreateTableRequest {
 		Columns: []models.ColumnDefinition{
 			// Core fields
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
-			{Name: "email", DataType: "varchar(255)", NotNull: true, Unique: true},
-			{Name: "password", DataType: "varchar(255)"},
-			{Name: "first_name", DataType: "varchar(100)"},
-			{Name: "last_name", DataType: "varchar(100)"},
+			{Name: "email", DataType: constant.DBTypeVarchar255Lower, NotNull: true, Unique: true},
+			{Name: "password", DataType: constant.DBTypeVarchar255Lower},
+			{Name: "first_name", DataType: constant.DBTypeVarchar100},
+			{Name: "last_name", DataType: constant.DBTypeVarchar100},
 			{Name: "display_name", DataType: "varchar(150)"},
 			{Name: "avatar", DataType: "text"},
 			{Name: "activity_data", DataType: "jsonb"},
 
 			// Authentication
-			{Name: "auth_provider", DataType: "varchar(50)", DefaultValue: strPtr("'email'")},
+			{Name: "auth_provider", DataType: constant.DBTypeVarchar50, DefaultValue: strPtr("'email'")},
 			{Name: "external_id", DataType: "uuid"},
 			{Name: "mfa_enabled", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "mfa_secret", DataType: "varchar(255)"},
+			{Name: "mfa_secret", DataType: constant.DBTypeVarchar255Lower},
 			{Name: "email_verified", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "phone", DataType: "varchar(50)"},
+			{Name: "phone", DataType: constant.DBTypeVarchar50},
 			{Name: "phone_verified", DataType: "boolean", DefaultValue: strPtr("false")},
 
 			// Account status
-			{Name: "status", DataType: "varchar(50)", DefaultValue: strPtr("'pending'")},
+			{Name: "status", DataType: constant.DBTypeVarchar50, DefaultValue: strPtr("'pending'")},
 			{Name: "last_login_at", DataType: "timestamptz", DefaultValue: &null},
 			{Name: "last_active_at", DataType: "timestamptz", DefaultValue: &null},
-			{Name: "timezone", DataType: "varchar(50)", DefaultValue: strPtr("'UTC'")},
+			{Name: "timezone", DataType: constant.DBTypeVarchar50, DefaultValue: strPtr("'UTC'")},
 			{Name: "locale", DataType: "varchar(10)", DefaultValue: strPtr("'en'")},
 
 			// Security
 			{Name: "failed_login_attempts", DataType: "int", DefaultValue: strPtr("0")},
 			{Name: "locked_until", DataType: "timestamptz", DefaultValue: &null},
 			{Name: "password_changed_at", DataType: "timestamptz", DefaultValue: &null},
-			{Name: "roles", DataType: "varchar(255)", NotNull: true, DefaultValue: strPtr("'user'")},
+			{Name: "roles", DataType: constant.DBTypeVarchar255Lower, NotNull: true, DefaultValue: strPtr("'user'")},
 
 			{Name: "date_of_birth", DataType: "TEXT"},
-			{Name: "country", DataType: "varchar(100)"},
+			{Name: "country", DataType: constant.DBTypeVarchar100},
 
 			// Timestamps
 			{Name: "created_time", DataType: "timestamptz", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},

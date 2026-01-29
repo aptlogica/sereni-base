@@ -64,7 +64,6 @@ func (b *BaseInsertion) SetConfig(config string) error {
 	if !json.Valid([]byte(config)) {
 		return fmt.Errorf("invalid JSON for config")
 	}
-	b.Config = b.Config
 	return nil
 }
 

@@ -11,6 +11,10 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+const (
+	OrganizationRetrievedMessage = "Organization retrieved successfully"
+)
+
 type OrganizationHandler struct {
 	organizationService interfaces.OrganizationService
 }
@@ -58,7 +62,7 @@ func (h *OrganizationHandler) GetOrganizationByID(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, "Organization retrieved successfully", organization)
+	response.SendSuccess(c, OrganizationRetrievedMessage, organization)
 }
 
 func (h *OrganizationHandler) GetAllOrganizations(c *gin.Context) {
@@ -71,7 +75,7 @@ func (h *OrganizationHandler) GetAllOrganizations(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, "Organization retrieved successfully", organization)
+	response.SendSuccess(c, OrganizationRetrievedMessage, organization)
 }
 
 func (h *OrganizationHandler) UpdateOrganization(c *gin.Context) {
@@ -130,5 +134,5 @@ func (h *OrganizationHandler) GetOrganizationByEmail(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, "Organization retrieved successfully", organization)
+	response.SendSuccess(c, OrganizationRetrievedMessage, organization)
 }

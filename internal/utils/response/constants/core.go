@@ -2,6 +2,14 @@ package constants
 
 import "net/http"
 
+// Message constants for commonly used error messages
+const (
+	MsgInternalServerError   = "Internal server error"
+	MsgUnauthorizedAccess    = "Unauthorized access"
+	MsgBadRequest            = "Bad request"
+	MsgInvalidRequestPayload = "Invalid request payload"
+)
+
 var Error = struct {
 	InvalidID                ResponseCode
 	UnauthorizedAccess       ResponseCode
@@ -113,19 +121,19 @@ var Error = struct {
 }
 
 var CoreErrorCodes = map[ResponseCode]MetaResponse{
-	Error.UnauthorizedAccess:       {HTTPStatus: http.StatusUnauthorized, Message: "Unauthorized access", Description: "Unauthorized access"},
+	Error.UnauthorizedAccess:       {HTTPStatus: http.StatusUnauthorized, Message: MsgUnauthorizedAccess, Description: MsgUnauthorizedAccess},
 	Error.Forbidden:                {HTTPStatus: http.StatusForbidden, Message: "Forbidden", Description: "Forbidden"},
-	Error.SessionExpired:           {HTTPStatus: http.StatusUnauthorized, Message: "Unauthorized access", Description: "Session expired"},
-	Error.InvalidPayload:           {HTTPStatus: http.StatusBadRequest, Message: "Bad request", Description: "Invalid request payload"},
+	Error.SessionExpired:           {HTTPStatus: http.StatusUnauthorized, Message: MsgUnauthorizedAccess, Description: "Session expired"},
+	Error.InvalidPayload:           {HTTPStatus: http.StatusBadRequest, Message: MsgBadRequest, Description: MsgInvalidRequestPayload},
 	Error.ValidationFailed:         {HTTPStatus: http.StatusUnprocessableEntity, Message: "Validation failed", Description: "Validation failed"},
-	Error.DatabaseError:            {HTTPStatus: http.StatusInternalServerError, Message: "Internal server error", Description: "Database error"},
+	Error.DatabaseError:            {HTTPStatus: http.StatusInternalServerError, Message: MsgInternalServerError, Description: "Database error"},
 	Error.RecordNotFound:           {HTTPStatus: http.StatusNotFound, Message: "Record not found", Description: "Record not found"},
-	Error.InternalError:            {HTTPStatus: http.StatusInternalServerError, Message: "Internal server error", Description: "Internal server error"},
+	Error.InternalError:            {HTTPStatus: http.StatusInternalServerError, Message: MsgInternalServerError, Description: MsgInternalServerError},
 	Error.ServiceUnavailable:       {HTTPStatus: http.StatusServiceUnavailable, Message: "Service unavailable", Description: "Service unavailable"},
 	Error.GatewayTimeout:           {HTTPStatus: http.StatusGatewayTimeout, Message: "Gateway timeout", Description: "Gateway timeout"},
 	Error.TooManyRequests:          {HTTPStatus: http.StatusTooManyRequests, Message: "Too many requests", Description: "Too many requests"},
 	Error.Conflict:                 {HTTPStatus: http.StatusConflict, Message: "Conflict", Description: "Conflict"},
-	Error.BadRequest:               {HTTPStatus: http.StatusBadRequest, Message: "Bad request", Description: "Bad request"},
+	Error.BadRequest:               {HTTPStatus: http.StatusBadRequest, Message: MsgBadRequest, Description: MsgBadRequest},
 	Error.InvalidID:                {HTTPStatus: http.StatusBadRequest, Message: "Invalid ID", Description: "The provided ID is invalid"},
 	Error.UserAlreadyExists:        {HTTPStatus: http.StatusConflict, Message: "User already exists", Description: "User already exists"},
 	Error.RecordAlreadyExists:      {HTTPStatus: http.StatusConflict, Message: "Record already exists", Description: "Record already exists"},
