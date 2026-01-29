@@ -21,6 +21,10 @@ type organizationService struct {
 	repo *pkg.DatabaseService
 }
 
+const (
+	ErrMapOrganizationData = "ERROR: Failed to map organization data: %v\n"
+)
+
 func NewOrganizationService(repo *pkg.DatabaseService) interfaces.OrganizationService {
 	return &organizationService{
 		repo: repo,
@@ -138,7 +142,7 @@ func (s *organizationService) GetOrganizationByID(ctx context.Context, schemaNam
 
 	var org tenant.Organization
 	if err := helpers.MapToStruct(orgData, &org); err != nil {
-		fmt.Printf("ERROR: Failed to map organization data: %v\n", err)
+		fmt.Printf(ErrMapOrganizationData, err)
 		return tenant.Organization{}, app_errors.ErrStructToStruct
 	}
 
@@ -163,7 +167,7 @@ func (s *organizationService) GetAllOrganizations(ctx context.Context, schemaNam
 	for _, record := range records {
 		var org tenant.Organization
 		if err := helpers.MapToStruct(record, &org); err != nil {
-			fmt.Printf("ERROR: Failed to map organization data: %v\n", err)
+			fmt.Printf(ErrMapOrganizationData, err)
 			continue
 		}
 		organizations = append(organizations, org)
@@ -196,7 +200,7 @@ func (s *organizationService) GetOrganization(ctx context.Context, schemaName st
 
 	var org tenant.Organization
 	if err := helpers.MapToStruct(records[0], &org); err != nil {
-		fmt.Printf("ERROR: Failed to map organization data: %v\n", err)
+		fmt.Printf(ErrMapOrganizationData, err)
 		return tenant.Organization{}, app_errors.ErrStructToStruct
 	}
 
@@ -204,96 +208,20 @@ func (s *organizationService) GetOrganization(ctx context.Context, schemaName st
 }
 
 func (s *organizationService) UpdateOrganization(ctx context.Context, schemaName string, id string, req dto.UpdateOrganizationRequest) (tenant.Organization, error) {
-	// Get existing organization
 	organization, err := s.GetOrganizationByID(ctx, schemaName, id)
 	if err != nil {
 		return tenant.Organization{}, err
 	}
 
-	// Update fields if provided
-	if req.Name != nil {
-		organization.Name = *req.Name
-	}
-	if req.Description != nil {
-		organization.Description = req.Description
-	}
-	if req.Email != nil {
-		organization.Email = *req.Email
-	}
-	if req.Phone != nil {
-		organization.Phone = req.Phone
-	}
-	if req.Website != nil {
-		organization.Website = req.Website
-	}
-	if req.Logo != nil {
-		organization.Logo = req.Logo
-	}
-	if req.Address != nil {
-		organization.Address = req.Address
-	}
-	if req.City != nil {
-		organization.City = req.City
-	}
-	if req.State != nil {
-		organization.State = req.State
-	}
-	if req.Country != nil {
-		organization.Country = req.Country
-	}
-	if req.ZipCode != nil {
-		organization.ZipCode = req.ZipCode
-	}
-	if req.Settings != nil {
-		organization.Settings = req.Settings
-	}
-	if req.Meta != nil {
-		organization.Meta = req.Meta
-	}
-	if req.Status != nil {
-		organization.Status = *req.Status
-	}
-
+	updateOrganizationFields(&organization, req)
 	organization.UpdatedAt = time.Now()
 
+	orgData := buildOrganizationUpdateMap(organization)
+	if err := addJSONFieldsToUpdateMap(orgData, req); err != nil {
+		return tenant.Organization{}, err
+	}
+
 	tblName := organization.TableName(schemaName)
-
-	// Convert struct to map for database update
-	orgData := map[string]interface{}{
-		"name":               organization.Name,
-		"description":        organization.Description,
-		"email":              organization.Email,
-		"phone":              organization.Phone,
-		"website":            organization.Website,
-		"logo":               organization.Logo,
-		"address":            organization.Address,
-		"city":               organization.City,
-		"state":              organization.State,
-		"country":            organization.Country,
-		"zip_code":           organization.ZipCode,
-		"status":             organization.Status,
-		"last_modified_time": organization.UpdatedAt,
-	}
-
-	// Convert Settings and Meta to JSON if provided
-	if req.Settings != nil {
-		jsonBytes, err := json.Marshal(req.Settings)
-		if err != nil {
-			fmt.Printf("ERROR: Failed to marshal settings: %v\n", err)
-			return tenant.Organization{}, fmt.Errorf("invalid settings format")
-		}
-		orgData["settings"] = string(jsonBytes)
-	}
-
-	if req.Meta != nil {
-		jsonBytes, err := json.Marshal(req.Meta)
-		if err != nil {
-			fmt.Printf("ERROR: Failed to marshal meta: %v\n", err)
-			return tenant.Organization{}, fmt.Errorf("invalid meta format")
-		}
-		orgData["meta"] = string(jsonBytes)
-	}
-
 	_, err = s.repo.TableService.UpdateRecord(tblName, id, orgData)
 	if err != nil {
 		fmt.Printf("ERROR: Failed to update organization %s: %v\n", id, err)
@@ -302,6 +230,91 @@ func (s *organizationService) UpdateOrganization(ctx context.Context, schemaName
 
 	fmt.Printf("DEBUG: Organization updated successfully with ID: %s\n", id)
 	return organization, nil
+}
+
+func updateOrganizationFields(org *tenant.Organization, req dto.UpdateOrganizationRequest) {
+	if req.Name != nil {
+		org.Name = *req.Name
+	}
+	if req.Description != nil {
+		org.Description = req.Description
+	}
+	if req.Email != nil {
+		org.Email = *req.Email
+	}
+	if req.Phone != nil {
+		org.Phone = req.Phone
+	}
+	if req.Website != nil {
+		org.Website = req.Website
+	}
+	if req.Logo != nil {
+		org.Logo = req.Logo
+	}
+	if req.Address != nil {
+		org.Address = req.Address
+	}
+	if req.City != nil {
+		org.City = req.City
+	}
+	if req.State != nil {
+		org.State = req.State
+	}
+	if req.Country != nil {
+		org.Country = req.Country
+	}
+	if req.ZipCode != nil {
+		org.ZipCode = req.ZipCode
+	}
+	if req.Settings != nil {
+		org.Settings = req.Settings
+	}
+	if req.Meta != nil {
+		org.Meta = req.Meta
+	}
+	if req.Status != nil {
+		org.Status = *req.Status
+	}
+}
+
+func buildOrganizationUpdateMap(org tenant.Organization) map[string]interface{} {
+	return map[string]interface{}{
+		"name":               org.Name,
+		"description":        org.Description,
+		"email":              org.Email,
+		"phone":              org.Phone,
+		"website":            org.Website,
+		"logo":               org.Logo,
+		"address":            org.Address,
+		"city":               org.City,
+		"state":              org.State,
+		"country":            org.Country,
+		"zip_code":           org.ZipCode,
+		"status":             org.Status,
+		"last_modified_time": org.UpdatedAt,
+	}
+}
+
+func addJSONFieldsToUpdateMap(orgData map[string]interface{}, req dto.UpdateOrganizationRequest) error {
+	if req.Settings != nil {
+		jsonBytes, err := json.Marshal(req.Settings)
+		if err != nil {
+			fmt.Printf("ERROR: Failed to marshal settings: %v\n", err)
+			return fmt.Errorf("invalid settings format")
+		}
+		orgData["settings"] = string(jsonBytes)
+	}
+
+	if req.Meta != nil {
+		jsonBytes, err := json.Marshal(req.Meta)
+		if err != nil {
+			fmt.Printf("ERROR: Failed to marshal meta: %v\n", err)
+			return fmt.Errorf("invalid meta format")
+		}
+		orgData["meta"] = string(jsonBytes)
+	}
+
+	return nil
 }
 
 func (s *organizationService) DeleteOrganization(ctx context.Context, schemaName string, id string) error {
@@ -349,7 +362,7 @@ func (s *organizationService) GetOrganizationByEmail(ctx context.Context, schema
 	orgData := records[0]
 	var org tenant.Organization
 	if err := helpers.MapToStruct(orgData, &org); err != nil {
-		fmt.Printf("ERROR: Failed to map organization data: %v\n", err)
+		fmt.Printf(ErrMapOrganizationData, err)
 		return tenant.Organization{}, app_errors.ErrStructToStruct
 	}
 

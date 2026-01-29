@@ -18,6 +18,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	// Error messages
+	ErrWorkspaceIDCannotBeEmpty = "workspace ID cannot be empty"
+)
+
 type workspaceService struct {
 	repo *pkg.DatabaseService
 }
@@ -105,7 +110,7 @@ func (s *workspaceService) CreateWorkspace(ctx context.Context, schemaName strin
 
 func (s *workspaceService) GetWorkspaceByID(ctx context.Context, schemaName string, id string) (tenant.Workspace, error) {
 	if id == "" {
-		return tenant.Workspace{}, fmt.Errorf("workspace ID cannot be empty")
+		return tenant.Workspace{}, fmt.Errorf(ErrWorkspaceIDCannotBeEmpty)
 	}
 	workspace := tenant.Workspace{}
 	tableName := workspace.TableName(schemaName)
@@ -173,7 +178,7 @@ func (s *workspaceService) GetAllWorkspaces(ctx context.Context, schemaName stri
 func (s *workspaceService) UpdateWorkspace(ctx context.Context, schemaName string, id string, req dto.WorkspaceUpdate) (tenant.Workspace, error) {
 	lg := logger.Get()
 	if id == "" {
-		return tenant.Workspace{}, fmt.Errorf("workspace ID cannot be empty")
+		return tenant.Workspace{}, fmt.Errorf(ErrWorkspaceIDCannotBeEmpty)
 	}
 	workspace := tenant.Workspace{}
 	tableName := workspace.TableName(schemaName)
@@ -208,7 +213,7 @@ func (s *workspaceService) UpdateWorkspace(ctx context.Context, schemaName strin
 
 func (s *workspaceService) DeleteWorkspace(ctx context.Context, schemaName string, id string) error {
 	if id == "" {
-		return fmt.Errorf("workspace ID cannot be empty")
+		return fmt.Errorf(ErrWorkspaceIDCannotBeEmpty)
 	}
 	workspace := tenant.Workspace{}
 	tableName := workspace.TableName(schemaName)

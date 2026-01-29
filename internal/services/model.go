@@ -12,6 +12,10 @@ import (
 	"serenibase/internal/utils/helpers"
 )
 
+const (
+	ErrRepositoryNotInitialized = "repository not initialized"
+)
+
 type modelService struct {
 	repo *pkg.DatabaseService
 }
@@ -22,7 +26,7 @@ func NewModelService(repo *pkg.DatabaseService) interfaces.ModelService {
 
 func (s *modelService) CreateModel(ctx context.Context, schemaName string) (tenant.Model, error) {
 	if s.repo == nil || s.repo.TableService == nil {
-		return tenant.Model{}, fmt.Errorf("repository not initialized")
+		return tenant.Model{}, fmt.Errorf(ErrRepositoryNotInitialized)
 	}
 
 	model := tenant.Model{}
@@ -97,7 +101,7 @@ func (s *modelService) GetAllModels(ctx context.Context, schemaName string) ([]t
 // --- shared private helper ---
 func (s *modelService) fetchModels(ctx context.Context, schemaName string, params dbModels.QueryParams) ([]tenant.Model, error) {
 	if s.repo == nil || s.repo.TableService == nil {
-		return nil, fmt.Errorf("repository not initialized")
+		return nil, fmt.Errorf(ErrRepositoryNotInitialized)
 	}
 
 	tableName := tenant.Model{}.TableName(schemaName)
@@ -147,7 +151,7 @@ func (s *modelService) Update(ctx context.Context, schemaName string, id string,
 // DeleteModels deletes a model by its ID
 func (s *modelService) DeleteModels(ctx context.Context, schemaName string, id string) error {
 	if s.repo == nil || s.repo.TableService == nil {
-		return fmt.Errorf("repository not initialized")
+		return fmt.Errorf(ErrRepositoryNotInitialized)
 	}
 	if id == "" {
 		return fmt.Errorf("model ID cannot be empty")
@@ -163,10 +167,10 @@ func (s *modelService) DeleteModels(ctx context.Context, schemaName string, id s
 	return nil
 }
 
-func (s *modelService) GetModelByBaseID(ctx context.Context, schemaName string, base_id string) ([]tenant.Model, error) {
+func (s *modelService) GetModelByBaseID(ctx context.Context, schemaName string, baseID string) ([]tenant.Model, error) {
 	models, err := s.fetchModels(ctx, schemaName, dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
-			{Column: "base_id", Operator: "eq", Value: base_id},
+			{Column: "base_id", Operator: "eq", Value: baseID},
 		},
 		OrderBy: []string{"order_index"},
 	})
@@ -176,10 +180,10 @@ func (s *modelService) GetModelByBaseID(ctx context.Context, schemaName string, 
 	return models, nil
 }
 
-func (s *modelService) GetModelByWorkspaceID(ctx context.Context, schemaName string, workspace_id string) ([]tenant.Model, error) {
+func (s *modelService) GetModelByWorkspaceID(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Model, error) {
 	models, err := s.fetchModels(ctx, schemaName, dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
-			{Column: "workspace_id", Operator: "eq", Value: workspace_id},
+			{Column: "workspace_id", Operator: "eq", Value: workspaceID},
 		},
 	})
 	if err != nil {

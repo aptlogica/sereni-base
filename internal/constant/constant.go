@@ -20,6 +20,15 @@ This is an automated message. Replies are not monitored.
 
 © Serenibase. All rights reserved.
 ────────────────────────────────────`
+
+	// Database type constants
+	DBTypeVarchar255      = "VARCHAR(255)"
+	DBTypeNVarchar255     = "NVARCHAR(255)"
+	DBTypeNVarcharMax     = "NVARCHAR(MAX)"
+	DBTypeVarchar255Lower = "varchar(255)"
+	DBTypeVarchar100      = "varchar(100)"
+	DBTypeVarchar50       = "varchar(50)"
+	DBTypeVarchar150      = "varchar(150)" // Assuming for display_name
 )
 
 func strPtr(s string) *string {
@@ -241,9 +250,9 @@ var UITypeMappings = map[string]DBMapping{
 		Label:     "Single Line Text",
 		Postgres:  "TEXT",
 		MongoDB:   "String",
-		MySQL:     "VARCHAR(255)",
+		MySQL:     DBTypeVarchar255,
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(255)",
+		MSSQL:     DBTypeNVarchar255,
 		Oracle:    "VARCHAR2(255)",
 	},
 	"longText": {
@@ -361,9 +370,9 @@ var UITypeMappings = map[string]DBMapping{
 		Label:     "Email",
 		Postgres:  "TEXT",
 		MongoDB:   "String",
-		MySQL:     "VARCHAR(255)",
+		MySQL:     DBTypeVarchar255,
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(255)",
+		MSSQL:     DBTypeNVarchar255,
 		Oracle:    "VARCHAR2(255)",
 	},
 	"phoneNumber": {
@@ -381,9 +390,9 @@ var UITypeMappings = map[string]DBMapping{
 		Label:     "URL",
 		Postgres:  "TEXT",
 		MongoDB:   "String",
-		MySQL:     "VARCHAR(255)",
+		MySQL:     DBTypeVarchar255,
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(255)",
+		MSSQL:     DBTypeNVarchar255,
 		Oracle:    "VARCHAR2(255)",
 	},
 	"select": {
@@ -391,9 +400,9 @@ var UITypeMappings = map[string]DBMapping{
 		Label:     "Single Select",
 		Postgres:  "TEXT",
 		MongoDB:   "String",
-		MySQL:     "VARCHAR(255)",
+		MySQL:     DBTypeVarchar255,
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(255)",
+		MSSQL:     DBTypeNVarchar255,
 		Oracle:    "VARCHAR2(255)",
 	},
 	"multiSelect": {
@@ -403,7 +412,7 @@ var UITypeMappings = map[string]DBMapping{
 		MongoDB:   "Array",
 		MySQL:     "JSON",
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(MAX)",
+		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
 	"rating": {
@@ -443,7 +452,7 @@ var UITypeMappings = map[string]DBMapping{
 		MongoDB:   "Document",
 		MySQL:     "JSON",
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(MAX)",
+		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
 	"uuid": {
@@ -483,7 +492,7 @@ var UITypeMappings = map[string]DBMapping{
 		MongoDB:   "Array",
 		MySQL:     "JSON",
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(MAX)",
+		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
 	"links_target_has-many": {
@@ -503,7 +512,7 @@ var UITypeMappings = map[string]DBMapping{
 		MongoDB:   "Array",
 		MySQL:     "JSON",
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(MAX)",
+		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
 	"links_target_many-to-many": {
@@ -513,7 +522,7 @@ var UITypeMappings = map[string]DBMapping{
 		MongoDB:   "Array",
 		MySQL:     "JSON",
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(MAX)",
+		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
 	"lookup": {
@@ -543,7 +552,7 @@ var UITypeMappings = map[string]DBMapping{
 		MongoDB:   "Array",
 		MySQL:     "JSON",
 		SQLite:    "TEXT",
-		MSSQL:     "NVARCHAR(MAX)",
+		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
 	"lastModifiedTime": {

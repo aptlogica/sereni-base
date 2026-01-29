@@ -22,6 +22,57 @@ func NewUserHandler(
 	}
 }
 
+// bindUpdateProfileFields binds form fields to the update payload
+func (h *UserHandler) bindUpdateProfileFields(c *gin.Context) dto.UpdateUserProfileRequest {
+	var updatePayload dto.UpdateUserProfileRequest
+
+	// Manually bind form fields
+	if firstName := c.PostForm("first_name"); firstName != "" {
+		updatePayload.FirstName = &firstName
+	}
+	if lastName := c.PostForm("last_name"); lastName != "" {
+		updatePayload.LastName = &lastName
+	}
+	if displayName := c.PostForm("display_name"); displayName != "" {
+		updatePayload.DisplayName = &displayName
+	}
+	if dob := c.PostForm("dob"); dob != "" {
+		updatePayload.DateOfBirth = &dob
+	}
+	if country := c.PostForm("country"); country != "" {
+		updatePayload.Country = &country
+	}
+	if timezone := c.PostForm("timezone"); timezone != "" {
+		updatePayload.Timezone = &timezone
+	}
+	if locale := c.PostForm("locale"); locale != "" {
+		updatePayload.Locale = &locale
+	}
+
+	return updatePayload
+}
+
+// handleAvatarUpdate handles avatar upload and profile update logic
+func (h *UserHandler) handleAvatarUpdate(c *gin.Context, schemaName, id string, updatePayload dto.UpdateUserProfileRequest) (dto.UserResponse, error) {
+	// Handle avatar upload
+	updatedProfile, err := h.userManagementService.AddAvatar(c.Request.Context(), schemaName, id, updatePayload.ProfilePic)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
+	// Update other profile fields if provided
+	updatePayload.ProfilePic = nil
+	updateFields := updatePayload.Map()
+	if len(updateFields) > 0 {
+		updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
+		if err != nil {
+			return dto.UserResponse{}, err
+		}
+	}
+
+	return updatedProfile, nil
+}
+
 func (h *UserHandler) GetUserProfileByID(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -52,30 +103,7 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 		return
 	}
 
-	var updatePayload dto.UpdateUserProfileRequest
-
-	// Manually bind form fields
-	if firstName := c.PostForm("first_name"); firstName != "" {
-		updatePayload.FirstName = &firstName
-	}
-	if lastName := c.PostForm("last_name"); lastName != "" {
-		updatePayload.LastName = &lastName
-	}
-	if displayName := c.PostForm("display_name"); displayName != "" {
-		updatePayload.DisplayName = &displayName
-	}
-	if dob := c.PostForm("dob"); dob != "" {
-		updatePayload.DateOfBirth = &dob
-	}
-	if country := c.PostForm("country"); country != "" {
-		updatePayload.Country = &country
-	}
-	if timezone := c.PostForm("timezone"); timezone != "" {
-		updatePayload.Timezone = &timezone
-	}
-	if locale := c.PostForm("locale"); locale != "" {
-		updatePayload.Locale = &locale
-	}
+	updatePayload := h.bindUpdateProfileFields(c)
 
 	// Bind file if present
 	if file, err := c.FormFile("avatar"); err == nil {
@@ -89,29 +117,15 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	var err error
 
 	if updatePayload.ProfilePic != nil {
-		// Handle avatar upload
-		updatedProfile, err = h.userManagementService.AddAvatar(c.Request.Context(), schemaName, id, updatePayload.ProfilePic)
-		if err != nil {
-			response.CheckAndSendError(c, err)
-			return
-		}
-		// Update other profile fields if provided
-		updatePayload.ProfilePic = nil
-		updateFields := updatePayload.Map()
-		if len(updateFields) > 0 {
-			updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
-			if err != nil {
-				response.CheckAndSendError(c, err)
-				return
-			}
-		}
+		updatedProfile, err = h.handleAvatarUpdate(c, schemaName, id, updatePayload)
 	} else {
 		// Update profile fields only
 		updatedProfile, err = h.userManagementService.UpdateUserProfile(c.Request.Context(), schemaName, id, updatePayload)
-		if err != nil {
-			response.CheckAndSendError(c, err)
-			return
-		}
+	}
+
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
 	}
 
 	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
