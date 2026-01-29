@@ -21,6 +21,17 @@ func (RolePermission) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".role_permissions", prefix)
 }
 
+// createRolePermissionFK creates a foreign key definition for role_permissions table
+func createRolePermissionFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_role_permissions_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
 func (tbl RolePermission) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -36,20 +47,8 @@ func (tbl RolePermission) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_role_permissions_role_permission", Columns: []string{"role_id", "permission_id"}, Unique: true},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_role_permissions_role_id",
-				Columns:           []string{"role_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".access_roles", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_role_permissions_permission_id",
-				Columns:           []string{"permission_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".permissions", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createRolePermissionFK(prefix, "role_id", "access_roles"),
+			createRolePermissionFK(prefix, "permission_id", "permissions"),
 		},
 	}
 }

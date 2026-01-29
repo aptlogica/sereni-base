@@ -22,17 +22,28 @@ func (UsageMetric) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".usage_metrics", prefix)
 }
 
-func (tbl UsageMetric) TableSchema(prefix string) models.CreateTableRequest {
+// createTimestampColumn creates a timestamp column definition with optional null default
+func createTimestampColumn(name string, notNull bool, useNull bool) models.ColumnDefinition {
 	null := "NULL"
+	var defaultVal *string
+	if useNull {
+		defaultVal = &null
+	} else if notNull {
+		defaultVal = StrPtr("CURRENT_TIMESTAMP")
+	}
+	return models.ColumnDefinition{Name: name, DataType: "timestamp", NotNull: notNull, DefaultValue: defaultVal}
+}
+
+func (tbl UsageMetric) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
 			{Name: "metric_type", DataType: "varchar", NotNull: true},
 			{Name: "metric_value", DataType: "integer", DefaultValue: StrPtr("0")},
-			{Name: "period_start", DataType: "timestamp", DefaultValue: &null},
-			{Name: "period_end", DataType: "timestamp", DefaultValue: &null},
-			{Name: "recorded_at", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("period_start", false, true),
+			createTimestampColumn("period_end", false, true),
+			createTimestampColumn("recorded_at", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_usage_period", Columns: []string{"period_start", "period_end"}},

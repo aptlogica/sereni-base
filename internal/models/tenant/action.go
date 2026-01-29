@@ -21,11 +21,16 @@ func (Action) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".actions", prefix)
 }
 
+// createUUIDColumn creates a UUID column definition
+func createUUIDColumn(name string, notNull, unique bool) models.ColumnDefinition {
+	return models.ColumnDefinition{Name: name, DataType: "uuid", NotNull: notNull, Unique: unique}
+}
+
 func (tbl Action) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
+			createUUIDColumn("id", true, true),
 			{Name: "code", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "description", DataType: "text"},
 			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},

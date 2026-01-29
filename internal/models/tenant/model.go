@@ -82,20 +82,19 @@ func (tbl Model) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_models_type", Columns: []string{"type"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_models_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_models_workspace_id",
-				Columns:           []string{"workspace_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".workspaces", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createModelFK(prefix, "base_id", "bases"),
+			createModelFK(prefix, "workspace_id", "workspaces"),
 		},
+	}
+}
+
+// createModelFK creates a foreign key definition for models table
+func createModelFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_models_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
 	}
 }

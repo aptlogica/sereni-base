@@ -21,41 +21,13 @@ var RoleError = struct {
 }
 
 var RoleErrorCodes = map[ResponseCode]MetaResponse{
-	RoleError.RoleNotFound: {
-		HTTPStatus:  http.StatusNotFound,
-		Message:     "Role not found",
-		Description: "The specified role could not be found",
-	},
-	RoleError.RoleAlreadyExists: {
-		HTTPStatus:  http.StatusConflict,
-		Message:     "Role already exists",
-		Description: "A role with the given information already exists",
-	},
-	RoleError.RoleNotCreated: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Role not created",
-		Description: "The role could not be created due to an internal error",
-	},
-	RoleError.RoleNotUpdated: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Role not updated",
-		Description: "The role could not be updated due to an internal error",
-	},
-	RoleError.RoleNotDeleted: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Role not deleted",
-		Description: "The role could not be deleted due to an internal error",
-	},
-	RoleError.RoleRequired: {
-		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Role is required",
-		Description: "A role must be provided in the request",
-	},
-	RoleError.RoleInvalid: {
-		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Invalid role",
-		Description: "The specified role is not valid",
-	},
+	RoleError.RoleNotFound:      createMetaResponse(http.StatusNotFound, "Role not found", "The specified role could not be found"),
+	RoleError.RoleAlreadyExists: createMetaResponse(http.StatusConflict, "Role already exists", "A role with the given information already exists"),
+	RoleError.RoleNotCreated:    createMetaResponse(http.StatusInternalServerError, "Role not created", "The role could not be created due to an internal error"),
+	RoleError.RoleNotUpdated:    createMetaResponse(http.StatusInternalServerError, "Role not updated", "The role could not be updated due to an internal error"),
+	RoleError.RoleNotDeleted:    createMetaResponse(http.StatusInternalServerError, "Role not deleted", "The role could not be deleted due to an internal error"),
+	RoleError.RoleRequired:      createMetaResponse(http.StatusBadRequest, "Role is required", "A role must be provided in the request"),
+	RoleError.RoleInvalid:       createMetaResponse(http.StatusBadRequest, "Invalid role", "The specified role is not valid"),
 }
 
 var RoleSuccess = struct {
@@ -69,19 +41,7 @@ var RoleSuccess = struct {
 }
 
 var RoleSuccessCodes = map[ResponseCode]MetaResponse{
-	RoleSuccess.RoleCreated: {
-		HTTPStatus:  http.StatusCreated,
-		Message:     "Role created successfully",
-		Description: "The role has been created successfully",
-	},
-	RoleSuccess.RoleUpdated: {
-		HTTPStatus:  http.StatusOK,
-		Message:     "Role updated successfully",
-		Description: "The role has been updated successfully",
-	},
-	RoleSuccess.RoleDeleted: {
-		HTTPStatus:  http.StatusOK,
-		Message:     "Role deleted successfully",
-		Description: "The role has been deleted successfully",
-	},
+	RoleSuccess.RoleCreated: createMetaResponse(http.StatusCreated, "Role created successfully", "The role has been created successfully"),
+	RoleSuccess.RoleUpdated: createMetaResponse(http.StatusOK, "Role updated successfully", "The role has been updated successfully"),
+	RoleSuccess.RoleDeleted: createMetaResponse(http.StatusOK, "Role deleted successfully", "The role has been deleted successfully"),
 }

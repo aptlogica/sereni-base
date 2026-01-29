@@ -173,16 +173,16 @@ func SliceToString(slice interface{}) string {
 
 // StringToSlice converts a comma-separated string to a slice of strings
 func StringToSlice(str string) []string {
-	if str == "" {
-		return []string{}
-	}
+	return SplitAndTrim(str, ",")
+}
 
-	parts := strings.Split(str, ",")
-	for i, part := range parts {
-		parts[i] = strings.TrimSpace(part)
+// MapKeys returns the keys of a map as a slicem reflect.Values
+func extractMapInterfaces(values []reflect.Value, extractor func(reflect.Value) interface{}) []interface{} {
+	result := make([]interface{}, len(values))
+	for i, val := range values {
+		result[i] = extractor(val)
 	}
-
-	return parts
+	return result
 }
 
 // MapKeys returns the keys of a map as a slice
@@ -191,14 +191,9 @@ func MapKeys(m interface{}) []interface{} {
 	if v.Kind() != reflect.Map {
 		return nil
 	}
-
-	keys := v.MapKeys()
-	result := make([]interface{}, len(keys))
-	for i, key := range keys {
-		result[i] = key.Interface()
-	}
-
-	return result
+	return extractMapInterfaces(v.MapKeys(), func(key reflect.Value) interface{} {
+		return key.Interface()
+	})
 }
 
 // MapValues returns the values of a map as a slice
@@ -207,14 +202,9 @@ func MapValues(m interface{}) []interface{} {
 	if v.Kind() != reflect.Map {
 		return nil
 	}
-
-	keys := v.MapKeys()
-	result := make([]interface{}, len(keys))
-	for i, key := range keys {
-		result[i] = v.MapIndex(key).Interface()
-	}
-
-	return result
+	return extractMapInterfaces(v.MapKeys(), func(key reflect.Value) interface{} {
+		return v.MapIndex(key).Interface()
+	})
 }
 
 // Reverse reverses a slice in place
@@ -232,50 +222,33 @@ func Reverse(slice interface{}) {
 	}
 }
 
+// formatTimeUnit formats a time unit with singular/plural handling
+func formatTimeUnit(count int, unit string) string {
+	if count == 1 {
+		return fmt.Sprintf("1 %s ago", unit)
+	}
+	return fmt.Sprintf("%d %ss ago", count, unit)
+}
+
 // TimeAgo returns a human-readable time difference
 func TimeAgo(t time.Time) string {
-	now := time.Now()
-	diff := now.Sub(t)
+	diff := time.Now().Sub(t)
 
 	switch {
 	case diff < time.Minute:
 		return "just now"
 	case diff < time.Hour:
-		minutes := int(diff.Minutes())
-		if minutes == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", minutes)
+		return formatTimeUnit(int(diff.Minutes()), "minute")
 	case diff < 24*time.Hour:
-		hours := int(diff.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
+		return formatTimeUnit(int(diff.Hours()), "hour")
 	case diff < 7*24*time.Hour:
-		days := int(diff.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
+		return formatTimeUnit(int(diff.Hours()/24), "day")
 	case diff < 30*24*time.Hour:
-		weeks := int(diff.Hours() / (24 * 7))
-		if weeks == 1 {
-			return "1 week ago"
-		}
-		return fmt.Sprintf("%d weeks ago", weeks)
+		return formatTimeUnit(int(diff.Hours()/(24*7)), "week")
 	case diff < 365*24*time.Hour:
-		months := int(diff.Hours() / (24 * 30))
-		if months == 1 {
-			return "1 month ago"
-		}
-		return fmt.Sprintf("%d months ago", months)
+		return formatTimeUnit(int(diff.Hours()/(24*30)), "month")
 	default:
-		years := int(diff.Hours() / (24 * 365))
-		if years == 1 {
-			return "1 year ago"
-		}
-		return fmt.Sprintf("%d years ago", years)
+		return formatTimeUnit(int(diff.Hours()/(24*365)), "year")
 	}
 }
 
@@ -304,93 +277,87 @@ func getTimeConverters() []copier.TypeConverter {
 		{
 			SrcType: time.Time{},
 			DstType: time.Time{},
-			Fn: func(src interface{}) (interface{}, error) {
-				return src, nil
-			},
+			Fn:      timeToTime,
 		},
 		// *time.Time -> time.Time (dereference)
 		{
 			SrcType: (*time.Time)(nil),
 			DstType: time.Time{},
-			Fn: func(src interface{}) (interface{}, error) {
-				if src == nil {
-					return time.Time{}, nil
-				}
-				if rt, ok := src.(*time.Time); ok {
-					if rt == nil {
-						return time.Time{}, nil
-					}
-					return *rt, nil
-				}
-				return time.Time{}, nil
-			},
+			Fn:      pointerTimeToTime,
 		},
 		// time.Time -> *time.Time (address)
 		{
 			SrcType: time.Time{},
 			DstType: (*time.Time)(nil),
-			Fn: func(src interface{}) (interface{}, error) {
-				if t, ok := src.(time.Time); ok {
-					tt := t
-					return &tt, nil
-				}
-				return nil, nil
-			},
+			Fn:      timeToPointerTime,
 		},
 		// *time.Time -> *time.Time (pass through)
 		{
 			SrcType: (*time.Time)(nil),
 			DstType: (*time.Time)(nil),
-			Fn: func(src interface{}) (interface{}, error) {
-				return src, nil
-			},
+			Fn:      pointerTimeToPointerTime,
 		},
 		// *time.Time -> *string (convert date to string pointer in yyyy-mm-dd format)
 		{
 			SrcType: (*time.Time)(nil),
 			DstType: (*string)(nil),
-			Fn: func(src interface{}) (interface{}, error) {
-				if src == nil {
-					return nil, nil
-				}
-				if t, ok := src.(*time.Time); ok {
-					if t == nil {
-						return nil, nil
-					}
-					str := t.Format("2006-01-02")
-					return &str, nil
-				}
-				return nil, nil
-			},
+			Fn:      pointerTimeToPointerString,
 		},
 	}
 }
 
+// timeToTime converts time.Time to time.Time (pass through)
+func timeToTime(src interface{}) (interface{}, error) {
+	return src, nil
+}
+
+// pointerTimeToTime converts *time.Time to time.Time (dereference)
+func pointerTimeToTime(src interface{}) (interface{}, error) {
+	if rt, ok := src.(*time.Time); ok && rt != nil {
+		return *rt, nil
+	}
+	return time.Time{}, nil
+}
+
+// timeToPointerTime converts time.Time to *time.Time (address)
+func timeToPointerTime(src interface{}) (interface{}, error) {
+	if t, ok := src.(time.Time); ok {
+		return &t, nil
+	}
+	return nil, nil
+}
+
+// pointerTimeToPointerTime converts *time.Time to *time.Time (pass through)
+func pointerTimeToPointerTime(src interface{}) (interface{}, error) {
+	return src, nil
+}
+
+// pointerTimeToPointerString converts *time.Time to *string (yyyy-mm-dd format)
+func pointerTimeToPointerString(src interface{}) (interface{}, error) {
+	if t, ok := src.(*time.Time); ok && t != nil {
+		str := t.Format("2006-01-02")
+		return &str, nil
+	}
+	return nil, nil
+}
+
 // getUUIDConverters returns all UUID-related type converters
 func getUUIDConverters() []copier.TypeConverter {
+	uuidToString := func(src interface{}) (interface{}, error) {
+		if v, ok := src.(uuid.UUID); ok {
+			return v.String(), nil
+		}
+		return src, nil
+	}
+	stringToUUID := func(src interface{}) (interface{}, error) {
+		if s, ok := src.(string); ok {
+			return uuid.Parse(s)
+		}
+		return src, nil
+	}
 	return []copier.TypeConverter{
-		// uuid.UUID -> string
-		{
-			SrcType: uuid.UUID{},
-			DstType: "",
-			Fn: func(src interface{}) (interface{}, error) {
-				if v, ok := src.(uuid.UUID); ok {
-					return v.String(), nil
-				}
-				return src, nil
-			},
-		},
-		// string -> uuid.UUID
-		{
-			SrcType: "",
-			DstType: uuid.UUID{},
-			Fn: func(src interface{}) (interface{}, error) {
-				if s, ok := src.(string); ok {
-					return uuid.Parse(s)
-				}
-				return src, nil
-			},
-		},
+		{SrcType: uuid.UUID{}, DstType: "", Fn: uuidToString},
+		{SrcType: "", DstType: uuid.UUID{}, Fn: stringToUUID},
 	}
 }
 
@@ -462,22 +429,25 @@ func InterfaceToJSONString(val map[string]interface{}) string {
 	return string(bytes)
 }
 
-// SplitAndTrim splits a string by delimiter and trims whitespace from each part
-func SplitAndTrim(str string, delimiter string) []string {
+// splitAndProcess splits string and applies transformation
+func splitAndProcess(str string, delimiter string, keepEmpty bool) []string {
 	if str == "" {
 		return []string{}
 	}
-
 	parts := strings.Split(str, delimiter)
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
+		if keepEmpty || trimmed != "" {
 			result = append(result, trimmed)
 		}
 	}
-
 	return result
+}
+
+// SplitAndTrim splits a string by delimiter and trims whitespace from each part
+func SplitAndTrim(str string, delimiter string) []string {
+	return splitAndProcess(str, delimiter, false)
 }
 
 // JoinStrings joins a slice of strings with a delimiter

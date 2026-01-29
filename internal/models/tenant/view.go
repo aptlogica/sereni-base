@@ -72,20 +72,19 @@ func (tbl View) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_views_public", Columns: []string{"public"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_views_model_id",
-				Columns:           []string{"model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_views_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createViewFK(prefix, "model_id", "models"),
+			createViewFK(prefix, "base_id", "bases"),
 		},
+	}
+}
+
+// createViewFK creates a foreign key definition for views table
+func createViewFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_views_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
 	}
 }

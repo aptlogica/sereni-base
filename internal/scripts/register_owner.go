@@ -48,14 +48,18 @@ func RegisterOwner(
 	authManagementService := services.NewAuthManagementService(
 		cfg.TemporaryAddedUserPassword,
 		dbService,
-		mgmt.userManagementService,
-		mgmt.workspaceManagementService,
-		core.userResetTokenService,
-		mgmt.rbacManagementService,
-		providers.otpProviderService,
-		providers.emailTemplateService,
-		providers.emailProviderService,
-		authProvider,
+		services.AuthManagementServiceDeps{
+			UserManagementService:      mgmt.userManagementService,
+			WorkspaceManagementService: mgmt.workspaceManagementService,
+			UserResetTokenService:      core.userResetTokenService,
+			RBACManagementService:      mgmt.rbacManagementService,
+		},
+		services.AuthManagementProviderDeps{
+			OTPProviderService:   providers.otpProviderService,
+			EmailTemplateService: providers.emailTemplateService,
+			EmailProviderService: providers.emailProviderService,
+			AuthProviderService:  authProvider,
+		},
 	)
 
 	registerReq := prepareOwnerRegisterRequest(cfg)
@@ -181,13 +185,15 @@ func initManagementServices(
 
 	rbacManagementService := services.NewRBACManagementService(
 		dbService,
-		core.accessRoleService,
-		core.resourceService,
-		core.actionService,
-		core.permissionService,
-		core.rolePermissionService,
-		core.accessMemberService,
-		core.baseService,
+		services.RBACManagementServiceDeps{
+			RoleService:           core.accessRoleService,
+			ResourceService:       core.resourceService,
+			ActionService:         core.actionService,
+			PermissionService:     core.permissionService,
+			RolePermissionService: core.rolePermissionService,
+			AccessMemberService:   core.accessMemberService,
+			BaseService:           core.baseService,
+		},
 	)
 
 	workspaceManagementService := services.NewWorkspaceManagementService(
