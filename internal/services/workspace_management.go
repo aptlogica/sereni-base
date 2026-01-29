@@ -163,44 +163,31 @@ func (s workspaceManagementService) getAllBasesWithWorkspaceRole(ctx context.Con
 	return response, nil
 }
 
-func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
-	// Check if user has workspace-level role - they can see all bases in workspace
-	if isWorkspaceLevelRole(role) {
-		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, role)
-	}
-
-	// Get user's access members to check for workspace-level or base-level access
-	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schemaName, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// First, check if user has workspace-level access in accessMembers
-	// (scope_type='workspace' and scope_id matches workspace_id)
+// checkWorkspaceLevelAccess checks if user has workspace-level access and returns the role name
+func (s workspaceManagementService) checkWorkspaceLevelAccess(ctx context.Context, schemaName string, workspaceID string, accessMembers []dto.AccessMemberDTO) (string, bool) {
 	for _, member := range accessMembers {
 		if member.ScopeType == "workspace" && member.ScopeID != nil && *member.ScopeID == workspaceID {
-			// User has workspace-level access - get role name and return all bases
 			roleID := member.RoleID
 			if roleID != "" {
 				roleUUID, parseErr := uuid.Parse(roleID)
 				if parseErr == nil {
 					roleData, roleErr := s.rbacManagementService.GetRoleByID(ctx, schemaName, roleUUID)
 					if roleErr == nil {
-						fmt.Printf("DEBUG: User %s has workspace-level access with role: %s in workspace %s\n", userID, roleData.Name, workspaceID)
-						return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, roleData.Name)
+						fmt.Printf("DEBUG: User has workspace-level access with role: %s in workspace %s\n", roleData.Name, workspaceID)
+						return roleData.Name, true
 					}
 				}
 			}
 		}
 	}
+	return "", false
+}
 
-	// For base-member and base-read: Get only bases where user has explicit access
-	// Filter to only base-level access in this workspace
-	baseAccessMap := make(map[string]string) // Key: base_id, Value: role_name
+// buildBaseAccessMap creates a map of base IDs to role names for base-level access
+func (s workspaceManagementService) buildBaseAccessMap(ctx context.Context, schemaName string, workspaceID string, accessMembers []dto.AccessMemberDTO) map[string]string {
+	baseAccessMap := make(map[string]string)
 	for _, member := range accessMembers {
-		// Only include base-level access (scope_type='base') in this workspace
 		if member.ScopeType == "base" && member.WorkspaceID != nil && *member.WorkspaceID == workspaceID && member.ScopeID != nil {
-			// Fetch role name
 			roleID := member.RoleID
 			if roleID != "" {
 				roleUUID, parseErr := uuid.Parse(roleID)
@@ -215,14 +202,11 @@ func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context
 			}
 		}
 	}
+	return baseAccessMap
+}
 
-	// If no base access found, return empty list
-	if len(baseAccessMap) == 0 {
-		fmt.Printf("DEBUG: User %s has no base-level access in workspace %s\n", userID, workspaceID)
-		return []dto.BaseResponse{}, nil
-	}
-
-	// Get all bases with user's access
+// getBasesWithAccess retrieves bases with their access levels
+func (s workspaceManagementService) getBasesWithAccess(ctx context.Context, schemaName string, baseAccessMap map[string]string, userID string, workspaceID string) ([]dto.BaseResponse, error) {
 	var response []dto.BaseResponse
 	for baseID, roleName := range baseAccessMap {
 		base, err := s.baseManagementService.GetBaseByID(ctx, schemaName, baseID)
@@ -242,6 +226,36 @@ func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context
 
 	fmt.Printf("DEBUG: Returning %d bases for user %s with base-level access in workspace %s\n", len(response), userID, workspaceID)
 	return response, nil
+}
+
+func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
+	// Check if user has workspace-level role - they can see all bases in workspace
+	if isWorkspaceLevelRole(role) {
+		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, role)
+	}
+
+	// Get user's access members to check for workspace-level or base-level access
+	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schemaName, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if user has workspace-level access in accessMembers
+	if workspaceRole, hasWorkspaceAccess := s.checkWorkspaceLevelAccess(ctx, schemaName, workspaceID, accessMembers); hasWorkspaceAccess {
+		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, workspaceRole)
+	}
+
+	// For base-member and base-read: Get only bases where user has explicit access
+	baseAccessMap := s.buildBaseAccessMap(ctx, schemaName, workspaceID, accessMembers)
+
+	// If no base access found, return empty list
+	if len(baseAccessMap) == 0 {
+		fmt.Printf("DEBUG: User %s has no base-level access in workspace %s\n", userID, workspaceID)
+		return []dto.BaseResponse{}, nil
+	}
+
+	// Get all bases with user's access
+	return s.getBasesWithAccess(ctx, schemaName, baseAccessMap, userID, workspaceID)
 }
 
 func (s workspaceManagementService) RemoveUserFromWorkspace(ctx context.Context, schemaName string, workspaceID string, userID string) error {

@@ -15,6 +15,10 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	AccessMembersTableFormat = "\"%s\".access_members"
+)
+
 type accessMemberService struct {
 	repo *pkg.DatabaseService
 }
@@ -28,7 +32,7 @@ func (s *accessMemberService) AssignRoleToUser(ctx context.Context, schemaName s
 		req.ID = uuid.New()
 	}
 
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return nil, err
@@ -49,7 +53,7 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 		return app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 
 	// Delete all access members for user in this scope
 	query := dbModels.QueryParams{
@@ -113,7 +117,7 @@ func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schema
 		return app_errors.ErrRecordNotFound
 	}
 
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 	fmt.Printf("DEBUG: RemoveAccessMemberByID - Deleting from table: %s with ID: %s\n", tableName, memberID)
 
 	// Pass just the ID string, not a QueryFilter struct
@@ -128,7 +132,7 @@ func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schema
 }
 
 func (s *accessMemberService) GetUserAccessMembers(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -163,7 +167,7 @@ func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaNa
 		return nil, app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -204,7 +208,7 @@ func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaNa
 }
 
 func (s *accessMemberService) GetScopeMembers(ctx context.Context, schemaName string, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error) {
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 	query := dbModels.QueryParams{
 		Filters: []dbModels.QueryFilter{
 			{
@@ -427,7 +431,7 @@ func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName 
 		return app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf("\"%s\".access_members", schemaName)
+	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
 
 	// Find existing access member record
 	query := dbModels.QueryParams{

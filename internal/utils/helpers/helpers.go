@@ -297,11 +297,9 @@ func MapToStruct(input map[string]interface{}, target interface{}) error {
 	return nil
 }
 
-// StructToStruct: copies from src -> dest using jinzhu/copier with converters set up
-// to handle time.Time <-> *time.Time, *time.Time -> *string and uuid.UUID <-> string conversions.
-func StructToStruct(src, dest interface{}) error {
-	// Prepare converters for copier.Option
-	converters := []copier.TypeConverter{
+// getTimeConverters returns all time-related type converters
+func getTimeConverters() []copier.TypeConverter {
+	return []copier.TypeConverter{
 		// time.Time -> time.Time (pass through)
 		{
 			SrcType: time.Time{},
@@ -365,7 +363,12 @@ func StructToStruct(src, dest interface{}) error {
 				return nil, nil
 			},
 		},
+	}
+}
 
+// getUUIDConverters returns all UUID-related type converters
+func getUUIDConverters() []copier.TypeConverter {
+	return []copier.TypeConverter{
 		// uuid.UUID -> string
 		{
 			SrcType: uuid.UUID{},
@@ -389,6 +392,13 @@ func StructToStruct(src, dest interface{}) error {
 			},
 		},
 	}
+}
+
+// StructToStruct: copies from src -> dest using jinzhu/copier with converters set up
+// to handle time.Time <-> *time.Time, *time.Time -> *string and uuid.UUID <-> string conversions.
+func StructToStruct(src, dest interface{}) error {
+	// Prepare converters for copier.Option
+	converters := append(getTimeConverters(), getUUIDConverters()...)
 
 	// Option: set DeepCopy true if you want deep copy semantics
 	opt := copier.Option{

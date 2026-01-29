@@ -19,6 +19,11 @@ type Config struct {
 	TimeoutSeconds int
 }
 
+const (
+	ErrCreateRequest = "storage http: failed to create request: %w"
+	ErrSendRequest   = "storage http: failed to send request: %w"
+)
+
 // Client implements interfaces.StorageProvider for HTTP-based storage service
 type Client struct {
 	config     Config
@@ -71,7 +76,7 @@ func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.BaseURL+"/storage/upload", &buf)
 	if err != nil {
-		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to create request: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf(ErrCreateRequest, err)
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -79,7 +84,7 @@ func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to send request: %w", err)
+		return interfaces.UploadResponse{}, fmt.Errorf(ErrSendRequest, err)
 	}
 	defer resp.Body.Close()
 
@@ -107,13 +112,13 @@ func (c *Client) Download(ctx context.Context, objectName string) (io.ReadCloser
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("storage http: failed to create request: %w", err)
+		return nil, fmt.Errorf(ErrCreateRequest, err)
 	}
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("storage http: failed to send request: %w", err)
+		return nil, fmt.Errorf(ErrSendRequest, err)
 	}
 
 	// Handle non-200 responses
@@ -135,13 +140,13 @@ func (c *Client) Delete(ctx context.Context, objectName string) error {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteURL, nil)
 	if err != nil {
-		return fmt.Errorf("storage http: failed to create request: %w", err)
+		return fmt.Errorf(ErrCreateRequest, err)
 	}
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("storage http: failed to send request: %w", err)
+		return fmt.Errorf(ErrSendRequest, err)
 	}
 	defer resp.Body.Close()
 
@@ -162,13 +167,13 @@ func (c *Client) Exists(ctx context.Context, objectName string) (bool, error) {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
-		return false, fmt.Errorf("storage http: failed to create request: %w", err)
+		return false, fmt.Errorf(ErrCreateRequest, err)
 	}
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("storage http: failed to send request: %w", err)
+		return false, fmt.Errorf(ErrSendRequest, err)
 	}
 	defer resp.Body.Close()
 

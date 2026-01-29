@@ -6,6 +6,23 @@ import (
 	"github.com/go-playground/validator"
 )
 
+func validateUserIDField(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	switch field {
+	case "UserID":
+		switch tag {
+		case "required":
+			return responseConst.UserError.UserIDRequired
+		default:
+			return responseConst.UserError.UserIDInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
 func RegisterValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()
@@ -272,20 +289,7 @@ func AddUserRequestError(e validator.FieldError) responseConst.ResponseCode {
 }
 
 func RemoveUserRequestError(e validator.FieldError) responseConst.ResponseCode {
-	field := e.Field()
-	tag := e.Tag()
-
-	switch field {
-	case "UserID":
-		switch tag {
-		case "required":
-			return responseConst.UserError.UserIDRequired
-		default:
-			return responseConst.UserError.UserIDInvalid
-		}
-	default:
-		return responseConst.Error.ValidationFailed
-	}
+	return validateUserIDField(e)
 }
 
 func CreateMemberRequestError(e validator.FieldError) responseConst.ResponseCode {
@@ -384,35 +388,9 @@ func AddMultipleMembersRequestError(e validator.FieldError) responseConst.Respon
 }
 
 func ActivateUserRequestError(e validator.FieldError) responseConst.ResponseCode {
-	field := e.Field()
-	tag := e.Tag()
-
-	switch field {
-	case "UserID":
-		switch tag {
-		case "required":
-			return responseConst.UserError.UserIDRequired
-		default:
-			return responseConst.UserError.UserIDInvalid
-		}
-	default:
-		return responseConst.Error.ValidationFailed
-	}
+	return validateUserIDField(e)
 }
 
 func DeactivateUserRequestError(e validator.FieldError) responseConst.ResponseCode {
-	field := e.Field()
-	tag := e.Tag()
-
-	switch field {
-	case "UserID":
-		switch tag {
-		case "required":
-			return responseConst.UserError.UserIDRequired
-		default:
-			return responseConst.UserError.UserIDInvalid
-		}
-	default:
-		return responseConst.Error.ValidationFailed
-	}
+	return validateUserIDField(e)
 }
