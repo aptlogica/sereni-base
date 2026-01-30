@@ -85,3 +85,36 @@ func countRecords(repo *pkg.DatabaseService, tableName string, errorMsg string) 
 	}
 	return count, nil
 }
+
+// addFilter adds a filter to an existing QueryParams if value is not empty
+func addFilter(query *dbModels.QueryParams, column, operator, value string) {
+	if value != "" {
+		query.Filters = append(query.Filters, dbModels.QueryFilter{
+			Column:   column,
+			Operator: operator,
+			Value:    value,
+		})
+	}
+}
+
+// createMultiFilterQuery creates a query with multiple filters
+func createMultiFilterQuery(filters []dbModels.QueryFilter, limit, offset *int) dbModels.QueryParams {
+	return dbModels.QueryParams{
+		Filters: filters,
+		Limit:   limit,
+		Offset:  offset,
+	}
+}
+
+// mapToStructList converts a slice of maps to a slice of type T
+func mapToStructList[T any](data []map[string]interface{}) ([]T, error) {
+	results := make([]T, 0, len(data))
+	for _, item := range data {
+		var result T
+		if err := helpers.MapToStruct(item, &result); err != nil {
+			return nil, app_errors.ErrMapToStruct
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}

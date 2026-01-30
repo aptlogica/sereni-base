@@ -93,13 +93,9 @@ func (s *rolePermissionService) GetRolePermissions(ctx context.Context, schemaNa
 		return nil, app_errors.LogDatabaseError(err, "failed to get role permissions")
 	}
 
-	var rolePermissions []tenant.RolePermission
-	for _, item := range data {
-		var rp tenant.RolePermission
-		if err := helpers.MapToStruct(item, &rp); err != nil {
-			return nil, app_errors.ErrMapToStruct
-		}
-		rolePermissions = append(rolePermissions, rp)
+	rolePermissions, err := mapToStructList[tenant.RolePermission](data)
+	if err != nil {
+		return nil, err
 	}
 	return rolePermissions, nil
 }

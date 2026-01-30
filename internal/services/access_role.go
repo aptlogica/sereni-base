@@ -118,13 +118,9 @@ func (s *accessRoleService) GetAccessRolesByScope(ctx context.Context, schemaNam
 		return nil, app_errors.LogDatabaseError(err, "failed to get access roles by scope")
 	}
 
-	var roles []tenant.AccessRole
-	for _, roleData := range rolesData {
-		var role tenant.AccessRole
-		if err := helpers.MapToStruct(roleData, &role); err != nil {
-			return nil, app_errors.ErrMapToStruct
-		}
-		roles = append(roles, role)
+	roles, err := mapToStructList[tenant.AccessRole](rolesData)
+	if err != nil {
+		return nil, err
 	}
 	return roles, nil
 }
@@ -164,13 +160,9 @@ func (s *accessRoleService) ListAccessRoles(ctx context.Context, schemaName stri
 		}
 	}
 
-	var roles []tenant.AccessRole
-	for _, roleData := range rolesData {
-		var role tenant.AccessRole
-		if err := helpers.MapToStruct(roleData, &role); err != nil {
-			return nil, 0, app_errors.ErrMapToStruct
-		}
-		roles = append(roles, role)
+	roles, err := mapToStructList[tenant.AccessRole](rolesData)
+	if err != nil {
+		return nil, 0, err
 	}
 	return roles, count, nil
 }

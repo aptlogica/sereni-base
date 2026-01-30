@@ -57,7 +57,6 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	loginResp, err := h.authManagementService.VerifyEmail(c.Request.Context(), req)
 	if err != nil {
-		fmt.Println("err--->", err)
 		response.CheckAndSendError(c, err)
 		return
 	}

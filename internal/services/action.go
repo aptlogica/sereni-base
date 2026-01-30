@@ -35,19 +35,6 @@ func (s *actionService) mapToAction(data map[string]interface{}) (tenant.Action,
 	return action, nil
 }
 
-func (s *actionService) createSingleFilterQuery(column, operator, value string, limit int) dbModels.QueryParams {
-	return dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   column,
-				Operator: operator,
-				Value:    value,
-			},
-		},
-		Limit: &limit,
-	}
-}
-
 func (s *actionService) getSingleRecord(ctx context.Context, schemaName string, query dbModels.QueryParams, errorMsg string) (tenant.Action, error) {
 	tableName := s.getTableName(schemaName)
 	data, err := s.repo.TableService.GetTableData(tableName, query)
@@ -77,12 +64,12 @@ func (s *actionService) CreateAction(ctx context.Context, schemaName string, req
 }
 
 func (s *actionService) GetActionByID(ctx context.Context, schemaName string, actionID uuid.UUID) (tenant.Action, error) {
-	query := s.createSingleFilterQuery("id", "eq", actionID.String(), 1)
+	query := createSingleFilterQuery("id", "eq", actionID.String(), 1)
 	return s.getSingleRecord(ctx, schemaName, query, "failed to get action by id")
 }
 
 func (s *actionService) GetActionByCode(ctx context.Context, schemaName string, code string) (tenant.Action, error) {
-	query := s.createSingleFilterQuery("code", "eq", code, 1)
+	query := createSingleFilterQuery("code", "eq", code, 1)
 	return s.getSingleRecord(ctx, schemaName, query, "failed to get action by code")
 }
 
@@ -120,13 +107,9 @@ func (s *actionService) ListActions(ctx context.Context, schemaName string, limi
 		}
 	}
 
-	var actions []tenant.Action
-	for _, item := range data {
-		action, err := s.mapToAction(item)
-		if err != nil {
-			return nil, 0, err
-		}
-		actions = append(actions, action)
+	actions, err := mapToStructList[tenant.Action](data)
+	if err != nil {
+		return nil, 0, err
 	}
 	return actions, count, nil
 }
