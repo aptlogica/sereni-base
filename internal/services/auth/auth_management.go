@@ -9,6 +9,7 @@ import (
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
+	rbac "serenibase/internal/services/rbac"
 	"time"
 
 	app_errors "serenibase/internal/app-errors"
@@ -84,11 +85,8 @@ func (s *authManagementService) sendOtpViaEmail(email string) {
 
 func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error) {
 	// 1. Check if user already exists
-	if existingUser, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
-		fmt.Println("User already exists with ID:", existingUser.ID)
-		// If user exists, we might want to check if they are already an owner/verified.
-		// For now, return error or handle gracefully. Script handled it by printing.
-		// But here we return error to let caller decide.
+	if _, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
+		// If user exists, return error
 		return dto.LoginResponse{}, app_errors.UserAlreadyExists
 	} else if err != app_errors.UserNotFound {
 		return dto.LoginResponse{}, err
@@ -126,11 +124,8 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 
 	roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RBACRoleNames.Owner)
 	if err != nil {
-		fmt.Println("err: ------- ", err)
 		return dto.LoginResponse{}, err
 	}
-
-	fmt.Println("Assigning role", roleData.Name, "to user", insertedUser.Email)
 
 	accessMemberReq := dto.AccessMemberDTO{
 		UserID:     insertedUser.ID.String(),
@@ -225,7 +220,6 @@ func (a *authManagementService) initializeOwner(ctx context.Context, userId stri
 	}
 
 	updatedUser, err := a.userManagementService.UpdateUser(ctx, appConstant.MasterDatabase, userId, updateData)
-	fmt.Println("Updated user after initialization:", updatedUser)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}
@@ -270,7 +264,6 @@ func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyE
 
 	userData, err := a.initializeOwner(ctx, user.ID.String(), user)
 	if err != nil {
-		fmt.Println(err)
 		return dto.LoginResponse{}, err
 	}
 
@@ -357,14 +350,14 @@ func (a *authManagementService) VerifyToken(ctx context.Context, token string) (
 
 // extractIssuedAtFromToken extracts the iat claim as a string from a JWT token
 func extractIssuedAtFromToken(token string) (string, error) {
-       claims, err := helpers.DecodeJWT(token)
-       if err != nil {
-	       return "", fmt.Errorf("failed to decode JWT for iat: %w", err)
-       }
-       if iat, ok := claims["iat"].(float64); ok {
-	       return fmt.Sprintf("%d", int64(iat)), nil
-       }
-       return "", fmt.Errorf("iat claim not found in token")
+	claims, err := helpers.DecodeJWT(token)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode JWT for iat: %w", err)
+	}
+	if iat, ok := claims["iat"].(float64); ok {
+		return fmt.Sprintf("%d", int64(iat)), nil
+	}
+	return "", fmt.Errorf("iat claim not found in token")
 }
 
 func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
@@ -396,20 +389,20 @@ func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.Forg
 		return err
 	}
 
-       issuedAtStr, err := extractIssuedAtFromToken(token)
-       if err != nil {
-	       issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
-       }
-       dataToInsert := dto.UserResetTokenInsertion{
-	       ID:       uuid.NewString(),
-	       UserID:   user.ID.String(),
-	       Token:    token,
-	       IssuedAt: issuedAtStr,
-       }
-       _, err = a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
-       if err != nil {
-	       return app_errors.UserNotFound
-       }
+	issuedAtStr, err := extractIssuedAtFromToken(token)
+	if err != nil {
+		issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
+	}
+	dataToInsert := dto.UserResetTokenInsertion{
+		ID:       uuid.NewString(),
+		UserID:   user.ID.String(),
+		Token:    token,
+		IssuedAt: issuedAtStr,
+	}
+	_, err = a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
+	if err != nil {
+		return app_errors.UserNotFound
+	}
 
 	resetURLTemplate := appConfig.AppConfig.Auth.ResetPasswordURL
 	if resetURLTemplate == "" {
@@ -431,15 +424,14 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 
 	userId := userResetToken.UserID.String()
 
-       tokenIssuedAt, err := extractIssuedAtFromToken(userResetToken.Token)
-       if err != nil {
-	       return app_errors.TokenInvalid
-       }
-       latestIssuedAt := userResetToken.IssuedAt
-       fmt.Println("Latest issued at from DB:", latestIssuedAt, "Token issued at:", tokenIssuedAt)
-       if tokenIssuedAt != latestIssuedAt {
-	       return fmt.Errorf("reset token issued date does not match latest issued date in user_reset_tokens")
-       }
+	tokenIssuedAt, err := extractIssuedAtFromToken(userResetToken.Token)
+	if err != nil {
+		return app_errors.TokenInvalid
+	}
+	latestIssuedAt := userResetToken.IssuedAt
+	if tokenIssuedAt != latestIssuedAt {
+		return fmt.Errorf("reset token issued date does not match latest issued date in user_reset_tokens")
+	}
 
 	hashedPassword, err := a.hashNewPassword(req.NewPassword)
 	if err != nil {
@@ -454,7 +446,7 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return err
 	}
 
-	fmt.Println(userId, "Password reset successful for user.")
+	return nil
 	return a.cleanUserResetTokens(ctx, userId)
 }
 
@@ -604,22 +596,21 @@ func (a *authManagementService) generateInvitationToken(ctx context.Context, use
 		"user_id": userID,
 	}
 
+	token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 3600)
+	if err != nil {
+		return "", err
+	}
 
-       token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 3600)
-       if err != nil {
-	       return "", err
-       }
-
-       issuedAtStr, err := extractIssuedAtFromToken(token)
-       if err != nil {
-	       issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
-       }
-       dataToInsert := dto.UserResetTokenInsertion{
-	       ID:       uuid.NewString(),
-	       UserID:   userID,
-	       Token:    token,
-	       IssuedAt: issuedAtStr,
-       }
+	issuedAtStr, err := extractIssuedAtFromToken(token)
+	if err != nil {
+		issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
+	}
+	dataToInsert := dto.UserResetTokenInsertion{
+		ID:       uuid.NewString(),
+		UserID:   userID,
+		Token:    token,
+		IssuedAt: issuedAtStr,
+	}
 
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
 	if err != nil {
@@ -992,7 +983,7 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
 	// Try to remove from access_members table (RBAC system)
 	// Find all access_members records for this user-workspace combination
-	accessMembersTableName := fmt.Sprintf(AccessMembersTableFormat, schema)
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
 	params := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -1065,7 +1056,7 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 func (a *authManagementService) RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error {
 	// For base removal, we need to find the access_member record and delete it
 	// Find the access_members record for this user-base combination
-	accessMembersTableName := fmt.Sprintf(AccessMembersTableFormat, schema)
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
 	params := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -1334,8 +1325,6 @@ func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context,
 		return nil, app_errors.LogDatabaseError(err, "failed to get workspace members with roles")
 	}
 
-	fmt.Println("Records from get_workspace_members_with_role:", records)
-
 	var result []dto.UserWithRole
 	for _, record := range records {
 		if rec, ok := record[functionName].(map[string]interface{}); ok {
@@ -1396,7 +1385,7 @@ func (a *authManagementService) RemoveAccessMemberByID(ctx context.Context, sche
 	lg := logger.Get()
 
 	// Delete from access_members table using TableService
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schema)
+	tableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
 	err := a.repo.TableService.DeleteRecord(tableName, accessMemberID)
 	if err != nil {
 		lg.Error().Err(err).Str("access_member_id", accessMemberID).Msg("Failed to remove access member")

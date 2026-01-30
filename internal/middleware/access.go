@@ -1,9 +1,7 @@
 package middleware
 
 import (
-	"context"
 	"fmt"
-	"serenibase/internal/constant"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/response"
@@ -143,25 +141,12 @@ func validateBaseAccess(c *gin.Context, workspaceMemberData tenant.WorkspaceMemb
 // This is the new RBAC-based permission check that supports granular permissions
 func CheckPermissionMiddleware(accessMemberService interfaces.AccessMemberService, resourceCode, actionCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, hasUser := c.Get("user_id")
-		schema, hasSchema := c.Get("schema")
-
-		if !hasUser || !hasSchema {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		userIDStr, schemaStr, ok := extractUserAndSchemaFromContext(c)
+		if !ok {
 			return
 		}
 
-		userIDStr, _ := userID.(string)
-		schemaStr, _ := schema.(string)
-
-		// Get scope from context or headers
-		scopeType := c.GetHeader(HeaderScopeType)
-		if scopeType == "" {
-			scopeType = constant.ScopeLevels.Workspace
-		}
-
-		scopeID := c.GetHeader(HeaderScopeID)
+		scopeType, scopeID := extractScopeFromHeaders(c)
 
 		// Check if user has permission
 		hasPermission, err := accessMemberService.CheckUserPermission(
@@ -175,8 +160,7 @@ func CheckPermissionMiddleware(accessMemberService interfaces.AccessMemberServic
 		)
 
 		if err != nil || !hasPermission {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+			sendUnauthorizedError(c)
 			return
 		}
 
@@ -187,24 +171,12 @@ func CheckPermissionMiddleware(accessMemberService interfaces.AccessMemberServic
 // CheckRoleMiddleware verifies if user has a specific role at a scope level
 func CheckRoleMiddleware(accessMemberService interfaces.AccessMemberService, requiredRoles []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, hasUser := c.Get("user_id")
-		schema, hasSchema := c.Get("schema")
-
-		if !hasUser || !hasSchema {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		userIDStr, schemaStr, ok := extractUserAndSchemaFromContext(c)
+		if !ok {
 			return
 		}
 
-		userIDStr, _ := userID.(string)
-		schemaStr, _ := schema.(string)
-
-		scopeType := c.GetHeader(HeaderScopeType)
-		if scopeType == "" {
-			scopeType = constant.ScopeLevels.Workspace
-		}
-
-		scopeID := c.GetHeader(HeaderScopeID)
+		scopeType, scopeID := extractScopeFromHeaders(c)
 
 		// Get user's highest role for this scope
 		highestRole, err := accessMemberService.GetUserHighestRole(
@@ -216,8 +188,7 @@ func CheckRoleMiddleware(accessMemberService interfaces.AccessMemberService, req
 		)
 
 		if err != nil {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+			sendUnauthorizedError(c)
 			return
 		}
 
@@ -231,8 +202,7 @@ func CheckRoleMiddleware(accessMemberService interfaces.AccessMemberService, req
 		}
 
 		if !hasRole {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+			sendUnauthorizedError(c)
 			return
 		}
 
@@ -245,24 +215,15 @@ func CheckRoleMiddleware(accessMemberService interfaces.AccessMemberService, req
 // Supports both legacy workspace_members and new access_members
 func ValidateAccessScopeMiddleware(accessMemberService interfaces.AccessMemberService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, hasUser := c.Get("user_id")
-		schema, hasSchema := c.Get("schema")
-
-		if !hasUser || !hasSchema {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		userIDStr, schemaStr, ok := extractUserAndSchemaFromContext(c)
+		if !ok {
 			return
 		}
 
-		userIDStr, _ := userID.(string)
-		schemaStr, _ := schema.(string)
-
-		scopeType := c.GetHeader(HeaderScopeType)
-		scopeID := c.GetHeader(HeaderScopeID)
+		scopeType, scopeID := extractScopeFromHeaders(c)
 
 		if scopeType == "" || scopeID == "" {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+			sendUnauthorizedError(c)
 			return
 		}
 
@@ -291,26 +252,14 @@ func ValidateAccessScopeMiddleware(accessMemberService interfaces.AccessMemberSe
 // Useful for operations that require multiple permissions
 func RequirePermissionsMiddleware(accessMemberService interfaces.AccessMemberService, permissions []struct{ Resource, Action string }) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, hasUser := c.Get("user_id")
-		schema, hasSchema := c.Get("schema")
-
-		if !hasUser || !hasSchema {
-			response.SendError(c, responseConst.Error.UnauthorizedAccess)
-			c.Abort()
+		userIDStr, schemaStr, ok := extractUserAndSchemaFromContext(c)
+		if !ok {
 			return
 		}
 
-		userIDStr, _ := userID.(string)
-		schemaStr, _ := schema.(string)
+		scopeType, scopeID := extractScopeFromHeaders(c)
 
-		scopeType := c.GetHeader(HeaderScopeType)
-		if scopeType == "" {
-			scopeType = constant.ScopeLevels.Workspace
-		}
-
-		scopeID := c.GetHeader(HeaderScopeID)
-
-		ctx := context.Background()
+		ctx := c.Request.Context()
 
 		// Check all required permissions
 		for _, perm := range permissions {
@@ -325,8 +274,7 @@ func RequirePermissionsMiddleware(accessMemberService interfaces.AccessMemberSer
 			)
 
 			if err != nil || !hasPermission {
-				response.SendError(c, responseConst.Error.UnauthorizedAccess)
-				c.Abort()
+				sendUnauthorizedError(c)
 				return
 			}
 		}

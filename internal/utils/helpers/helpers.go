@@ -242,9 +242,6 @@ func TimeAgo(t time.Time) string {
 }
 
 func MapToStruct(input map[string]interface{}, target interface{}) error {
-	// debug print (keeps your original print from the snippet)
-	fmt.Printf("type: %T, value: %#v\n", input["created_time"], input["created_time"])
-
 	// JSON round-trip: map -> JSON -> struct
 	// This relies on encoding/json behavior:
 	//  - strings with RFC3339 parse into time.Time

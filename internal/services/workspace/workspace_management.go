@@ -168,7 +168,6 @@ func (s workspaceManagementService) checkWorkspaceLevelAccess(ctx context.Contex
 	for _, member := range accessMembers {
 		if s.isWorkspaceMember(member, workspaceID) {
 			if roleName := s.getRoleName(ctx, schemaName, member.RoleID); roleName != "" {
-				fmt.Printf("DEBUG: User has workspace-level access with role: %s in workspace %s\n", roleName, workspaceID)
 				return roleName, true
 			}
 		}
@@ -229,20 +228,17 @@ func (s workspaceManagementService) getBasesWithAccess(ctx context.Context, sche
 	for baseID, roleName := range baseAccessMap {
 		base, err := s.baseManagementService.GetBaseByID(ctx, schemaName, baseID)
 		if err != nil {
-			fmt.Printf("DEBUG: Failed to get base %s: %v\n", baseID, err)
 			continue
 		}
 
 		var baseResp dto.BaseResponse
 		if err := helpers.StructToStruct(base, &baseResp); err != nil {
-			fmt.Printf("DEBUG: Failed to convert base %s: %v\n", baseID, err)
 			continue
 		}
 		baseResp.AccessLevel = roleName
 		response = append(response, baseResp)
 	}
 
-	fmt.Printf("DEBUG: Returning %d bases for user %s with base-level access in workspace %s\n", len(response), userID, workspaceID)
 	return response, nil
 }
 

@@ -143,7 +143,6 @@ func (s tableManagementService) createTableWithDefaultsInDB(schemaName string, t
 
 	err := s.repo.TableService.CreateTable(creationReq)
 	if err != nil {
-		fmt.Println("CreateTable error:", err)
 		return []dto.AddColumnRequest{}, app_errors.LogDatabaseError(err, "failed to create table in DB")
 	}
 
@@ -194,7 +193,6 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 
 	insertedColumns, err := s.columnsService.BulkInsert(colDataList, schemaName)
 	if err != nil {
-		fmt.Println("BulkInsert system columns error:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -248,25 +246,21 @@ func (s tableManagementService) CreateTableWithDefaultsImport(ctx context.Contex
 func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	insertedModel, err := s.createModel(ctx, tableData, schemaName)
 	if err != nil {
-		fmt.Println("createModel:", err)
 		return dto.TableResponse{}, err
 	}
 
 	columnsResponse, err := s.setupSystemColumns(ctx, schemaName, insertedModel)
 	if err != nil {
-		fmt.Println("setupSystemColumns:", err)
 		return dto.TableResponse{}, err
 	}
 
 	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
 	if err != nil {
-		fmt.Println("createDefaultView:", err)
 		return dto.TableResponse{}, err
 	}
 
 	recordsData, err := s.GetAllRecords(ctx, schemaName, insertedModel.ID.String())
 	if err != nil {
-		fmt.Println("GetAllRecords:", err)
 		return dto.TableResponse{}, err
 	}
 
@@ -314,13 +308,11 @@ func (s tableManagementService) createModel(ctx context.Context, tableData dto.C
 func (s tableManagementService) setupSystemColumns(ctx context.Context, schemaName string, model tenant.Model) ([]dto.ColumnResponse, error) {
 	systemColumns, err := s.createTableWithDefaultsInDB(schemaName, model.Alias)
 	if err != nil {
-		fmt.Println("createTableWithDefaultsInDB:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
 	columnsResponse, err := s.insertSystemColumns(schemaName, model, systemColumns)
 	if err != nil {
-		fmt.Println("insertSystemColumns:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -950,9 +942,6 @@ func (s tableManagementService) removeLookupColumnInRelation(
 	if relationData.TargetModelID == modelId {
 		relationUpdation.TargetLookupColumns = s.removeLookupColumnFromList(relationData.TargetLookupColumns, lookupColumnName, "TargetLookupColumns")
 	}
-
-	fmt.Println("Updating relation with removal of lookup column:", relationUpdation)
-
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
 		lg := logger.Get()
@@ -1417,7 +1406,6 @@ func (s tableManagementService) handleDatatypeChangeIfNeeded(
 	allowed := s.isConversionAllowed(columnData.UIDT, *req.UIDT)
 
 	if err := s.updateColumnDatatypeInDb(ctx, schemaName, model.Alias, column.ColumnName, *req.DT, !allowed); err != nil {
-		fmt.Printf("DEBUG: Reverting column metadata for %s due to DB error: %v\n", column.ColumnName, err)
 		s.revertColumnMetadata(ctx, schemaName, id, columnData)
 		return err
 	}
@@ -1481,7 +1469,6 @@ func (s tableManagementService) deleteLookups(ctx context.Context, relationId st
 
 	for _, col := range columns {
 		if col.UIDT == "lookup" {
-			fmt.Printf("Found lookup column: %s\n", col.ColumnName)
 			colRelationId, _ := col.Meta["relation_id"].(string)
 
 			if colRelationId == relationId {
@@ -2504,8 +2491,6 @@ func (s tableManagementService) InsertRowData(ctx context.Context, schemaName st
 	}
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
-
-	fmt.Printf("DEBUG: InsertRowData - Column: %s, DT: %s, Value: %v\n", columnData.ColumnName, columnData.DT, req.Value)
 
 	var value interface{}
 	if req.Value != nil {

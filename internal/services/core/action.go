@@ -6,6 +6,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -35,31 +36,9 @@ func (s *actionService) mapToAction(data map[string]interface{}) (tenant.Action,
 	return action, nil
 }
 
-func (s *actionService) createSingleFilterQuery(column, operator, value string, limit int) dbModels.QueryParams {
-	return dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   column,
-				Operator: operator,
-				Value:    value,
-			},
-		},
-		Limit: &limit,
-	}
-}
-
 func (s *actionService) getSingleRecord(ctx context.Context, schemaName string, query dbModels.QueryParams, errorMsg string) (tenant.Action, error) {
 	tableName := s.getTableName(schemaName)
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Action{}, app_errors.LogDatabaseError(err, errorMsg)
-	}
-
-	if len(data) == 0 {
-		return tenant.Action{}, app_errors.ErrRecordNotFound
-	}
-
-	return s.mapToAction(data[0])
+	return common.GetSingleRecordWithRepo[tenant.Action](s.repo, tableName, query, errorMsg)
 }
 
 func (s *actionService) CreateAction(ctx context.Context, schemaName string, req dto.ActionDTO) (tenant.Action, error) {
@@ -77,12 +56,12 @@ func (s *actionService) CreateAction(ctx context.Context, schemaName string, req
 }
 
 func (s *actionService) GetActionByID(ctx context.Context, schemaName string, actionID uuid.UUID) (tenant.Action, error) {
-	query := s.createSingleFilterQuery("id", "eq", actionID.String(), 1)
+	query := common.CreateSingleFilterQuery("id", "eq", actionID.String(), 1)
 	return s.getSingleRecord(ctx, schemaName, query, "failed to get action by id")
 }
 
 func (s *actionService) GetActionByCode(ctx context.Context, schemaName string, code string) (tenant.Action, error) {
-	query := s.createSingleFilterQuery("code", "eq", code, 1)
+	query := common.CreateSingleFilterQuery("code", "eq", code, 1)
 	return s.getSingleRecord(ctx, schemaName, query, "failed to get action by code")
 }
 
@@ -99,34 +78,14 @@ func (s *actionService) ListActions(ctx context.Context, schemaName string, limi
 		return nil, 0, app_errors.LogDatabaseError(err, "failed to list actions")
 	}
 
-	countQuery := dbModels.QueryParams{
-		Aggregates: []dbModels.AggregateFunction{
-			{
-				Function: "COUNT",
-				Column:   "id",
-				Alias:    "total",
-			},
-		},
-	}
-	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
+	count, err := common.CountRecordsWithRepo(s.repo, tableName, "failed to count actions")
 	if err != nil {
-		return nil, 0, app_errors.LogDatabaseError(err, "failed to count actions")
+		return nil, 0, err
 	}
 
-	count := int64(0)
-	if len(countData) > 0 {
-		if total, ok := countData[0]["total"]; ok {
-			count = int64(total.(float64))
-		}
-	}
-
-	var actions []tenant.Action
-	for _, item := range data {
-		action, err := s.mapToAction(item)
-		if err != nil {
-			return nil, 0, err
-		}
-		actions = append(actions, action)
+	actions, err := common.MapToStructList[tenant.Action](data)
+	if err != nil {
+		return nil, 0, err
 	}
 	return actions, count, nil
 }

@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"go-postgres-rest/pkg"
+	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -34,15 +36,15 @@ func (s *permissionService) CreatePermission(ctx context.Context, schemaName str
 
 	var permission tenant.Permission
 	if err := helpers.MapToStruct(insertedData, &permission); err != nil {
-		return tenant.Permission{}, err
+		return tenant.Permission{}, app_errors.ErrMapToStruct
 	}
 	return permission, nil
 }
 
 func (s *permissionService) GetPermissionByID(ctx context.Context, schemaName string, permissionID uuid.UUID) (tenant.Permission, error) {
 	tableName := tenant.Permission{}.TableName(schemaName)
-	query := createSingleFilterQuery("id", "eq", permissionID.String(), 1)
-	return getSingleRecord[tenant.Permission](s.repo, tableName, query, "failed to get permission by id")
+	query := common.CreateSingleFilterQuery("id", "eq", permissionID.String(), 1)
+	return common.GetSingleRecordWithRepo[tenant.Permission](s.repo, tableName, query, "failed to get permission by id")
 }
 
 func (s *permissionService) GetPermissionByResourceAndAction(ctx context.Context, schemaName string, resourceID, actionID uuid.UUID) (tenant.Permission, error) {
@@ -64,7 +66,7 @@ func (s *permissionService) GetPermissionByResourceAndAction(ctx context.Context
 		Filters: filters,
 		Limit:   &limit,
 	}
-	return getSingleRecord[tenant.Permission](s.repo, tableName, query, "failed to get permission by resource and action")
+	return common.GetSingleRecordWithRepo[tenant.Permission](s.repo, tableName, query, "failed to get permission by resource and action")
 }
 
 func (s *permissionService) ListPermissions(ctx context.Context, schemaName string, limit, offset int) ([]tenant.Permission, int64, error) {
@@ -74,12 +76,12 @@ func (s *permissionService) ListPermissions(ctx context.Context, schemaName stri
 		Offset: &offset,
 	}
 
-	permissions, err := listRecords[tenant.Permission](s.repo, tableName, query, "failed to list permissions")
+	permissions, err := common.ListRecordsWithRepo[tenant.Permission](s.repo, tableName, query, "failed to list permissions")
 	if err != nil {
 		return nil, 0, err
 	}
 
-	count, err := countRecords(s.repo, tableName, "failed to count permissions")
+	count, err := common.CountRecordsWithRepo(s.repo, tableName, "failed to count permissions")
 	if err != nil {
 		return nil, 0, err
 	}
@@ -124,5 +126,5 @@ func (s *permissionService) GetPermissionsByResource(ctx context.Context, schema
 			},
 		},
 	}
-	return listRecords[tenant.Permission](s.repo, tableName, query, "failed to get permissions by resource")
+	return common.ListRecordsWithRepo[tenant.Permission](s.repo, tableName, query, "failed to get permissions by resource")
 }
