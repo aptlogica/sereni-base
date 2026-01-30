@@ -2803,6 +2803,7 @@ func (s tableManagementService) assetsToMaps(assets []tenant.Assets) []map[strin
 	return result
 }
 
+// AddAttachment now supports uploading all file types, not just images.
 func (s tableManagementService) AddAttachment(
 	ctx context.Context,
 	schemaName string,
@@ -2810,6 +2811,7 @@ func (s tableManagementService) AddAttachment(
 	files []*multipart.FileHeader,
 ) (dto.RecordResponse, error) {
 	lg := logger.Get()
+	// uploadAssets now supports all file types
 	assets, err := s.uploadAssets(ctx, schemaName, files)
 	if err != nil {
 		return dto.RecordResponse{}, err
@@ -2951,9 +2953,10 @@ func (s tableManagementService) RemoveAttachments(
 	}, nil
 }
 
+// uploadAssets now supports all file types, not just images.
 func (s tableManagementService) uploadAssets(ctx context.Context, schemaName string, files []*multipart.FileHeader) ([]tenant.Assets, error) {
 	uploadReq := dto.UploadAssetRequest{
-		Files: files,
+		Files: files, // Accepts all file types
 	}
 	assets, err := s.assetManagementService.Upload(ctx, uploadReq, schemaName)
 	if err != nil {

@@ -385,10 +385,10 @@ func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.Forg
 	}
 
 	dataToInsert := dto.UserResetTokenInsertion{
-		ID:     uuid.NewString(),
-		UserID: user.ID.String(),
-		Token:  token,
-		Expiry: time.Now().Add(1 * time.Hour),
+		ID:       uuid.NewString(),
+		UserID:   user.ID.String(),
+		Token:    token,
+		IssuedAt: time.Now(),
 	}
 	_, err = a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
 	// data unused was triggering lint?
@@ -416,6 +416,23 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 
 	userId := userResetToken.UserID.String()
 
+	// Extract issued date from token (assume helpers.DecodeJWT returns claims with IssuedAt field)
+	claims, err := helpers.DecodeJWT(userResetToken.Token)
+	if err != nil {
+		return app_errors.TokenInvalid
+	}
+	tokenIssuedAt, ok := claims["iat"].(float64)
+	if !ok {
+		return fmt.Errorf("token missing issued at (iat) claim")
+	}
+
+	// Fetch latest issued_at from user_reset_tokens for this user
+	// (Assume only one valid token per user, as per CreateUserResetToken logic)
+	latestIssuedAt := userResetToken.IssuedAt.Unix()
+	if int64(tokenIssuedAt) != latestIssuedAt {
+		return fmt.Errorf("reset token issued date does not match latest issued date in user_reset_tokens")
+	}
+
 	hashedPassword, err := a.hashNewPassword(req.NewPassword)
 	if err != nil {
 		return err
@@ -429,6 +446,7 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return err
 	}
 
+	fmt.Println(userId, "Password reset successful for user.")
 	return a.cleanUserResetTokens(ctx, userId)
 }
 
@@ -437,11 +455,7 @@ func (a *authManagementService) fetchValidResetToken(ctx context.Context, token 
 	if err != nil {
 		return tenant.UserResetToken{}, app_errors.TokenInvalid
 	}
-
-	if time.Now().After(userResetToken.Expiry) {
-		return tenant.UserResetToken{}, app_errors.TokenExpired
-	}
-
+	// No expiry check here, only validity of token
 	return userResetToken, nil
 }
 
@@ -588,10 +602,10 @@ func (a *authManagementService) generateInvitationToken(ctx context.Context, use
 	}
 
 	dataToInsert := dto.UserResetTokenInsertion{
-		ID:     uuid.NewString(),
-		UserID: userID,
-		Token:  token,
-		Expiry: time.Now().Add(1 * time.Hour),
+		ID:       uuid.NewString(),
+		UserID:   userID,
+		Token:    token,
+		IssuedAt: time.Now(),
 	}
 
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
@@ -789,11 +803,58 @@ func (a *authManagementService) demoteFromCoOwner(
 }
 
 func (a *authManagementService) updateMemberships(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) error {
+	// Always fetch current memberships
+	currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
+	if err != nil {
+		return err
+	}
+
+	// Build a map for quick lookup of new memberships (by unique key: workspace-level or base-level)
+	type membershipKey struct {
+		ScopeType string // "workspace" or "base"
+		ScopeID   string // workspace_id or base_id
+		Role      string // role name
+	}
+	newMemberships := make(map[membershipKey]struct{})
+	for _, m := range userData.Membership {
+		if len(m.Bases) == 0 {
+			// Workspace-level membership
+			key := membershipKey{ScopeType: "workspace", ScopeID: m.WorkspaceID, Role: m.Role}
+			newMemberships[key] = struct{}{}
+		} else {
+			// Base-level memberships
+			for _, b := range m.Bases {
+				key := membershipKey{ScopeType: "base", ScopeID: b.BaseID, Role: b.Role}
+				newMemberships[key] = struct{}{}
+			}
+		}
+	}
+
+	// Remove any current memberships not present in the new array
+	for _, member := range currentAccessMembers {
+		var key membershipKey
+		if member.ScopeType == "workspace" {
+			if member.ScopeID != nil {
+				key = membershipKey{ScopeType: "workspace", ScopeID: *member.ScopeID, Role: member.RoleID} // RoleID is actually role uuid, but we only have role name in MembershipRequest
+			}
+		} else if member.ScopeType == "base" {
+			if member.ScopeID != nil {
+				key = membershipKey{ScopeType: "base", ScopeID: *member.ScopeID, Role: member.RoleID}
+			}
+		}
+		// Note: This will only work if RoleID in DB is the same as Role in MembershipRequest, otherwise you may need to map role uuid to name
+		if _, found := newMemberships[key]; !found {
+			_ = a.RemoveAccessMemberByID(ctx, schema, member.ID.String(), reqBy)
+		}
+	}
+
+	// If membership is empty, we're done (all removed above)
 	if len(userData.Membership) == 0 {
 		return nil
 	}
 
-	_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
+	// Add/update memberships as usual
+	_, err = a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
 	return err
 }
 

@@ -115,6 +115,7 @@ func (s *assetManagementService) uploadMainFile(objectName string, file io.Reade
 		size,
 		contentType,
 	)
+	fmt.Println("Uploaded file to storage err:", err, contentType)
 	if err != nil {
 		return "", err
 	}
