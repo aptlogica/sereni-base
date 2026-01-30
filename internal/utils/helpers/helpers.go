@@ -277,7 +277,7 @@ func getTimeConverters() []copier.TypeConverter {
 		{
 			SrcType: time.Time{},
 			DstType: time.Time{},
-			Fn:      timeToTime,
+			Fn:      passThrough,
 		},
 		// *time.Time -> time.Time (dereference)
 		{
@@ -295,7 +295,7 @@ func getTimeConverters() []copier.TypeConverter {
 		{
 			SrcType: (*time.Time)(nil),
 			DstType: (*time.Time)(nil),
-			Fn:      pointerTimeToPointerTime,
+			Fn:      passThrough,
 		},
 		// *time.Time -> *string (convert date to string pointer in yyyy-mm-dd format)
 		{
@@ -306,8 +306,8 @@ func getTimeConverters() []copier.TypeConverter {
 	}
 }
 
-// timeToTime converts time.Time to time.Time (pass through)
-func timeToTime(src interface{}) (interface{}, error) {
+// passThrough is a generic pass-through converter (returns src as-is)
+func passThrough(src interface{}) (interface{}, error) {
 	return src, nil
 }
 
@@ -327,11 +327,6 @@ func timeToPointerTime(src interface{}) (interface{}, error) {
 	return nil, nil
 }
 
-// pointerTimeToPointerTime converts *time.Time to *time.Time (pass through)
-func pointerTimeToPointerTime(src interface{}) (interface{}, error) {
-	return src, nil
-}
-
 // pointerTimeToPointerString converts *time.Time to *string (yyyy-mm-dd format)
 func pointerTimeToPointerString(src interface{}) (interface{}, error) {
 	if t, ok := src.(*time.Time); ok && t != nil {
@@ -341,20 +336,24 @@ func pointerTimeToPointerString(src interface{}) (interface{}, error) {
 	return nil, nil
 }
 
+// uuidToString converts uuid.UUID to string
+func uuidToString(src interface{}) (interface{}, error) {
+	if v, ok := src.(uuid.UUID); ok {
+		return v.String(), nil
+	}
+	return src, nil
+}
+
+// stringToUUID converts string to uuid.UUID
+func stringToUUID(src interface{}) (interface{}, error) {
+	if s, ok := src.(string); ok {
+		return uuid.Parse(s)
+	}
+	return src, nil
+}
+
 // getUUIDConverters returns all UUID-related type converters
 func getUUIDConverters() []copier.TypeConverter {
-	uuidToString := func(src interface{}) (interface{}, error) {
-		if v, ok := src.(uuid.UUID); ok {
-			return v.String(), nil
-		}
-		return src, nil
-	}
-	stringToUUID := func(src interface{}) (interface{}, error) {
-		if s, ok := src.(string); ok {
-			return uuid.Parse(s)
-		}
-		return src, nil
-	}
 	return []copier.TypeConverter{
 		{SrcType: uuid.UUID{}, DstType: "", Fn: uuidToString},
 		{SrcType: "", DstType: uuid.UUID{}, Fn: stringToUUID},
@@ -386,12 +385,24 @@ func StructToStruct(src, dest interface{}) error {
 	return nil
 }
 
-func StringPtr(s string) *string {
-	return &s
+// Ptr returns a pointer to the given value (generic pointer helper)
+func Ptr[T any](v T) *T {
+	return &v
 }
 
+// StringPtr returns a pointer to the given string (kept for backward compatibility)
+func StringPtr(s string) *string {
+	return Ptr(s)
+}
+
+// Float64Ptr returns a pointer to the given float64 (kept for backward compatibility)
 func Float64Ptr(f float64) *float64 {
-	return &f
+	return Ptr(f)
+}
+
+// BoolPtr returns a pointer to the given bool (kept for backward compatibility)
+func BoolPtr(b bool) *bool {
+	return Ptr(b)
 }
 
 func UnmarshalJSON(data []byte, v interface{}) error {
@@ -400,10 +411,6 @@ func UnmarshalJSON(data []byte, v interface{}) error {
 
 func MarshalJSON(v interface{}) ([]byte, error) {
 	return json.Marshal(v)
-}
-
-func BoolPtr(b bool) *bool {
-	return &b
 }
 
 func ToSnakeCase(str string) string {

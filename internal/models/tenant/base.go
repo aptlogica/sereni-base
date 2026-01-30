@@ -43,6 +43,11 @@ func (Base) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".bases", prefix)
 }
 
+// createIntegerColumn creates an integer column with default 0
+func createIntegerColumn(name string) models.ColumnDefinition {
+	return models.ColumnDefinition{Name: name, DataType: "integer", DefaultValue: StrPtr("0")}
+}
+
 func (tbl Base) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -52,19 +57,19 @@ func (tbl Base) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "title", DataType: "varchar", NotNull: true},
 			{Name: "description", DataType: "text"},
 			{Name: "image", DataType: "varchar"},
-			{Name: "type", DataType: "varchar", DefaultValue: strPtr("'internal'")},
+			{Name: "type", DataType: "varchar", DefaultValue: StrPtr("'internal'")},
 			{Name: "config", DataType: "jsonb"},
 			{Name: "settings", DataType: "jsonb"},
 			{Name: "meta", DataType: "jsonb"},
-			{Name: "status", DataType: "varchar", DefaultValue: strPtr("'active'")},
-			{Name: "visibility", DataType: "varchar", DefaultValue: strPtr("'private'")},
-			{Name: "table_count", DataType: "integer", DefaultValue: strPtr("0")},
-			{Name: "row_count", DataType: "integer", DefaultValue: strPtr("0")},
-			{Name: "storage_used_bytes", DataType: "integer", DefaultValue: strPtr("0")},
+			{Name: "status", DataType: "varchar", DefaultValue: StrPtr("'active'")},
+			{Name: "visibility", DataType: "varchar", DefaultValue: StrPtr("'private'")},
+			createIntegerColumn("table_count"),
+			createIntegerColumn("row_count"),
+			createIntegerColumn("storage_used_bytes"),
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("created_time", true, false),
+			createTimestampColumn("last_modified_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_bases_workspace_id", Columns: []string{"workspace_id"}},
