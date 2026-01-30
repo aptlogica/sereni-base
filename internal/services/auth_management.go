@@ -355,6 +355,18 @@ func (a *authManagementService) VerifyToken(ctx context.Context, token string) (
 	return a.ValidateToken(ctx, token)
 }
 
+// extractIssuedAtFromToken extracts the iat claim as a string from a JWT token
+func extractIssuedAtFromToken(token string) (string, error) {
+       claims, err := helpers.DecodeJWT(token)
+       if err != nil {
+	       return "", fmt.Errorf("failed to decode JWT for iat: %w", err)
+       }
+       if iat, ok := claims["iat"].(float64); ok {
+	       return fmt.Sprintf("%d", int64(iat)), nil
+       }
+       return "", fmt.Errorf("iat claim not found in token")
+}
+
 func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	// Local lookup instead of Keycloak
 
@@ -384,17 +396,20 @@ func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.Forg
 		return err
 	}
 
-	dataToInsert := dto.UserResetTokenInsertion{
-		ID:       uuid.NewString(),
-		UserID:   user.ID.String(),
-		Token:    token,
-		IssuedAt: time.Now(),
-	}
-	_, err = a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
-	// data unused was triggering lint?
-	if err != nil {
-		return app_errors.UserNotFound
-	}
+       issuedAtStr, err := extractIssuedAtFromToken(token)
+       if err != nil {
+	       issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
+       }
+       dataToInsert := dto.UserResetTokenInsertion{
+	       ID:       uuid.NewString(),
+	       UserID:   user.ID.String(),
+	       Token:    token,
+	       IssuedAt: issuedAtStr,
+       }
+       _, err = a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
+       if err != nil {
+	       return app_errors.UserNotFound
+       }
 
 	resetURLTemplate := appConfig.AppConfig.Auth.ResetPasswordURL
 	if resetURLTemplate == "" {
@@ -416,22 +431,15 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 
 	userId := userResetToken.UserID.String()
 
-	// Extract issued date from token (assume helpers.DecodeJWT returns claims with IssuedAt field)
-	claims, err := helpers.DecodeJWT(userResetToken.Token)
-	if err != nil {
-		return app_errors.TokenInvalid
-	}
-	tokenIssuedAt, ok := claims["iat"].(float64)
-	if !ok {
-		return fmt.Errorf("token missing issued at (iat) claim")
-	}
-
-	// Fetch latest issued_at from user_reset_tokens for this user
-	// (Assume only one valid token per user, as per CreateUserResetToken logic)
-	latestIssuedAt := userResetToken.IssuedAt.Unix()
-	if int64(tokenIssuedAt) != latestIssuedAt {
-		return fmt.Errorf("reset token issued date does not match latest issued date in user_reset_tokens")
-	}
+       tokenIssuedAt, err := extractIssuedAtFromToken(userResetToken.Token)
+       if err != nil {
+	       return app_errors.TokenInvalid
+       }
+       latestIssuedAt := userResetToken.IssuedAt
+       fmt.Println("Latest issued at from DB:", latestIssuedAt, "Token issued at:", tokenIssuedAt)
+       if tokenIssuedAt != latestIssuedAt {
+	       return fmt.Errorf("reset token issued date does not match latest issued date in user_reset_tokens")
+       }
 
 	hashedPassword, err := a.hashNewPassword(req.NewPassword)
 	if err != nil {
@@ -596,17 +604,22 @@ func (a *authManagementService) generateInvitationToken(ctx context.Context, use
 		"user_id": userID,
 	}
 
-	token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 3600)
-	if err != nil {
-		return "", err
-	}
 
-	dataToInsert := dto.UserResetTokenInsertion{
-		ID:       uuid.NewString(),
-		UserID:   userID,
-		Token:    token,
-		IssuedAt: time.Now(),
-	}
+       token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 3600)
+       if err != nil {
+	       return "", err
+       }
+
+       issuedAtStr, err := extractIssuedAtFromToken(token)
+       if err != nil {
+	       issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
+       }
+       dataToInsert := dto.UserResetTokenInsertion{
+	       ID:       uuid.NewString(),
+	       UserID:   userID,
+	       Token:    token,
+	       IssuedAt: issuedAtStr,
+       }
 
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
 	if err != nil {

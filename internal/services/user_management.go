@@ -416,7 +416,6 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to get users with role")
 	}
-	fmt.Println("result records: ---- ", records)
 	var result []dto.UserWithRole
 	for _, record := range records {
 		if rec, ok := record[functionName].(map[string]interface{}); ok {

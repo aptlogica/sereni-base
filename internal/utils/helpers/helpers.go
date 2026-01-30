@@ -50,21 +50,6 @@ func ConvertToString(value interface{}) string {
 	}
 }
 
-// ConvertToInt converts string to int with error handling
-func ConvertToInt(value string) (int, error) {
-	return strconv.Atoi(value)
-}
-
-// ConvertToFloat converts string to float64 with error handling
-func ConvertToFloat(value string) (float64, error) {
-	return strconv.ParseFloat(value, 64)
-}
-
-// ConvertToBool converts string to bool with error handling
-func ConvertToBool(value string) (bool, error) {
-	return strconv.ParseBool(value)
-}
-
 // IsEmpty checks if a value is empty
 func IsEmpty(value interface{}) bool {
 	if value == nil {
@@ -90,10 +75,16 @@ func IsEmpty(value interface{}) bool {
 	return false
 }
 
+// validateSlice checks if the input is a valid slice and returns its reflect.Value
+func validateSlice(slice interface{}) (reflect.Value, bool) {
+	s := reflect.ValueOf(slice)
+	return s, s.Kind() == reflect.Slice
+}
+
 // Contains checks if a slice contains a specific element
 func Contains(slice interface{}, element interface{}) bool {
-	s := reflect.ValueOf(slice)
-	if s.Kind() != reflect.Slice {
+	s, ok := validateSlice(slice)
+	if !ok {
 		return false
 	}
 
@@ -108,8 +99,8 @@ func Contains(slice interface{}, element interface{}) bool {
 
 // RemoveDuplicates removes duplicate elements from a slice
 func RemoveDuplicates(slice interface{}) interface{} {
-	s := reflect.ValueOf(slice)
-	if s.Kind() != reflect.Slice {
+	s, ok := validateSlice(slice)
+	if !ok {
 		return slice
 	}
 
@@ -156,10 +147,44 @@ func FormatFileSize(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+// StringToSlice converts a comma-separated string to a slice of strings
+func StringToSlice(str string) []string {
+	return SplitAndTrim(str, ",")
+}
+
+// extractMapData is a generic helper to extract data from a map using reflection
+func extractMapData(m interface{}, extractor func(reflect.Value, reflect.Value) interface{}) []interface{} {
+	v := reflect.ValueOf(m)
+	if v.Kind() != reflect.Map {
+		return nil
+	}
+
+	keys := v.MapKeys()
+	result := make([]interface{}, len(keys))
+	for i, key := range keys {
+		result[i] = extractor(v, key)
+	}
+	return result
+}
+
+// MapKeys returns the keys of a map as a slice
+func MapKeys(m interface{}) []interface{} {
+	return extractMapData(m, func(_ reflect.Value, key reflect.Value) interface{} {
+		return key.Interface()
+	})
+}
+
+// MapValues returns the values of a map as a slice
+func MapValues(m interface{}) []interface{} {
+	return extractMapData(m, func(v reflect.Value, key reflect.Value) interface{} {
+		return v.MapIndex(key).Interface()
+	})
+}
+
 // SliceToString converts a slice of any type to a comma-separated string
 func SliceToString(slice interface{}) string {
-	s := reflect.ValueOf(slice)
-	if s.Kind() != reflect.Slice {
+	s, ok := validateSlice(slice)
+	if !ok {
 		return ""
 	}
 
@@ -171,46 +196,10 @@ func SliceToString(slice interface{}) string {
 	return strings.Join(parts, ", ")
 }
 
-// StringToSlice converts a comma-separated string to a slice of strings
-func StringToSlice(str string) []string {
-	return SplitAndTrim(str, ",")
-}
-
-// MapKeys returns the keys of a map as a slicem reflect.Values
-func extractMapInterfaces(values []reflect.Value, extractor func(reflect.Value) interface{}) []interface{} {
-	result := make([]interface{}, len(values))
-	for i, val := range values {
-		result[i] = extractor(val)
-	}
-	return result
-}
-
-// MapKeys returns the keys of a map as a slice
-func MapKeys(m interface{}) []interface{} {
-	v := reflect.ValueOf(m)
-	if v.Kind() != reflect.Map {
-		return nil
-	}
-	return extractMapInterfaces(v.MapKeys(), func(key reflect.Value) interface{} {
-		return key.Interface()
-	})
-}
-
-// MapValues returns the values of a map as a slice
-func MapValues(m interface{}) []interface{} {
-	v := reflect.ValueOf(m)
-	if v.Kind() != reflect.Map {
-		return nil
-	}
-	return extractMapInterfaces(v.MapKeys(), func(key reflect.Value) interface{} {
-		return v.MapIndex(key).Interface()
-	})
-}
-
 // Reverse reverses a slice in place
 func Reverse(slice interface{}) {
-	s := reflect.ValueOf(slice)
-	if s.Kind() != reflect.Slice {
+	s, ok := validateSlice(slice)
+	if !ok {
 		return
 	}
 
@@ -270,39 +259,44 @@ func MapToStruct(input map[string]interface{}, target interface{}) error {
 	return nil
 }
 
+// createConverter creates a type converter with the given source type, destination type, and conversion function
+func createConverter(srcType, dstType interface{}, fn func(interface{}) (interface{}, error)) copier.TypeConverter {
+	return copier.TypeConverter{
+		SrcType: srcType,
+		DstType: dstType,
+		Fn:      fn,
+	}
+}
+
 // getTimeConverters returns all time-related type converters
 func getTimeConverters() []copier.TypeConverter {
 	return []copier.TypeConverter{
-		// time.Time -> time.Time (pass through)
-		{
-			SrcType: time.Time{},
-			DstType: time.Time{},
-			Fn:      passThrough,
-		},
+		// time.Time <-> time.Time (pass through)
+		createConverter(time.Time{}, time.Time{}, passThrough),
 		// *time.Time -> time.Time (dereference)
-		{
-			SrcType: (*time.Time)(nil),
-			DstType: time.Time{},
-			Fn:      pointerTimeToTime,
-		},
+		createConverter((*time.Time)(nil), time.Time{}, func(src interface{}) (interface{}, error) {
+			if rt, ok := src.(*time.Time); ok && rt != nil {
+				return *rt, nil
+			}
+			return time.Time{}, nil
+		}),
 		// time.Time -> *time.Time (address)
-		{
-			SrcType: time.Time{},
-			DstType: (*time.Time)(nil),
-			Fn:      timeToPointerTime,
-		},
-		// *time.Time -> *time.Time (pass through)
-		{
-			SrcType: (*time.Time)(nil),
-			DstType: (*time.Time)(nil),
-			Fn:      passThrough,
-		},
+		createConverter(time.Time{}, (*time.Time)(nil), func(src interface{}) (interface{}, error) {
+			if t, ok := src.(time.Time); ok {
+				return &t, nil
+			}
+			return nil, nil
+		}),
+		// *time.Time <-> *time.Time (pass through)
+		createConverter((*time.Time)(nil), (*time.Time)(nil), passThrough),
 		// *time.Time -> *string (convert date to string pointer in yyyy-mm-dd format)
-		{
-			SrcType: (*time.Time)(nil),
-			DstType: (*string)(nil),
-			Fn:      pointerTimeToPointerString,
-		},
+		createConverter((*time.Time)(nil), (*string)(nil), func(src interface{}) (interface{}, error) {
+			if t, ok := src.(*time.Time); ok && t != nil {
+				str := t.Format("2006-01-02")
+				return &str, nil
+			}
+			return nil, nil
+		}),
 	}
 }
 
@@ -311,52 +305,21 @@ func passThrough(src interface{}) (interface{}, error) {
 	return src, nil
 }
 
-// pointerTimeToTime converts *time.Time to time.Time (dereference)
-func pointerTimeToTime(src interface{}) (interface{}, error) {
-	if rt, ok := src.(*time.Time); ok && rt != nil {
-		return *rt, nil
-	}
-	return time.Time{}, nil
-}
-
-// timeToPointerTime converts time.Time to *time.Time (address)
-func timeToPointerTime(src interface{}) (interface{}, error) {
-	if t, ok := src.(time.Time); ok {
-		return &t, nil
-	}
-	return nil, nil
-}
-
-// pointerTimeToPointerString converts *time.Time to *string (yyyy-mm-dd format)
-func pointerTimeToPointerString(src interface{}) (interface{}, error) {
-	if t, ok := src.(*time.Time); ok && t != nil {
-		str := t.Format("2006-01-02")
-		return &str, nil
-	}
-	return nil, nil
-}
-
-// uuidToString converts uuid.UUID to string
-func uuidToString(src interface{}) (interface{}, error) {
-	if v, ok := src.(uuid.UUID); ok {
-		return v.String(), nil
-	}
-	return src, nil
-}
-
-// stringToUUID converts string to uuid.UUID
-func stringToUUID(src interface{}) (interface{}, error) {
-	if s, ok := src.(string); ok {
-		return uuid.Parse(s)
-	}
-	return src, nil
-}
-
 // getUUIDConverters returns all UUID-related type converters
 func getUUIDConverters() []copier.TypeConverter {
 	return []copier.TypeConverter{
-		{SrcType: uuid.UUID{}, DstType: "", Fn: uuidToString},
-		{SrcType: "", DstType: uuid.UUID{}, Fn: stringToUUID},
+		createConverter(uuid.UUID{}, "", func(src interface{}) (interface{}, error) {
+			if v, ok := src.(uuid.UUID); ok {
+				return v.String(), nil
+			}
+			return src, nil
+		}),
+		createConverter("", uuid.UUID{}, func(src interface{}) (interface{}, error) {
+			if s, ok := src.(string); ok {
+				return uuid.Parse(s)
+			}
+			return src, nil
+		}),
 	}
 }
 
@@ -405,14 +368,6 @@ func BoolPtr(b bool) *bool {
 	return Ptr(b)
 }
 
-func UnmarshalJSON(data []byte, v interface{}) error {
-	return json.Unmarshal(data, v)
-}
-
-func MarshalJSON(v interface{}) ([]byte, error) {
-	return json.Marshal(v)
-}
-
 func ToSnakeCase(str string) string {
 	reg := regexp.MustCompile("([a-z0-9])([A-Z])")
 	snake := reg.ReplaceAllString(str, "${1}_${2}")
@@ -455,18 +410,4 @@ func splitAndProcess(str string, delimiter string, keepEmpty bool) []string {
 // SplitAndTrim splits a string by delimiter and trims whitespace from each part
 func SplitAndTrim(str string, delimiter string) []string {
 	return splitAndProcess(str, delimiter, false)
-}
-
-// JoinStrings joins a slice of strings with a delimiter
-func JoinStrings(parts []string, delimiter string) string {
-	return strings.Join(parts, delimiter)
-}
-
-func ContainsString(slice []string, element string) bool {
-	for _, v := range slice {
-		if v == element {
-			return true
-		}
-	}
-	return false
 }

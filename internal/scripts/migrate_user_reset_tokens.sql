@@ -21,7 +21,7 @@ BEGIN
             SELECT 1 FROM information_schema.columns 
             WHERE table_name = 'user_reset_tokens' AND column_name = 'issued_at'
         ) THEN
-            ALTER TABLE user_reset_tokens ADD COLUMN issued_at timestamp NOT NULL DEFAULT NOW();
+            ALTER TABLE user_reset_tokens ADD COLUMN issued_at varchar NOT NULL DEFAULT (extract(epoch from now())::bigint::text);
         END IF;
     END IF;
 END $$;
