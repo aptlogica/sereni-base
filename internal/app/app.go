@@ -101,12 +101,12 @@ func New(cfg *config.Config) (*App, error) {
 	viewService := services.NewViewService(dbService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
-	resourceService := services.NewResourceService(dbService)
-	actionService := services.NewActionService(dbService)
-	permissionService := services.NewPermissionService(dbService)
+	resourceService := services.NewCoreResourceService(dbService)
+	actionService := services.NewCoreActionService(dbService)
+	permissionService := services.NewRBACPermissionService(dbService)
 	rolePermissionService := services.NewRolePermissionService(dbService)
 	accessMemberService := services.NewAccessMemberService(dbService)
-	accessRoleService := services.NewAccessRoleService(dbService)
+	accessRoleService := services.NewRBACAccessRoleService(dbService)
 
 	assetManagementService := services.NewAssetManagementService(
 		dbService,

@@ -6,6 +6,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -41,63 +42,23 @@ func (s *accessRoleService) CreateAccessRole(ctx context.Context, schemaName str
 }
 
 func (s *accessRoleService) GetAccessRoleByID(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
-	limit := 1
+	query := common.CreateSingleFilterQuery("id", "eq", roleID.String(), 1)
 	tableName := tenant.AccessRole{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "id",
-				Operator: "eq",
-				Value:    roleID.String(),
-			},
-		},
-		Limit: &limit,
-	}
-
-	rolesData, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.AccessRole{}, app_errors.LogDatabaseError(err, "failed to get access role by id")
-	}
-
-	if len(rolesData) == 0 {
+	role, err := common.GetSingleRecordWithRepo[tenant.AccessRole](s.repo, tableName, query, "failed to get access role by id")
+	if err == app_errors.ErrRecordNotFound {
 		return tenant.AccessRole{}, app_errors.RoleNotFound
 	}
-
-	var role tenant.AccessRole
-	if err := helpers.MapToStruct(rolesData[0], &role); err != nil {
-		return tenant.AccessRole{}, app_errors.ErrMapToStruct
-	}
-	return role, nil
+	return role, err
 }
 
 func (s *accessRoleService) GetAccessRoleByName(ctx context.Context, schemaName string, name string) (tenant.AccessRole, error) {
-	limit := 1
+	query := common.CreateSingleFilterQuery("name", "eq", name, 1)
 	tableName := tenant.AccessRole{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "name",
-				Operator: "eq",
-				Value:    name,
-			},
-		},
-		Limit: &limit,
-	}
-
-	rolesData, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.AccessRole{}, app_errors.LogDatabaseError(err, "failed to get access role by name")
-	}
-
-	if len(rolesData) == 0 {
+	role, err := common.GetSingleRecordWithRepo[tenant.AccessRole](s.repo, tableName, query, "failed to get access role by name")
+	if err == app_errors.ErrRecordNotFound {
 		return tenant.AccessRole{}, app_errors.RoleNotFound
 	}
-
-	var role tenant.AccessRole
-	if err := helpers.MapToStruct(rolesData[0], &role); err != nil {
-		return tenant.AccessRole{}, app_errors.ErrMapToStruct
-	}
-	return role, nil
+	return role, err
 }
 
 func (s *accessRoleService) GetAccessRolesByScope(ctx context.Context, schemaName string, scopeLevel string) ([]tenant.AccessRole, error) {
@@ -118,7 +79,7 @@ func (s *accessRoleService) GetAccessRolesByScope(ctx context.Context, schemaNam
 		return nil, app_errors.LogDatabaseError(err, "failed to get access roles by scope")
 	}
 
-	roles, err := mapToStructList[tenant.AccessRole](rolesData)
+	roles, err := common.MapToStructList[tenant.AccessRole](rolesData)
 	if err != nil {
 		return nil, err
 	}
@@ -138,29 +99,12 @@ func (s *accessRoleService) ListAccessRoles(ctx context.Context, schemaName stri
 		return nil, 0, app_errors.LogDatabaseError(err, "failed to list access roles")
 	}
 
-	// Get count
-	countQuery := dbModels.QueryParams{
-		Aggregates: []dbModels.AggregateFunction{
-			{
-				Function: "COUNT",
-				Column:   "id",
-				Alias:    "total",
-			},
-		},
-	}
-	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
+	count, err := common.CountRecordsWithRepo(s.repo, tableName, "failed to count access roles")
 	if err != nil {
-		return nil, 0, app_errors.LogDatabaseError(err, "failed to count access roles")
+		return nil, 0, err
 	}
 
-	var count int64
-	if len(countData) > 0 {
-		if total, ok := countData[0]["total"]; ok {
-			count = int64(total.(float64))
-		}
-	}
-
-	roles, err := mapToStructList[tenant.AccessRole](rolesData)
+	roles, err := common.MapToStructList[tenant.AccessRole](rolesData)
 	if err != nil {
 		return nil, 0, err
 	}

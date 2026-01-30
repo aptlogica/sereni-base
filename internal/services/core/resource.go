@@ -6,6 +6,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -22,7 +23,7 @@ func NewResourceService(repo *pkg.DatabaseService) interfaces.ResourceService {
 	return &resourceService{repo: repo}
 }
 
-// Helper functions to reduce duplication
+// getTableName returns the table name for resources
 func (s *resourceService) getTableName(schemaName string) string {
 	return tenant.Resource{}.TableName(schemaName)
 }
@@ -46,15 +47,15 @@ func (s *resourceService) CreateResource(ctx context.Context, schemaName string,
 }
 
 func (s *resourceService) GetResourceByID(ctx context.Context, schemaName string, resourceID uuid.UUID) (tenant.Resource, error) {
-	query := createSingleFilterQuery("id", "eq", resourceID.String(), 1)
+	query := common.CreateSingleFilterQuery("id", "eq", resourceID.String(), 1)
 	tableName := s.getTableName(schemaName)
-	return getSingleRecord[tenant.Resource](s.repo, tableName, query, "failed to get resource by id")
+	return common.GetSingleRecordWithRepo[tenant.Resource](s.repo, tableName, query, "failed to get resource by id")
 }
 
 func (s *resourceService) GetResourceByCode(ctx context.Context, schemaName string, code string) (tenant.Resource, error) {
-	query := createSingleFilterQuery("code", "eq", code, 1)
+	query := common.CreateSingleFilterQuery("code", "eq", code, 1)
 	tableName := s.getTableName(schemaName)
-	return getSingleRecord[tenant.Resource](s.repo, tableName, query, "failed to get resource by code")
+	return common.GetSingleRecordWithRepo[tenant.Resource](s.repo, tableName, query, "failed to get resource by code")
 }
 
 func (s *resourceService) ListResources(ctx context.Context, schemaName string, limit, offset int) ([]tenant.Resource, int64, error) {
@@ -65,12 +66,12 @@ func (s *resourceService) ListResources(ctx context.Context, schemaName string, 
 		OrderBy: []string{"code"},
 	}
 
-	resources, err := listRecords[tenant.Resource](s.repo, tableName, query, "failed to list resources")
+	resources, err := common.ListRecordsWithRepo[tenant.Resource](s.repo, tableName, query, "failed to list resources")
 	if err != nil {
 		return nil, 0, err
 	}
 
-	count, err := countRecords(s.repo, tableName, "failed to count resources")
+	count, err := common.CountRecordsWithRepo(s.repo, tableName, "failed to count resources")
 	if err != nil {
 		return nil, 0, err
 	}

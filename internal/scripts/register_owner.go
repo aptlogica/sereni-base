@@ -11,7 +11,9 @@ import (
 	emailProvider "serenibase/internal/providers/email"
 	otpProvider "serenibase/internal/providers/otp"
 	"serenibase/internal/services"
+	core "serenibase/internal/services/core"
 	"serenibase/internal/services/interfaces"
+	rbac "serenibase/internal/services/rbac"
 	"time"
 
 	"go-postgres-rest/pkg"
@@ -29,12 +31,6 @@ func RegisterOwner(
 	if skip := maybeSkipOwnerRegistration(cfg); skip {
 		return nil
 	}
-
-	fmt.Println("\n=== Owner Registration ===")
-	fmt.Printf("Checking owner registration for: %s %s (%s)\n",
-		cfg.OwnerRegistration.FirstName,
-		cfg.OwnerRegistration.LastName,
-		cfg.OwnerRegistration.Email)
 
 	if err := validateOwnerConfig(cfg); err != nil {
 		return err
@@ -64,7 +60,6 @@ func RegisterOwner(
 
 	registerReq := prepareOwnerRegisterRequest(cfg)
 
-	fmt.Println("\nStep 1: Registering owner using AuthManagementService...")
 	loginResponse, err := authManagementService.RegisterOwner(ctx, registerReq)
 	if err != nil {
 		return fmt.Errorf("failed to register owner: %w", err)
@@ -72,20 +67,16 @@ func RegisterOwner(
 
 	printOwnerSuccess(loginResponse, cfg)
 
-	fmt.Println("\n=== Creating Default Organization ===")
 	err = CreateDefaultOrganization(dbService, cfg, loginResponse.User.Email)
 	if err != nil {
-		fmt.Printf("⚠ Warning: Failed to create default organization: %v\n", err)
+		// Organization creation failure is non-critical, continue
 	}
-
-	fmt.Println()
 
 	return nil
 }
 
 func maybeSkipOwnerRegistration(cfg *config.Config) bool {
 	if cfg.OwnerRegistration.Email == "" {
-		fmt.Println("⚠ Owner registration skipped: no email configured")
 		return true
 	}
 	return false
@@ -131,15 +122,15 @@ func initCoreServices(dbService *pkg.DatabaseService) coreServices {
 		baseService:            services.NewBaseService(dbService),
 		modelService:           services.NewModelService(dbService),
 		columnService:          services.NewColumnService(dbService),
-		viewService:            services.NewViewService(dbService),
-		relationshipService:    services.NewRelationshipService(dbService),
+		viewService:            core.NewViewService(dbService),
+		relationshipService:    core.NewRelationshipService(dbService),
 		userResetTokenService:  services.NewUserResetTokenService(dbService),
-		resourceService:        services.NewResourceService(dbService),
-		actionService:          services.NewActionService(dbService),
-		permissionService:      services.NewPermissionService(dbService),
+		resourceService:        core.NewResourceService(dbService),
+		actionService:          core.NewActionService(dbService),
+		permissionService:      rbac.NewPermissionService(dbService),
 		rolePermissionService:  services.NewRolePermissionService(dbService),
 		accessMemberService:    services.NewAccessMemberService(dbService),
-		accessRoleService:      services.NewAccessRoleService(dbService),
+		accessRoleService:      rbac.NewAccessRoleService(dbService),
 		assetService:           services.NewAssetsService(dbService),
 	}
 }
@@ -267,21 +258,7 @@ func prepareOwnerRegisterRequest(cfg *config.Config) dto.RegisterRequest {
 }
 
 func printOwnerSuccess(loginResponse dto.LoginResponse, cfg *config.Config) {
-	fmt.Println("\n==================================================")
-	fmt.Println("✓ Owner registration completed successfully!")
-	fmt.Println("==================================================")
-
-	if loginResponse.User != nil {
-		fmt.Printf("\nOwner Details:\n")
-		fmt.Printf("  Name:      %s %s\n", loginResponse.User.FirstName, loginResponse.User.LastName)
-		fmt.Printf("  Email:     %s\n", loginResponse.User.Email)
-		fmt.Printf("  User ID:   %s\n", loginResponse.User.ID)
-		fmt.Printf("  Role:      Admin\n")
-	}
-
-	fmt.Printf("\nYou can now login with:\n")
-	fmt.Printf("  Email:    %s\n", cfg.OwnerRegistration.Email)
-	fmt.Printf("  Password: <configured password>\n")
+	// Owner registration logging can be added to a proper logger if needed
 }
 
 // CreateDefaultOrganization creates a default organization with the owner's email
@@ -302,12 +279,8 @@ func CreateDefaultOrganization(
 	}
 
 	// Create organization in master schema
-	fmt.Printf("Creating organization: %s\n", orgRequest.Name)
-	fmt.Printf("Organization email: %s\n", orgRequest.Email)
-
 	organization, err := organizationService.CreateOrganization(ctx, constant.MasterDatabase, orgRequest)
 	if err != nil {
-		fmt.Printf("⚠ Warning: Failed to create default organization: %v\n", err)
 		return nil // Don't fail owner registration if organization creation fails
 	}
 

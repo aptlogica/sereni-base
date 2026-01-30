@@ -6,6 +6,8 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
+	core "serenibase/internal/services/core"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -93,7 +95,7 @@ func (s *rolePermissionService) GetRolePermissions(ctx context.Context, schemaNa
 		return nil, app_errors.LogDatabaseError(err, "failed to get role permissions")
 	}
 
-	rolePermissions, err := mapToStructList[tenant.RolePermission](data)
+	rolePermissions, err := common.MapToStructList[tenant.RolePermission](data)
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +119,8 @@ func (s *rolePermissionService) GetPermissionsByRole(ctx context.Context, schema
 		}
 
 		// Get resource and action codes
-		resource, _ := NewResourceService(s.repo).GetResourceByID(ctx, schemaName, perm.ResourceID)
-		action, _ := NewActionService(s.repo).GetActionByID(ctx, schemaName, perm.ActionID)
+		resource, _ := core.NewResourceService(s.repo).GetResourceByID(ctx, schemaName, perm.ResourceID)
+		action, _ := core.NewActionService(s.repo).GetActionByID(ctx, schemaName, perm.ActionID)
 
 		permission := dto.PermissionWithDetails{
 			ID:           perm.ID,
