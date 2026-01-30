@@ -21,16 +21,11 @@ func (Role) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".roles", prefix)
 }
 
-// createIDColumn creates a UUID primary key column definition
-func createIDColumn() models.ColumnDefinition {
-	return models.ColumnDefinition{Name: "id", DataType: "uuid", NotNull: true, Unique: true}
-}
-
 func (tbl Role) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			createIDColumn(),
+			createUUIDIDColumn(),
 			{Name: "name", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "description", DataType: "text"},
 			{Name: "is_default", DataType: "boolean", NotNull: true, DefaultValue: StrPtr("false")},

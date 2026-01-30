@@ -43,11 +43,6 @@ func (Base) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".bases", prefix)
 }
 
-// createIntegerColumn creates an integer column with default 0
-func createIntegerColumn(name string) models.ColumnDefinition {
-	return models.ColumnDefinition{Name: name, DataType: "integer", DefaultValue: StrPtr("0")}
-}
-
 func (tbl Base) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
