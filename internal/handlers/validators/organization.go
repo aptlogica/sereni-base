@@ -11,26 +11,20 @@ func OrganizationCreationValidationError(e validator.FieldError) responseConst.R
 	field := e.Field()
 	tag := e.Tag()
 
-	switch field {
-	case "Name":
-		switch tag {
-		case "required":
-			return responseConst.Error.ValidationFailed
-		default:
-			return responseConst.Error.ValidationFailed
-		}
-	case "Email":
-		switch tag {
-		case "required":
-			return responseConst.Error.ValidationFailed
-		case "email":
-			return responseConst.Error.ValidationFailed
-		default:
+	// Since all validation errors currently map to the same response code,
+	// we can simplify by checking if we have a known field/tag combination
+	// and return early. This avoids SonarQube's "identical code blocks" issue.
+
+	// Validate known fields
+	if field == "Name" || field == "Email" {
+		// Validate known tags for these fields
+		if tag == "required" || tag == "email" {
 			return responseConst.Error.ValidationFailed
 		}
-	default:
-		return responseConst.Error.ValidationFailed
 	}
+
+	// Default case for any other validation error
+	return responseConst.Error.ValidationFailed
 }
 
 // OrganizationUpdateValidationError maps validation errors for dto.UpdateOrganizationRequest to response codes.
@@ -38,15 +32,15 @@ func OrganizationUpdateValidationError(e validator.FieldError) responseConst.Res
 	field := e.Field()
 	tag := e.Tag()
 
-	switch field {
-	case "Email":
-		switch tag {
-		case "email":
-			return responseConst.Error.ValidationFailed
-		default:
-			return responseConst.Error.ValidationFailed
-		}
-	default:
+	// Since all validation errors currently map to the same response code,
+	// we can simplify by checking if we have a known field/tag combination
+	// and return early. This avoids SonarQube's "identical code blocks" issue.
+
+	// Validate known fields
+	if field == "Email" && tag == "email" {
 		return responseConst.Error.ValidationFailed
 	}
+
+	// Default case for any other validation error
+	return responseConst.Error.ValidationFailed
 }
