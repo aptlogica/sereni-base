@@ -36,7 +36,7 @@ func (tbl RolePermission) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			createIDColumn(),
+			createUUIDIDColumn(),
 			{Name: "role_id", DataType: "uuid", NotNull: true},
 			{Name: "permission_id", DataType: "uuid", NotNull: true},
 			createTimestampColumn("created_time", true, false),

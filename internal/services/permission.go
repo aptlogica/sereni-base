@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"go-postgres-rest/pkg"
-	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
@@ -20,46 +19,6 @@ type permissionService struct {
 
 func NewPermissionService(repo *pkg.DatabaseService) interfaces.PermissionService {
 	return &permissionService{repo: repo}
-}
-
-func (s *permissionService) getSinglePermission(tableName string, filters []dbModels.QueryFilter, errorMsg string) (tenant.Permission, error) {
-	limit := 1
-	query := dbModels.QueryParams{
-		Filters: filters,
-		Limit:   &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Permission{}, app_errors.LogDatabaseError(err, errorMsg)
-	}
-
-	if len(data) == 0 {
-		return tenant.Permission{}, app_errors.ErrRecordNotFound
-	}
-
-	var permission tenant.Permission
-	if err := helpers.MapToStruct(data[0], &permission); err != nil {
-		return tenant.Permission{}, app_errors.ErrMapToStruct
-	}
-	return permission, nil
-}
-
-func (s *permissionService) getPermissions(tableName string, query dbModels.QueryParams, errorMsg string) ([]tenant.Permission, error) {
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, errorMsg)
-	}
-
-	var permissions []tenant.Permission
-	for _, item := range data {
-		var permission tenant.Permission
-		if err := helpers.MapToStruct(item, &permission); err != nil {
-			return nil, app_errors.ErrMapToStruct
-		}
-		permissions = append(permissions, permission)
-	}
-	return permissions, nil
 }
 
 func (s *permissionService) CreatePermission(ctx context.Context, schemaName string, req dto.PermissionDTO) (tenant.Permission, error) {
@@ -82,14 +41,8 @@ func (s *permissionService) CreatePermission(ctx context.Context, schemaName str
 
 func (s *permissionService) GetPermissionByID(ctx context.Context, schemaName string, permissionID uuid.UUID) (tenant.Permission, error) {
 	tableName := tenant.Permission{}.TableName(schemaName)
-	filters := []dbModels.QueryFilter{
-		{
-			Column:   "id",
-			Operator: "eq",
-			Value:    permissionID.String(),
-		},
-	}
-	return s.getSinglePermission(tableName, filters, "failed to get permission by id")
+	query := createSingleFilterQuery("id", "eq", permissionID.String(), 1)
+	return getSingleRecord[tenant.Permission](s.repo, tableName, query, "failed to get permission by id")
 }
 
 func (s *permissionService) GetPermissionByResourceAndAction(ctx context.Context, schemaName string, resourceID, actionID uuid.UUID) (tenant.Permission, error) {
@@ -106,7 +59,12 @@ func (s *permissionService) GetPermissionByResourceAndAction(ctx context.Context
 			Value:    actionID.String(),
 		},
 	}
-	return s.getSinglePermission(tableName, filters, "failed to get permission by resource and action")
+	limit := 1
+	query := dbModels.QueryParams{
+		Filters: filters,
+		Limit:   &limit,
+	}
+	return getSingleRecord[tenant.Permission](s.repo, tableName, query, "failed to get permission by resource and action")
 }
 
 func (s *permissionService) ListPermissions(ctx context.Context, schemaName string, limit, offset int) ([]tenant.Permission, int64, error) {
@@ -116,31 +74,14 @@ func (s *permissionService) ListPermissions(ctx context.Context, schemaName stri
 		Offset: &offset,
 	}
 
-	permissions, err := s.getPermissions(tableName, query, "failed to list permissions")
+	permissions, err := listRecords[tenant.Permission](s.repo, tableName, query, "failed to list permissions")
 	if err != nil {
 		return nil, 0, err
 	}
 
-	countQuery := dbModels.QueryParams{
-		Aggregates: []dbModels.AggregateFunction{
-			{
-				Function: "COUNT",
-				Column:   "id",
-				Alias:    "total",
-			},
-		},
-	}
-
-	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
+	count, err := countRecords(s.repo, tableName, "failed to count permissions")
 	if err != nil {
-		return nil, 0, app_errors.LogDatabaseError(err, "failed to count permissions")
-	}
-
-	count := int64(0)
-	if len(countData) > 0 {
-		if total, ok := countData[0]["total"]; ok {
-			count = int64(total.(float64))
-		}
+		return nil, 0, err
 	}
 
 	return permissions, count, nil
@@ -183,5 +124,5 @@ func (s *permissionService) GetPermissionsByResource(ctx context.Context, schema
 			},
 		},
 	}
-	return s.getPermissions(tableName, query, "failed to get permissions by resource")
+	return listRecords[tenant.Permission](s.repo, tableName, query, "failed to get permissions by resource")
 }

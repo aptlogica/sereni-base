@@ -71,11 +71,6 @@ func createColumnFK(prefix, column, table string) models.ForeignKeyDef {
 	}
 }
 
-// createBooleanColumn creates a boolean column with default false
-func createBooleanColumn(name string) models.ColumnDefinition {
-	return models.ColumnDefinition{Name: name, DataType: "boolean", DefaultValue: StrPtr("false")}
-}
-
 func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),

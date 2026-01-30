@@ -22,18 +22,6 @@ func (UsageMetric) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".usage_metrics", prefix)
 }
 
-// createTimestampColumn creates a timestamp column definition with optional null default
-func createTimestampColumn(name string, notNull bool, useNull bool) models.ColumnDefinition {
-	null := "NULL"
-	var defaultVal *string
-	if useNull {
-		defaultVal = &null
-	} else if notNull {
-		defaultVal = StrPtr("CURRENT_TIMESTAMP")
-	}
-	return models.ColumnDefinition{Name: name, DataType: "timestamp", NotNull: notNull, DefaultValue: defaultVal}
-}
-
 func (tbl UsageMetric) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
