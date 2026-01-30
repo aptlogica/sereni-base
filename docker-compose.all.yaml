@@ -1,0 +1,106 @@
+
+services:
+  serenibase-rest:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    networks:
+      - serenibase-network
+
+  postgres:
+    image: postgres:15-alpine
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${DATABASE_USER}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - POSTGRES_DB=${DATABASE_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - serenibase-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d serenibase"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  antivirus-service:
+    build:
+      context: ./services/antivirus-service
+    env_file:
+      - .env
+    ports:
+      - "8084:8084"
+    networks:
+      - serenibase-network
+
+  jwt-provider:
+    build:
+      context: ./services/auth-service
+    env_file:
+      - .env
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+    ports:
+      - "8081:8081"
+    networks:
+      - serenibase-network
+
+  email-service:
+    build:
+      context: ./services/email-service
+    env_file:
+      - .env
+    ports:
+      - "8082:8082"
+    networks:
+      - serenibase-network
+
+  sereni-storage-provider:
+    build:
+      context: ./services/storage-service
+    env_file:
+      - .env
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./services/storage-service/uploads:/app/uploads
+    depends_on:
+      - minio
+    networks:
+      - serenibase-network
+
+  minio:
+    image: minio/minio:latest
+    env_file:
+      - .env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: ${MINIO_USE_SSL}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - serenibase-network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  serenibase-network:
+    driver: bridge

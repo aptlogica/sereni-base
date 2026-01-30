@@ -1,0 +1,5 @@
+antivirus-service https://github.com/aptlogica/sereni-antivirus-clamav one-click-installation
+storage-service https://github.com/aptlogica/sereni-storage-provider
+auth-service https://github.com/aptlogica/sereni-jwt-provider one-click-installation
+email-service https://github.com/aptlogica/sereni-email-smtp one-click-installation
+base-ui https://github.com/aptlogica/base-ui

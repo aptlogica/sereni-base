@@ -98,6 +98,7 @@ func (s *importService) scanFile(ctx context.Context, file *multipart.FileHeader
 	scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, file.Filename, f)
 	f.Close()
 	if scanErr != nil {
+		lg.Info().Str("scanErr: ", scanErr.Error())
 		lg.Error().Stack().Err(scanErr).Str("file", file.Filename).Str("threat", scanResult.Threat).Msg("Antivirus scan detected threat")
 		return fmt.Errorf("file '%s' is infected or contains malicious content", file.Filename)
 	}
