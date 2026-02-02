@@ -36,6 +36,75 @@ const (
 	ErrConvertViewStruct = "Failed to convert view struct"
 )
 
+// targetColumnParams holds parameters for creating target column in relation
+type targetColumnParams struct {
+	ColumnData      dto.AddColumnRequest
+	SourceModelData tenant.Model
+	RelationWith    string
+	RelationID      uuid.UUID
+	RelationType    string
+	Now             time.Time
+}
+
+// relationRecordParams holds parameters for creating relation record
+type relationRecordParams struct {
+	BaseID          uuid.UUID
+	RelationID      uuid.UUID
+	SourceModelData tenant.Model
+	SourceColumn    tenant.Column
+	TargetModelData tenant.Model
+	TargetColumn    tenant.Column
+	RelationType    string
+	Now             time.Time
+}
+
+// updateLinkDataParams holds parameters for updating link data
+type updateLinkDataParams struct {
+	SourceTableName  string
+	TargetTableName  string
+	SourceColumnName string
+	TargetColumnName string
+	SourceDataType   string
+	TargetDataType   string
+	Request          dto.UpdateRowDataLinksRequest
+}
+
+// updateIfExistParams holds parameters for checking and updating existing links
+type updateIfExistParams struct {
+	RelationType     string
+	SourceTableName  string
+	SourceColumnName string
+	TargetTableName  string
+	TargetColumnName string
+	SourceDataType   string
+	TargetDataType   string
+	Request          dto.UpdateRowDataLinksRequest
+}
+
+// unlinkRowDataParams holds parameters for unlinking row data
+type unlinkRowDataParams struct {
+	Request         dto.DeleteRowDataRequest
+	SourceTableName string
+	TargetTableName string
+	Column          tenant.Column
+	TargetColumn    tenant.Column
+	RowData         map[string]interface{}
+	SourceDataType  string
+	TargetDataType  string
+}
+
+// unlinkSingleRowParams holds parameters for unlinking a single row
+type unlinkSingleRowParams struct {
+	Request         dto.DeleteRowDataRequest
+	SourceTableName string
+	TargetTableName string
+	Column          tenant.Column
+	TargetColumn    tenant.Column
+	SourceDataType  string
+	TargetDataType  string
+	TargetRowId     int64
+}
+
 func NewTableManagementService(
 	driver string,
 	repo *pkg.DatabaseService,
@@ -74,7 +143,6 @@ func (s tableManagementService) createTableWithDefaultsInDB(schemaName string, t
 
 	err := s.repo.TableService.CreateTable(creationReq)
 	if err != nil {
-		fmt.Println("CreateTable error:", err)
 		return []dto.AddColumnRequest{}, app_errors.LogDatabaseError(err, "failed to create table in DB")
 	}
 
@@ -125,7 +193,6 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 
 	insertedColumns, err := s.columnsService.BulkInsert(colDataList, schemaName)
 	if err != nil {
-		fmt.Println("BulkInsert system columns error:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -179,25 +246,21 @@ func (s tableManagementService) CreateTableWithDefaultsImport(ctx context.Contex
 func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	insertedModel, err := s.createModel(ctx, tableData, schemaName)
 	if err != nil {
-		fmt.Println("createModel:", err)
 		return dto.TableResponse{}, err
 	}
 
 	columnsResponse, err := s.setupSystemColumns(ctx, schemaName, insertedModel)
 	if err != nil {
-		fmt.Println("setupSystemColumns:", err)
 		return dto.TableResponse{}, err
 	}
 
 	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
 	if err != nil {
-		fmt.Println("createDefaultView:", err)
 		return dto.TableResponse{}, err
 	}
 
 	recordsData, err := s.GetAllRecords(ctx, schemaName, insertedModel.ID.String())
 	if err != nil {
-		fmt.Println("GetAllRecords:", err)
 		return dto.TableResponse{}, err
 	}
 
@@ -245,13 +308,11 @@ func (s tableManagementService) createModel(ctx context.Context, tableData dto.C
 func (s tableManagementService) setupSystemColumns(ctx context.Context, schemaName string, model tenant.Model) ([]dto.ColumnResponse, error) {
 	systemColumns, err := s.createTableWithDefaultsInDB(schemaName, model.Alias)
 	if err != nil {
-		fmt.Println("createTableWithDefaultsInDB:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
 	columnsResponse, err := s.insertSystemColumns(schemaName, model, systemColumns)
 	if err != nil {
-		fmt.Println("insertSystemColumns:", err)
 		return []dto.ColumnResponse{}, err
 	}
 
@@ -643,12 +704,28 @@ func (s tableManagementService) addColumnWithRelation(
 		return dto.ColumnResponse{}, err
 	}
 
-	targetColumn, targetModelData, err := s.createTargetColumnForRelation(ctx, schemaName, columnData, sourceModelData, relationWith, relationId, relationType, now)
+	targetColumn, targetModelData, err := s.createTargetColumnForRelation(ctx, schemaName, targetColumnParams{
+		ColumnData:      columnData,
+		SourceModelData: sourceModelData,
+		RelationWith:    relationWith,
+		RelationID:      relationId,
+		RelationType:    relationType,
+		Now:             now,
+	})
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
 
-	if err := s.createRelationRecord(ctx, schemaName, columnData.BaseID, relationId, sourceModelData, sourcColumn, targetModelData, targetColumn, relationType, now); err != nil {
+	if err := s.createRelationRecord(ctx, schemaName, relationRecordParams{
+		BaseID:          columnData.BaseID,
+		RelationID:      relationId,
+		SourceModelData: sourceModelData,
+		SourceColumn:    sourcColumn,
+		TargetModelData: targetModelData,
+		TargetColumn:    targetColumn,
+		RelationType:    relationType,
+		Now:             now,
+	}); err != nil {
 		return dto.ColumnResponse{}, err
 	}
 
@@ -717,49 +794,44 @@ func (s tableManagementService) createSourceColumnForRelation(
 func (s tableManagementService) createTargetColumnForRelation(
 	ctx context.Context,
 	schemaName string,
-	columnData dto.AddColumnRequest,
-	sourceModelData tenant.Model,
-	relationWith string,
-	relationId uuid.UUID,
-	relationType string,
-	now time.Time,
+	params targetColumnParams,
 ) (tenant.Column, tenant.Model, error) {
 	targetMeta := map[string]interface{}{
 		"relation": map[string]interface{}{
-			"with": columnData.ModelID.String(),
-			"type": relationType,
+			"with": params.ColumnData.ModelID.String(),
+			"type": params.RelationType,
 		},
 		"entity_role": "target",
-		"relation_id": relationId,
+		"relation_id": params.RelationID,
 	}
 
-	targetTempUidt := fmt.Sprintf("%s_target_%v", columnData.UIDT, relationType)
+	targetTempUidt := fmt.Sprintf("%s_target_%v", params.ColumnData.UIDT, params.RelationType)
 	targetDataType, err := s.getDataBaseType(targetTempUidt)
 	if err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	targetCurrentOrderIndex, err := s.columnsService.GetMaxOrderIndexOfColumn(ctx, schemaName, relationWith)
+	targetCurrentOrderIndex, err := s.columnsService.GetMaxOrderIndexOfColumn(ctx, schemaName, params.RelationWith)
 	if err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
 	targetColumnCreateData := dto.ColumnInsertion{
 		ID:          uuid.New(),
-		ModelID:     uuid.MustParse(relationWith),
-		BaseID:      columnData.BaseID,
-		Title:       sourceModelData.Title,
-		ColumnName:  s.slugify(sourceModelData.Title),
+		ModelID:     uuid.MustParse(params.RelationWith),
+		BaseID:      params.ColumnData.BaseID,
+		Title:       params.SourceModelData.Title,
+		ColumnName:  s.slugify(params.SourceModelData.Title),
 		Description: helpers.StringPtr(""),
 		Meta:        targetMeta,
-		UIDT:        columnData.UIDT,
+		UIDT:        params.ColumnData.UIDT,
 		DT:          helpers.StringPtr(targetDataType),
-		Virtual:     columnData.Virtual != nil && *columnData.Virtual,
-		System:      columnData.System != nil && *columnData.System,
+		Virtual:     params.ColumnData.Virtual != nil && *params.ColumnData.Virtual,
+		System:      params.ColumnData.System != nil && *params.ColumnData.System,
 		Deleted:     false,
 		OrderIndex:  helpers.Float64Ptr(targetCurrentOrderIndex + 1),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CreatedAt:   params.Now,
+		UpdatedAt:   params.Now,
 	}
 
 	targetColumn, err := s.columnsService.Create(ctx, targetColumnCreateData, schemaName)
@@ -782,25 +854,18 @@ func (s tableManagementService) createTargetColumnForRelation(
 func (s tableManagementService) createRelationRecord(
 	ctx context.Context,
 	schemaName string,
-	baseID uuid.UUID,
-	relationId uuid.UUID,
-	sourceModelData tenant.Model,
-	sourcColumn tenant.Column,
-	targetModelData tenant.Model,
-	targetColumn tenant.Column,
-	relationType string,
-	now time.Time,
+	params relationRecordParams,
 ) error {
 	relationInsertionData := dto.RelationInsertion{
-		ID:             relationId,
-		BaseID:         baseID.String(),
-		SourceModelID:  sourceModelData.ID.String(),
-		SourceColumnID: sourcColumn.ID.String(),
-		TargetModelID:  targetModelData.ID.String(),
-		TargetColumnID: targetColumn.ID.String(),
-		RelationType:   relationType,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:             params.RelationID,
+		BaseID:         params.BaseID.String(),
+		SourceModelID:  params.SourceModelData.ID.String(),
+		SourceColumnID: params.SourceColumn.ID.String(),
+		TargetModelID:  params.TargetModelData.ID.String(),
+		TargetColumnID: params.TargetColumn.ID.String(),
+		RelationType:   params.RelationType,
+		CreatedAt:      params.Now,
+		UpdatedAt:      params.Now,
 	}
 
 	_, err := s.relationshipService.Create(ctx, relationInsertionData, schemaName)
@@ -877,9 +942,6 @@ func (s tableManagementService) removeLookupColumnInRelation(
 	if relationData.TargetModelID == modelId {
 		relationUpdation.TargetLookupColumns = s.removeLookupColumnFromList(relationData.TargetLookupColumns, lookupColumnName, "TargetLookupColumns")
 	}
-
-	fmt.Println("Updating relation with removal of lookup column:", relationUpdation)
-
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
 		lg := logger.Get()
@@ -1344,7 +1406,6 @@ func (s tableManagementService) handleDatatypeChangeIfNeeded(
 	allowed := s.isConversionAllowed(columnData.UIDT, *req.UIDT)
 
 	if err := s.updateColumnDatatypeInDb(ctx, schemaName, model.Alias, column.ColumnName, *req.DT, !allowed); err != nil {
-		fmt.Printf("DEBUG: Reverting column metadata for %s due to DB error: %v\n", column.ColumnName, err)
 		s.revertColumnMetadata(ctx, schemaName, id, columnData)
 		return err
 	}
@@ -1408,7 +1469,6 @@ func (s tableManagementService) deleteLookups(ctx context.Context, relationId st
 
 	for _, col := range columns {
 		if col.UIDT == "lookup" {
-			fmt.Printf("Found lookup column: %s\n", col.ColumnName)
 			colRelationId, _ := col.Meta["relation_id"].(string)
 
 			if colRelationId == relationId {
@@ -2187,33 +2247,27 @@ func (s tableManagementService) unlinkInt(
 
 func (s tableManagementService) updateLinkData(
 	ctx context.Context,
-	sourceTableName string,
-	targetTableName string,
-	sourceColumnName string,
-	targetColumnName string,
-	sourceDataType string,
-	targetDataType string,
-	req dto.UpdateRowDataLinksRequest,
+	params updateLinkDataParams,
 ) (dto.RecordResponse, error) {
 	var (
 		sourceInsertedRecord map[string]interface{}
 		err                  error
 	)
-	switch req.Action {
+	switch params.Request.Action {
 	case "link":
-		sourceInsertedRecord, err = s.linkRecord(ctx, sourceDataType, sourceTableName, req.SourceRowId, sourceColumnName, req.TargetRowId, req.UpdatedBy)
+		sourceInsertedRecord, err = s.linkRecord(ctx, params.SourceDataType, params.SourceTableName, params.Request.SourceRowId, params.SourceColumnName, params.Request.TargetRowId, params.Request.UpdatedBy)
 	default:
-		sourceInsertedRecord, err = s.unlinkRecord(ctx, sourceDataType, sourceTableName, req.SourceRowId, sourceColumnName, req.TargetRowId, req.UpdatedBy)
+		sourceInsertedRecord, err = s.unlinkRecord(ctx, params.SourceDataType, params.SourceTableName, params.Request.SourceRowId, params.SourceColumnName, params.Request.TargetRowId, params.Request.UpdatedBy)
 	}
 	if err != nil {
 		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update link data (source side)")
 	}
 
-	switch req.Action {
+	switch params.Request.Action {
 	case "link":
-		_, err = s.linkRecord(ctx, targetDataType, targetTableName, req.TargetRowId, targetColumnName, req.SourceRowId, req.UpdatedBy)
+		_, err = s.linkRecord(ctx, params.TargetDataType, params.TargetTableName, params.Request.TargetRowId, params.TargetColumnName, params.Request.SourceRowId, params.Request.UpdatedBy)
 	default:
-		_, err = s.unlinkRecord(ctx, targetDataType, targetTableName, req.TargetRowId, targetColumnName, req.SourceRowId, req.UpdatedBy)
+		_, err = s.unlinkRecord(ctx, params.TargetDataType, params.TargetTableName, params.Request.TargetRowId, params.TargetColumnName, params.Request.SourceRowId, params.Request.UpdatedBy)
 	}
 	if err != nil {
 		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update link data (target side)")
@@ -2225,10 +2279,8 @@ func (s tableManagementService) updateLinkData(
 }
 
 func (s tableManagementService) updateIfExist(
-	ctx context.Context, relationType string,
-	sourceTableName, sourceColumnName, targetTableName, targetColumnName string,
-	sourceDataType string, targetDataType string,
-	req dto.UpdateRowDataLinksRequest,
+	ctx context.Context,
+	params updateIfExistParams,
 ) error {
 
 	type check struct {
@@ -2241,18 +2293,18 @@ func (s tableManagementService) updateIfExist(
 		id          int
 	}
 	checks := []check{
-		{sourceTableName, sourceColumnName, sourceDataType, targetTableName, targetColumnName, targetDataType, req.TargetRowId},
-		{targetTableName, targetColumnName, targetDataType, sourceTableName, sourceColumnName, sourceDataType, req.SourceRowId},
+		{params.SourceTableName, params.SourceColumnName, params.SourceDataType, params.TargetTableName, params.TargetColumnName, params.TargetDataType, params.Request.TargetRowId},
+		{params.TargetTableName, params.TargetColumnName, params.TargetDataType, params.SourceTableName, params.SourceColumnName, params.SourceDataType, params.Request.SourceRowId},
 	}
 
 	for _, c := range checks {
 		switch {
-		case relationType == "one-to-one":
-			if err := s.handleOneToOneRelation(ctx, c, req); err != nil {
+		case params.RelationType == "one-to-one":
+			if err := s.handleOneToOneRelation(ctx, c, params.Request); err != nil {
 				return err
 			}
-		case relationType == "has-many" && c.srcDatatype == "INT[]":
-			if err := s.handleHasManyIntArrayRelation(ctx, c, req); err != nil {
+		case params.RelationType == "has-many" && c.srcDatatype == "INT[]":
+			if err := s.handleHasManyIntArrayRelation(ctx, c, params.Request); err != nil {
 				return err
 			}
 		}
@@ -2278,7 +2330,15 @@ func (s tableManagementService) handleOneToOneRelation(
 		req.SourceRowId = int(srcID)
 		req.TargetRowId = int(tgtID)
 		req.Action = "unlink"
-		_, err = s.updateLinkData(ctx, c.srcTable, c.trgTable, c.srcColumn, c.trgColumn, c.srcDatatype, c.trgDataType, req)
+		_, err = s.updateLinkData(ctx, updateLinkDataParams{
+			SourceTableName:  c.srcTable,
+			TargetTableName:  c.trgTable,
+			SourceColumnName: c.srcColumn,
+			TargetColumnName: c.trgColumn,
+			SourceDataType:   c.srcDatatype,
+			TargetDataType:   c.trgDataType,
+			Request:          req,
+		})
 		if err != nil {
 			return err
 		}
@@ -2306,7 +2366,15 @@ func (s tableManagementService) handleHasManyIntArrayRelation(
 		req.SourceRowId = int(srcID)
 		req.TargetRowId = int(tgtID)
 		req.Action = "unlink"
-		_, err = s.updateLinkData(ctx, c.srcTable, c.trgTable, c.srcColumn, c.trgColumn, c.srcDatatype, c.trgDataType, req)
+		_, err = s.updateLinkData(ctx, updateLinkDataParams{
+			SourceTableName:  c.srcTable,
+			TargetTableName:  c.trgTable,
+			SourceColumnName: c.srcColumn,
+			TargetColumnName: c.trgColumn,
+			SourceDataType:   c.srcDatatype,
+			TargetDataType:   c.trgDataType,
+			Request:          req,
+		})
 		if err != nil {
 			return err
 		}
@@ -2380,13 +2448,30 @@ func (s tableManagementService) UpdateRawDataForLinks(
 	}
 
 	if req.Action == "link" {
-		err = s.updateIfExist(ctx, relationType, sourceTableName, sourceColumnData.ColumnName, targetTableName, targetColumnData.ColumnName, sourceDataType, targetDataType, req)
+		err = s.updateIfExist(ctx, updateIfExistParams{
+			RelationType:     relationType,
+			SourceTableName:  sourceTableName,
+			SourceColumnName: sourceColumnData.ColumnName,
+			TargetTableName:  targetTableName,
+			TargetColumnName: targetColumnData.ColumnName,
+			SourceDataType:   sourceDataType,
+			TargetDataType:   targetDataType,
+			Request:          req,
+		})
 		if err != nil {
 			return dto.RecordResponse{}, err
 		}
 	}
 
-	return s.updateLinkData(ctx, sourceTableName, targetTableName, sourceColumnData.ColumnName, targetColumnData.ColumnName, sourceDataType, targetDataType, req)
+	return s.updateLinkData(ctx, updateLinkDataParams{
+		SourceTableName:  sourceTableName,
+		TargetTableName:  targetTableName,
+		SourceColumnName: sourceColumnData.ColumnName,
+		TargetColumnName: targetColumnData.ColumnName,
+		SourceDataType:   sourceDataType,
+		TargetDataType:   targetDataType,
+		Request:          req,
+	})
 }
 
 func (s tableManagementService) InsertRowData(ctx context.Context, schemaName string, req dto.InsertRowDataRequest) (dto.RecordResponse, error) {
@@ -2406,8 +2491,6 @@ func (s tableManagementService) InsertRowData(ctx context.Context, schemaName st
 	}
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
-
-	fmt.Printf("DEBUG: InsertRowData - Column: %s, DT: %s, Value: %v\n", columnData.ColumnName, columnData.DT, req.Value)
 
 	var value interface{}
 	if req.Value != nil {
@@ -2543,7 +2626,16 @@ func (s tableManagementService) handleLinkColumn(
 
 	sourceTableName := fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias)
 	targetTableName := fmt.Sprintf(SchemaTableFormat, schemaName, targetModel.Alias)
-	return s.unlinkRowData(ctx, req, sourceTableName, targetTableName, column, targetColumn, rowData, sourceDataType, targetDataType)
+	return s.unlinkRowData(ctx, unlinkRowDataParams{
+		Request:         req,
+		SourceTableName: sourceTableName,
+		TargetTableName: targetTableName,
+		Column:          column,
+		TargetColumn:    targetColumn,
+		RowData:         rowData,
+		SourceDataType:  sourceDataType,
+		TargetDataType:  targetDataType,
+	})
 }
 
 // Resolve source/target datatype from relation metadata
@@ -2576,24 +2668,37 @@ func (s tableManagementService) resolveDataTypes(column tenant.Column) (string, 
 // Unlink row(s) depending on datatype (INT or INT[])
 func (s tableManagementService) unlinkRowData(
 	ctx context.Context,
-	req dto.DeleteRowDataRequest,
-	sourceTableName, targetTableName string,
-	column tenant.Column,
-	targetColumn tenant.Column,
-	rowData map[string]interface{},
-	sourceDataType, targetDataType string,
+	params unlinkRowDataParams,
 ) error {
 	lg := logger.Get()
-	if sourceDataType == "INT" {
+	if params.SourceDataType == "INT" {
 		lg.Debug().Msg("Unlinking single row")
-		targetRowId := rowData[column.ColumnName].(int64)
-		return s.unlinkSingleRow(ctx, req, sourceTableName, targetTableName, column, targetColumn, sourceDataType, targetDataType, targetRowId)
+		targetRowId := params.RowData[params.Column.ColumnName].(int64)
+		return s.unlinkSingleRow(ctx, unlinkSingleRowParams{
+			Request:         params.Request,
+			SourceTableName: params.SourceTableName,
+			TargetTableName: params.TargetTableName,
+			Column:          params.Column,
+			TargetColumn:    params.TargetColumn,
+			SourceDataType:  params.SourceDataType,
+			TargetDataType:  params.TargetDataType,
+			TargetRowId:     targetRowId,
+		})
 	}
 
 	// handle multiple (INT[])
-	targetRowIds := rowData[targetColumn.ColumnName].([]int64)
+	targetRowIds := params.RowData[params.TargetColumn.ColumnName].([]int64)
 	for _, targetRowId := range targetRowIds {
-		if err := s.unlinkSingleRow(ctx, req, sourceTableName, targetTableName, column, targetColumn, sourceDataType, targetDataType, targetRowId); err != nil {
+		if err := s.unlinkSingleRow(ctx, unlinkSingleRowParams{
+			Request:         params.Request,
+			SourceTableName: params.SourceTableName,
+			TargetTableName: params.TargetTableName,
+			Column:          params.Column,
+			TargetColumn:    params.TargetColumn,
+			SourceDataType:  params.SourceDataType,
+			TargetDataType:  params.TargetDataType,
+			TargetRowId:     targetRowId,
+		}); err != nil {
 			return err
 		}
 	}
@@ -2603,30 +2708,27 @@ func (s tableManagementService) unlinkRowData(
 // Build unlink request and call updateLinkData
 func (s tableManagementService) unlinkSingleRow(
 	ctx context.Context,
-	req dto.DeleteRowDataRequest,
-	sourceTableName, targetTableName string,
-	column tenant.Column,
-	targetColumn tenant.Column,
-	sourceDataType, targetDataType string,
-	targetRowId int64,
+	params unlinkSingleRowParams,
 ) error {
 	updateLinkReq := dto.UpdateRowDataLinksRequest{
-		ModelID:     req.ModelID,
-		ColumnId:    column.ID.String(),
-		SourceRowId: req.RowId,
-		TargetRowId: int(targetRowId),
+		ModelID:     params.Request.ModelID,
+		ColumnId:    params.Column.ID.String(),
+		SourceRowId: params.Request.RowId,
+		TargetRowId: int(params.TargetRowId),
 		Action:      "unlink",
 	}
 
 	_, err := s.updateLinkData(
 		ctx,
-		sourceTableName,
-		targetTableName,
-		column.ColumnName,
-		targetColumn.ColumnName,
-		sourceDataType,
-		targetDataType,
-		updateLinkReq,
+		updateLinkDataParams{
+			SourceTableName:  params.SourceTableName,
+			TargetTableName:  params.TargetTableName,
+			SourceColumnName: params.Column.ColumnName,
+			TargetColumnName: params.TargetColumn.ColumnName,
+			SourceDataType:   params.SourceDataType,
+			TargetDataType:   params.TargetDataType,
+			Request:          updateLinkReq,
+		},
 	)
 	return err
 }
@@ -2686,6 +2788,7 @@ func (s tableManagementService) assetsToMaps(assets []tenant.Assets) []map[strin
 	return result
 }
 
+// AddAttachment now supports uploading all file types, not just images.
 func (s tableManagementService) AddAttachment(
 	ctx context.Context,
 	schemaName string,
@@ -2693,6 +2796,7 @@ func (s tableManagementService) AddAttachment(
 	files []*multipart.FileHeader,
 ) (dto.RecordResponse, error) {
 	lg := logger.Get()
+	// uploadAssets now supports all file types
 	assets, err := s.uploadAssets(ctx, schemaName, files)
 	if err != nil {
 		return dto.RecordResponse{}, err
@@ -2834,9 +2938,10 @@ func (s tableManagementService) RemoveAttachments(
 	}, nil
 }
 
+// uploadAssets now supports all file types, not just images.
 func (s tableManagementService) uploadAssets(ctx context.Context, schemaName string, files []*multipart.FileHeader) ([]tenant.Assets, error) {
 	uploadReq := dto.UploadAssetRequest{
-		Files: files,
+		Files: files, // Accepts all file types
 	}
 	assets, err := s.assetManagementService.Upload(ctx, uploadReq, schemaName)
 	if err != nil {

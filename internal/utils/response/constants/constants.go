@@ -10,6 +10,15 @@ type MetaResponse struct {
 	Description string
 }
 
+// createMetaResponse is a helper function to create MetaResponse instances
+func createMetaResponse(httpStatus int, message, description string) MetaResponse {
+	return MetaResponse{
+		HTTPStatus:  httpStatus,
+		Message:     message,
+		Description: description,
+	}
+}
+
 // mergeMaps merges multiple maps of type map[ResponseCode]MetaResponse into one.
 func mergeMaps(maps ...map[ResponseCode]MetaResponse) map[ResponseCode]MetaResponse {
 	merged := make(map[ResponseCode]MetaResponse)

@@ -23,16 +23,15 @@ func (UsageMetric) TableName(prefix string) string {
 }
 
 func (tbl UsageMetric) TableSchema(prefix string) models.CreateTableRequest {
-	null := "NULL"
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
 			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
 			{Name: "metric_type", DataType: "varchar", NotNull: true},
 			{Name: "metric_value", DataType: "integer", DefaultValue: StrPtr("0")},
-			{Name: "period_start", DataType: "timestamp", DefaultValue: &null},
-			{Name: "period_end", DataType: "timestamp", DefaultValue: &null},
-			{Name: "recorded_at", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("period_start", false, true),
+			createTimestampColumn("period_end", false, true),
+			createTimestampColumn("recorded_at", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_usage_period", Columns: []string{"period_start", "period_end"}},

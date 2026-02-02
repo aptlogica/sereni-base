@@ -58,22 +58,22 @@ func (tbl Model) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "title", DataType: "varchar", NotNull: true},
 			{Name: "description", DataType: "text"},
 			{Name: "alias", DataType: "varchar", NotNull: true},
-			{Name: "type", DataType: "varchar", DefaultValue: strPtr("'table'")},
+			{Name: "type", DataType: "varchar", DefaultValue: StrPtr("'table'")},
 			{Name: "meta", DataType: "jsonb"},
 			{Name: "schema", DataType: "text"},
-			{Name: "enabled", DataType: "boolean", DefaultValue: strPtr("true")},
-			{Name: "mm", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "pinned", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "deleted", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "enabled", DataType: "boolean", DefaultValue: StrPtr("true")},
+			{Name: "mm", DataType: "boolean", DefaultValue: StrPtr("false")},
+			{Name: "pinned", DataType: "boolean", DefaultValue: StrPtr("false")},
+			{Name: "deleted", DataType: "boolean", DefaultValue: StrPtr("false")},
 			{Name: "tags", DataType: "varchar"},
 			{Name: "order_index", DataType: "real"},
-			{Name: "row_count", DataType: "integer", DefaultValue: strPtr("0")},
-			{Name: "column_count", DataType: "integer", DefaultValue: strPtr("0")},
-			{Name: "storage_used_bytes", DataType: "integer", DefaultValue: strPtr("0")},
+			{Name: "row_count", DataType: "integer", DefaultValue: StrPtr("0")},
+			{Name: "column_count", DataType: "integer", DefaultValue: StrPtr("0")},
+			{Name: "storage_used_bytes", DataType: "integer", DefaultValue: StrPtr("0")},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_models_base_id", Columns: []string{"base_id"}},
@@ -82,20 +82,19 @@ func (tbl Model) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_models_type", Columns: []string{"type"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_models_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_models_workspace_id",
-				Columns:           []string{"workspace_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".workspaces", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createModelFK(prefix, "base_id", "bases"),
+			createModelFK(prefix, "workspace_id", "workspaces"),
 		},
+	}
+}
+
+// createModelFK creates a foreign key definition for models table
+func createModelFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_models_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
 	}
 }

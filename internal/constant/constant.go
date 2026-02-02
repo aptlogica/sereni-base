@@ -22,13 +22,17 @@ This is an automated message. Replies are not monitored.
 ────────────────────────────────────`
 
 	// Database type constants
-	DBTypeVarchar255      = "VARCHAR(255)"
-	DBTypeNVarchar255     = "NVARCHAR(255)"
-	DBTypeNVarcharMax     = "NVARCHAR(MAX)"
-	DBTypeVarchar255Lower = "varchar(255)"
-	DBTypeVarchar100      = "varchar(100)"
-	DBTypeVarchar50       = "varchar(50)"
-	DBTypeVarchar150      = "varchar(150)" // Assuming for display_name
+	DBTypeVarchar255       = "VARCHAR(255)"
+	DBTypeNVarchar255      = "NVARCHAR(255)"
+	DBTypeNVarcharMax      = "NVARCHAR(MAX)"
+	DBTypeVarchar255Lower  = "varchar(255)"
+	DBTypeVarchar100       = "varchar(100)"
+	DBTypeVarchar50        = "varchar(50)"
+	DBTypeVarchar150       = "varchar(150)" // Assuming for display_name
+	DBTypeOracleVarchar255 = "VARCHAR2(255)"
+
+	// Table format constants
+	ModelsTableFormat = "\"%s\".models"
 )
 
 func strPtr(s string) *string {
@@ -244,17 +248,100 @@ type DBMapping struct {
 	Oracle    string
 }
 
-var UITypeMappings = map[string]DBMapping{
-	"text": {
-		Component: "TextInput",
-		Label:     "Single Line Text",
+// Helper functions to create common DBMapping patterns
+func createTextMapping(component, label string) DBMapping {
+	return DBMapping{
+		Component: component,
+		Label:     label,
 		Postgres:  "TEXT",
 		MongoDB:   "String",
 		MySQL:     DBTypeVarchar255,
 		SQLite:    "TEXT",
 		MSSQL:     DBTypeNVarchar255,
-		Oracle:    "VARCHAR2(255)",
-	},
+		Oracle:    DBTypeOracleVarchar255,
+	}
+}
+
+func createNumericMapping(component, label, postgres, mysql, mssql, oracle string) DBMapping {
+	return DBMapping{
+		Component: component,
+		Label:     label,
+		Postgres:  postgres,
+		MongoDB:   "Number",
+		MySQL:     mysql,
+		SQLite:    "REAL",
+		MSSQL:     mssql,
+		Oracle:    oracle,
+	}
+}
+
+func createIntMapping(component, label, postgres string) DBMapping {
+	return DBMapping{
+		Component: component,
+		Label:     label,
+		Postgres:  postgres,
+		MongoDB:   "Number",
+		MySQL:     "INT",
+		SQLite:    "INTEGER",
+		MSSQL:     "INT",
+		Oracle:    "NUMBER",
+	}
+}
+
+func createTimestampMapping(component, label string) DBMapping {
+	return DBMapping{
+		Component: component,
+		Label:     label,
+		Postgres:  "TIMESTAMP",
+		MongoDB:   "Date",
+		MySQL:     "DATETIME",
+		SQLite:    "TEXT",
+		MSSQL:     "DATETIME2",
+		Oracle:    "TIMESTAMP",
+	}
+}
+
+func createArrayMapping(component, label, postgres string) DBMapping {
+	return DBMapping{
+		Component: component,
+		Label:     label,
+		Postgres:  postgres,
+		MongoDB:   "Array",
+		MySQL:     "JSON",
+		SQLite:    "TEXT",
+		MSSQL:     DBTypeNVarcharMax,
+		Oracle:    "CLOB",
+	}
+}
+
+func createSystemTextMapping(label string) DBMapping {
+	return DBMapping{
+		Component: "SystemField",
+		Label:     label,
+		Postgres:  "TEXT",
+		MongoDB:   "ObjectId",
+		MySQL:     "INT",
+		SQLite:    "INTEGER",
+		MSSQL:     "INT",
+		Oracle:    "NUMBER",
+	}
+}
+
+func createUniformTextMapping(component, label string) DBMapping {
+	return DBMapping{
+		Component: component,
+		Label:     label,
+		Postgres:  "TEXT",
+		MongoDB:   "TEXT",
+		MySQL:     "TEXT",
+		SQLite:    "TEXT",
+		MSSQL:     "TEXT",
+		Oracle:    "TEXT",
+	}
+}
+
+var UITypeMappings = map[string]DBMapping{
+	"text": createTextMapping("TextInput", "Single Line Text"),
 	"longText": {
 		Component: "TextArea",
 		Label:     "Long Text",
@@ -265,26 +352,8 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "NTEXT",
 		Oracle:    "CLOB",
 	},
-	"number": {
-		Component: "NumberInput",
-		Label:     "Number",
-		Postgres:  "INTEGER",
-		MongoDB:   "Number",
-		MySQL:     "INT",
-		SQLite:    "INTEGER",
-		MSSQL:     "INT",
-		Oracle:    "NUMBER",
-	},
-	"decimal": {
-		Component: "NumberInput",
-		Label:     "Decimal",
-		Postgres:  "NUMERIC",
-		MongoDB:   "Number",
-		MySQL:     "DECIMAL",
-		SQLite:    "REAL",
-		MSSQL:     "DECIMAL",
-		Oracle:    "NUMBER",
-	},
+	"number":  createIntMapping("NumberInput", "Number", "INTEGER"),
+	"decimal": createNumericMapping("NumberInput", "Decimal", "NUMERIC", "DECIMAL", "DECIMAL", "NUMBER"),
 	"boolean": {
 		Component: "Checkbox",
 		Label:     "Checkbox",
@@ -295,26 +364,8 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "BIT",
 		Oracle:    "NUMBER(1)",
 	},
-	"currency": {
-		Component: "CurrencyInput",
-		Label:     "Currency",
-		Postgres:  "NUMERIC",
-		MongoDB:   "Number",
-		MySQL:     "DECIMAL",
-		SQLite:    "REAL",
-		MSSQL:     "DECIMAL",
-		Oracle:    "NUMBER",
-	},
-	"percent": {
-		Component: "PercentInput",
-		Label:     "Percent",
-		Postgres:  "NUMERIC",
-		MongoDB:   "Number",
-		MySQL:     "DECIMAL",
-		SQLite:    "REAL",
-		MSSQL:     "DECIMAL",
-		Oracle:    "NUMBER",
-	},
+	"currency": createNumericMapping("CurrencyInput", "Currency", "NUMERIC", "DECIMAL", "DECIMAL", "NUMBER"),
+	"percent":  createNumericMapping("PercentInput", "Percent", "NUMERIC", "DECIMAL", "DECIMAL", "NUMBER"),
 	"duration": {
 		Component: "DurationPicker",
 		Label:     "Duration",
@@ -345,16 +396,7 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "DATE",
 		Oracle:    "DATE",
 	},
-	"datetime": {
-		Component: "DateTimePicker",
-		Label:     "Date Time",
-		Postgres:  "TIMESTAMP",
-		MongoDB:   "Date",
-		MySQL:     "DATETIME",
-		SQLite:    "TEXT",
-		MSSQL:     "DATETIME2",
-		Oracle:    "TIMESTAMP",
-	},
+	"datetime": createTimestampMapping("DateTimePicker", "Date Time"),
 	"time": {
 		Component: "TimePicker",
 		Label:     "Time",
@@ -365,16 +407,7 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "TIME",
 		Oracle:    "DATE",
 	},
-	"email": {
-		Component: "EmailInput",
-		Label:     "Email",
-		Postgres:  "TEXT",
-		MongoDB:   "String",
-		MySQL:     DBTypeVarchar255,
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarchar255,
-		Oracle:    "VARCHAR2(255)",
-	},
+	"email": createTextMapping("EmailInput", "Email"),
 	"phoneNumber": {
 		Component: "PhoneInput",
 		Label:     "Phone Number",
@@ -385,36 +418,9 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "NVARCHAR(20)",
 		Oracle:    "VARCHAR2(20)",
 	},
-	"url": {
-		Component: "URLInput",
-		Label:     "URL",
-		Postgres:  "TEXT",
-		MongoDB:   "String",
-		MySQL:     DBTypeVarchar255,
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarchar255,
-		Oracle:    "VARCHAR2(255)",
-	},
-	"select": {
-		Component: "Dropdown",
-		Label:     "Single Select",
-		Postgres:  "TEXT",
-		MongoDB:   "String",
-		MySQL:     DBTypeVarchar255,
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarchar255,
-		Oracle:    "VARCHAR2(255)",
-	},
-	"multiSelect": {
-		Component: "MultiDropdown",
-		Label:     "Multi Select",
-		Postgres:  "TEXT[]",
-		MongoDB:   "Array",
-		MySQL:     "JSON",
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarcharMax,
-		Oracle:    "CLOB",
-	},
+	"url":         createTextMapping("URLInput", "URL"),
+	"select":      createTextMapping("Dropdown", "Single Select"),
+	"multiSelect": createArrayMapping("MultiDropdown", "Multi Select", "TEXT[]"),
 	"rating": {
 		Component: "RatingStars",
 		Label:     "Rating",
@@ -425,26 +431,8 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "TINYINT",
 		Oracle:    "NUMBER",
 	},
-	"user": {
-		Component: "UserPicker",
-		Label:     "User",
-		Postgres:  "TEXT",
-		MongoDB:   "TEXT",
-		MySQL:     "TEXT",
-		SQLite:    "TEXT",
-		MSSQL:     "TEXT",
-		Oracle:    "TEXT",
-	},
-	"button": {
-		Component: "Button",
-		Label:     "Button",
-		Postgres:  "TEXT",
-		MongoDB:   "TEXT",
-		MySQL:     "TEXT",
-		SQLite:    "TEXT",
-		MSSQL:     "TEXT",
-		Oracle:    "TEXT",
-	},
+	"user":   createUniformTextMapping("UserPicker", "User"),
+	"button": createUniformTextMapping("Button", "Button"),
 	"json": {
 		Component: "JSONField",
 		Label:     "JSON Field",
@@ -465,66 +453,12 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "UNIQUEIDENTIFIER",
 		Oracle:    "RAW(16)",
 	},
-	"links_source_one-to-one": {
-		Component: "LinkInput",
-		Label:     "Links",
-		Postgres:  "INT",
-		MongoDB:   "Number",
-		MySQL:     "INT",
-		SQLite:    "INTEGER",
-		MSSQL:     "INT",
-		Oracle:    "NUMBER",
-	},
-	"links_target_one-to-one": {
-		Component: "LinkInput",
-		Label:     "Links",
-		Postgres:  "INT",
-		MongoDB:   "Number",
-		MySQL:     "INT",
-		SQLite:    "INTEGER",
-		MSSQL:     "INT",
-		Oracle:    "NUMBER",
-	},
-	"links_source_has-many": {
-		Component: "LinkInput",
-		Label:     "Links",
-		Postgres:  "INT[]",
-		MongoDB:   "Array",
-		MySQL:     "JSON",
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarcharMax,
-		Oracle:    "CLOB",
-	},
-	"links_target_has-many": {
-		Component: "LinkInput",
-		Label:     "Links",
-		Postgres:  "INT",
-		MongoDB:   "Number",
-		MySQL:     "INT",
-		SQLite:    "INTEGER",
-		MSSQL:     "INT",
-		Oracle:    "NUMBER",
-	},
-	"links_source_many-to-many": {
-		Component: "LinkInput",
-		Label:     "Links",
-		Postgres:  "INT[]",
-		MongoDB:   "Array",
-		MySQL:     "JSON",
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarcharMax,
-		Oracle:    "CLOB",
-	},
-	"links_target_many-to-many": {
-		Component: "LinkInput",
-		Label:     "Links",
-		Postgres:  "INT[]",
-		MongoDB:   "Array",
-		MySQL:     "JSON",
-		SQLite:    "TEXT",
-		MSSQL:     DBTypeNVarcharMax,
-		Oracle:    "CLOB",
-	},
+	"links_source_one-to-one":   createIntMapping("LinkInput", "Links", "INT"),
+	"links_target_one-to-one":   createIntMapping("LinkInput", "Links", "INT"),
+	"links_source_has-many":     createArrayMapping("LinkInput", "Links", "INT[]"),
+	"links_target_has-many":     createIntMapping("LinkInput", "Links", "INT"),
+	"links_source_many-to-many": createArrayMapping("LinkInput", "Links", "INT[]"),
+	"links_target_many-to-many": createArrayMapping("LinkInput", "Links", "INT[]"),
 	"lookup": {
 		Component: "LookupField",
 		Label:     "Lookup",
@@ -535,16 +469,7 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "INT",
 		Oracle:    "NUMBER",
 	},
-	"createdTime": {
-		Component: "SystemField",
-		Label:     "Created Time",
-		Postgres:  "TIMESTAMP",
-		MongoDB:   "Date",
-		MySQL:     "DATETIME",
-		SQLite:    "TEXT",
-		MSSQL:     "DATETIME2",
-		Oracle:    "TIMESTAMP",
-	},
+	"createdTime": createTimestampMapping("SystemField", "Created Time"),
 	"attachment": {
 		Component: "AttachmentField",
 		Label:     "Attachment",
@@ -555,46 +480,10 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     DBTypeNVarcharMax,
 		Oracle:    "CLOB",
 	},
-	"lastModifiedTime": {
-		Component: "SystemField",
-		Label:     "Last Modified Time",
-		Postgres:  "TIMESTAMP",
-		MongoDB:   "Date",
-		MySQL:     "DATETIME",
-		SQLite:    "TEXT",
-		MSSQL:     "DATETIME2",
-		Oracle:    "TIMESTAMP",
-	},
-	"createdBy": {
-		Component: "SystemField",
-		Label:     "Created By",
-		Postgres:  "TEXT",
-		MongoDB:   "ObjectId",
-		MySQL:     "INT",
-		SQLite:    "INTEGER",
-		MSSQL:     "INT",
-		Oracle:    "NUMBER",
-	},
-	"lastModifiedBy": {
-		Component: "SystemField",
-		Label:     "Last Modified By",
-		Postgres:  "TEXT",
-		MongoDB:   "ObjectId",
-		MySQL:     "INT",
-		SQLite:    "INTEGER",
-		MSSQL:     "INT",
-		Oracle:    "NUMBER",
-	},
-	"formula": {
-		Component: "Formula",
-		Label:     "Formula",
-		Postgres:  "TEXT",
-		MongoDB:   "TEXT",
-		MySQL:     "TEXT",
-		SQLite:    "TEXT",
-		MSSQL:     "TEXT",
-		Oracle:    "TEXT",
-	},
+	"lastModifiedTime": createTimestampMapping("SystemField", "Last Modified Time"),
+	"createdBy":        createSystemTextMapping("Created By"),
+	"lastModifiedBy":   createSystemTextMapping("Last Modified By"),
+	"formula":          createUniformTextMapping("Formula", "Formula"),
 }
 
 // AllowedConversions says: fromType -> list of allowed target types.

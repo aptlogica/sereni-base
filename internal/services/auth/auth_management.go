@@ -9,6 +9,7 @@ import (
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
 	"serenibase/internal/services/interfaces"
+	rbac "serenibase/internal/services/rbac"
 	"time"
 
 	app_errors "serenibase/internal/app-errors"
@@ -24,6 +25,22 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// AuthManagementServiceDeps holds all service dependencies
+type AuthManagementServiceDeps struct {
+	UserManagementService      interfaces.UserManagementService
+	WorkspaceManagementService interfaces.WorkspaceManagementService
+	UserResetTokenService      interfaces.UserResetTokenService
+	RBACManagementService      interfaces.RBACManagementService
+}
+
+// AuthManagementProviderDeps holds all provider dependencies
+type AuthManagementProviderDeps struct {
+	OTPProviderService   otpProvider.OtpService
+	EmailTemplateService emailProvider.EmailTemplateService
+	EmailProviderService emailProvider.EmailService
+	AuthProviderService  authProviderInterface.AuthProvider
+}
 
 type authManagementService struct {
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig
@@ -43,26 +60,20 @@ type authManagementService struct {
 func NewAuthManagementService(
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig,
 	repo *pkg.DatabaseService,
-	userManagementService interfaces.UserManagementService,
-	workspaceManagementService interfaces.WorkspaceManagementService,
-	userResetTokenService interfaces.UserResetTokenService,
-	rbacManagementService interfaces.RBACManagementService,
-	otpProviderService otpProvider.OtpService,
-	emailTemplateService emailProvider.EmailTemplateService,
-	emailProviderService emailProvider.EmailService,
-	authProviderService authProviderInterface.AuthProvider,
+	serviceDeps AuthManagementServiceDeps,
+	providerDeps AuthManagementProviderDeps,
 ) interfaces.AuthManagementService {
 	return &authManagementService{
 		userDefaultPassword:        userDefaultPassword,
 		repo:                       repo,
-		userManagementService:      userManagementService,
-		workspaceManagementService: workspaceManagementService,
-		userResetTokenService:      userResetTokenService,
-		rbacManagementService:      rbacManagementService,
-		otpProviderService:         otpProviderService,
-		emailTemplateService:       emailTemplateService,
-		emailProviderService:       emailProviderService,
-		authProviderService:        authProviderService,
+		userManagementService:      serviceDeps.UserManagementService,
+		workspaceManagementService: serviceDeps.WorkspaceManagementService,
+		userResetTokenService:      serviceDeps.UserResetTokenService,
+		rbacManagementService:      serviceDeps.RBACManagementService,
+		otpProviderService:         providerDeps.OTPProviderService,
+		emailTemplateService:       providerDeps.EmailTemplateService,
+		emailProviderService:       providerDeps.EmailProviderService,
+		authProviderService:        providerDeps.AuthProviderService,
 	}
 }
 
@@ -74,11 +85,8 @@ func (s *authManagementService) sendOtpViaEmail(email string) {
 
 func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error) {
 	// 1. Check if user already exists
-	if existingUser, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
-		fmt.Println("User already exists with ID:", existingUser.ID)
-		// If user exists, we might want to check if they are already an owner/verified.
-		// For now, return error or handle gracefully. Script handled it by printing.
-		// But here we return error to let caller decide.
+	if _, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
+		// If user exists, return error
 		return dto.LoginResponse{}, app_errors.UserAlreadyExists
 	} else if err != app_errors.UserNotFound {
 		return dto.LoginResponse{}, err
@@ -116,11 +124,8 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 
 	roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RBACRoleNames.Owner)
 	if err != nil {
-		fmt.Println("err: ------- ", err)
 		return dto.LoginResponse{}, err
 	}
-
-	fmt.Println("Assigning role", roleData.Name, "to user", insertedUser.Email)
 
 	accessMemberReq := dto.AccessMemberDTO{
 		UserID:     insertedUser.ID.String(),
@@ -215,7 +220,6 @@ func (a *authManagementService) initializeOwner(ctx context.Context, userId stri
 	}
 
 	updatedUser, err := a.userManagementService.UpdateUser(ctx, appConstant.MasterDatabase, userId, updateData)
-	fmt.Println("Updated user after initialization:", updatedUser)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}
@@ -260,7 +264,6 @@ func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyE
 
 	userData, err := a.initializeOwner(ctx, user.ID.String(), user)
 	if err != nil {
-		fmt.Println(err)
 		return dto.LoginResponse{}, err
 	}
 
@@ -345,6 +348,18 @@ func (a *authManagementService) VerifyToken(ctx context.Context, token string) (
 	return a.ValidateToken(ctx, token)
 }
 
+// extractIssuedAtFromToken extracts the iat claim as a string from a JWT token
+func extractIssuedAtFromToken(token string) (string, error) {
+	claims, err := helpers.DecodeJWT(token)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode JWT for iat: %w", err)
+	}
+	if iat, ok := claims["iat"].(float64); ok {
+		return fmt.Sprintf("%d", int64(iat)), nil
+	}
+	return "", fmt.Errorf("iat claim not found in token")
+}
+
 func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	// Local lookup instead of Keycloak
 
@@ -374,14 +389,17 @@ func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.Forg
 		return err
 	}
 
+	issuedAtStr, err := extractIssuedAtFromToken(token)
+	if err != nil {
+		issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
+	}
 	dataToInsert := dto.UserResetTokenInsertion{
-		ID:     uuid.NewString(),
-		UserID: user.ID.String(),
-		Token:  token,
-		Expiry: time.Now().Add(1 * time.Hour),
+		ID:       uuid.NewString(),
+		UserID:   user.ID.String(),
+		Token:    token,
+		IssuedAt: issuedAtStr,
 	}
 	_, err = a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
-	// data unused was triggering lint?
 	if err != nil {
 		return app_errors.UserNotFound
 	}
@@ -406,6 +424,15 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 
 	userId := userResetToken.UserID.String()
 
+	tokenIssuedAt, err := extractIssuedAtFromToken(userResetToken.Token)
+	if err != nil {
+		return app_errors.TokenInvalid
+	}
+	latestIssuedAt := userResetToken.IssuedAt
+	if tokenIssuedAt != latestIssuedAt {
+		return fmt.Errorf("reset token issued date does not match latest issued date in user_reset_tokens")
+	}
+
 	hashedPassword, err := a.hashNewPassword(req.NewPassword)
 	if err != nil {
 		return err
@@ -419,6 +446,7 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return err
 	}
 
+	return nil
 	return a.cleanUserResetTokens(ctx, userId)
 }
 
@@ -427,11 +455,7 @@ func (a *authManagementService) fetchValidResetToken(ctx context.Context, token 
 	if err != nil {
 		return tenant.UserResetToken{}, app_errors.TokenInvalid
 	}
-
-	if time.Now().After(userResetToken.Expiry) {
-		return tenant.UserResetToken{}, app_errors.TokenExpired
-	}
-
+	// No expiry check here, only validity of token
 	return userResetToken, nil
 }
 
@@ -577,11 +601,15 @@ func (a *authManagementService) generateInvitationToken(ctx context.Context, use
 		return "", err
 	}
 
+	issuedAtStr, err := extractIssuedAtFromToken(token)
+	if err != nil {
+		issuedAtStr = fmt.Sprintf("%d", time.Now().Unix())
+	}
 	dataToInsert := dto.UserResetTokenInsertion{
-		ID:     uuid.NewString(),
-		UserID: userID,
-		Token:  token,
-		Expiry: time.Now().Add(1 * time.Hour),
+		ID:       uuid.NewString(),
+		UserID:   userID,
+		Token:    token,
+		IssuedAt: issuedAtStr,
 	}
 
 	data, err := a.userResetTokenService.CreateUserResetToken(ctx, dataToInsert)
@@ -779,11 +807,58 @@ func (a *authManagementService) demoteFromCoOwner(
 }
 
 func (a *authManagementService) updateMemberships(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) error {
+	// Always fetch current memberships
+	currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
+	if err != nil {
+		return err
+	}
+
+	// Build a map for quick lookup of new memberships (by unique key: workspace-level or base-level)
+	type membershipKey struct {
+		ScopeType string // "workspace" or "base"
+		ScopeID   string // workspace_id or base_id
+		Role      string // role name
+	}
+	newMemberships := make(map[membershipKey]struct{})
+	for _, m := range userData.Membership {
+		if len(m.Bases) == 0 {
+			// Workspace-level membership
+			key := membershipKey{ScopeType: "workspace", ScopeID: m.WorkspaceID, Role: m.Role}
+			newMemberships[key] = struct{}{}
+		} else {
+			// Base-level memberships
+			for _, b := range m.Bases {
+				key := membershipKey{ScopeType: "base", ScopeID: b.BaseID, Role: b.Role}
+				newMemberships[key] = struct{}{}
+			}
+		}
+	}
+
+	// Remove any current memberships not present in the new array
+	for _, member := range currentAccessMembers {
+		var key membershipKey
+		if member.ScopeType == "workspace" {
+			if member.ScopeID != nil {
+				key = membershipKey{ScopeType: "workspace", ScopeID: *member.ScopeID, Role: member.RoleID} // RoleID is actually role uuid, but we only have role name in MembershipRequest
+			}
+		} else if member.ScopeType == "base" {
+			if member.ScopeID != nil {
+				key = membershipKey{ScopeType: "base", ScopeID: *member.ScopeID, Role: member.RoleID}
+			}
+		}
+		// Note: This will only work if RoleID in DB is the same as Role in MembershipRequest, otherwise you may need to map role uuid to name
+		if _, found := newMemberships[key]; !found {
+			_ = a.RemoveAccessMemberByID(ctx, schema, member.ID.String(), reqBy)
+		}
+	}
+
+	// If membership is empty, we're done (all removed above)
 	if len(userData.Membership) == 0 {
 		return nil
 	}
 
-	_, err := a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
+	// Add/update memberships as usual
+	_, err = a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
 	return err
 }
 
@@ -858,20 +933,35 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 
 func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) error {
 	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
-	if err == nil {
-		for _, member := range accessMembers {
-			if member.RoleID != "" {
-				roleUUID, parseErr := uuid.Parse(member.RoleID)
-				if parseErr == nil {
-					role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
-					if roleErr == nil && role.Name == appConstant.RBACRoleNames.Owner {
-						return app_errors.OwnerCannotBeDeactivated
-					}
-				}
-			}
+	if err != nil {
+		return nil
+	}
+
+	for _, member := range accessMembers {
+		if a.isUserOwner(ctx, schema, member.RoleID) {
+			return app_errors.OwnerCannotBeDeactivated
 		}
 	}
 	return nil
+}
+
+// isUserOwner checks if the given role ID corresponds to an owner role
+func (a *authManagementService) isUserOwner(ctx context.Context, schema string, roleID string) bool {
+	if roleID == "" {
+		return false
+	}
+
+	roleUUID, parseErr := uuid.Parse(roleID)
+	if parseErr != nil {
+		return false
+	}
+
+	role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+	if roleErr != nil {
+		return false
+	}
+
+	return role.Name == appConstant.RBACRoleNames.Owner
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
@@ -893,7 +983,7 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
 	// Try to remove from access_members table (RBAC system)
 	// Find all access_members records for this user-workspace combination
-	accessMembersTableName := fmt.Sprintf(AccessMembersTableFormat, schema)
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
 	params := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -966,7 +1056,7 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 func (a *authManagementService) RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error {
 	// For base removal, we need to find the access_member record and delete it
 	// Find the access_members record for this user-base combination
-	accessMembersTableName := fmt.Sprintf(AccessMembersTableFormat, schema)
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
 	params := dbModels.QueryParams{
 		Select: []string{"id"},
 		Filters: []dbModels.QueryFilter{
@@ -1235,8 +1325,6 @@ func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context,
 		return nil, app_errors.LogDatabaseError(err, "failed to get workspace members with roles")
 	}
 
-	fmt.Println("Records from get_workspace_members_with_role:", records)
-
 	var result []dto.UserWithRole
 	for _, record := range records {
 		if rec, ok := record[functionName].(map[string]interface{}); ok {
@@ -1297,7 +1385,7 @@ func (a *authManagementService) RemoveAccessMemberByID(ctx context.Context, sche
 	lg := logger.Get()
 
 	// Delete from access_members table using TableService
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schema)
+	tableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
 	err := a.repo.TableService.DeleteRecord(tableName, accessMemberID)
 	if err != nil {
 		lg.Error().Err(err).Str("access_member_id", accessMemberID).Msg("Failed to remove access member")

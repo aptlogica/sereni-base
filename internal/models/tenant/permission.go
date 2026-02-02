@@ -21,14 +21,25 @@ func (Permission) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".permissions", prefix)
 }
 
+// createPermissionFK creates a foreign key definition for permission table
+func createPermissionFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_permissions_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
 func (tbl Permission) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			{Name: "id", DataType: "uuid", NotNull: true, Unique: true},
+			createUUIDIDColumn(),
 			{Name: "resource_id", DataType: "uuid", NotNull: true},
 			{Name: "action_id", DataType: "uuid", NotNull: true},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("created_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_permissions_resource_id", Columns: []string{"resource_id"}},
@@ -36,20 +47,8 @@ func (tbl Permission) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_permissions_resource_action", Columns: []string{"resource_id", "action_id"}, Unique: true},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_permissions_resource_id",
-				Columns:           []string{"resource_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".resources", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_permissions_action_id",
-				Columns:           []string{"action_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".actions", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createPermissionFK(prefix, "resource_id", "resources"),
+			createPermissionFK(prefix, "action_id", "actions"),
 		},
 	}
 }

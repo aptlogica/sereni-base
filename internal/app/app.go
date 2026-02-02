@@ -51,7 +51,7 @@ func New(cfg *config.Config) (*App, error) {
 			Username:     cfg.Database.Username,
 			Password:     cfg.Database.Password,
 			DatabaseName: cfg.Database.DatabaseName,
-			SSLMode: 	cfg.Database.SSLMode,
+			SSLMode:      cfg.Database.SSLMode,
 			MaxOpenConns: cfg.Database.MaxOpenConns,
 			MaxIdleConns: cfg.Database.MaxIdleConns,
 		},
@@ -101,12 +101,12 @@ func New(cfg *config.Config) (*App, error) {
 	viewService := services.NewViewService(dbService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
-	resourceService := services.NewResourceService(dbService)
-	actionService := services.NewActionService(dbService)
-	permissionService := services.NewPermissionService(dbService)
+	resourceService := services.NewCoreResourceService(dbService)
+	actionService := services.NewCoreActionService(dbService)
+	permissionService := services.NewRBACPermissionService(dbService)
 	rolePermissionService := services.NewRolePermissionService(dbService)
 	accessMemberService := services.NewAccessMemberService(dbService)
-	accessRoleService := services.NewAccessRoleService(dbService)
+	accessRoleService := services.NewRBACAccessRoleService(dbService)
 
 	assetManagementService := services.NewAssetManagementService(
 		dbService,
@@ -127,13 +127,15 @@ func New(cfg *config.Config) (*App, error) {
 
 	rbacManagementService := services.NewRBACManagementService(
 		dbService,
-		accessRoleService,
-		resourceService,
-		actionService,
-		permissionService,
-		rolePermissionService,
-		accessMemberService,
-		baseService,
+		services.RBACManagementServiceDeps{
+			RoleService:           accessRoleService,
+			ResourceService:       resourceService,
+			ActionService:         actionService,
+			PermissionService:     permissionService,
+			RolePermissionService: rolePermissionService,
+			AccessMemberService:   accessMemberService,
+			BaseService:           baseService,
+		},
 	)
 
 	baseManagementService := services.NewBaseManagementService(
@@ -169,14 +171,18 @@ func New(cfg *config.Config) (*App, error) {
 	authService := services.NewAuthManagementService(
 		cfg.TemporaryAddedUserPassword,
 		dbService,
-		userManagementService,
-		workspaceManagementService, // Now pass the actual service
-		userResetTokenService,
-		rbacManagementService,
-		otpProvider,
-		emailTemplateService,
-		emailProvider,
-		authProvider,
+		services.AuthManagementServiceDeps{
+			UserManagementService:      userManagementService,
+			WorkspaceManagementService: workspaceManagementService,
+			UserResetTokenService:      userResetTokenService,
+			RBACManagementService:      rbacManagementService,
+		},
+		services.AuthManagementProviderDeps{
+			OTPProviderService:   otpProvider,
+			EmailTemplateService: emailTemplateService,
+			EmailProviderService: emailProvider,
+			AuthProviderService:  authProvider,
+		},
 	)
 
 	organizationService := services.NewOrganizationService(dbService)

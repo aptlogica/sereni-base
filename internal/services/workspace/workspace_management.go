@@ -166,43 +166,60 @@ func (s workspaceManagementService) getAllBasesWithWorkspaceRole(ctx context.Con
 // checkWorkspaceLevelAccess checks if user has workspace-level access and returns the role name
 func (s workspaceManagementService) checkWorkspaceLevelAccess(ctx context.Context, schemaName string, workspaceID string, accessMembers []dto.AccessMemberDTO) (string, bool) {
 	for _, member := range accessMembers {
-		if member.ScopeType == "workspace" && member.ScopeID != nil && *member.ScopeID == workspaceID {
-			roleID := member.RoleID
-			if roleID != "" {
-				roleUUID, parseErr := uuid.Parse(roleID)
-				if parseErr == nil {
-					roleData, roleErr := s.rbacManagementService.GetRoleByID(ctx, schemaName, roleUUID)
-					if roleErr == nil {
-						fmt.Printf("DEBUG: User has workspace-level access with role: %s in workspace %s\n", roleData.Name, workspaceID)
-						return roleData.Name, true
-					}
-				}
+		if s.isWorkspaceMember(member, workspaceID) {
+			if roleName := s.getRoleName(ctx, schemaName, member.RoleID); roleName != "" {
+				return roleName, true
 			}
 		}
 	}
 	return "", false
 }
 
+// isWorkspaceMember checks if the member has workspace-level access for the given workspace
+func (s workspaceManagementService) isWorkspaceMember(member dto.AccessMemberDTO, workspaceID string) bool {
+	return member.ScopeType == "workspace" && member.ScopeID != nil && *member.ScopeID == workspaceID
+}
+
+// getRoleName retrieves the role name from a role ID, returns empty string if invalid
+func (s workspaceManagementService) getRoleName(ctx context.Context, schemaName string, roleID string) string {
+	if roleID == "" {
+		return ""
+	}
+
+	roleUUID, parseErr := uuid.Parse(roleID)
+	if parseErr != nil {
+		return ""
+	}
+
+	roleData, roleErr := s.rbacManagementService.GetRoleByID(ctx, schemaName, roleUUID)
+	if roleErr != nil {
+		return ""
+	}
+
+	return roleData.Name
+}
+
 // buildBaseAccessMap creates a map of base IDs to role names for base-level access
 func (s workspaceManagementService) buildBaseAccessMap(ctx context.Context, schemaName string, workspaceID string, accessMembers []dto.AccessMemberDTO) map[string]string {
 	baseAccessMap := make(map[string]string)
 	for _, member := range accessMembers {
-		if member.ScopeType == "base" && member.WorkspaceID != nil && *member.WorkspaceID == workspaceID && member.ScopeID != nil {
-			roleID := member.RoleID
-			if roleID != "" {
-				roleUUID, parseErr := uuid.Parse(roleID)
-				if parseErr == nil {
-					roleData, roleErr := s.rbacManagementService.GetRoleByID(ctx, schemaName, roleUUID)
-					if roleErr == nil {
-						baseAccessMap[*member.ScopeID] = roleData.Name
-					} else {
-						baseAccessMap[*member.ScopeID] = roleID
-					}
-				}
+		if s.isBaseMember(member, workspaceID) {
+			if roleName := s.getRoleName(ctx, schemaName, member.RoleID); roleName != "" {
+				baseAccessMap[*member.ScopeID] = roleName
+			} else {
+				baseAccessMap[*member.ScopeID] = member.RoleID
 			}
 		}
 	}
 	return baseAccessMap
+}
+
+// isBaseMember checks if the member has base-level access for the given workspace
+func (s workspaceManagementService) isBaseMember(member dto.AccessMemberDTO, workspaceID string) bool {
+	return member.ScopeType == "base" &&
+		member.WorkspaceID != nil &&
+		*member.WorkspaceID == workspaceID &&
+		member.ScopeID != nil
 }
 
 // getBasesWithAccess retrieves bases with their access levels
@@ -211,20 +228,17 @@ func (s workspaceManagementService) getBasesWithAccess(ctx context.Context, sche
 	for baseID, roleName := range baseAccessMap {
 		base, err := s.baseManagementService.GetBaseByID(ctx, schemaName, baseID)
 		if err != nil {
-			fmt.Printf("DEBUG: Failed to get base %s: %v\n", baseID, err)
 			continue
 		}
 
 		var baseResp dto.BaseResponse
 		if err := helpers.StructToStruct(base, &baseResp); err != nil {
-			fmt.Printf("DEBUG: Failed to convert base %s: %v\n", baseID, err)
 			continue
 		}
 		baseResp.AccessLevel = roleName
 		response = append(response, baseResp)
 	}
 
-	fmt.Printf("DEBUG: Returning %d bases for user %s with base-level access in workspace %s\n", len(response), userID, workspaceID)
 	return response, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -22,12 +23,17 @@ func NewResourceService(repo *pkg.DatabaseService) interfaces.ResourceService {
 	return &resourceService{repo: repo}
 }
 
+// getTableName returns the table name for resources
+func (s *resourceService) getTableName(schemaName string) string {
+	return tenant.Resource{}.TableName(schemaName)
+}
+
 func (s *resourceService) CreateResource(ctx context.Context, schemaName string, req dto.ResourceDTO) (tenant.Resource, error) {
 	if req.ID == uuid.Nil {
 		req.ID = uuid.New()
 	}
 
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return tenant.Resource{}, err
@@ -35,120 +41,46 @@ func (s *resourceService) CreateResource(ctx context.Context, schemaName string,
 
 	var resource tenant.Resource
 	if err := helpers.MapToStruct(insertedData, &resource); err != nil {
-		return tenant.Resource{}, err
+		return tenant.Resource{}, app_errors.ErrMapToStruct
 	}
 	return resource, nil
 }
 
 func (s *resourceService) GetResourceByID(ctx context.Context, schemaName string, resourceID uuid.UUID) (tenant.Resource, error) {
-	limit := 1
-	tableName := tenant.Resource{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "id",
-				Operator: "eq",
-				Value:    resourceID.String(),
-			},
-		},
-		Limit: &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Resource{}, app_errors.LogDatabaseError(err, "failed to get resource by id")
-	}
-
-	if len(data) == 0 {
-		return tenant.Resource{}, app_errors.ErrRecordNotFound
-	}
-
-	var resource tenant.Resource
-	if err := helpers.MapToStruct(data[0], &resource); err != nil {
-		return tenant.Resource{}, app_errors.ErrMapToStruct
-	}
-	return resource, nil
+	query := common.CreateSingleFilterQuery("id", "eq", resourceID.String(), 1)
+	tableName := s.getTableName(schemaName)
+	return common.GetSingleRecordWithRepo[tenant.Resource](s.repo, tableName, query, "failed to get resource by id")
 }
 
 func (s *resourceService) GetResourceByCode(ctx context.Context, schemaName string, code string) (tenant.Resource, error) {
-	limit := 1
-	tableName := tenant.Resource{}.TableName(schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "code",
-				Operator: "eq",
-				Value:    code,
-			},
-		},
-		Limit: &limit,
-	}
-
-	data, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Resource{}, app_errors.LogDatabaseError(err, "failed to get resource by code")
-	}
-
-	if len(data) == 0 {
-		return tenant.Resource{}, app_errors.ErrRecordNotFound
-	}
-
-	var resource tenant.Resource
-	if err := helpers.MapToStruct(data[0], &resource); err != nil {
-		return tenant.Resource{}, app_errors.ErrMapToStruct
-	}
-	return resource, nil
+	query := common.CreateSingleFilterQuery("code", "eq", code, 1)
+	tableName := s.getTableName(schemaName)
+	return common.GetSingleRecordWithRepo[tenant.Resource](s.repo, tableName, query, "failed to get resource by code")
 }
 
 func (s *resourceService) ListResources(ctx context.Context, schemaName string, limit, offset int) ([]tenant.Resource, int64, error) {
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	query := dbModels.QueryParams{
 		Limit:   &limit,
 		Offset:  &offset,
 		OrderBy: []string{"code"},
 	}
 
-	data, err := s.repo.TableService.GetTableData(tableName, query)
+	resources, err := common.ListRecordsWithRepo[tenant.Resource](s.repo, tableName, query, "failed to list resources")
 	if err != nil {
-		return nil, 0, app_errors.LogDatabaseError(err, "failed to list resources")
+		return nil, 0, err
 	}
 
-	countQuery := dbModels.QueryParams{
-		Aggregates: []dbModels.AggregateFunction{
-			{
-				Function: "COUNT",
-				Column:   "id",
-				Alias:    "total",
-			},
-		},
-	}
-	countData, err := s.repo.TableService.GetTableData(tableName, countQuery)
+	count, err := common.CountRecordsWithRepo(s.repo, tableName, "failed to count resources")
 	if err != nil {
-		return nil, 0, app_errors.LogDatabaseError(err, "failed to count resources")
+		return nil, 0, err
 	}
 
-	count := int64(len(countData))
-	if len(countData) > 0 {
-		if total, ok := countData[0]["total"]; ok {
-			if totalVal, ok := total.(float64); ok {
-				count = int64(totalVal)
-			}
-		}
-	}
-
-	var resources []tenant.Resource
-	for _, item := range data {
-		var resource tenant.Resource
-		if err := helpers.MapToStruct(item, &resource); err != nil {
-			return nil, 0, app_errors.ErrMapToStruct
-		}
-		resources = append(resources, resource)
-	}
 	return resources, count, nil
 }
 
 func (s *resourceService) UpdateResource(ctx context.Context, schemaName string, resourceID uuid.UUID, req dto.ResourceDTO) (tenant.Resource, error) {
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	updateData := req.Map()
 	// Remove ID from update data to prevent modifying the primary key
 	delete(updateData, "id")
@@ -166,7 +98,7 @@ func (s *resourceService) UpdateResource(ctx context.Context, schemaName string,
 }
 
 func (s *resourceService) DeleteResource(ctx context.Context, schemaName string, resourceID uuid.UUID) error {
-	tableName := tenant.Resource{}.TableName(schemaName)
+	tableName := s.getTableName(schemaName)
 	filter := dbModels.QueryFilter{
 		Column:   "id",
 		Operator: "eq",

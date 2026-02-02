@@ -55,56 +55,60 @@ func AddColumnValidator(e validator.FieldError) responseConst.ResponseCode {
 	return getAddColumnValidationError(e.Field(), e.Tag())
 }
 
+// fieldErrorCodes holds the required and invalid error codes for each field
+type fieldErrorCodes struct {
+	required responseConst.ResponseCode
+	invalid  responseConst.ResponseCode
+}
+
 func getAddColumnValidationError(field, tag string) responseConst.ResponseCode {
-	switch field {
-	case "ModelID":
-		if tag == "required" {
-			return responseConst.TableError.ModelIDRequired
-		}
-		return responseConst.TableError.ModelIDInvalid
-	case "BaseID":
-		if tag == "required" {
-			return responseConst.TableError.BaseIDRequired
-		}
-		return responseConst.TableError.BaseIDInvalid
-	case "Title":
-		if tag == "required" {
-			return responseConst.TableError.TitleRequired
-		}
-		return responseConst.TableError.TitleInvalid
-	case "Description":
-		if tag == "required" {
-			return responseConst.TableError.DescriptionRequired
-		}
-		return responseConst.TableError.DescriptionInvalid
-	case "UIDT":
-		if tag == "required" {
-			return responseConst.TableError.UIDTRequired
-		}
-		return responseConst.TableError.UIDTInvalid
-	case "Meta":
-		if tag == "required" {
-			return responseConst.TableError.DTRequired
-		}
-		return responseConst.TableError.DTInvalid
-	case "OrderIndex":
-		if tag == "required" {
-			return responseConst.TableError.OrderIndexRequired
-		}
-		return responseConst.TableError.OrderIndexInvalid
-	case "Virtual":
-		if tag == "required" {
-			return responseConst.TableError.VirtualRequired
-		}
-		return responseConst.TableError.VirtualInvalid
-	case "System":
-		if tag == "required" {
-			return responseConst.TableError.SystemRequired
-		}
-		return responseConst.TableError.SystemInvalid
-	default:
-		return responseConst.Error.ValidationFailed
+	fieldErrors := map[string]fieldErrorCodes{
+		"ModelID": {
+			required: responseConst.TableError.ModelIDRequired,
+			invalid:  responseConst.TableError.ModelIDInvalid,
+		},
+		"BaseID": {
+			required: responseConst.TableError.BaseIDRequired,
+			invalid:  responseConst.TableError.BaseIDInvalid,
+		},
+		"Title": {
+			required: responseConst.TableError.TitleRequired,
+			invalid:  responseConst.TableError.TitleInvalid,
+		},
+		"Description": {
+			required: responseConst.TableError.DescriptionRequired,
+			invalid:  responseConst.TableError.DescriptionInvalid,
+		},
+		"UIDT": {
+			required: responseConst.TableError.UIDTRequired,
+			invalid:  responseConst.TableError.UIDTInvalid,
+		},
+		"Meta": {
+			required: responseConst.TableError.DTRequired,
+			invalid:  responseConst.TableError.DTInvalid,
+		},
+		"OrderIndex": {
+			required: responseConst.TableError.OrderIndexRequired,
+			invalid:  responseConst.TableError.OrderIndexInvalid,
+		},
+		"Virtual": {
+			required: responseConst.TableError.VirtualRequired,
+			invalid:  responseConst.TableError.VirtualInvalid,
+		},
+		"System": {
+			required: responseConst.TableError.SystemRequired,
+			invalid:  responseConst.TableError.SystemInvalid,
+		},
 	}
+
+	if errors, exists := fieldErrors[field]; exists {
+		if tag == "required" {
+			return errors.required
+		}
+		return errors.invalid
+	}
+
+	return responseConst.Error.ValidationFailed
 }
 
 func CreateViewValidationError(e validator.FieldError) responseConst.ResponseCode {

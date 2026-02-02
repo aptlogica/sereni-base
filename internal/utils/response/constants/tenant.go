@@ -25,51 +25,15 @@ var TenantError = struct {
 }
 
 var TenantErrorCodes = map[ResponseCode]MetaResponse{
-	TenantError.TenantNotFound: {
-		HTTPStatus:  http.StatusNotFound,
-		Message:     "Tenant not found",
-		Description: "The specified tenant could not be found",
-	},
-	TenantError.TenantAlreadyExists: {
-		HTTPStatus:  http.StatusConflict,
-		Message:     "Tenant already exists",
-		Description: "A tenant with the given information already exists",
-	},
-	TenantError.TenantNotCreated: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Tenant not created",
-		Description: "The tenant could not be created due to an internal error",
-	},
-	TenantError.TenantNotUpdated: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Tenant not updated",
-		Description: "The tenant could not be updated due to an internal error",
-	},
-	TenantError.TenantNotDeleted: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Tenant not deleted",
-		Description: "The tenant could not be deleted due to an internal error",
-	},
-	TenantError.SubscriptionNotCreated: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Tenant subscription not created",
-		Description: "The tenant subscription could not be created due to an internal error",
-	},
-	TenantError.MembershipNotCreated: {
-		HTTPStatus:  http.StatusInternalServerError,
-		Message:     "Tenant membership not created",
-		Description: "The tenant membership could not be created due to an internal error",
-	},
-	TenantError.SubscriptionNotFound: {
-		HTTPStatus:  http.StatusNotFound,
-		Message:     "Tenant subscription not found",
-		Description: "The specified tenant subscription could not be found",
-	},
-	TenantError.MembershipNotFound: {
-		HTTPStatus:  http.StatusNotFound,
-		Message:     "Tenant membership not found",
-		Description: "The specified tenant membership could not be found",
-	},
+	TenantError.TenantNotFound:         createMetaResponse(http.StatusNotFound, "Tenant not found", "The specified tenant could not be found"),
+	TenantError.TenantAlreadyExists:    createMetaResponse(http.StatusConflict, "Tenant already exists", "A tenant with the given information already exists"),
+	TenantError.TenantNotCreated:       createMetaResponse(http.StatusInternalServerError, "Tenant not created", "The tenant could not be created due to an internal error"),
+	TenantError.TenantNotUpdated:       createMetaResponse(http.StatusInternalServerError, "Tenant not updated", "The tenant could not be updated due to an internal error"),
+	TenantError.TenantNotDeleted:       createMetaResponse(http.StatusInternalServerError, "Tenant not deleted", "The tenant could not be deleted due to an internal error"),
+	TenantError.SubscriptionNotCreated: createMetaResponse(http.StatusInternalServerError, "Tenant subscription not created", "The tenant subscription could not be created due to an internal error"),
+	TenantError.MembershipNotCreated:   createMetaResponse(http.StatusInternalServerError, "Tenant membership not created", "The tenant membership could not be created due to an internal error"),
+	TenantError.SubscriptionNotFound:   createMetaResponse(http.StatusNotFound, "Tenant subscription not found", "The specified tenant subscription could not be found"),
+	TenantError.MembershipNotFound:     createMetaResponse(http.StatusNotFound, "Tenant membership not found", "The specified tenant membership could not be found"),
 }
 
 var TenantSuccess = struct {
@@ -89,34 +53,10 @@ var TenantSuccess = struct {
 }
 
 var TenantSuccessCodes = map[ResponseCode]MetaResponse{
-	TenantSuccess.TenantCreated: {
-		HTTPStatus:  http.StatusCreated,
-		Message:     "Tenant created successfully",
-		Description: "The tenant has been created successfully",
-	},
-	TenantSuccess.TenantUpdated: {
-		HTTPStatus:  http.StatusOK,
-		Message:     "Tenant updated successfully",
-		Description: "The tenant has been updated successfully",
-	},
-	TenantSuccess.TenantDeleted: {
-		HTTPStatus:  http.StatusOK,
-		Message:     "Tenant deleted successfully",
-		Description: "The tenant has been deleted successfully",
-	},
-	TenantSuccess.SubscriptionCreated: {
-		HTTPStatus:  http.StatusCreated,
-		Message:     "Tenant subscription created successfully",
-		Description: "The tenant subscription has been created successfully",
-	},
-	TenantSuccess.MembershipCreated: {
-		HTTPStatus:  http.StatusCreated,
-		Message:     "Tenant membership created successfully",
-		Description: "The tenant membership has been created successfully",
-	},
-	TenantSuccess.TenantFetched: {
-		HTTPStatus:  http.StatusOK,
-		Message:     "Tenant fetched successfully",
-		Description: "The tenant has been fetched successfully",
-	},
+	TenantSuccess.TenantCreated:       createMetaResponse(http.StatusCreated, "Tenant created successfully", "The tenant has been created successfully"),
+	TenantSuccess.TenantUpdated:       createMetaResponse(http.StatusOK, "Tenant updated successfully", "The tenant has been updated successfully"),
+	TenantSuccess.TenantDeleted:       createMetaResponse(http.StatusOK, "Tenant deleted successfully", "The tenant has been deleted successfully"),
+	TenantSuccess.SubscriptionCreated: createMetaResponse(http.StatusCreated, "Tenant subscription created successfully", "The tenant subscription has been created successfully"),
+	TenantSuccess.MembershipCreated:   createMetaResponse(http.StatusCreated, "Tenant membership created successfully", "The tenant membership has been created successfully"),
+	TenantSuccess.TenantFetched:       createMetaResponse(http.StatusOK, "Tenant fetched successfully", "The tenant has been fetched successfully"),
 }

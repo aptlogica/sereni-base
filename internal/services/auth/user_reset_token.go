@@ -62,7 +62,7 @@ func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dt
 			}
 		}
 	}
-	recordData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
+		recordData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create reset token record")
 		return tenant.UserResetToken{}, app_errors.LogDatabaseError(err, "failed to create reset token record")
@@ -100,22 +100,25 @@ func (s *userResetTokenService) GetUserResetToken(ctx context.Context, token str
 
 	tokenData := tokensData[0]
 
-	var outToken tenant.UserResetToken
-	if err := helpers.MapToStruct(tokenData, &outToken); err != nil {
-		return tenant.UserResetToken{}, app_errors.ErrMapToStruct
-	}
-	return outToken, nil
+	   var outToken tenant.UserResetToken
+	   if err := helpers.MapToStruct(tokenData, &outToken); err != nil {
+		   return tenant.UserResetToken{}, app_errors.ErrMapToStruct
+	   }
+	   return outToken, nil
 }
 
 func (s *userResetTokenService) DeleteTokensByUserId(ctx context.Context, userId string) error {
 	lg := logger.Get()
 	tableName := tenant.UserResetToken{}.TableName(constant.MasterDatabase)
+	lg.Debug().Str("userId", userId).Str("tableName", tableName).Msg("Starting DeleteTokensByUserId")
+
 	// Build filter for user_id
 	filter := dbModels.QueryFilter{
 		Column:   "user_id",
 		Operator: "eq",
 		Value:    userId,
 	}
+	lg.Debug().Interface("filter", filter).Msg("Built user_id filter")
 
 	// First, get records by user_id
 	query := dbModels.QueryParams{
@@ -123,19 +126,20 @@ func (s *userResetTokenService) DeleteTokensByUserId(ctx context.Context, userId
 	}
 	records, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
+		lg.Error().Stack().Err(err).Str("userId", userId).Msg("Error fetching reset tokens by user id")
 		return app_errors.LogDatabaseError(err, "failed to fetch reset tokens by user id")
 	}
+	if len(records) == 0 {
+		lg.Debug().Str("userId", userId).Msg("No reset token records found for user_id")
+	}
 	if len(records) > 0 {
-
 		for _, record := range records {
 			idVal, ok := record["id"]
 			if !ok {
-				lg.Warn().Msg("ID field not found in reset token record")
 				errMissingID := fmt.Errorf("id field missing in reset token record")
 				return app_errors.LogDatabaseError(errMissingID, "reset token record missing id during delete")
 			}
 			if err := s.repo.TableService.DeleteRecord(tableName, idVal); err != nil {
-				lg.Error().Stack().Err(err).Msg("Failed to delete reset token by user ID")
 				return app_errors.LogDatabaseError(err, "failed to delete reset token by user id")
 			}
 		}

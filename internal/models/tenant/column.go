@@ -60,6 +60,17 @@ func (Column) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".columns", prefix)
 }
 
+// createColumnFK creates a foreign key definition for columns table
+func createColumnFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_columns_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
 func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -73,25 +84,25 @@ func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "description", DataType: "text"},
 			{Name: "meta", DataType: "jsonb"},
 			{Name: "dt", DataType: "varchar"},
-			// {Name: "pk", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "pv", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "rqd", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "un", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "ai", DataType: "boolean", DefaultValue: strPtr("false")},
-			// {Name: "unique_constraint", DataType: "boolean", DefaultValue: strPtr("false")},
+			// {Name: "pk", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "pv", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "rqd", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "un", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "ai", DataType: "boolean", DefaultValue: StrPtr("false")},
+			// {Name: "unique_constraint", DataType: "boolean", DefaultValue: StrPtr("false")},
 			// {Name: "max_length", DataType: "varchar"},
 			// {Name: "precision_value", DataType: "varchar"},
 			// {Name: "scale_value", DataType: "varchar"},
 			// {Name: "default_value", DataType: "text"},
 			// {Name: "validation_rules", DataType: "text"},
-			{Name: "virtual", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "system", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "deleted", DataType: "boolean", DefaultValue: strPtr("false")},
+			createBooleanColumn("virtual"),
+			createBooleanColumn("system"),
+			createBooleanColumn("deleted"),
 			{Name: "order_index", DataType: "real"},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("created_time", true, false),
+			createTimestampColumn("last_modified_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_columns_model_id", Columns: []string{"model_id"}},
@@ -99,20 +110,8 @@ func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_columns_column_name", Columns: []string{"column_name"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_columns_model_id",
-				Columns:           []string{"model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_columns_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createColumnFK(prefix, "model_id", "models"),
+			createColumnFK(prefix, "base_id", "bases"),
 		},
 	}
 }

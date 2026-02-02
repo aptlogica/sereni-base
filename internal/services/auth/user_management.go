@@ -372,27 +372,31 @@ func (s *userManagementService) buildWorkspaceResponses(ctx context.Context, sch
 			continue
 		}
 
-		// If it's "base", set as access level directly
-		if roleIDOrLevel == "base" {
-			wsResp.AccessLevel = "base"
-		} else {
-			// Otherwise, fetch the role name from the role ID
-			roleUUID, parseErr := uuid.Parse(roleIDOrLevel)
-			if parseErr != nil {
-				wsResp.AccessLevel = roleIDOrLevel
-			} else {
-				role, roleErr := s.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
-				if roleErr != nil {
-					wsResp.AccessLevel = roleIDOrLevel
-				} else {
-					wsResp.AccessLevel = role.Name
-				}
-			}
-		}
-
+		wsResp.AccessLevel = s.determineAccessLevel(ctx, schema, roleIDOrLevel)
 		res = append(res, wsResp)
 	}
 	return res, nil
+}
+
+// determineAccessLevel determines the access level from a role ID or direct level
+func (s *userManagementService) determineAccessLevel(ctx context.Context, schema string, roleIDOrLevel string) string {
+	// If it's "base", set as access level directly
+	if roleIDOrLevel == "base" {
+		return "base"
+	}
+
+	// Try to parse as UUID and get role name
+	roleUUID, parseErr := uuid.Parse(roleIDOrLevel)
+	if parseErr != nil {
+		return roleIDOrLevel
+	}
+
+	role, roleErr := s.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
+	if roleErr != nil {
+		return roleIDOrLevel
+	}
+
+	return role.Name
 }
 
 func (s *userManagementService) GetBulkUsers(ctx context.Context, schema string, ids []string) ([]tenant.User, error) {
@@ -412,7 +416,6 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to get users with role")
 	}
-	fmt.Println("result records: ---- ", records)
 	var result []dto.UserWithRole
 	for _, record := range records {
 		if rec, ok := record[functionName].(map[string]interface{}); ok {

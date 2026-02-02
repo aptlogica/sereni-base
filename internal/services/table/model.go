@@ -60,10 +60,8 @@ func (s *modelService) Create(ctx context.Context, tableData dto.ModelInsertion,
 	tableName := tenant.Model{}.TableName(schemaName)
 	s.ensureAuditColumns(ctx, schemaName)
 	modelData := tableData.Map()
-	fmt.Println("modelData", modelData)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, modelData)
 	if err != nil {
-		fmt.Println("----------------", err)
 		return tenant.Model{}, app_errors.LogDatabaseError(err, "failed to create model")
 	}
 

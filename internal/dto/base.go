@@ -77,7 +77,6 @@ func (b *BaseInsertion) SetSettings(settings string) error {
 	if !json.Valid([]byte(settings)) {
 		return fmt.Errorf("invalid JSON for settings")
 	}
-	b.Settings = b.Settings
 	return nil
 }
 
@@ -91,7 +90,6 @@ func (b *BaseInsertion) SetMeta(meta string) error {
 	if !json.Valid([]byte(meta)) {
 		return fmt.Errorf("invalid JSON for meta")
 	}
-	b.Meta = b.Meta
 	return nil
 }
 

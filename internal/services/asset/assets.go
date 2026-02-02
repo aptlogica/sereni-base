@@ -22,6 +22,47 @@ func NewAssetsService(repo *pkg.DatabaseService) interfaces.AssetService {
 	return &assetsService{repo: repo}
 }
 
+func (s *assetsService) getSingleAsset(tableName string, filters []dbModels.QueryFilter, errorMsg string) (tenant.Assets, error) {
+	limit := 1
+	query := dbModels.QueryParams{
+		Select:  []string{"*"},
+		Filters: filters,
+		Limit:   &limit,
+	}
+
+	assetsData, err := s.repo.TableService.GetTableData(tableName, query)
+	if err != nil {
+		return tenant.Assets{}, app_errors.LogDatabaseError(err, errorMsg)
+	}
+
+	if len(assetsData) == 0 {
+		return tenant.Assets{}, app_errors.InvalidPayload
+	}
+
+	var asset tenant.Assets
+	if err := helpers.MapToStruct(assetsData[0], &asset); err != nil {
+		return tenant.Assets{}, app_errors.ErrMapToStruct
+	}
+	return asset, nil
+}
+
+func (s *assetsService) getAssets(tableName string, params dbModels.QueryParams, errorMsg string) ([]tenant.Assets, error) {
+	rows, err := s.repo.TableService.GetTableData(tableName, params)
+	if err != nil {
+		return nil, app_errors.LogDatabaseError(err, errorMsg)
+	}
+
+	assets := make([]tenant.Assets, 0, len(rows))
+	for _, row := range rows {
+		var asset tenant.Assets
+		if err := helpers.MapToStruct(row, &asset); err != nil {
+			return nil, app_errors.ErrMapToStruct
+		}
+		assets = append(assets, asset)
+	}
+	return assets, nil
+}
+
 func (s *assetsService) AssetInsertion(ctx context.Context, assetData dto.AssetInsertion, schemaName string) (tenant.Assets, error) {
 	tableName := tenant.Assets{}.TableName(schemaName)
 
@@ -58,24 +99,7 @@ func (s *assetsService) GetBulkAssets(ctx context.Context, schemaName string, id
 		Filters: filters,
 	}
 
-	rows, err := s.repo.TableService.GetTableData(tableName, params)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to fetch bulk assets")
-	}
-	if len(rows) == 0 {
-		return []tenant.Assets{}, nil
-	}
-
-	assets := make([]tenant.Assets, 0, len(rows))
-	for _, row := range rows {
-		var asset tenant.Assets
-		if err := helpers.MapToStruct(row, &asset); err != nil {
-			return nil, app_errors.ErrMapToStruct
-		}
-		assets = append(assets, asset)
-	}
-
-	return assets, nil
+	return s.getAssets(tableName, params, "failed to fetch bulk assets")
 }
 
 func (s *assetsService) AssetBulkInsertion(ctx context.Context, assetData []dto.AssetInsertion, schemaName string) ([]tenant.Assets, error) {
@@ -130,35 +154,14 @@ func (s *assetsService) AssetUpdate(ctx context.Context, assetId string, assetDa
 
 func (s *assetsService) GetAssetByID(ctx context.Context, id string, schemaName string) (tenant.Assets, error) {
 	tableName := tenant.Assets{}.TableName(schemaName)
-	limit := 1
-	query := dbModels.QueryParams{
-		Select: []string{"*"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "id",
-				Operator: "eq",
-				Value:    id,
-			},
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "id",
+			Operator: "eq",
+			Value:    id,
 		},
-		Limit: &limit,
 	}
-
-	assetsData, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Assets{}, app_errors.LogDatabaseError(err, "failed to get asset by id")
-	}
-
-	if len(assetsData) == 0 {
-		return tenant.Assets{}, app_errors.InvalidPayload
-	}
-
-	assetData := assetsData[0]
-
-	var asset tenant.Assets
-	if err := helpers.MapToStruct(assetData, &asset); err != nil {
-		return tenant.Assets{}, app_errors.ErrMapToStruct
-	}
-	return asset, nil
+	return s.getSingleAsset(tableName, filters, "failed to get asset by id")
 }
 
 func (s *assetsService) DeleteAsset(ctx context.Context, assetId string, schemaName string) error {
@@ -174,33 +177,12 @@ func (s *assetsService) DeleteAsset(ctx context.Context, assetId string, schemaN
 
 func (s *assetsService) GetAssetByURL(ctx context.Context, url string, schemaName string) (tenant.Assets, error) {
 	tableName := tenant.Assets{}.TableName(schemaName)
-	limit := 1
-	query := dbModels.QueryParams{
-		Select: []string{"*"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "url",
-				Operator: "eq",
-				Value:    url,
-			},
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "url",
+			Operator: "eq",
+			Value:    url,
 		},
-		Limit: &limit,
 	}
-
-	assetsData, err := s.repo.TableService.GetTableData(tableName, query)
-	if err != nil {
-		return tenant.Assets{}, app_errors.LogDatabaseError(err, "failed to get asset by url")
-	}
-
-	if len(assetsData) == 0 {
-		return tenant.Assets{}, app_errors.InvalidPayload
-	}
-
-	assetData := assetsData[0]
-
-	var asset tenant.Assets
-	if err := helpers.MapToStruct(assetData, &asset); err != nil {
-		return tenant.Assets{}, app_errors.ErrMapToStruct
-	}
-	return asset, nil
+	return s.getSingleAsset(tableName, filters, "failed to get asset by url")
 }

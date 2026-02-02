@@ -7,6 +7,7 @@ import (
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/dto"
 	"serenibase/internal/models/tenant"
+	common "serenibase/internal/services/common"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/helpers"
 
@@ -27,12 +28,24 @@ func NewAccessMemberService(repo *pkg.DatabaseService) interfaces.AccessMemberSe
 	return &accessMemberService{repo: repo}
 }
 
+func (s *accessMemberService) getTableName(schemaName string) string {
+	return fmt.Sprintf(AccessMembersTableFormat, schemaName)
+}
+
+func (s *accessMemberService) mapToAccessMemberDTOs(data []map[string]interface{}) []dto.AccessMemberDTO {
+	members, err := common.MapToStructList[dto.AccessMemberDTO](data)
+	if err != nil {
+		return []dto.AccessMemberDTO{}
+	}
+	return members
+}
+
 func (s *accessMemberService) AssignRoleToUser(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error) {
 	if req.ID == uuid.Nil {
 		req.ID = uuid.New()
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 	insertedData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		return nil, err
@@ -53,32 +66,31 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 		return app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 
 	// Delete all access members for user in this scope
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    scopeType,
-			},
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "user_id",
+			Operator: "eq",
+			Value:    userID,
+		},
+		{
+			Column:   "scope_type",
+			Operator: "eq",
+			Value:    scopeType,
 		},
 	}
 
 	if scopeID != "" {
-		query.Filters = append(query.Filters, dbModels.QueryFilter{
+		filters = append(filters, dbModels.QueryFilter{
 			Column:   "scope_id",
 			Operator: "eq",
 			Value:    scopeID,
 		})
 	}
 
+	query := common.CreateMultiFilterQuery(filters, nil, nil)
 	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		return app_errors.LogDatabaseError(err, "failed to get access members for removal")
@@ -113,50 +125,37 @@ func (s *accessMemberService) RemoveRoleFromUser(ctx context.Context, schemaName
 // This is more reliable than searching by composite key (user_id, scope_id, scope_type)
 func (s *accessMemberService) RemoveAccessMemberByID(ctx context.Context, schemaName string, memberID string) error {
 	if memberID == "" {
-		fmt.Printf("DEBUG: RemoveAccessMemberByID - memberID is empty\n")
 		return app_errors.ErrRecordNotFound
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
-	fmt.Printf("DEBUG: RemoveAccessMemberByID - Deleting from table: %s with ID: %s\n", tableName, memberID)
+	tableName := s.getTableName(schemaName)
 
 	// Pass just the ID string, not a QueryFilter struct
 	deleteErr := s.repo.TableService.DeleteRecord(tableName, memberID)
 	if deleteErr != nil {
-		fmt.Printf("DEBUG: RemoveAccessMemberByID - DeleteRecord failed with error: %v (type: %T)\n", deleteErr, deleteErr)
 		return deleteErr
 	}
 
-	fmt.Printf("DEBUG: RemoveAccessMemberByID - Record deleted successfully\n")
 	return nil
 }
 
 func (s *accessMemberService) GetUserAccessMembers(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
+	tableName := s.getTableName(schemaName)
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "user_id",
+			Operator: "eq",
+			Value:    userID,
 		},
 	}
+	query := common.CreateMultiFilterQuery(filters, nil, nil)
 
 	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to fetch user access members")
 	}
 
-	var members []dto.AccessMemberDTO
-	for _, item := range data {
-		var member dto.AccessMemberDTO
-		if err := helpers.MapToStruct(item, &member); err != nil {
-			continue
-		}
-		members = append(members, member)
-	}
-	return members, nil
+	return s.mapToAccessMemberDTOs(data), nil
 }
 
 func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error) {
@@ -167,80 +166,62 @@ func (s *accessMemberService) GetUserAccessByScope(ctx context.Context, schemaNa
 		return nil, app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    scopeType,
-			},
+	tableName := s.getTableName(schemaName)
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "user_id",
+			Operator: "eq",
+			Value:    userID,
+		},
+		{
+			Column:   "scope_type",
+			Operator: "eq",
+			Value:    scopeType,
 		},
 	}
 
 	if scopeID != nil && *scopeID != "" {
-		query.Filters = append(query.Filters, dbModels.QueryFilter{
+		filters = append(filters, dbModels.QueryFilter{
 			Column:   "scope_id",
 			Operator: "eq",
 			Value:    *scopeID,
 		})
 	}
 
+	query := common.CreateMultiFilterQuery(filters, nil, nil)
 	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to fetch user access by scope")
 	}
 
-	var members []dto.AccessMemberDTO
-	for _, item := range data {
-		var member dto.AccessMemberDTO
-		if err := helpers.MapToStruct(item, &member); err != nil {
-			continue
-		}
-		members = append(members, member)
-	}
-	return members, nil
+	return s.mapToAccessMemberDTOs(data), nil
 }
 
 func (s *accessMemberService) GetScopeMembers(ctx context.Context, schemaName string, scopeType string, scopeID *string) ([]dto.AccessMemberDTO, error) {
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    scopeType,
-			},
+	tableName := s.getTableName(schemaName)
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "scope_type",
+			Operator: "eq",
+			Value:    scopeType,
 		},
 	}
 
 	if scopeID != nil && *scopeID != "" {
-		query.Filters = append(query.Filters, dbModels.QueryFilter{
+		filters = append(filters, dbModels.QueryFilter{
 			Column:   "scope_id",
 			Operator: "eq",
 			Value:    *scopeID,
 		})
 	}
 
+	query := common.CreateMultiFilterQuery(filters, nil, nil)
 	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to fetch scope members")
 	}
 
-	var members []dto.AccessMemberDTO
-	for _, item := range data {
-		var member dto.AccessMemberDTO
-		if err := helpers.MapToStruct(item, &member); err != nil {
-			continue
-		}
-		members = append(members, member)
-	}
-	return members, nil
+	return s.mapToAccessMemberDTOs(data), nil
 }
 
 func (s *accessMemberService) GetUserPermissions(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string) ([]dto.PermissionWithDetails, error) {
@@ -431,32 +412,31 @@ func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName 
 		return app_errors.InvalidScopeType
 	}
 
-	tableName := fmt.Sprintf(AccessMembersTableFormat, schemaName)
+	tableName := s.getTableName(schemaName)
 
 	// Find existing access member record
-	query := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    scopeType,
-			},
+	filters := []dbModels.QueryFilter{
+		{
+			Column:   "user_id",
+			Operator: "eq",
+			Value:    userID,
+		},
+		{
+			Column:   "scope_type",
+			Operator: "eq",
+			Value:    scopeType,
 		},
 	}
 
 	if scopeID != nil && *scopeID != "" {
-		query.Filters = append(query.Filters, dbModels.QueryFilter{
+		filters = append(filters, dbModels.QueryFilter{
 			Column:   "scope_id",
 			Operator: "eq",
 			Value:    *scopeID,
 		})
 	}
 
+	query := common.CreateMultiFilterQuery(filters, nil, nil)
 	data, err := s.repo.TableService.GetTableData(tableName, query)
 	if err != nil {
 		return app_errors.LogDatabaseError(err, "failed to fetch access member for role update")

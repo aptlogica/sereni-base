@@ -5,6 +5,8 @@ import (
 	"go-postgres-rest/pkg/models"
 	"time"
 
+	"serenibase/internal/constant"
+
 	"github.com/google/uuid"
 )
 
@@ -38,6 +40,28 @@ func (Relation) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".relations", prefix)
 }
 
+// createRelationFK creates a foreign key definition for relations table
+func createRelationFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_relations_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
+// createRelationModelFK creates a foreign key definition for model references in relations table
+func createRelationModelFK(prefix, column string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_relations_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf(constant.ModelsTableFormat, prefix),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
+	}
+}
+
 func (tbl Relation) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
@@ -49,13 +73,13 @@ func (tbl Relation) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "target_model_id", DataType: "varchar", NotNull: true},
 			{Name: "target_column_id", DataType: "varchar", NotNull: true},
 			{Name: "relation_type", DataType: "varchar", NotNull: true},
-			{Name: "update_rule", DataType: "varchar", DefaultValue: strPtr("'CASCADE'")},
-			{Name: "delete_rule", DataType: "varchar", DefaultValue: strPtr("'RESTRICT'")},
+			{Name: "update_rule", DataType: "varchar", DefaultValue: StrPtr("'CASCADE'")},
+			{Name: "delete_rule", DataType: "varchar", DefaultValue: StrPtr("'RESTRICT'")},
 			{Name: "junction_model_id", DataType: "varchar"},
-			{Name: "source_lookup_columns", DataType: "text[]", DefaultValue: strPtr("null")},
-			{Name: "target_lookup_columns", DataType: "text[]", DefaultValue: strPtr("null")},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "source_lookup_columns", DataType: "text[]", DefaultValue: StrPtr("null")},
+			{Name: "target_lookup_columns", DataType: "text[]", DefaultValue: StrPtr("null")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_relations_base_id", Columns: []string{"base_id"}},
@@ -64,48 +88,12 @@ func (tbl Relation) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_relations_type", Columns: []string{"relation_type"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_relations_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_relations_source_model_id",
-				Columns:           []string{"source_model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_relations_target_model_id",
-				Columns:           []string{"target_model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_relations_source_column_id",
-				Columns:           []string{"source_column_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".columns", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_relations_target_column_id",
-				Columns:           []string{"target_column_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".columns", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_relations_junction_model_id",
-				Columns:           []string{"junction_model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createRelationFK(prefix, "base_id", "bases"),
+			createRelationModelFK(prefix, "source_model_id"),
+			createRelationModelFK(prefix, "target_model_id"),
+			createRelationFK(prefix, "source_column_id", "columns"),
+			createRelationFK(prefix, "target_column_id", "columns"),
+			createRelationModelFK(prefix, "junction_model_id"),
 		},
 	}
 }

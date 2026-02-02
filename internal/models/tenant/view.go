@@ -52,16 +52,16 @@ func (tbl View) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "title", DataType: "varchar", NotNull: true},
 			{Name: "alias", DataType: "varchar"},
 			{Name: "description", DataType: "text"},
-			{Name: "type", DataType: "varchar", DefaultValue: strPtr("'grid'")},
-			{Name: "is_default", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "type", DataType: "varchar", DefaultValue: StrPtr("'grid'")},
+			{Name: "is_default", DataType: "boolean", DefaultValue: StrPtr("false")},
 			{Name: "lock_type", DataType: "varchar"},
 			{Name: "password", DataType: "varchar"},
-			{Name: "public", DataType: "boolean", DefaultValue: strPtr("false")},
+			{Name: "public", DataType: "boolean", DefaultValue: StrPtr("false")},
 			{Name: "uuid", DataType: "varchar"},
 			{Name: "meta", DataType: "jsonb"},
 			{Name: "order_index", DataType: "real"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
+			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
 		},
@@ -72,20 +72,19 @@ func (tbl View) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "idx_views_public", Columns: []string{"public"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
-			{
-				Name:              "fk_views_model_id",
-				Columns:           []string{"model_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".models", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
-			{
-				Name:              "fk_views_base_id",
-				Columns:           []string{"base_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
-				ReferencedColumns: []string{"id"},
-				OnDelete:          "CASCADE",
-			},
+			createViewFK(prefix, "model_id", "models"),
+			createViewFK(prefix, "base_id", "bases"),
 		},
+	}
+}
+
+// createViewFK creates a foreign key definition for views table
+func createViewFK(prefix, column, table string) models.ForeignKeyDef {
+	return models.ForeignKeyDef{
+		Name:              fmt.Sprintf("fk_views_%s", column),
+		Columns:           []string{column},
+		ReferencedTable:   fmt.Sprintf("\"%s\".%s", prefix, table),
+		ReferencedColumns: []string{"id"},
+		OnDelete:          "CASCADE",
 	}
 }

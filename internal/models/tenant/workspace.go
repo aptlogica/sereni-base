@@ -37,20 +37,16 @@ func (tbl Workspace) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "description", DataType: "text"},
 			{Name: "slug", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "meta", DataType: "jsonb"},
-			{Name: "is_default", DataType: "boolean", DefaultValue: strPtr("false")},
-			{Name: "status", DataType: "varchar", DefaultValue: strPtr("'active'")},
+			createBooleanColumn("is_default"),
+			{Name: "status", DataType: "varchar", DefaultValue: StrPtr("'active'")},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
-			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
-			{Name: "last_modified_time", DataType: "timestamp", NotNull: true, DefaultValue: strPtr("CURRENT_TIMESTAMP")},
+			createTimestampColumn("created_time", true, false),
+			createTimestampColumn("last_modified_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_workspaces_slug", Columns: []string{"slug"}},
 			{Name: "idx_workspaces_status", Columns: []string{"status"}},
 		},
 	}
-}
-
-func strPtr(s string) *string {
-	return &s
 }
