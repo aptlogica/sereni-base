@@ -85,12 +85,16 @@ setup_environment() {
     if [ ! -f ".env" ]; then
         if [ -f "build/config/.env.example" ]; then
             cp build/config/.env.example .env
+            # Convert Windows CRLF to Unix LF line endings
+            sed -i 's/\r$//' .env 2>/dev/null || sed -i '' 's/\r$//' .env
             print_step "Created .env from build/config/.env.example"
         else
             print_error "build/config/.env.example not found!"
             exit 1
         fi
     else
+        # Also convert existing .env file to Unix line endings
+        sed -i 's/\r$//' .env 2>/dev/null || sed -i '' 's/\r$//' .env
         print_warning ".env already exists. Skipping creation."
     fi
 }

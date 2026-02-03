@@ -13,8 +13,9 @@ SERVICES_FILE="services.list"
 
 # Load .env if present - using safer method
 if [ -f ".env" ]; then
+    # Convert Windows line endings (CRLF) to Unix (LF) if needed, then source
     set -a
-    source ".env"
+    source <(sed 's/\r$//' .env)
     set +a
 fi
 

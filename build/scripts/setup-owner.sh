@@ -14,7 +14,8 @@ fi
 get_env_value() {
     local key=$1
     if [ -f ".env" ]; then
-        local value=$(grep "^${key}=" .env | cut -d'=' -f2-)
+        # Handle Windows CRLF line endings by removing \r
+        local value=$(grep "^${key}=" .env | cut -d'=' -f2- | tr -d '\r')
         echo "$value"
     fi
 }
