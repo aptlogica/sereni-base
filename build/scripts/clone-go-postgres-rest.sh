@@ -8,9 +8,18 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Change to project root
 cd "$PROJECT_ROOT"
 
-# Load .env if present for GIT_TOKEN
+# Load .env if present for GIT_TOKEN - using safer method
 if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | grep -v '^\s*$' | xargs)
+    set -a
+    source ".env"
+    set +a
+fi
+
+# Debug: Check if GIT_TOKEN is loaded
+if [ -z "$GIT_TOKEN" ]; then
+    echo "[INFO] GIT_TOKEN not set, cloning without authentication"
+else
+    echo "[INFO] GIT_TOKEN is set"
 fi
 
 REPO_URL="https://github.com/aptlogica/go-postgres-rest.git"
@@ -24,9 +33,8 @@ fi
 
 # Inject GIT_TOKEN if available
 if [ -n "$GIT_TOKEN" ]; then
-    # Escape special characters in token for sed
-    ESCAPED_TOKEN=$(printf '%s\n' "$GIT_TOKEN" | sed -e 's/[\/&]/\\&/g')
-    REPO_URL=$(echo "$REPO_URL" | sed "s|^https://|https://${ESCAPED_TOKEN}@|")
+    # Use bash string substitution instead of sed to avoid issues with special characters
+    REPO_URL="${REPO_URL/https:\/\//https://${GIT_TOKEN}@}"
 fi
 
 echo "Cloning $REPO_URL into $TARGET_DIR..."

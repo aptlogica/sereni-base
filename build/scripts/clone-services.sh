@@ -11,9 +11,18 @@ cd "$PROJECT_ROOT"
 SERVICES_DIR="services"
 SERVICES_FILE="services.list"
 
-# Load .env if present
+# Load .env if present - using safer method
 if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | grep -v '^\s*$' | xargs)
+    set -a
+    source ".env"
+    set +a
+fi
+
+# Debug: Check if GIT_TOKEN is loaded
+if [ -z "$GIT_TOKEN" ]; then
+    echo "[INFO] GIT_TOKEN not set, cloning without authentication"
+else
+    echo "[INFO] GIT_TOKEN is set"
 fi
 
 # Create services directory if missing
@@ -55,9 +64,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     
     # Inject GIT_TOKEN if available
     if [ -n "$GIT_TOKEN" ]; then
-        # Escape special characters in token for sed
-        ESCAPED_TOKEN=$(printf '%s\n' "$GIT_TOKEN" | sed -e 's/[\/&]/\\&/g')
-        repo=$(echo "$repo" | sed "s|^https://|https://${ESCAPED_TOKEN}@|")
+        # Use a function to safely append token to URL without sed complications
+        # This method avoids issues with special characters in the token
+        repo="${repo/https:\/\//https://${GIT_TOKEN}@}"
     fi
     
     # Clone
