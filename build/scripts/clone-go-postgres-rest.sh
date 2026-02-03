@@ -10,10 +10,8 @@ cd "$PROJECT_ROOT"
 
 # Load .env if present for GIT_TOKEN - using safer method
 if [ -f ".env" ]; then
-    # Convert Windows line endings (CRLF) to Unix (LF) if needed, then source
-    set -a
-    source <(sed 's/\r$//' .env)
-    set +a
+    # Only load specific variables we need, avoiding issues with special characters
+    GIT_TOKEN=$(grep "^GIT_TOKEN=" .env | cut -d'=' -f2- | tr -d '\r')
 fi
 
 # Debug: Check if GIT_TOKEN is loaded
