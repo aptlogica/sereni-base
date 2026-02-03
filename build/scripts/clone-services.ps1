@@ -1,4 +1,10 @@
+# Clone services for Windows PowerShell
 $ErrorActionPreference = "Stop"
+
+# Get script directory and navigate to project root
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+Set-Location $projectRoot
 
 $servicesDir  = "services"
 $servicesFile = "services.list"
@@ -24,7 +30,6 @@ Get-Content $servicesFile | ForEach-Object {
         return
     }
 
-
     $parts  = $_ -split '\s+'
     $name   = $parts[0]
     $repo   = $parts[1]
@@ -33,7 +38,6 @@ Get-Content $servicesFile | ForEach-Object {
         $branch = $parts[2]
     }
     $target = Join-Path $servicesDir $name
-
 
     # Repo exists -> check remote and branch
     if (Test-Path (Join-Path $target ".git")) {
@@ -72,3 +76,5 @@ Get-Content $servicesFile | ForEach-Object {
         git clone $repo $target
     }
 }
+
+Write-Host "All services cloned/updated successfully!"

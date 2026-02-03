@@ -1,6 +1,6 @@
 
 services:
-  serenibase-rest:
+  serenibase:
     build: .
     ports:
       - "8080:8080"
@@ -27,7 +27,7 @@ services:
     networks:
       - serenibase-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d serenibase"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DATABASE_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -38,6 +38,15 @@ services:
       context: ./services/antivirus-service
     env_file:
       - .env
+    environment:
+      HOST: ${ANTIVIRUS_HOST}
+      PORT: ${ANTIVIRUS_PORT}
+      BASE_URL: ${ANTIVIRUS_BASE_URL}
+      ALLOWED_ORIGINS: ${ANTIVIRUS_ALLOWED_ORIGINS}
+      ANTIVIRUS_DRIVER: ${ANTIVIRUS_DRIVER}
+      CLAMAV_ADDRESS: ${ANTIVIRUS_CLAMAV_ADDRESS}
+      CLAMAV_TIMEOUT_SECONDS: ${ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS}
+      MAX_UPLOAD_SIZE_MB: ${ANTIVIRUS_MAX_UPLOAD_SIZE_MB}
     ports:
       - "8084:8084"
     networks:
@@ -49,7 +58,12 @@ services:
     env_file:
       - .env
     environment:
-      - JWT_SECRET=${JWT_SECRET}
+      JWT_SECRET: ${AUTH_JWT_SECRET}
+      SERVER_PORT: ${AUTH_PORT}
+      SERVER_HOST: ${AUTH_HOST}
+      ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS}
+      ENV: ${AUTH_ENV}
+      LOG_LEVEL: ${AUTH_LOG_LEVEL}
     ports:
       - "8081:8081"
     networks:
@@ -60,6 +74,15 @@ services:
       context: ./services/email-service
     env_file:
       - .env
+    environment:
+      HOST: ${EMAIL_HOST}
+      PORT: ${EMAIL_PORT}
+      ALLOWED_ORIGIN: ${EMAIL_ALLOWED_ORIGIN}
+      SMTP_HOST: ${EMAIL_SMTP_HOST}
+      SMTP_PORT: ${EMAIL_SMTP_PORT}
+      SMTP_USERNAME: ${EMAIL_SMTP_USERNAME}
+      SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD}
+      FROM_EMAIL: ${EMAIL_FROM_EMAIL}
     ports:
       - "8082:8082"
     networks:
@@ -70,6 +93,22 @@ services:
       context: ./services/storage-service
     env_file:
       - .env
+    environment:
+      SERVER_PORT: ${STORAGE_SERVER_PORT}
+      SERVER_HOST: ${STORAGE_SERVER_HOST}
+      SERVER_SCHEME: ${STORAGE_SERVER_SCHEME}
+      STORAGE_DRIVER: ${STORAGE_DRIVER}
+      STORAGE_DEV_PATH: ${STORAGE_DEV_PATH}
+      AWS_REGION: ${STORAGE_AWS_REGION}
+      AWS_BUCKET: ${STORAGE_AWS_BUCKET}
+      AWS_ACCESS_KEY: ${STORAGE_AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${STORAGE_AWS_SECRET_KEY}
+      MINIO_ENDPOINT: ${STORAGE_MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${STORAGE_MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${STORAGE_MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${STORAGE_MINIO_BUCKET}
+      MINIO_USE_SSL: ${STORAGE_MINIO_USE_SSL}
+      ALLOWED_ORIGINS: ${STORAGE_ALLOWED_ORIGINS}
     ports:
       - "8083:8083"
     volumes:
@@ -94,6 +133,47 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    networks:
+      - serenibase-network
+
+  base-ui:
+    build:
+      context: ./services/base-ui
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=${BASEUI_VITE_API_BASE_URL}
+    env_file:
+      - .env
+    ports:
+      - "5050:5050"
+    restart: unless-stopped
+    networks:
+      - serenibase-network
+
+  clamav:
+    image: clamav/clamav:latest
+    container_name: clamav
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "3310:3310"
+    volumes:
+      - ./data:/data
+    environment:
+      - CLAMD_STARTUP_TIMEOUT=180
+      - FRESHCLAM_CHECKS=12
+      - MaxScanSize=500M
+      - MaxFileSize=500M
+      - StreamMaxLength=500M
+      - MaxRecursion=20
+      - MaxFiles=10000
+    healthcheck:
+      test: ["CMD", "clamdscan", "--version"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       - serenibase-network
 
