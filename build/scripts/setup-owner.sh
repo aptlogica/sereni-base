@@ -4,6 +4,16 @@
 # Usage: bash setup-owner.sh       (interactive mode)
 #        bash setup-owner.sh -y    (use defaults without prompts)
 
+# Cleanup function to handle Ctrl+C
+cleanup() {
+    echo ""
+    echo "[!] Setup interrupted by user."
+    exit 1
+}
+
+# Trap Ctrl+C (SIGINT) and other termination signals
+trap cleanup SIGINT SIGTERM
+
 # Check if -y flag is provided
 USE_DEFAULTS=false
 if [ "$1" = "-y" ]; then
@@ -26,15 +36,18 @@ update_env_value() {
     local value=$2
     local envFile=".env"
     
+    # Escape special characters for sed (& / \ and newlines)
+    local escaped_value=$(printf '%s\n' "$value" | sed -e 's/[&/\]/\\&/g')
+    
     if [ -f "$envFile" ]; then
         if grep -q "^${key}=" "$envFile"; then
             # Update existing key
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 # macOS
-                sed -i '' "s/^${key}=.*/${key}=${value}/" "$envFile"
+                sed -i '' "s/^${key}=.*/${key}=${escaped_value}/" "$envFile"
             else
                 # Linux
-                sed -i "s/^${key}=.*/${key}=${value}/" "$envFile"
+                sed -i "s/^${key}=.*/${key}=${escaped_value}/" "$envFile"
             fi
         else
             # Add new key if it doesn't exist

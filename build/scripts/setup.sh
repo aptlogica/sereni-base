@@ -14,6 +14,27 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Change to project root
 cd "$PROJECT_ROOT"
 
+# Cleanup function to stop all processes on Ctrl+C
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}[!] Setup interrupted by user. Cleaning up...${NC}"
+    
+    # Stop any running docker containers started by this script
+    if docker compose -f docker-compose.all.yaml ps -q 2>/dev/null | grep -q .; then
+        echo -e "${YELLOW}[!] Stopping Docker containers...${NC}"
+        docker compose -f docker-compose.all.yaml down 2>/dev/null || true
+    fi
+    
+    # Kill any background processes started by this script
+    jobs -p 2>/dev/null | xargs -r kill 2>/dev/null || true
+    
+    echo -e "${RED}[X] Setup cancelled.${NC}"
+    exit 1
+}
+
+# Trap Ctrl+C (SIGINT) and other termination signals
+trap cleanup SIGINT SIGTERM
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -130,11 +151,14 @@ configure_host() {
             ;;
     esac
     
+    # Escape special characters for sed
+    ESCAPED_HOST=$(printf '%s\n' "$PUBLIC_HOST" | sed -e 's/[&/\]/\\&/g')
+    
     # Update .env file
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$PUBLIC_HOST/" .env
+        sed -i '' "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$ESCAPED_HOST/" .env
     else
-        sed -i "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$PUBLIC_HOST/" .env
+        sed -i "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$ESCAPED_HOST/" .env
     fi
     
     print_step "Configured PUBLIC_HOST=$PUBLIC_HOST"
@@ -167,17 +191,27 @@ configure_owner() {
         OWNER_PASSWORD="Admin@123"
     fi
     
-    # Update .env file
+    # Escape special characters for sed (& / \ and newlines)
+    escape_for_sed() {
+        printf '%s\n' "$1" | sed -e 's/[&/\]/\\&/g'
+    }
+    
+    ESCAPED_FIRST_NAME=$(escape_for_sed "$OWNER_FIRST_NAME")
+    ESCAPED_LAST_NAME=$(escape_for_sed "$OWNER_LAST_NAME")
+    ESCAPED_EMAIL=$(escape_for_sed "$OWNER_EMAIL")
+    ESCAPED_PASSWORD=$(escape_for_sed "$OWNER_PASSWORD")
+    
+    # Update .env file using escaped values
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/^OWNER_FIRST_NAME=.*/OWNER_FIRST_NAME=$OWNER_FIRST_NAME/" .env
-        sed -i '' "s/^OWNER_LAST_NAME=.*/OWNER_LAST_NAME=$OWNER_LAST_NAME/" .env
-        sed -i '' "s/^OWNER_EMAIL=.*/OWNER_EMAIL=$OWNER_EMAIL/" .env
-        sed -i '' "s/^OWNER_PASSWORD=.*/OWNER_PASSWORD=$OWNER_PASSWORD/" .env
+        sed -i '' "s/^OWNER_FIRST_NAME=.*/OWNER_FIRST_NAME=$ESCAPED_FIRST_NAME/" .env
+        sed -i '' "s/^OWNER_LAST_NAME=.*/OWNER_LAST_NAME=$ESCAPED_LAST_NAME/" .env
+        sed -i '' "s/^OWNER_EMAIL=.*/OWNER_EMAIL=$ESCAPED_EMAIL/" .env
+        sed -i '' "s/^OWNER_PASSWORD=.*/OWNER_PASSWORD=$ESCAPED_PASSWORD/" .env
     else
-        sed -i "s/^OWNER_FIRST_NAME=.*/OWNER_FIRST_NAME=$OWNER_FIRST_NAME/" .env
-        sed -i "s/^OWNER_LAST_NAME=.*/OWNER_LAST_NAME=$OWNER_LAST_NAME/" .env
-        sed -i "s/^OWNER_EMAIL=.*/OWNER_EMAIL=$OWNER_EMAIL/" .env
-        sed -i "s/^OWNER_PASSWORD=.*/OWNER_PASSWORD=$OWNER_PASSWORD/" .env
+        sed -i "s/^OWNER_FIRST_NAME=.*/OWNER_FIRST_NAME=$ESCAPED_FIRST_NAME/" .env
+        sed -i "s/^OWNER_LAST_NAME=.*/OWNER_LAST_NAME=$ESCAPED_LAST_NAME/" .env
+        sed -i "s/^OWNER_EMAIL=.*/OWNER_EMAIL=$ESCAPED_EMAIL/" .env
+        sed -i "s/^OWNER_PASSWORD=.*/OWNER_PASSWORD=$ESCAPED_PASSWORD/" .env
     fi
     
     print_step "Owner configuration set"
