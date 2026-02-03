@@ -55,7 +55,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     
     # Inject GIT_TOKEN if available
     if [ -n "$GIT_TOKEN" ]; then
-        repo=$(echo "$repo" | sed "s|^https://|https://${GIT_TOKEN}@|")
+        # Escape special characters in token for sed
+        ESCAPED_TOKEN=$(printf '%s\n' "$GIT_TOKEN" | sed -e 's/[\/&]/\\&/g')
+        repo=$(echo "$repo" | sed "s|^https://|https://${ESCAPED_TOKEN}@|")
     fi
     
     # Clone

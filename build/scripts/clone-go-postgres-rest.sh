@@ -24,7 +24,9 @@ fi
 
 # Inject GIT_TOKEN if available
 if [ -n "$GIT_TOKEN" ]; then
-    REPO_URL=$(echo "$REPO_URL" | sed "s|^https://|https://${GIT_TOKEN}@|")
+    # Escape special characters in token for sed
+    ESCAPED_TOKEN=$(printf '%s\n' "$GIT_TOKEN" | sed -e 's/[\/&]/\\&/g')
+    REPO_URL=$(echo "$REPO_URL" | sed "s|^https://|https://${ESCAPED_TOKEN}@|")
 fi
 
 echo "Cloning $REPO_URL into $TARGET_DIR..."
