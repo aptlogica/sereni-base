@@ -15,19 +15,14 @@ COPY go.mod go.sum ./
 # Ensure go-postgres-rest exists inside your build context
 COPY go-postgres-rest ./go-postgres-rest
 
+# Download dependencies
+RUN go mod download
 
-# Install Swagger CLI tool
-RUN go install github.com/swaggo/swag/cmd/swag@latest
-
-# Copy the rest of application source code
+# Copy the rest of application source code (including docs)
 COPY . .
 
-# Generate Swagger documentation for antivirus-service
-WORKDIR /app/services/antivirus-service
-RUN swag init -g internal/handlers/scan_handler.go -o docs
-WORKDIR /app
-
 # Build the application with optimizations
+# Note: Swagger docs in /docs are embedded in the binary at compile time
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -a -installsuffix cgo \
@@ -45,9 +40,6 @@ WORKDIR /app
 
 # Copy binary and required files from builder
 COPY --from=builder /app/main .
-COPY --from=builder /app/docs ./docs
-
-# Copy .env file if it exists (optional for production)
 
 # Create assets directory for uploads or static files
 RUN mkdir -p /app/assets

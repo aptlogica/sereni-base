@@ -124,32 +124,23 @@ setup_environment() {
 configure_host() {
     echo -e "\n${BLUE}Network Configuration${NC}\n"
     
-    # Detect local IP
-    local_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || ipconfig getifaddr en0 2>/dev/null || echo "localhost")
+    # Detect local IP for display purposes
+    local_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || ipconfig getifaddr en0 2>/dev/null || echo "")
     
-    echo "Your detected local IP: $local_ip"
-    echo ""
-    echo "How would you like to access SereniBase?"
-    echo "  1) localhost (local development only)"
-    echo "  2) $local_ip (LAN access)"
-    echo "  3) Custom IP/domain"
-    echo ""
-    read -p "Enter choice [1-3]: " choice
+    if [ -n "$local_ip" ]; then
+        echo "Detected local IP: $local_ip"
+        echo ""
+    fi
     
-    case $choice in
-        1)
-            PUBLIC_HOST="localhost"
-            ;;
-        2)
-            PUBLIC_HOST="$local_ip"
-            ;;
-        3)
-            read -p "Enter your IP or domain: " PUBLIC_HOST
-            ;;
-        *)
-            PUBLIC_HOST="localhost"
-            ;;
-    esac
+    echo "Enter your public IP address or domain name:"
+    echo "(Examples: 192.168.1.100, myapp.example.com, or localhost for local development)"
+    echo ""
+    read -p "IP/Domain [localhost]: " PUBLIC_HOST
+    
+    # Use localhost as default if nothing entered
+    if [ -z "$PUBLIC_HOST" ]; then
+        PUBLIC_HOST="localhost"
+    fi
     
     # Escape special characters for sed
     ESCAPED_HOST=$(printf '%s\n' "$PUBLIC_HOST" | sed -e 's/[&/\]/\\&/g')
