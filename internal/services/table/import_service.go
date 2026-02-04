@@ -98,6 +98,7 @@ func (s *importService) scanFile(ctx context.Context, file *multipart.FileHeader
 	scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, file.Filename, f)
 	f.Close()
 	if scanErr != nil {
+		lg.Info().Str("scanErr: ", scanErr.Error())
 		lg.Error().Stack().Err(scanErr).Str("file", file.Filename).Str("threat", scanResult.Threat).Msg("Antivirus scan detected threat")
 		return fmt.Errorf("file '%s' is infected or contains malicious content", file.Filename)
 	}
@@ -353,7 +354,6 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 		}
 		hasData = true
 		totalLength += len(val)
-		count++
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
@@ -411,10 +411,6 @@ func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDa
 	avgLength := 0
 	if count > 0 {
 		avgLength = totalLength / count
-	}
-
-	if isBool {
-		return "boolean"
 	}
 	if isNumber {
 		return "number"

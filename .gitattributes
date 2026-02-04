@@ -1,0 +1,34 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Shell scripts should always have LF endings
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Batch files need CRLF for Windows
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell scripts should have CRLF for Windows
+*.ps1 text eol=crlf
+
+# Config files - use LF for cross-platform compatibility
+.env text eol=lf
+.env.* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+
+# Go files
+*.go text eol=lf
+
+# Keep these files as-is (binary)
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.ico binary
+*.pdf binary
