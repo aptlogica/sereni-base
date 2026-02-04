@@ -69,20 +69,11 @@ echo ========================================================================
 echo                      NETWORK CONFIGURATION
 echo ========================================================================
 echo.
-echo How would you like to access SereniBase?
-echo   1) localhost (local development only)
-echo   2) Custom IP/domain (for LAN or production access)
-echo.
-set /p choice="Enter choice [1-2]: "
-
-if "%choice%"=="1" (
-    set PUBLIC_HOST=localhost
-) else (
-    set /p PUBLIC_HOST="Enter your IP or domain: "
-)
+set /p PUBLIC_HOST="Enter IP/domain [localhost]: "
+if "%PUBLIC_HOST%"=="" set PUBLIC_HOST=localhost
 
 REM Update .env file with PUBLIC_HOST
-powershell -Command "(Get-Content '.env') -replace '^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' | Set-Content '.env'"
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
 echo [OK] Configured PUBLIC_HOST=%PUBLIC_HOST%
 
 echo.
@@ -105,11 +96,11 @@ if "%OWNER_EMAIL%"=="" set OWNER_EMAIL=admin@example.com
 set /p OWNER_PASSWORD="Password [Admin@123]: "
 if "%OWNER_PASSWORD%"=="" set OWNER_PASSWORD=Admin@123
 
-REM Update .env file with owner configuration
-powershell -Command "(Get-Content '.env') -replace '^OWNER_FIRST_NAME=.*', 'OWNER_FIRST_NAME=%OWNER_FIRST_NAME%' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^OWNER_LAST_NAME=.*', 'OWNER_LAST_NAME=%OWNER_LAST_NAME%' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^OWNER_EMAIL=.*', 'OWNER_EMAIL=%OWNER_EMAIL%' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^OWNER_PASSWORD=.*', 'OWNER_PASSWORD=%OWNER_PASSWORD%' | Set-Content '.env'"
+REM Update .env file with owner configuration (add if not exists, replace if exists)
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^OWNER_FIRST_NAME=') { $content = $content -replace '(?m)^OWNER_FIRST_NAME=.*', 'OWNER_FIRST_NAME=%OWNER_FIRST_NAME%' } else { $content += \"`nOWNER_FIRST_NAME=%OWNER_FIRST_NAME%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^OWNER_LAST_NAME=') { $content = $content -replace '(?m)^OWNER_LAST_NAME=.*', 'OWNER_LAST_NAME=%OWNER_LAST_NAME%' } else { $content += \"`nOWNER_LAST_NAME=%OWNER_LAST_NAME%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^OWNER_EMAIL=') { $content = $content -replace '(?m)^OWNER_EMAIL=.*', 'OWNER_EMAIL=%OWNER_EMAIL%' } else { $content += \"`nOWNER_EMAIL=%OWNER_EMAIL%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^OWNER_PASSWORD=') { $content = $content -replace '(?m)^OWNER_PASSWORD=.*', 'OWNER_PASSWORD=%OWNER_PASSWORD%' } else { $content += \"`nOWNER_PASSWORD=%OWNER_PASSWORD%\" }; Set-Content '.env' -Value $content -NoNewline"
 
 echo [OK] Owner configuration set
 echo ========================================================================

@@ -19,7 +19,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 SERVICES_DIR="services"
-SERVICES_FILE="services.list"
+SERVICES_FILE="build/scripts/services.list"
 
 # Load .env if present - using safer method
 if [ -f ".env" ]; then

@@ -4,6 +4,10 @@
 # All build scripts are located in: build/scripts/
 # Configuration templates are in:   build/config/
 
+# Stop on first error - Ctrl+C will stop the entire Make process
+.ONESHELL:
+.SHELLFLAGS := -e
+
 .PHONY: setup setup-all setup-all-y clone-all clone-go-postgres-rest up-all down-all logs clean rebuild help status check-env setup-owner
 
 # Detect OS
@@ -65,7 +69,12 @@ setup:
 	@$(SETUP_SCRIPT)
 
 # Full automated setup
-setup-all: check-env clone-all clone-go-postgres-rest setup-owner up-all
+setup-all: check-env
+	@echo Starting full setup process...
+	@$(MAKE) clone-all || exit 1
+	@$(MAKE) clone-go-postgres-rest || exit 1
+	@$(MAKE) setup-owner || exit 1
+	@$(MAKE) up-all || exit 1
 	@echo.
 	@echo ========================================================================
 	@echo                     SETUP COMPLETE!
@@ -77,7 +86,12 @@ setup-all: check-env clone-all clone-go-postgres-rest setup-owner up-all
 	@echo.
 
 # Full automated setup with defaults (no prompts)
-setup-all-y: check-env clone-all clone-go-postgres-rest setup-owner-y up-all
+setup-all-y: check-env
+	@echo Starting full setup process with defaults...
+	@$(MAKE) clone-all || exit 1
+	@$(MAKE) clone-go-postgres-rest || exit 1
+	@$(MAKE) setup-owner-y || exit 1
+	@$(MAKE) up-all || exit 1
 	@echo.
 	@echo ========================================================================
 	@echo                     SETUP COMPLETE!

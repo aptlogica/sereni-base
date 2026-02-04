@@ -7,7 +7,7 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 Set-Location $projectRoot
 
 $servicesDir  = "services"
-$servicesFile = "services.list"
+$servicesFile = "build/scripts/services.list"
 
 # Load .env if present
 if (Test-Path ".env") {

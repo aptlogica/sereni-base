@@ -10,15 +10,23 @@ build/
 │   └── .env.example          # Environment variables template
 │
 ├── scripts/                   # Setup and utility scripts
-│   ├── setup.sh              # Interactive setup (Linux/macOS)
-│   ├── setup.bat             # Interactive setup (Windows CMD)
+│   ├── setup.sh              # Basic setup (Linux/macOS)
+│   ├── setup.bat             # Basic setup (Windows CMD)
+│   ├── setup-interactive.ps1 # Interactive setup wizard (Windows PowerShell)
+│   ├── setup-interactive.sh  # Interactive setup wizard (Linux/macOS)
 │   ├── setup-all.ps1         # Full setup (Windows PowerShell)
 │   ├── clone-services.sh     # Clone microservices (Bash)
 │   ├── clone-services.ps1    # Clone microservices (PowerShell)
 │   ├── clone-go-postgres-rest.sh   # Clone go-postgres-rest (Bash)
-│   └── clone-go-postgres-rest.ps1  # Clone go-postgres-rest (PowerShell)
+│   ├── clone-go-postgres-rest.ps1  # Clone go-postgres-rest (PowerShell)
+│   ├── services.list         # List of microservices to clone
+│   ├── test-ctrl-c.ps1       # Test script for Ctrl+C handling
+│   └── test-ui-preview.ps1   # Test script for UI preview
 │
-└── README.md                  # This file
+├── INTERACTIVE_SETUP_README.md  # Documentation for interactive setup
+├── CTRL_C_FIX_NOTES.md          # Notes on Ctrl+C handling fixes
+├── UI_IMPROVEMENTS.md           # Documentation for UI improvements
+└── README.md                    # This file
 ```
 
 ## 🚀 Usage
@@ -27,15 +35,15 @@ build/
 
 ```bash
 # Linux/macOS - Interactive setup
-make setup
+./build/scripts/setup-interactive.sh
 
-# Linux/macOS - Automated setup
-make setup-all
+# Windows PowerShell - Interactive setup
+.\build\scripts\setup-interactive.ps1
 
-# Windows CMD
+# Windows CMD - Basic setup
 build\scripts\setup.bat
 
-# Windows PowerShell
+# Windows PowerShell - Automated full setup
 .\build\scripts\setup-all.ps1
 ```
 
@@ -46,7 +54,10 @@ build\scripts\setup.bat
 # Make scripts executable
 chmod +x build/scripts/*.sh
 
-# Run setup
+# Run interactive setup
+./build/scripts/setup-interactive.sh
+
+# Run basic setup
 ./build/scripts/setup.sh
 
 # Clone services only
@@ -55,7 +66,10 @@ chmod +x build/scripts/*.sh
 
 #### Windows (PowerShell)
 ```powershell
-# Run setup
+# Run interactive setup
+.\build\scripts\setup-interactive.ps1
+
+# Run automated setup
 .\build\scripts\setup-all.ps1
 
 # Clone services only
@@ -66,13 +80,16 @@ chmod +x build/scripts/*.sh
 
 | Script | Platform | Description |
 |--------|----------|-------------|
-| `setup.sh` | Linux/macOS | Interactive setup wizard with prompts |
-| `setup.bat` | Windows CMD | Interactive setup wizard for Command Prompt |
+| `setup-interactive.ps1` | Windows PS | Interactive setup wizard with prompts |
+| `setup-interactive.sh` | Linux/macOS | Interactive setup wizard with prompts |
+| `setup.sh` | Linux/macOS | Basic setup script |
+| `setup.bat` | Windows CMD | Basic setup for Command Prompt |
 | `setup-all.ps1` | Windows PS | Automated full setup |
 | `clone-services.sh` | Linux/macOS | Clones all microservices from services.list |
 | `clone-services.ps1` | Windows | Clones all microservices from services.list |
 | `clone-go-postgres-rest.sh` | Linux/macOS | Clones go-postgres-rest repository |
 | `clone-go-postgres-rest.ps1` | Windows | Clones go-postgres-rest repository |
+| `services.list` | All | List of microservices to clone |
 
 ## ⚙️ Configuration
 
