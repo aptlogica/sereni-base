@@ -279,13 +279,16 @@ PUBLIC_HOST="localhost"
 echo "Using default IP/domain: $PUBLIC_HOST"
 echo ""
 
-# Update .env file with PUBLIC_HOST
+# Update .env file with PUBLIC_HOST and BASEUI_VITE_API_BASE_URL
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$PUBLIC_HOST/" .env
+    sed -i '' "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080|" .env
 else
     sed -i "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$PUBLIC_HOST/" .env
+    sed -i "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080|" .env
 fi
 print_step "Configured PUBLIC_HOST=$PUBLIC_HOST"
+print_step "Configured BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080"
 
 echo ""
 echo -e "${BLUE}========================================================================"

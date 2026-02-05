@@ -216,9 +216,10 @@ echo.
 set PUBLIC_HOST=localhost
 echo Using default IP/domain: %PUBLIC_HOST%
 
-REM Update .env file with PUBLIC_HOST
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
+REM Update .env file with PUBLIC_HOST and BASEUI_VITE_API_BASE_URL
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; if ($content -match '(?m)^BASEUI_VITE_API_BASE_URL=') { $content = $content -replace '(?m)^BASEUI_VITE_API_BASE_URL=.*', 'BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080' } else { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; Set-Content '.env' -Value $content -NoNewline"
 echo [OK] Configured PUBLIC_HOST=%PUBLIC_HOST%
+echo [OK] Configured BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080
 
 echo.
 echo ========================================================================

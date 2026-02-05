@@ -213,11 +213,6 @@ ANTIVIRUS_CLAMAV_ADDRESS=clamav:3310
 ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS=30
 ANTIVIRUS_MAX_UPLOAD_SIZE_MB=32
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🎨 FRONTEND CONFIGURATION                           │
-# └──────────────────────────────────────────────────────────────────────────────┘
-
-BASEUI_VITE_API_BASE_URL=http://localhost:8080
 
 # ┌──────────────────────────────────────────────────────────────────────────────┐
 # │                           🔒 CORS CONFIGURATION                               │
@@ -325,14 +320,15 @@ configure_host() {
     # Update .env file
     if [[ "$OSTYPE" == "darwin"* ]]; then
         sed -i '' "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$ESCAPED_HOST/" .env
+        sed -i '' "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$ESCAPED_HOST:8080|" .env
     else
         sed -i "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$ESCAPED_HOST/" .env
+        sed -i "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$ESCAPED_HOST:8080|" .env
     fi
     
     print_step "Configured PUBLIC_HOST=$PUBLIC_HOST"
+    print_step "Configured BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080"
 }
-
-# Configure owner registration
 configure_owner() {
     echo -e "\n${BLUE}Owner Registration Configuration${NC}\n"
     
