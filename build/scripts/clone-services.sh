@@ -66,7 +66,18 @@ while IFS= read -r line || [ -n "$line" ]; do
             rm -rf "$target"
         else
             echo "PULLING: $name"
-            git -C "$target" pull
+            # Inject GIT_TOKEN for pull operation if available
+            if [ -n "$GIT_TOKEN" ]; then
+                # Construct authenticated URL for pull
+                auth_repo="${repo/https:\/\//https://${GIT_TOKEN}@}"
+                # Temporarily set remote URL with token
+                git -C "$target" remote set-url origin "$auth_repo"
+                git -C "$target" pull
+                # Restore original URL without token (for security)
+                git -C "$target" remote set-url origin "$repo"
+            else
+                git -C "$target" pull
+            fi
             continue
         fi
     fi
@@ -75,15 +86,22 @@ while IFS= read -r line || [ -n "$line" ]; do
     if [ -n "$GIT_TOKEN" ]; then
         # Use a function to safely append token to URL without sed complications
         # This method avoids issues with special characters in the token
-        repo="${repo/https:\/\//https://${GIT_TOKEN}@}"
+        auth_repo="${repo/https:\/\//https://${GIT_TOKEN}@}"
+    else
+        auth_repo="$repo"
     fi
     
     # Clone
     echo "CLONING: $name"
     if [ -n "$branch" ]; then
-        git clone --branch "$branch" "$repo" "$target"
+        git clone --branch "$branch" "$auth_repo" "$target"
     else
-        git clone "$repo" "$target"
+        git clone "$auth_repo" "$target"
+    fi
+    
+    # Remove token from remote URL (for security)
+    if [ -n "$GIT_TOKEN" ]; then
+        git -C "$target" remote set-url origin "$repo"
     fi
 done < "$SERVICES_FILE"
 
