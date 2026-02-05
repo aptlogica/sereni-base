@@ -315,12 +315,14 @@ configure_public_host() {
         sed -i '' "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$ESCAPED_HOST/" .env
         sed -i '' "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$ESCAPED_HOST:8080|" .env
         sed -i '' "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://$ESCAPED_HOST:5050,http://base-ui:5050,http://serenibase:8080|" .env
+        sed -i '' "s|^STORAGE_URL=.*|STORAGE_URL=http://$ESCAPED_HOST:8083/api/v1|" .env
     else
         sed -i "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$ESCAPED_HOST/" .env
         sed -i "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$ESCAPED_HOST:8080|" .env
         sed -i "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://$ESCAPED_HOST:5050,http://base-ui:5050,http://serenibase:8080|" .env
+        sed -i "s|^STORAGE_URL=.*|STORAGE_URL=http://$ESCAPED_HOST:8083/api/v1|" .env
     fi
-
+    
     print_step "Configured PUBLIC_HOST=$PUBLIC_HOST"
     print_step "Configured BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080"
 }
