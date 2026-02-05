@@ -81,6 +81,19 @@ ensure_cors_origin() {
     fi
 }
 
+# Ensure BASEUI_VITE_API_BASE_URL matches PUBLIC_HOST
+ensure_baseui_api_base_url() {
+    local host="$1"
+    local desired_url="http://${host}:8080"
+    local current_url
+
+    current_url=$(grep -E '^BASEUI_VITE_API_BASE_URL=' .env 2>/dev/null | tail -n 1 | cut -d'=' -f2-)
+
+    if [ -z "$current_url" ] || [ "$current_url" != "$desired_url" ]; then
+        update_env_var "BASEUI_VITE_API_BASE_URL" "$desired_url"
+    fi
+}
+
 # Print header
 print_header
 echo ""
@@ -321,17 +334,18 @@ echo ""
 if [[ "$OSTYPE" == "darwin"* ]]; then
     grep -q "^PUBLIC_HOST=" .env || echo "PUBLIC_HOST=$PUBLIC_HOST" >> .env
     grep -q "^SERVER_IP=" .env || echo "SERVER_IP=$PUBLIC_HOST" >> .env
-    grep -q "^BASEUI_VITE_API_BASE_URL=" .env || echo "BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080" >> .env
     grep -q "^STORAGE_SERVER_IP=" .env || echo "STORAGE_SERVER_IP=$PUBLIC_HOST" >> .env
 else
     grep -q "^PUBLIC_HOST=" .env || echo "PUBLIC_HOST=$PUBLIC_HOST" >> .env
     grep -q "^SERVER_IP=" .env || echo "SERVER_IP=$PUBLIC_HOST" >> .env
-    grep -q "^BASEUI_VITE_API_BASE_URL=" .env || echo "BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080" >> .env
     grep -q "^STORAGE_SERVER_IP=" .env || echo "STORAGE_SERVER_IP=$PUBLIC_HOST" >> .env
 fi
 print_step "Configured PUBLIC_HOST (added if missing)"
 print_step "Configured SERVER_IP (added if missing)"
 print_step "Configured BASEUI_VITE_API_BASE_URL (added if missing)"
+
+# Always ensure Base UI API URL matches public host
+ensure_baseui_api_base_url "$PUBLIC_HOST"
 
 # Always ensure CORS includes the public host
 ensure_cors_origin "$PUBLIC_HOST"
