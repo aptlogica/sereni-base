@@ -217,7 +217,7 @@ set PUBLIC_HOST=localhost
 echo Using default IP/domain: %PUBLIC_HOST%
 
 REM Update .env file with PUBLIC_HOST and BASEUI_VITE_API_BASE_URL
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; if ($content -match '(?m)^BASEUI_VITE_API_BASE_URL=') { $content = $content -replace '(?m)^BASEUI_VITE_API_BASE_URL=.*', 'BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080' } else { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; if ($content -match '(?m)^BASEUI_VITE_API_BASE_URL=') { $content = $content -replace '(?m)^BASEUI_VITE_API_BASE_URL=.*', 'BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080' } else { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; if ($content -match '(?m)^CORS_ALLOWED_ORIGINS=') { $content = $content -replace '(?m)^CORS_ALLOWED_ORIGINS=.*', 'CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080' } else { $content += \"`nCORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080\" }; Set-Content '.env' -Value $content -NoNewline"
 echo [OK] Configured PUBLIC_HOST=%PUBLIC_HOST%
 echo [OK] Configured BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080
 
