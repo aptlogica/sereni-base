@@ -43,6 +43,44 @@ print_error() {
     echo -e "${RED}[X]${NC} $1"
 }
 
+# Update a single environment variable in .env (overwrite if exists)
+update_env_var() {
+    local var_name="$1"
+    local var_value="$2"
+
+    # Escape special characters for sed replacement
+    local escaped_value
+    escaped_value=$(printf '%s\n' "$var_value" | sed -e 's/[\/&|\\]/\\&/g')
+
+    if grep -q "^${var_name}=" .env 2>/dev/null; then
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|^${var_name}=.*|${var_name}=${escaped_value}|" .env
+        else
+            sed -i "s|^${var_name}=.*|${var_name}=${escaped_value}|" .env
+        fi
+    else
+        echo "${var_name}=${var_value}" >> .env
+    fi
+}
+
+# Ensure CORS_ALLOWED_ORIGINS includes PUBLIC_HOST:5050
+ensure_cors_origin() {
+    local host="$1"
+    local required_origin="http://${host}:5050"
+    local current_origins
+
+    current_origins=$(grep -E '^CORS_ALLOWED_ORIGINS=' .env 2>/dev/null | tail -n 1 | cut -d'=' -f2-)
+
+    if [ -z "$current_origins" ]; then
+        update_env_var "CORS_ALLOWED_ORIGINS" "http://localhost:5050,http://127.0.0.1:5050,http://${host}:5050,http://base-ui:5050,http://serenibase:8080"
+        return
+    fi
+
+    if ! echo "$current_origins" | tr ',' '\n' | grep -Fxq "$required_origin"; then
+        update_env_var "CORS_ALLOWED_ORIGINS" "${current_origins},${required_origin}"
+    fi
+}
+
 # Print header
 print_header
 echo ""
@@ -284,18 +322,19 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     grep -q "^PUBLIC_HOST=" .env || echo "PUBLIC_HOST=$PUBLIC_HOST" >> .env
     grep -q "^SERVER_IP=" .env || echo "SERVER_IP=$PUBLIC_HOST" >> .env
     grep -q "^BASEUI_VITE_API_BASE_URL=" .env || echo "BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080" >> .env
-    grep -q "^CORS_ALLOWED_ORIGINS=" .env || echo "CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://$PUBLIC_HOST:5050,http://base-ui:5050,http://serenibase:8080" >> .env
     grep -q "^STORAGE_SERVER_IP=" .env || echo "STORAGE_SERVER_IP=$PUBLIC_HOST" >> .env
 else
     grep -q "^PUBLIC_HOST=" .env || echo "PUBLIC_HOST=$PUBLIC_HOST" >> .env
     grep -q "^SERVER_IP=" .env || echo "SERVER_IP=$PUBLIC_HOST" >> .env
     grep -q "^BASEUI_VITE_API_BASE_URL=" .env || echo "BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080" >> .env
-    grep -q "^CORS_ALLOWED_ORIGINS=" .env || echo "CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://$PUBLIC_HOST:5050,http://base-ui:5050,http://serenibase:8080" >> .env
     grep -q "^STORAGE_SERVER_IP=" .env || echo "STORAGE_SERVER_IP=$PUBLIC_HOST" >> .env
 fi
 print_step "Configured PUBLIC_HOST (added if missing)"
 print_step "Configured SERVER_IP (added if missing)"
 print_step "Configured BASEUI_VITE_API_BASE_URL (added if missing)"
+
+# Always ensure CORS includes the public host
+ensure_cors_origin "$PUBLIC_HOST"
 
 echo ""
 echo -e "${BLUE}========================================================================"
