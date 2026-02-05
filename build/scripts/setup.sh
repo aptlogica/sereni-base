@@ -39,7 +39,7 @@ trap cleanup SIGINT SIGTERM
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'FV
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Print functions
@@ -262,21 +262,28 @@ EOF
         
         # Find missing variables
         missing_count=0
-        echo "" >> .env
-        echo "# Added by setup script on $(date '+%Y-%m-%d %H:%M:%S')" >> .env
+        
+        # Create temporary file for missing vars
+        temp_missing=$(mktemp)
         
         while IFS= read -r var_name; do
             if ! echo "$existing_vars" | grep -q "^${var_name}$"; then
-                grep "^${var_name}=" .env.template >> .env
-                ((missing_count++))
+                grep "^${var_name}=" .env.template >> "$temp_missing"
+                missing_count=$((missing_count + 1))
             fi
         done <<< "$template_vars"
         
         if [ $missing_count -gt 0 ]; then
+            echo "" >> .env
+            echo "# Added by setup script on $(date '+%Y-%m-%d %H:%M:%S')" >> .env
+            cat "$temp_missing" >> .env
             print_step "Added $missing_count missing variable(s) to .env"
         else
             print_step "All variables already exist in .env"
         fi
+        
+        # Clean up temp file
+        rm -f "$temp_missing"
     fi
     
     # Clean up template file
