@@ -1,40 +1,75 @@
-# Clone go-postgres-rest for Windows PowerShell
+# ========================================================================
+#                    CLONE GO-POSTGRES-REST SCRIPT
+#                       PowerShell Version
+# ========================================================================
+
 $ErrorActionPreference = "Stop"
 
-# Get script directory and navigate to project root
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
-Set-Location $projectRoot
+# Cleanup function to handle Ctrl+C
+function Cleanup {
+    Write-Host ""
+    Write-Host "[!] Clone interrupted by user." -ForegroundColor Yellow
+    exit 1
+}
+
+# Register Ctrl+C handler
+$null = Register-EngineEvent PowerShell.Exiting -Action { Cleanup }
+
+# Get script directory and project root
+$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PROJECT_ROOT = Split-Path -Parent (Split-Path -Parent $SCRIPT_DIR)
+
+# Change to project root
+Set-Location $PROJECT_ROOT
 
 # Load .env if present for GIT_TOKEN
+$GIT_TOKEN = ""
 if (Test-Path ".env") {
-    Get-Content ".env" | ForEach-Object {
-        if ($_ -match "^\s*([^#=]+)\s*=\s*(.+)\s*$") {
-            [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2])
-        }
+    Write-Host "[INFO] Loading .env file..." -ForegroundColor Cyan
+    $envContent = Get-Content ".env" -Raw
+    if ($envContent -match "GIT_TOKEN=(.+?)(\r?\n|$)") {
+        $GIT_TOKEN = $matches[1].Trim()
     }
 }
 
-$repoUrl = "https://github.com/aptlogica/go-postgres-rest.git"
-$targetDir = "go-postgres-rest"
+# Debug: Check if GIT_TOKEN is loaded
+if ([string]::IsNullOrEmpty($GIT_TOKEN)) {
+    Write-Host "[INFO] GIT_TOKEN not set, cloning without authentication" -ForegroundColor Yellow
+} else {
+    Write-Host "[INFO] GIT_TOKEN is set" -ForegroundColor Green
+}
+
+$REPO_URL = "https://github.com/aptlogica/go-postgres-rest.git"
+$TARGET_DIR = "go-postgres-rest"
 
 # Always remove and re-clone for a clean state
-if (Test-Path $targetDir) {
-    Write-Host "Removing existing $targetDir..."
-    Remove-Item -Recurse -Force $targetDir
+if (Test-Path $TARGET_DIR) {
+    Write-Host "Removing existing $TARGET_DIR..." -ForegroundColor Yellow
+    Remove-Item -Recurse -Force $TARGET_DIR
 }
 
-if ($env:GIT_TOKEN) {
-    $repoUrl = $repoUrl -replace '^https://', "https://$($env:GIT_TOKEN)@"
+# Inject GIT_TOKEN if available
+$authRepoUrl = $REPO_URL
+if (![string]::IsNullOrEmpty($GIT_TOKEN)) {
+    $authRepoUrl = $REPO_URL -replace "https://", "https://${GIT_TOKEN}@"
 }
 
-Write-Host "Cloning $repoUrl into $targetDir..."
-git clone $repoUrl $targetDir
+Write-Host "Cloning $REPO_URL into $TARGET_DIR..." -ForegroundColor Cyan
+
+try {
+    git clone $authRepoUrl $TARGET_DIR
+    Write-Host "[OK] go-postgres-rest cloned successfully!" -ForegroundColor Green
+} catch {
+    Write-Host "[ERROR] Failed to clone go-postgres-rest: $_" -ForegroundColor Red
+    exit 1
+}
 
 # Clean Go module cache (if go is available)
 if (Get-Command go -ErrorAction SilentlyContinue) {
-    Write-Host "Cleaning Go module cache..."
+    Write-Host "Cleaning Go module cache..." -ForegroundColor Cyan
     go clean -modcache
 }
 
-Write-Host "go-postgres-rest cloned successfully!"
+Write-Host ""
+Write-Host "go-postgres-rest setup complete!" -ForegroundColor Green
+Write-Host ""
