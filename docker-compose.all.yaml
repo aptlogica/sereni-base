@@ -91,10 +91,10 @@ services:
   sereni-storage-provider:
     build:
       context: ./services/storage-service
-    env_file:
-      - .env
+
     environment:
       SERVER_PORT: ${STORAGE_SERVER_PORT}
+      SERVER_IP: ${STORAGE_SERVER_IP}
       SERVER_HOST: ${STORAGE_SERVER_HOST}
       SERVER_SCHEME: ${STORAGE_SERVER_SCHEME}
       STORAGE_DRIVER: ${STORAGE_DRIVER}
@@ -114,25 +114,45 @@ services:
     volumes:
       - ./services/storage-service/uploads:/app/uploads
     depends_on:
-      - minio
+      - minio-init
     networks:
       - serenibase-network
 
   minio:
     image: minio/minio:latest
-    env_file:
-      - .env
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${MINIO_BUCKET}
-      MINIO_USE_SSL: ${MINIO_USE_SSL}
+      MINIO_ROOT_USER: ${STORAGE_MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${STORAGE_MINIO_SECRET_KEY}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    networks:
+      - serenibase-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  minio-init:
+    image: minio/mc:latest
+    environment:
+      MINIO_ACCESS_KEY: ${STORAGE_MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${STORAGE_MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${STORAGE_MINIO_BUCKET}
+    entrypoint: >
+      sh -c '
+        /usr/bin/mc alias set myminio http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY;
+        /usr/bin/mc mb -p myminio/$$MINIO_BUCKET;
+        /usr/bin/mc anonymous set download myminio/$$MINIO_BUCKET;
+      '
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - serenibase-network
 

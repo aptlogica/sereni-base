@@ -135,16 +135,16 @@ REM Create a temporary file with all default environment variables
     echo STORAGE_SERVER_PORT=8083
     echo STORAGE_SERVER_HOST=0.0.0.0
     echo STORAGE_SERVER_SCHEME=http
-    echo STORAGE_DRIVER=local
+    echo STORAGE_DRIVER=minio
     echo STORAGE_DEV_PATH=./uploads
     echo STORAGE_AWS_REGION=us-east-1
-    echo STORAGE_AWS_BUCKET=my-bucket
+    echo STORAGE_AWS_BUCKET=serenibase
     echo STORAGE_AWS_ACCESS_KEY=your-access-key
     echo STORAGE_AWS_SECRET_KEY=your-secret-key
     echo STORAGE_MINIO_ENDPOINT=minio:9000
     echo STORAGE_MINIO_ACCESS_KEY=minioadmin
     echo STORAGE_MINIO_SECRET_KEY=minioadmin
-    echo STORAGE_MINIO_BUCKET=my-bucket
+    echo STORAGE_MINIO_BUCKET=serenibase
     echo STORAGE_MINIO_USE_SSL=false
     echo STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
     echo #
@@ -216,9 +216,10 @@ echo.
 set PUBLIC_HOST=localhost
 echo Using default IP/domain: %PUBLIC_HOST%
 
-REM Update .env file with PUBLIC_HOST, BASEUI_VITE_API_BASE_URL and STORAGE_URL
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; if ($content -match '(?m)^BASEUI_VITE_API_BASE_URL=') { $content = $content -replace '(?m)^BASEUI_VITE_API_BASE_URL=.*', 'BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080' } else { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; if ($content -match '(?m)^CORS_ALLOWED_ORIGINS=') { $content = $content -replace '(?m)^CORS_ALLOWED_ORIGINS=.*', 'CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080' } else { $content += \"`nCORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080\" }; if ($content -match '(?m)^STORAGE_URL=') { $content = $content -replace '(?m)^STORAGE_URL=.*', 'STORAGE_URL=http://%PUBLIC_HOST%:8083/api/v1' } else { $content += \"`nSTORAGE_URL=http://%PUBLIC_HOST%:8083/api/v1\" }; Set-Content '.env' -Value $content -NoNewline"
+REM Update .env file with PUBLIC_HOST, BASEUI_VITE_API_BASE_URL and STORAGE_SERVER_IP
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; if ($content -match '(?m)^SERVER_IP=') { $content = $content -replace '(?m)^SERVER_IP=.*', 'SERVER_IP=%PUBLIC_HOST%' } else { $content += \"`nSERVER_IP=%PUBLIC_HOST%\" }; if ($content -match '(?m)^BASEUI_VITE_API_BASE_URL=') { $content = $content -replace '(?m)^BASEUI_VITE_API_BASE_URL=.*', 'BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080' } else { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; if ($content -match '(?m)^CORS_ALLOWED_ORIGINS=') { $content = $content -replace '(?m)^CORS_ALLOWED_ORIGINS=.*', 'CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080' } else { $content += \"`nCORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080\" }; if ($content -match '(?m)^STORAGE_SERVER_IP=') { $content = $content -replace '(?m)^STORAGE_SERVER_IP=.*', 'STORAGE_SERVER_IP=%PUBLIC_HOST%' } else { $content += \"`nSTORAGE_SERVER_IP=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
 echo [OK] Configured PUBLIC_HOST=%PUBLIC_HOST%
+echo [OK] Configured SERVER_IP=%PUBLIC_HOST%
 echo [OK] Configured BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080
 
 echo.

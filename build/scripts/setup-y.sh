@@ -166,16 +166,16 @@ STORAGE_URL=http://sereni-storage-provider:8083/api/v1
 STORAGE_SERVER_PORT=8083
 STORAGE_SERVER_HOST=0.0.0.0
 STORAGE_SERVER_SCHEME=http
-STORAGE_DRIVER=local
+STORAGE_DRIVER=minio
 STORAGE_DEV_PATH=./uploads
 STORAGE_AWS_REGION=us-east-1
-STORAGE_AWS_BUCKET=my-bucket
+STORAGE_AWS_BUCKET=serenibase
 STORAGE_AWS_ACCESS_KEY=your-access-key
 STORAGE_AWS_SECRET_KEY=your-secret-key
 STORAGE_MINIO_ENDPOINT=minio:9000
 STORAGE_MINIO_ACCESS_KEY=minioadmin
 STORAGE_MINIO_SECRET_KEY=minioadmin
-STORAGE_MINIO_BUCKET=my-bucket
+STORAGE_MINIO_BUCKET=serenibase
 STORAGE_MINIO_USE_SSL=false
 STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
 
@@ -282,16 +282,19 @@ echo ""
 # Update .env file with PUBLIC_HOST and BASEUI_VITE_API_BASE_URL
 if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$PUBLIC_HOST/" .env
+    sed -i '' "s/^SERVER_IP=.*/SERVER_IP=$PUBLIC_HOST/" .env
     sed -i '' "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080|" .env
     sed -i '' "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://$PUBLIC_HOST:5050,http://base-ui:5050,http://serenibase:8080|" .env
-    sed -i '' "s|^STORAGE_URL=.*|STORAGE_URL=http://$PUBLIC_HOST:8083/api/v1|" .env
+    sed -i '' "s|^STORAGE_SERVER_IP=.*|STORAGE_SERVER_IP=$PUBLIC_HOST|" .env
 else
     sed -i "s/^PUBLIC_HOST=.*/PUBLIC_HOST=$PUBLIC_HOST/" .env
+    sed -i "s/^SERVER_IP=.*/SERVER_IP=$PUBLIC_HOST/" .env
     sed -i "s|^BASEUI_VITE_API_BASE_URL=.*|BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080|" .env
     sed -i "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://$PUBLIC_HOST:5050,http://base-ui:5050,http://serenibase:8080|" .env
-    sed -i "s|^STORAGE_URL=.*|STORAGE_URL=http://$PUBLIC_HOST:8083/api/v1|" .env
+    sed -i "s|^STORAGE_SERVER_IP=.*|STORAGE_SERVER_IP=$PUBLIC_HOST|" .env
 fi
 print_step "Configured PUBLIC_HOST=$PUBLIC_HOST"
+print_step "Configured SERVER_IP=$PUBLIC_HOST"
 print_step "Configured BASEUI_VITE_API_BASE_URL=http://$PUBLIC_HOST:8080"
 
 echo ""
