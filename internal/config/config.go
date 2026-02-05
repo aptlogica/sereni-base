@@ -12,7 +12,6 @@ var AppConfig *Config
 type Config struct {
 	Server                     ServerConfig                     `mapstructure:"server"`
 	Auth                       AuthConfig                       `mapstructure:"auth"`
-	Redis                      RedisConfig                      `mapstructure:"redis"`
 	Email                      EmailConfig                      `mapstructure:"email"`
 	Storage                    StorageConfig                    `mapstructure:"storage"`
 	Log                        LogConfig                        `mapstructure:"log"`
@@ -74,12 +73,6 @@ type StorageConfig struct {
 
 type AntivirusConfig struct {
 	URL string `mapstructure:"url"`
-}
-
-type RedisConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	URL      string `mapstructure:"url"`
-	Password string `mapstructure:"password"`
 }
 
 type LogConfig struct {
@@ -219,10 +212,6 @@ func Load() (*Config, error) {
 	viper.SetDefault("auth.jwt.refresh_token_expiry", 86400)
 	viper.SetDefault("auth.jwt.secret", "default-secret-change-me")
 	viper.SetDefault("auth.jwt.issuer", "serenibase")
-
-	viper.SetDefault("redis.enabled", true)
-	viper.SetDefault("redis.url", "redis://localhost:6379")
-	viper.SetDefault("redis.password", "")
 
 	viper.SetDefault("email.url", "http://localhost:8082/api/v1/email")
 
