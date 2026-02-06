@@ -10,8 +10,8 @@ type MetaResponse struct {
 	Description string
 }
 
-// createMetaResponse is a helper function to create MetaResponse instances
-func createMetaResponse(httpStatus int, message, description string) MetaResponse {
+// CreateMetaResponse is a helper function to create MetaResponse instances
+func CreateMetaResponse(httpStatus int, message, description string) MetaResponse {
 	return MetaResponse{
 		HTTPStatus:  httpStatus,
 		Message:     message,
@@ -19,8 +19,8 @@ func createMetaResponse(httpStatus int, message, description string) MetaRespons
 	}
 }
 
-// mergeMaps merges multiple maps of type map[ResponseCode]MetaResponse into one.
-func mergeMaps(maps ...map[ResponseCode]MetaResponse) map[ResponseCode]MetaResponse {
+// MergeMaps merges multiple maps of type map[ResponseCode]MetaResponse into one.
+func MergeMaps(maps ...map[ResponseCode]MetaResponse) map[ResponseCode]MetaResponse {
 	merged := make(map[ResponseCode]MetaResponse)
 	for _, m := range maps {
 		for k, v := range m {
@@ -31,7 +31,7 @@ func mergeMaps(maps ...map[ResponseCode]MetaResponse) map[ResponseCode]MetaRespo
 }
 
 // ErrorCodes is the merged map of all error codes.
-var ErrorCodes = mergeMaps(
+var ErrorCodes = MergeMaps(
 	AuthErrorCodes,
 	UserErrorCodes,
 	CoreErrorCodes,
@@ -45,7 +45,7 @@ var ErrorCodes = mergeMaps(
 	RBACErrorCodeDetails,
 )
 
-var SuccessCodes = mergeMaps(
+var SuccessCodes = MergeMaps(
 	AuthSuccessCodes,
 	UserSuccessCodes,
 	CoreSuccessCodes,

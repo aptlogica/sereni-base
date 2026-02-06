@@ -28,11 +28,11 @@ func RegisterOwner(
 	authProvider auth.AuthProvider,
 	cfg *config.Config,
 ) error {
-	if skip := maybeSkipOwnerRegistration(cfg); skip {
+	if skip := MaybeSkipOwnerRegistration(cfg); skip {
 		return nil
 	}
 
-	if err := validateOwnerConfig(cfg); err != nil {
+	if err := ValidateOwnerConfig(cfg); err != nil {
 		return err
 	}
 
@@ -58,7 +58,7 @@ func RegisterOwner(
 		},
 	)
 
-	registerReq := prepareOwnerRegisterRequest(cfg)
+	registerReq := PrepareOwnerRegisterRequest(cfg)
 
 	loginResponse, err := authManagementService.RegisterOwner(ctx, registerReq)
 	if err != nil {
@@ -75,14 +75,14 @@ func RegisterOwner(
 	return nil
 }
 
-func maybeSkipOwnerRegistration(cfg *config.Config) bool {
+func MaybeSkipOwnerRegistration(cfg *config.Config) bool {
 	if cfg.OwnerRegistration.Email == "" {
 		return true
 	}
 	return false
 }
 
-func validateOwnerConfig(cfg *config.Config) error {
+func ValidateOwnerConfig(cfg *config.Config) error {
 	if cfg.OwnerRegistration.Password == "" {
 		return fmt.Errorf("owner password is required in config.yaml")
 	}
@@ -236,7 +236,7 @@ func initAuthProviders(cfg *config.Config) authProviders {
 	}
 }
 
-func prepareOwnerRegisterRequest(cfg *config.Config) dto.RegisterRequest {
+func PrepareOwnerRegisterRequest(cfg *config.Config) dto.RegisterRequest {
 	country := os.Getenv("COUNTRY")
 	if country == "" {
 		country = "US"

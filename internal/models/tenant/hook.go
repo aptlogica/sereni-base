@@ -40,8 +40,8 @@ func (Hook) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".hooks", prefix)
 }
 
-// createBooleanColumnTrue creates a boolean column with default true
-func createBooleanColumnTrue(name string) models.ColumnDefinition {
+// CreateBooleanColumnTrue creates a boolean column with default true
+func CreateBooleanColumnTrue(name string) models.ColumnDefinition {
 	return models.ColumnDefinition{Name: name, DataType: "boolean", DefaultValue: StrPtr("true")}
 }
 
@@ -61,13 +61,13 @@ func (tbl Hook) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "headers", DataType: "text"},
 			{Name: "payload", DataType: "text"},
 			{Name: "condition", DataType: "text"},
-			createBooleanColumnTrue("async_processing"),
+			CreateBooleanColumnTrue("async_processing"),
 			{Name: "retries", DataType: "integer", DefaultValue: StrPtr("3")},
 			{Name: "retry_interval", DataType: "integer", DefaultValue: StrPtr("60")},
 			{Name: "timeout", DataType: "integer", DefaultValue: StrPtr("30")},
-			createBooleanColumnTrue("active"),
-			createTimestampColumn("created_time", true, false),
-			createTimestampColumn("last_modified_time", true, false),
+			CreateBooleanColumnTrue("active"),
+			CreateTimestampColumn("created_time", true, false),
+			CreateTimestampColumn("last_modified_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_hooks_base_id", Columns: []string{"base_id"}},

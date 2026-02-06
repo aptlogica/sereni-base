@@ -9,6 +9,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// PermissionRequest represents the parameters for a permission check
+type PermissionRequest struct {
+	Schema       string
+	UserID       string
+	ScopeType    string
+	ScopeID      *string
+	ResourceCode string
+	ActionCode   string
+}
+
 // MiddlewareUtil provides common middleware utilities
 type MiddlewareUtil struct{}
 
@@ -58,24 +68,28 @@ func (mu *MiddlewareUtil) ValidateBaseAccess(c *gin.Context, workspaceMemberData
 		if wm, ok := workspaceMemberData.(interface {
 			GetBasesIds() string
 		}); ok {
-			if wm.GetBasesIds() != "*" {
-				baseIDs := strings.Split(wm.GetBasesIds(), ",")
-				baseAllowed := false
-				for _, id := range baseIDs {
-					if strings.TrimSpace(id) == baseID {
-						baseAllowed = true
-						break
-					}
-				}
-				if !baseAllowed {
-					response.SendError(c, responseConst.Error.UnauthorizedAccess)
-					c.Abort()
-					return false
-				}
+			if !mu.isBaseAllowed(baseID, wm.GetBasesIds()) {
+				response.SendError(c, responseConst.Error.UnauthorizedAccess)
+				c.Abort()
+				return false
 			}
 		}
 	}
 	return true
+}
+
+// isBaseAllowed checks if the baseID is allowed based on basesIds string
+func (mu *MiddlewareUtil) isBaseAllowed(baseID, basesIds string) bool {
+	if basesIds == "*" {
+		return true
+	}
+	baseIDs := strings.Split(basesIds, ",")
+	for _, id := range baseIDs {
+		if strings.TrimSpace(id) == baseID {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckAccessLevel validates if user has required access level
@@ -97,17 +111,16 @@ func (mu *MiddlewareUtil) CheckAccessLevel(c *gin.Context, userAccessLevel strin
 }
 
 // CheckUserPermission checks if user has required permission
-func (mu *MiddlewareUtil) CheckUserPermission(c *gin.Context, accessMemberService interfaces.AccessMemberService,
-	schemaStr, userIDStr, scopeType string, scopeID *string, resourceCode, actionCode string) bool {
+func (mu *MiddlewareUtil) CheckUserPermission(c *gin.Context, accessMemberService interfaces.AccessMemberService, req PermissionRequest) bool {
 
 	hasPermission, err := accessMemberService.CheckUserPermission(
 		c.Request.Context(),
-		schemaStr,
-		userIDStr,
-		scopeType,
-		scopeID,
-		resourceCode,
-		actionCode,
+		req.Schema,
+		req.UserID,
+		req.ScopeType,
+		req.ScopeID,
+		req.ResourceCode,
+		req.ActionCode,
 	)
 
 	if err != nil || !hasPermission {

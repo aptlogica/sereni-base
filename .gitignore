@@ -1,4 +1,4 @@
-tests/
+# Ignore environment files
 .env
 config.yaml
 docs/
@@ -6,3 +6,4 @@ keycloak-docs/
 uploads/
 assets/
 services/
+!tests/services/

@@ -17,11 +17,11 @@ var SubscriptionPlanError = struct {
 }
 
 var SubscriptionPlanErrorCodes = map[ResponseCode]MetaResponse{
-	SubscriptionPlanError.PlanNotFound:      createMetaResponse(http.StatusNotFound, "Subscription plan not found", "The specified subscription plan could not be found"),
-	SubscriptionPlanError.PlanAlreadyExists: createMetaResponse(http.StatusConflict, "Subscription plan already exists", "A subscription plan with the given information already exists"),
-	SubscriptionPlanError.PlanNotCreated:    createMetaResponse(http.StatusInternalServerError, "Subscription plan not created", "The subscription plan could not be created due to an internal error"),
-	SubscriptionPlanError.PlanNotUpdated:    createMetaResponse(http.StatusInternalServerError, "Subscription plan not updated", "The subscription plan could not be updated due to an internal error"),
-	SubscriptionPlanError.PlanNotDeleted:    createMetaResponse(http.StatusInternalServerError, "Subscription plan not deleted", "The subscription plan could not be deleted due to an internal error"),
+	SubscriptionPlanError.PlanNotFound:      CreateMetaResponse(http.StatusNotFound, "Subscription plan not found", "The specified subscription plan could not be found"),
+	SubscriptionPlanError.PlanAlreadyExists: CreateMetaResponse(http.StatusConflict, "Subscription plan already exists", "A subscription plan with the given information already exists"),
+	SubscriptionPlanError.PlanNotCreated:    CreateMetaResponse(http.StatusInternalServerError, "Subscription plan not created", "The subscription plan could not be created due to an internal error"),
+	SubscriptionPlanError.PlanNotUpdated:    CreateMetaResponse(http.StatusInternalServerError, "Subscription plan not updated", "The subscription plan could not be updated due to an internal error"),
+	SubscriptionPlanError.PlanNotDeleted:    CreateMetaResponse(http.StatusInternalServerError, "Subscription plan not deleted", "The subscription plan could not be deleted due to an internal error"),
 }
 
 var SubscriptionPlanSuccess = struct {
@@ -35,7 +35,7 @@ var SubscriptionPlanSuccess = struct {
 }
 
 var SubscriptionPlanSuccessCodes = map[ResponseCode]MetaResponse{
-	SubscriptionPlanSuccess.PlanCreated: createMetaResponse(http.StatusCreated, "Subscription plan created successfully", "The subscription plan has been created successfully"),
-	SubscriptionPlanSuccess.PlanUpdated: createMetaResponse(http.StatusOK, "Subscription plan updated successfully", "The subscription plan has been updated successfully"),
-	SubscriptionPlanSuccess.PlanDeleted: createMetaResponse(http.StatusOK, "Subscription plan deleted successfully", "The subscription plan has been deleted successfully"),
+	SubscriptionPlanSuccess.PlanCreated: CreateMetaResponse(http.StatusCreated, "Subscription plan created successfully", "The subscription plan has been created successfully"),
+	SubscriptionPlanSuccess.PlanUpdated: CreateMetaResponse(http.StatusOK, "Subscription plan updated successfully", "The subscription plan has been updated successfully"),
+	SubscriptionPlanSuccess.PlanDeleted: CreateMetaResponse(http.StatusOK, "Subscription plan deleted successfully", "The subscription plan has been deleted successfully"),
 }

@@ -36,10 +36,10 @@ func (tbl Permission) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			createUUIDIDColumn(),
+			CreateUUIDIDColumn(),
 			{Name: "resource_id", DataType: "uuid", NotNull: true},
 			{Name: "action_id", DataType: "uuid", NotNull: true},
-			createTimestampColumn("created_time", true, false),
+			CreateTimestampColumn("created_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_permissions_resource_id", Columns: []string{"resource_id"}},

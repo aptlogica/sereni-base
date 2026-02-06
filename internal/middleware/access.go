@@ -44,7 +44,7 @@ func WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService interface
 
 		workspaceMemberData, _ := c.Get("workspaceMemberData")
 
-		if !validateBaseAccess(c, workspaceMemberData.(tenant.WorkspaceMember)) {
+		if !validateBaseAccess(c, workspaceMemberData.(*tenant.WorkspaceMember)) {
 			return
 		}
 
@@ -104,7 +104,7 @@ func validateWorkspaceAccess(c *gin.Context, workspaceMemberService interfaces.W
 	return true
 }
 
-func validateBaseAccess(c *gin.Context, workspaceMemberData tenant.WorkspaceMember) bool {
+func validateBaseAccess(c *gin.Context, workspaceMemberData *tenant.WorkspaceMember) bool {
 	scope, hasScope := c.Get("scope")
 	_ = hasScope
 

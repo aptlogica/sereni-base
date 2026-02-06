@@ -25,12 +25,12 @@ func (tbl Role) TableSchema(prefix string) models.CreateTableRequest {
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			createUUIDIDColumn(),
+			CreateUUIDIDColumn(),
 			{Name: "name", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "description", DataType: "text"},
 			{Name: "is_default", DataType: "boolean", NotNull: true, DefaultValue: StrPtr("false")},
-			createTimestampColumn("created_time", true, false),
-			createTimestampColumn("last_modified_time", true, false),
+			CreateTimestampColumn("created_time", true, false),
+			CreateTimestampColumn("last_modified_time", true, false),
 		},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_roles_name", Columns: []string{"name"}},
