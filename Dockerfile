@@ -41,11 +41,9 @@ WORKDIR /app
 # Copy binary and required files from builder
 COPY --from=builder /app/main .
 
-# Create assets directory for uploads or static files
-RUN mkdir -p /app/assets
-
-# Create non-root user for security
-RUN adduser -D -s /bin/sh serenibase && \
+# Create assets directory and non-root user for security
+RUN mkdir -p /app/assets && \
+    adduser -D -s /bin/sh serenibase && \
     chown -R serenibase:serenibase /app
 
 # Switch to non-root user

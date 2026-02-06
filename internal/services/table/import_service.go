@@ -412,6 +412,9 @@ func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDa
 	if count > 0 {
 		avgLength = totalLength / count
 	}
+	if isBool {
+		return "boolean"
+	}
 	if isNumber {
 		return "number"
 	}

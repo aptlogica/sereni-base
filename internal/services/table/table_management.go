@@ -640,7 +640,7 @@ func (s tableManagementService) AddColumn(
 	}
 
 	now := time.Now().UTC()
-	columnCreateData := dto.ColumnInsertion{
+	ColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
 		ModelID:     columnData.ModelID,
 		BaseID:      columnData.BaseID,
@@ -660,7 +660,7 @@ func (s tableManagementService) AddColumn(
 		UpdatedAt:   now,
 	}
 
-	column, err := s.columnsService.Create(ctx, columnCreateData, schemaName)
+	column, err := s.columnsService.Create(ctx, ColumnCreatedata, schemaName)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
@@ -756,7 +756,7 @@ func (s tableManagementService) createSourceColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	srcColumnCreateData := dto.ColumnInsertion{
+	srcColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
 		ModelID:     columnData.ModelID,
 		BaseID:      columnData.BaseID,
@@ -774,7 +774,7 @@ func (s tableManagementService) createSourceColumnForRelation(
 		UpdatedAt:   now,
 	}
 
-	sourcColumn, err := s.columnsService.Create(ctx, srcColumnCreateData, schemaName)
+	sourcColumn, err := s.columnsService.Create(ctx, srcColumnCreatedata, schemaName)
 	if err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
@@ -816,7 +816,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	targetColumnCreateData := dto.ColumnInsertion{
+	targetColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
 		ModelID:     uuid.MustParse(params.RelationWith),
 		BaseID:      params.ColumnData.BaseID,
@@ -834,7 +834,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		UpdatedAt:   params.Now,
 	}
 
-	targetColumn, err := s.columnsService.Create(ctx, targetColumnCreateData, schemaName)
+	targetColumn, err := s.columnsService.Create(ctx, targetColumnCreatedata, schemaName)
 	if err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
@@ -989,7 +989,7 @@ func (s tableManagementService) addColumnWithLookup(
 		return dto.ColumnResponse{}, err
 	}
 
-	srcColumnCreateData := dto.ColumnInsertion{
+	srcColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
 		ModelID:     columnData.ModelID,
 		BaseID:      columnData.BaseID,
@@ -1007,7 +1007,7 @@ func (s tableManagementService) addColumnWithLookup(
 		UpdatedAt:   now,
 	}
 
-	insertedColumn, err := s.columnsService.Create(ctx, srcColumnCreateData, schemaName)
+	insertedColumn, err := s.columnsService.Create(ctx, srcColumnCreatedata, schemaName)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
