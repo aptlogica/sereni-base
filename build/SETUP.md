@@ -1,17 +1,17 @@
-# 🚀 SereniBase Setup Guide
+# SereniBase Setup Guide
 
-## 📋 Prerequisites
+## Prerequisites
 
 Before you begin, make sure you have the following installed:
 
 | Tool | Required | Installation |
 |------|----------|--------------|
-| **Docker** | ✅ Yes | [Download Docker Desktop](https://www.docker.com/products/docker-desktop) |
-| **Docker Compose** | ✅ Yes | Included with Docker Desktop |
-| **Make** | ✅ Yes | Windows: `choco install make` or [GnuWin32](http://gnuwin32.sourceforge.net/packages/make.htm) |
-| **Git** | ✅ Yes | [Download Git](https://git-scm.com/downloads) |
+| Docker | Yes | https://www.docker.com/products/docker-desktop |
+| Docker Compose | Yes | Included with Docker Desktop |
+| Make | Yes | Windows: `choco install make` or http://gnuwin32.sourceforge.net/packages/make.htm |
+| Git | Required for first-time setup | https://git-scm.com/downloads |
 
-### Verify Prerequisites
+### Verify prerequisites
 ```bash
 docker --version
 docker compose version
@@ -21,26 +21,49 @@ git --version
 
 ---
 
-## 🚀 Quick Start (One Command)
+## Quick Start (One Click)
 
+### Step 1: Create the required `.env`
+Create a `.env` file in the project root with the required keys below.
+
+```env
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_NAME=serenibase
+AUTH_JWT_SECRET=replace-with-a-strong-random-secret
+
+GIT_TOKEN=your_github_pat
+
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USERNAME=your_email@gmail.com
+EMAIL_SMTP_PASSWORD=your_app_password
+EMAIL_FROM_EMAIL=your_email@gmail.com
+```
+
+Notes:
+1. `GIT_TOKEN` must be a GitHub Personal Access Token that can access the microservice repos.
+2. Email settings are required for password reset and notifications. Use an app password if your provider requires it.
+3. Do not commit `.env` to source control.
+
+### Step 2: Run setup
 ```bash
 make setup
 ```
 
-This single command will:
-1. ✅ Check prerequisites (Docker, Git)
-2. ✅ Clone required microservices
-3. ✅ Prompt for configuration (or use defaults)
-4. ✅ Create `.env` file
-5. ✅ Build and start all Docker containers
+This will:
+1. Check prerequisites (Docker, Git)
+2. Clone required microservices
+3. Prompt for configuration (or use defaults)
+4. Build and start all Docker containers
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
-### Variables Set by Setup Script
+### Variables set by the setup script
 
-These variables are configured when you run `make setup`. Press Enter to use defaults:
+These are configured when you run `make setup`. Press Enter to use defaults.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -50,25 +73,17 @@ These variables are configured when you run `make setup`. Press Enter to use def
 | `OWNER_EMAIL` | `admin@example.com` | Admin login email |
 | `OWNER_PASSWORD` | `Admin@123` | Admin login password |
 
-### Variables in `.env` File (Pre-configured)
+### Required in `.env` before setup
 
-These have working defaults and typically don't need changes:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_HOST` | `postgres` | Database hostname |
-| `DATABASE_USER` | `postgres` | Database username |
-| `DATABASE_PASSWORD` | `postgres` | Database password |
-| `DATABASE_NAME` | `serenibase` | Database name |
-| `AUTH_JWT_SECRET` | (set) | JWT signing secret |
-
-### Email Configuration
-
-> ⚠️ **Email ** - Only configure if you need password reset and email notifications.
-> This may require a paid SMTP service.
+These must already exist in `.env` before you run `make setup`.
 
 | Variable | Example | Description |
 |----------|---------|-------------|
+| `DATABASE_USER` | `postgres` | Database username |
+| `DATABASE_PASSWORD` | `postgres` | Database password |
+| `DATABASE_NAME` | `serenibase` | Database name |
+| `AUTH_JWT_SECRET` | `replace-with-strong-secret` | JWT signing secret |
+| `GIT_TOKEN` | `your_github_pat` | GitHub token for cloning services |
 | `EMAIL_SMTP_HOST` | `smtp.gmail.com` | SMTP server host |
 | `EMAIL_SMTP_PORT` | `587` | SMTP server port |
 | `EMAIL_SMTP_USERNAME` | `your_email@gmail.com` | SMTP username |
@@ -77,40 +92,37 @@ These have working defaults and typically don't need changes:
 
 ---
 
-## 📖 Step-by-Step Setup
+## Step-by-Step Setup
 
-### Step 1: Clone the Repository
+### Step 1: Clone the repository
 ```bash
 git clone https://github.com/aptlogica/sereni-base.git
 cd sereni-base
 ```
 
-### Step 2: Run Setup
+### Step 2: Add `.env`
+Create `.env` in the project root using the required keys listed above.
+
+### Step 3: Run setup
 ```bash
 make setup
 ```
 
-### Step 3: Follow the Prompts
+### Step 4: Follow the prompts
 ```
 ========================================================================
                      SERENIBASE SETUP WIZARD
 ========================================================================
 
-Enter IP/domain [localhost]: 
-First Name [Admin]: 
-Last Name [User]: 
-Email [admin@example.com]: 
-Password [Admin@123]: 
+Enter IP/domain [localhost]:
+First Name [Admin]:
+Last Name [User]:
+Email [admin@example.com]:
+Password [Admin@123]:
 ```
-> 💡 Press **Enter** to accept default values shown in brackets
+Press Enter to accept default values shown in brackets.
 
-### Step 4: Wait for Services to Start
-The setup will automatically:
-- Build Docker images
-- Start all containers
-- Initialize the database
-
-### Step 5: Access the Application
+### Step 5: Access the application
 ```
 Frontend:  http://localhost:5050
 Backend:   http://localhost:8080
@@ -119,7 +131,7 @@ MinIO:     http://localhost:9001
 
 ---
 
-## 🔧 Useful Commands
+## Useful Commands
 
 | Command | Description |
 |---------|-------------|
@@ -132,50 +144,41 @@ MinIO:     http://localhost:9001
 
 ---
 
-## 🔑 Default Login Credentials
+## Default Login Credentials
 
 | Field | Value |
 |-------|-------|
 | Email | `admin@example.com` |
 | Password | `Admin@123` |
 
-> ⚠️ **Change these in production!**
+Change these in production.
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Docker Not Found
-```bash
-# Install Docker Desktop from:
-https://www.docker.com/products/docker-desktop
-```
+### Docker not found
+Install Docker Desktop from https://www.docker.com/products/docker-desktop
 
-### Make Not Found (Windows)
+### Make not found (Windows)
 ```powershell
-# Option 1: Using Chocolatey
 choco install make
-
-# Option 2: Run setup script directly
-.\build\scripts\setup.bat
 ```
 
-### Permission Denied (Linux/macOS)
+### Permission denied (Linux/macOS)
 ```bash
 chmod +x build/scripts/*.sh
 ./build/scripts/setup.sh
 ```
 
-### Port Already in Use
+### Port already in use
 ```bash
 # Check what's using the port
 netstat -ano | findstr :8080  # Windows
 lsof -i :8080                 # Linux/macOS
-
-# Stop conflicting services or change ports in .env
 ```
 
-### Reset Everything
+### Reset everything
 ```bash
 make clean
 make setup
@@ -183,7 +186,7 @@ make setup
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 sereni-base/
@@ -206,12 +209,8 @@ sereni-base/
 
 ---
 
-## 📚 Additional Documentation
+## Additional Documentation
 
-- [Environment Variables Reference](../docs/ENV_QUICK_REFERENCE_CARD.md)
-- [Environment Setup Guide](../docs/ENVIRONMENT_SETUP_GUIDE.md)
-- [API Response Codes](../docs/API_RESPONSE_CODES.md)
-
----
-
-**Happy Coding! 🎉**
+- ../docs/ENV_QUICK_REFERENCE_CARD.md
+- ../docs/ENVIRONMENT_SETUP_GUIDE.md
+- ../docs/API_RESPONSE_CODES.md
