@@ -169,6 +169,12 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 	var colDataList []dto.ColumnInsertion
 	now := time.Now().UTC()
 	for index, column := range columnsData {
+		// Use the System value from the column definition, default to true if not specified
+		systemValue := true
+		if column.System != nil {
+			systemValue = *column.System
+		}
+
 		colData := dto.ColumnInsertion{
 			ID:          uuid.New(),
 			ModelID:     tableData.ID,
@@ -180,7 +186,7 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 			Description: helpers.StringPtr(column.Description),
 			Meta:        map[string]interface{}{},
 			Virtual:     true,
-			System:      true,
+			System:      systemValue,
 			Deleted:     false,
 			OrderIndex:  helpers.Float64Ptr(float64(index)),
 			CreatedAt:   now,

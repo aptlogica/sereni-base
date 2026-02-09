@@ -370,6 +370,9 @@ func TestImport_UpdateTitleColumnNoTitleName(t *testing.T) {
 	resp := baseTableResponse()
 
 	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	// Mock UpdateColumn in case the empty header still triggers the update
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+		Return(dto.ColumnResponse{}, nil).Maybe()
 	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
 		Return(dto.ColumnResponse{}, errors.New("add fail"))
 

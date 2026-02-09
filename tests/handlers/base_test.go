@@ -155,6 +155,117 @@ func TestBaseHandler_UpdateBase_WithImage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestBaseHandler_UpdateBase_RemoveImage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockBaseManagementService(ctrl)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().RemoveBaseImage(gomock.Any(), "test", "b1", "user123").Return(tenant.Base{}, nil)
+	handler := handlers.NewBaseHandler(mockService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "New Title")
+	_ = writer.WriteField("remove_image", "true")
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateBase(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockBaseManagementService(ctrl)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, errors.New("update failed"))
+	handler := handlers.NewBaseHandler(mockService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "New Title")
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_AddImageError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockBaseManagementService(ctrl)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().AddBaseImage(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, errors.New("add image failed"))
+	handler := handlers.NewBaseHandler(mockService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "New Title")
+	part, _ := writer.CreateFormFile("image", "img.png")
+	_, _ = part.Write([]byte("fake"))
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_RemoveImageError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockBaseManagementService(ctrl)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().RemoveBaseImage(gomock.Any(), "test", "b1", "user123").Return(tenant.Base{}, errors.New("remove image failed"))
+	handler := handlers.NewBaseHandler(mockService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "New Title")
+	_ = writer.WriteField("remove_image", "true")
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestBaseHandler_DeleteBase_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)

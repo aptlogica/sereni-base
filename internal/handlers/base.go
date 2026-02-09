@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"mime/multipart"
 	"serenibase/internal/dto"
 	"serenibase/internal/services/interfaces"
 	"serenibase/internal/utils/response"
@@ -67,47 +68,50 @@ func (h *BaseHandler) GetBaseByID(c *gin.Context) {
 	response.SendSuccess(c, "base retrieved successfully", base)
 }
 
-func (h *BaseHandler) UpdateBase(c *gin.Context) {
-	id := c.Param("id")
-
+func (h *BaseHandler) parseUpdateBaseForm(c *gin.Context) (dto.BaseUpdate, *multipart.FileHeader, string) {
 	req := dto.BaseUpdate{}
 
 	// Get optional title from form
-	title := c.PostForm("title")
-	if title != "" {
+	if title := c.PostForm("title"); title != "" {
 		req.Title = &title
 	}
 
 	// Get optional description from form
-	description := c.PostForm("description")
-	if description != "" {
+	if description := c.PostForm("description"); description != "" {
 		req.Description = &description
 	}
 
 	// Get optional status from form
-	status := c.PostForm("status")
-	if status != "" {
+	if status := c.PostForm("status"); status != "" {
 		req.Status = &status
 	}
 
 	// Get optional visibility from form
-	visibility := c.PostForm("visibility")
-	if visibility != "" {
+	if visibility := c.PostForm("visibility"); visibility != "" {
 		req.Visibility = &visibility
 	}
 
 	// Get optional type from form
-	baseType := c.PostForm("type")
-	if baseType != "" {
+	if baseType := c.PostForm("type"); baseType != "" {
 		req.Type = &baseType
 	}
 
 	// Handle image file upload if provided
-	fileHeader, err := c.FormFile("image")
-	if err == nil && fileHeader != nil {
-		// Image will be handled separately in the service
-		// For now, we just accept the file and pass it
+	var fileHeader *multipart.FileHeader
+	if fh, err := c.FormFile("image"); err == nil && fh != nil {
+		fileHeader = fh
 	}
+
+	// Check if remove image is requested
+	removeImage := c.PostForm("remove_image")
+
+	return req, fileHeader, removeImage
+}
+
+func (h *BaseHandler) UpdateBase(c *gin.Context) {
+	id := c.Param("id")
+
+	req, fileHeader, removeImage := h.parseUpdateBaseForm(c)
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -123,11 +127,19 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 		return
 	}
 
-	// Handle image upload if file was provided
+	// Handle image: add if file provided, else remove if requested
 	if fileHeader != nil {
-		_, imgErr := h.baseManagementService.AddBaseImage(c.Request.Context(), schemaName, id, fileHeader, userId)
+		var imgErr error
+		updatedBase, imgErr = h.baseManagementService.AddBaseImage(c.Request.Context(), schemaName, id, fileHeader, userId)
 		if imgErr != nil {
 			response.CheckAndSendError(c, imgErr)
+			return
+		}
+	} else if removeImage == "true" {
+		var remErr error
+		updatedBase, remErr = h.baseManagementService.RemoveBaseImage(c.Request.Context(), schemaName, id, userId)
+		if remErr != nil {
+			response.CheckAndSendError(c, remErr)
 			return
 		}
 	}
