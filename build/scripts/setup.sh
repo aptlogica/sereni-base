@@ -5,7 +5,8 @@
 #  Interactive setup script to configure and deploy SereniBase
 # ========================================================================
 
-set -e
+# Don't use 'set -e' to allow proper Ctrl+C handling
+# set -e  # Commented out to handle Ctrl+C gracefully
 
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,8 +17,16 @@ cd "$PROJECT_ROOT"
 
 # Cleanup function to stop all processes on Ctrl+C
 cleanup() {
+    local exit_code=$?
+    
+    # Only cleanup if interrupted (exit code 130 = Ctrl+C or SIGINT)
+    # Don't cleanup on successful completion
+    if [ $exit_code -eq 0 ]; then
+        return 0
+    fi
+    
     echo ""
-    echo -e "${YELLOW}[!] Setup interrupted by user. Cleaning up...${NC}"
+    echo -e "${YELLOW}[!] Setup interrupted by user (Ctrl+C). Cleaning up...${NC}"
     
     # Stop any running docker containers started by this script
     if docker compose -f docker-compose.all.yaml ps -q 2>/dev/null | grep -q .; then
@@ -26,14 +35,18 @@ cleanup() {
     fi
     
     # Kill any background processes started by this script
-    jobs -p 2>/dev/null | xargs -r kill 2>/dev/null || true
+    local jobs_list=$(jobs -p 2>/dev/null)
+    if [ -n "$jobs_list" ]; then
+        echo -e "${YELLOW}[!] Killing background processes...${NC}"
+        echo "$jobs_list" | xargs kill -9 2>/dev/null || true
+    fi
     
-    echo -e "${RED}[X] Setup cancelled.${NC}"
-    exit 1
+    echo -e "${RED}[X] Setup cancelled. All processes stopped.${NC}"
+    exit 130  # Standard exit code for Ctrl+C
 }
 
 # Trap Ctrl+C (SIGINT) and other termination signals
-trap cleanup SIGINT SIGTERM
+trap cleanup SIGINT SIGTERM SIGHUP
 
 # Colors for output
 RED='\033[0;31m'
@@ -341,6 +354,288 @@ EOF
     rm -f .env.template
 }
 
+configure_database() {
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      DATABASE CONFIGURATION"
+    echo "========================================================================${NC}"
+    echo ""
+    
+    echo "Choose database setup:"
+    echo "  1. Use default PostgreSQL (Docker container)"
+    echo "  2. Use custom database credentials"
+    echo ""
+    read -p "Enter choice [1]: " DB_CHOICE
+    DB_CHOICE=${DB_CHOICE:-1}
+    
+    if [ "$DB_CHOICE" = "1" ]; then
+        echo ""
+        echo "Using default PostgreSQL Docker container"
+        echo ""
+        
+        read -p "Database User [postgres]: " DATABASE_USER
+        DATABASE_USER=${DATABASE_USER:-postgres}
+        
+        read -p "Database Password [postgres]: " DATABASE_PASSWORD
+        DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+        
+        read -p "Database Name [serenibase]: " DATABASE_NAME
+        DATABASE_NAME=${DATABASE_NAME:-serenibase}
+        
+        DATABASE_HOST="postgres"
+        DATABASE_PORT="5432"
+        DATABASE_SSL_MODE="disable"
+    else
+        echo ""
+        echo "Enter custom database configuration:"
+        echo ""
+        
+        read -p "Database Host: " DATABASE_HOST
+        if [ -z "$DATABASE_HOST" ]; then
+            print_error "Database host is required"
+            exit 1
+        fi
+        
+        read -p "Database Port [5432]: " DATABASE_PORT
+        DATABASE_PORT=${DATABASE_PORT:-5432}
+        
+        read -p "Database User: " DATABASE_USER
+        if [ -z "$DATABASE_USER" ]; then
+            print_error "Database user is required"
+            exit 1
+        fi
+        
+        read -s -p "Database Password: " DATABASE_PASSWORD
+        echo ""
+        if [ -z "$DATABASE_PASSWORD" ]; then
+            print_error "Database password is required"
+            exit 1
+        fi
+        
+        read -p "Database Name: " DATABASE_NAME
+        if [ -z "$DATABASE_NAME" ]; then
+            print_error "Database name is required"
+            exit 1
+        fi
+        
+        read -p "SSL Mode [disable]: " DATABASE_SSL_MODE
+        DATABASE_SSL_MODE=${DATABASE_SSL_MODE:-disable}
+    fi
+    
+    # Update database configuration in .env
+    sed -i.bak "s/^DATABASE_HOST=.*/DATABASE_HOST=$DATABASE_HOST/" .env
+    sed -i.bak "s/^DATABASE_PORT=.*/DATABASE_PORT=$DATABASE_PORT/" .env
+    sed -i.bak "s/^DATABASE_USER=.*/DATABASE_USER=$DATABASE_USER/" .env
+    sed -i.bak "s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD=$DATABASE_PASSWORD/" .env
+    sed -i.bak "s/^DATABASE_NAME=.*/DATABASE_NAME=$DATABASE_NAME/" .env
+    sed -i.bak "s/^DATABASE_SSL_MODE=.*/DATABASE_SSL_MODE=$DATABASE_SSL_MODE/" .env
+    rm -f .env.bak
+    
+    print_step "Database configuration updated"
+}
+
+configure_jwt_secret() {
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      AUTHENTICATION CONFIGURATION"
+    echo "========================================================================${NC}"
+    echo ""
+    
+    read -p "JWT Secret (min 32 chars) [press Enter to generate]: " AUTH_JWT_SECRET
+    
+    if [ -z "$AUTH_JWT_SECRET" ]; then
+        # Generate random JWT secret
+        AUTH_JWT_SECRET=$(openssl rand -base64 32 | tr -d '\n' | head -c 32)
+        echo "Generated JWT Secret: $AUTH_JWT_SECRET"
+    fi
+    
+    # Update JWT secret in .env
+    sed -i.bak "s/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=$AUTH_JWT_SECRET/" .env
+    rm -f .env.bak
+    
+    print_step "JWT Secret configured"
+}
+
+configure_email() {
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      EMAIL CONFIGURATION"
+    echo "========================================================================${NC}"
+    echo ""
+    echo "Enter SMTP email configuration:"
+    echo ""
+    
+    read -p "SMTP Host [smtp.gmail.com]: " EMAIL_SMTP_HOST
+    EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-smtp.gmail.com}
+    
+    read -p "SMTP Port [587]: " EMAIL_SMTP_PORT
+    EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+    
+    read -p "SMTP Username (email): " EMAIL_SMTP_USERNAME
+    
+    if [ -z "$EMAIL_SMTP_USERNAME" ]; then
+        print_warning "Email username not provided. Email features will not work."
+        EMAIL_SMTP_USERNAME="your_email@gmail.com"
+        EMAIL_SMTP_PASSWORD="your_app_password"
+        EMAIL_FROM_EMAIL="your_email@gmail.com"
+    else
+        read -s -p "SMTP Password (app password): " EMAIL_SMTP_PASSWORD
+        echo ""
+        
+        if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
+            print_warning "Email password not provided. Email features will not work."
+            EMAIL_SMTP_PASSWORD="your_app_password"
+        fi
+        
+        read -p "From Email [$EMAIL_SMTP_USERNAME]: " EMAIL_FROM_EMAIL
+        EMAIL_FROM_EMAIL=${EMAIL_FROM_EMAIL:-$EMAIL_SMTP_USERNAME}
+    fi
+    
+    # Update email configuration in .env
+    sed -i.bak "s/^EMAIL_SMTP_HOST=.*/EMAIL_SMTP_HOST=$EMAIL_SMTP_HOST/" .env
+    sed -i.bak "s/^EMAIL_SMTP_PORT=.*/EMAIL_SMTP_PORT=$EMAIL_SMTP_PORT/" .env
+    sed -i.bak "s|^EMAIL_SMTP_USERNAME=.*|EMAIL_SMTP_USERNAME=$EMAIL_SMTP_USERNAME|" .env
+    sed -i.bak "s|^EMAIL_SMTP_PASSWORD=.*|EMAIL_SMTP_PASSWORD=$EMAIL_SMTP_PASSWORD|" .env
+    sed -i.bak "s|^EMAIL_FROM_EMAIL=.*|EMAIL_FROM_EMAIL=$EMAIL_FROM_EMAIL|" .env
+    rm -f .env.bak
+    
+    print_step "Email configuration updated"
+}
+
+configure_storage() {
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      STORAGE CONFIGURATION"
+    echo "========================================================================${NC}"
+    echo ""
+    
+    echo "Choose storage driver:"
+    echo "  1. Local filesystem (for development only)"
+    echo "  2. MinIO (Docker container - recommended)"
+    echo "  3. MinIO Custom (external MinIO server)"
+    echo "  4. AWS S3"
+    echo ""
+    read -p "Enter choice [2]: " STORAGE_CHOICE
+    STORAGE_CHOICE=${STORAGE_CHOICE:-2}
+    
+    if [ "$STORAGE_CHOICE" = "1" ]; then
+        echo ""
+        echo "Using local filesystem storage"
+        
+        read -p "Storage path [./uploads]: " STORAGE_DEV_PATH
+        STORAGE_DEV_PATH=${STORAGE_DEV_PATH:-./uploads}
+        
+        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=local|" .env
+        sed -i.bak "s|^STORAGE_DEV_PATH=.*|STORAGE_DEV_PATH=$STORAGE_DEV_PATH|" .env
+        rm -f .env.bak
+        
+        print_step "Local filesystem storage configured"
+        
+    elif [ "$STORAGE_CHOICE" = "2" ]; then
+        echo ""
+        echo "Using default MinIO Docker container"
+        
+        read -p "MinIO Access Key [minioadmin]: " STORAGE_MINIO_ACCESS_KEY
+        STORAGE_MINIO_ACCESS_KEY=${STORAGE_MINIO_ACCESS_KEY:-minioadmin}
+        
+        read -p "MinIO Secret Key [minioadmin]: " STORAGE_MINIO_SECRET_KEY
+        STORAGE_MINIO_SECRET_KEY=${STORAGE_MINIO_SECRET_KEY:-minioadmin}
+        
+        read -p "Bucket Name [serenibase]: " STORAGE_MINIO_BUCKET
+        STORAGE_MINIO_BUCKET=${STORAGE_MINIO_BUCKET:-serenibase}
+        
+        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
+        sed -i.bak "s|^STORAGE_MINIO_ENDPOINT=.*|STORAGE_MINIO_ENDPOINT=minio:9000|" .env
+        sed -i.bak "s|^STORAGE_MINIO_ACCESS_KEY=.*|STORAGE_MINIO_ACCESS_KEY=$STORAGE_MINIO_ACCESS_KEY|" .env
+        sed -i.bak "s|^STORAGE_MINIO_SECRET_KEY=.*|STORAGE_MINIO_SECRET_KEY=$STORAGE_MINIO_SECRET_KEY|" .env
+        sed -i.bak "s|^STORAGE_MINIO_BUCKET=.*|STORAGE_MINIO_BUCKET=$STORAGE_MINIO_BUCKET|" .env
+        sed -i.bak "s|^STORAGE_MINIO_USE_SSL=.*|STORAGE_MINIO_USE_SSL=false|" .env
+        rm -f .env.bak
+        
+        print_step "MinIO Docker storage configured"
+        
+    elif [ "$STORAGE_CHOICE" = "3" ]; then
+        echo ""
+        echo "Enter custom MinIO configuration:"
+        echo ""
+        
+        read -p "MinIO Endpoint (host:port): " STORAGE_MINIO_ENDPOINT
+        if [ -z "$STORAGE_MINIO_ENDPOINT" ]; then
+            print_error "MinIO endpoint is required"
+            exit 1
+        fi
+        
+        read -p "MinIO Access Key: " STORAGE_MINIO_ACCESS_KEY
+        if [ -z "$STORAGE_MINIO_ACCESS_KEY" ]; then
+            print_error "MinIO access key is required"
+            exit 1
+        fi
+        
+        read -s -p "MinIO Secret Key: " STORAGE_MINIO_SECRET_KEY
+        echo ""
+        if [ -z "$STORAGE_MINIO_SECRET_KEY" ]; then
+            print_error "MinIO secret key is required"
+            exit 1
+        fi
+        
+        read -p "Bucket Name [serenibase]: " STORAGE_MINIO_BUCKET
+        STORAGE_MINIO_BUCKET=${STORAGE_MINIO_BUCKET:-serenibase}
+        
+        read -p "Use SSL (true/false) [false]: " STORAGE_MINIO_USE_SSL
+        STORAGE_MINIO_USE_SSL=${STORAGE_MINIO_USE_SSL:-false}
+        
+        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
+        sed -i.bak "s|^STORAGE_MINIO_ENDPOINT=.*|STORAGE_MINIO_ENDPOINT=$STORAGE_MINIO_ENDPOINT|" .env
+        sed -i.bak "s|^STORAGE_MINIO_ACCESS_KEY=.*|STORAGE_MINIO_ACCESS_KEY=$STORAGE_MINIO_ACCESS_KEY|" .env
+        sed -i.bak "s|^STORAGE_MINIO_SECRET_KEY=.*|STORAGE_MINIO_SECRET_KEY=$STORAGE_MINIO_SECRET_KEY|" .env
+        sed -i.bak "s|^STORAGE_MINIO_BUCKET=.*|STORAGE_MINIO_BUCKET=$STORAGE_MINIO_BUCKET|" .env
+        sed -i.bak "s|^STORAGE_MINIO_USE_SSL=.*|STORAGE_MINIO_USE_SSL=$STORAGE_MINIO_USE_SSL|" .env
+        rm -f .env.bak
+        
+        print_step "Custom MinIO storage configured"
+        
+    elif [ "$STORAGE_CHOICE" = "4" ]; then
+        echo ""
+        echo "Enter AWS S3 configuration:"
+        echo ""
+        
+        read -p "AWS Region [us-east-1]: " STORAGE_AWS_REGION
+        STORAGE_AWS_REGION=${STORAGE_AWS_REGION:-us-east-1}
+        
+        read -p "S3 Bucket Name: " STORAGE_AWS_BUCKET
+        if [ -z "$STORAGE_AWS_BUCKET" ]; then
+            print_error "S3 bucket name is required"
+            exit 1
+        fi
+        
+        read -p "AWS Access Key: " STORAGE_AWS_ACCESS_KEY
+        if [ -z "$STORAGE_AWS_ACCESS_KEY" ]; then
+            print_error "AWS access key is required"
+            exit 1
+        fi
+        
+        read -s -p "AWS Secret Key: " STORAGE_AWS_SECRET_KEY
+        echo ""
+        if [ -z "$STORAGE_AWS_SECRET_KEY" ]; then
+            print_error "AWS secret key is required"
+            exit 1
+        fi
+        
+        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=s3|" .env
+        sed -i.bak "s|^STORAGE_AWS_REGION=.*|STORAGE_AWS_REGION=$STORAGE_AWS_REGION|" .env
+        sed -i.bak "s|^STORAGE_AWS_BUCKET=.*|STORAGE_AWS_BUCKET=$STORAGE_AWS_BUCKET|" .env
+        sed -i.bak "s|^STORAGE_AWS_ACCESS_KEY=.*|STORAGE_AWS_ACCESS_KEY=$STORAGE_AWS_ACCESS_KEY|" .env
+        sed -i.bak "s|^STORAGE_AWS_SECRET_KEY=.*|STORAGE_AWS_SECRET_KEY=$STORAGE_AWS_SECRET_KEY|" .env
+        rm -f .env.bak
+        
+        print_step "AWS S3 storage configured"
+        
+    else
+        print_error "Invalid choice"
+        exit 1
+    fi
+}
+
 configure_public_host() {
     echo ""
     echo -e "${BLUE}========================================================================"
@@ -449,6 +744,10 @@ start_services() {
 print_header
 check_prerequisites
 setup_environment
+configure_database
+configure_jwt_secret
+configure_email
+configure_storage
 configure_public_host
 configure_owner
 clone_repositories

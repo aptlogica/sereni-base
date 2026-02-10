@@ -35,21 +35,23 @@
 
 ## ✨ Features
 
-- 🎨 **Modern React UI** - Beautiful, responsive interface built with React 18+ and TailwindCSS
-- 🔐 **Secure Authentication** - JWT-based auth with role-based access control
+- � **Zero-Config Setup** - No manual .env file needed! Interactive wizard guides you through everything
+- �🎨 **Modern React UI** - Beautiful, responsive interface built with React 18+ and TailwindCSS
+- 🔐 **Secure Authentication** - JWT-based auth with role-based access control (auto-generated secrets)
 - 📧 **Email Notifications** - Built-in email service with SMTP support
-- 📁 **Flexible Storage** - Support for local, MinIO, and AWS S3 storage
+- 📁 **Flexible Storage** - Support for local, MinIO (Docker/Custom), and AWS S3 storage
 - 🦠 **Antivirus Scanning** - Integrated ClamAV for file security
 - 🐳 **Docker Ready** - One-command deployment with Docker Compose
 - 🌍 **Cross-Platform** - Works on Windows, macOS, and Linux
 - 📊 **API Documentation** - Auto-generated Swagger/OpenAPI docs
 - 🔧 **Highly Configurable** - Easy configuration via environment variables
+- 🔄 **Safe Updates** - Re-run setup anytime - preserves your existing configuration
 
 ---
 
 ## 🚀 Quick Start
 
-Get SereniBase running in under 5 minutes!
+Get SereniBase running in under 5 minutes! **No manual configuration needed!** ✨
 
 ### Prerequisites
 
@@ -61,28 +63,40 @@ Before you begin, ensure you have:
 | Docker Compose | v2.0+ | [Install Compose](https://docs.docker.com/compose/install/) |
 | Git | Latest | [Install Git](https://git-scm.com/downloads) |
 
-### 🐧 Linux / macOS
+### One-Command Setup 🎯
+
+**No `.env` file needed!** The setup wizard guides you through everything.
+
+#### 🐧 Linux / macOS
 
 ```bash
-# Clone the repository
+# Clone and setup in one go
 git clone https://github.com/aptlogica/sereni-base.git
 cd sereni-base
-
-# Run the interactive setup wizard
 make setup
 ```
 
-### 🪟 Windows
+#### 🪟 Windows
 
 ```powershell
-# Clone the repository
+# Clone and setup
 git clone https://github.com/aptlogica/sereni-base.git
 cd sereni-base
-
-# Run the setup script (choose one):
-.\build\scripts\setup.bat           # CMD users
-.\build\scripts\setup-all.ps1       # PowerShell users
+make setup
 ```
+
+### 💡 What Happens During Setup?
+
+The interactive wizard will prompt you for:
+
+1. **Database**: Default PostgreSQL or custom database
+2. **Authentication**: Auto-generate JWT secret or provide your own
+3. **Email**: SMTP configuration for notifications
+4. **Storage**: Choose between Local, MinIO, or AWS S3
+5. **Network**: Public host/domain configuration
+6. **Admin Account**: Your admin credentials
+
+**All with smart defaults** - just press Enter to use recommended settings!
 
 ### 🎉 That's it!
 

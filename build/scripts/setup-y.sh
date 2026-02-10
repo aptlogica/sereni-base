@@ -6,7 +6,8 @@
 #  but without prompting the user
 # ========================================================================
 
-set -e
+# Don't use 'set -e' to allow proper Ctrl+C handling
+# set -e  # Commented out to handle Ctrl+C gracefully
 
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,6 +15,39 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Change to project root
 cd "$PROJECT_ROOT"
+
+# Cleanup function to stop all processes on Ctrl+C
+cleanup() {
+    local exit_code=$?
+    
+    # Only cleanup if interrupted (exit code 130 = Ctrl+C or SIGINT)
+    # Don't cleanup on successful completion
+    if [ $exit_code -eq 0 ]; then
+        return 0
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}[!] Setup interrupted by user (Ctrl+C). Cleaning up...${NC}"
+    
+    # Stop any running docker containers started by this script
+    if docker compose -f docker-compose.all.yaml ps -q 2>/dev/null | grep -q .; then
+        echo -e "${YELLOW}[!] Stopping Docker containers...${NC}"
+        docker compose -f docker-compose.all.yaml down 2>/dev/null || true
+    fi
+    
+    # Kill any background processes started by this script
+    local jobs_list=$(jobs -p 2>/dev/null)
+    if [ -n "$jobs_list" ]; then
+        echo -e "${YELLOW}[!] Killing background processes...${NC}"
+        echo "$jobs_list" | xargs kill -9 2>/dev/null || true
+    fi
+    
+    echo -e "${RED}[X] Setup cancelled. All processes stopped.${NC}"
+    exit 130  # Standard exit code for Ctrl+C
+}
+
+# Trap Ctrl+C (SIGINT) and other termination signals
+trap cleanup SIGINT SIGTERM SIGHUP
 
 # Colors for output
 RED='\033[0;31m'
@@ -319,6 +353,114 @@ fi
 
 # Clean up template file
 rm -f .env.template
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      DATABASE CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+echo "Using default PostgreSQL Docker container"
+
+# Check if database credentials are default or empty, update them
+if grep -q "^DATABASE_USER=" .env; then
+    current_user=$(grep "^DATABASE_USER=" .env | cut -d'=' -f2)
+    if [ -z "$current_user" ] || [ "$current_user" = "postgres" ]; then
+        sed -i.bak "s/^DATABASE_USER=.*/DATABASE_USER=postgres/" .env
+    fi
+else
+    sed -i.bak "s/^DATABASE_USER=.*/DATABASE_USER=postgres/" .env
+fi
+
+if grep -q "^DATABASE_PASSWORD=" .env; then
+    current_pass=$(grep "^DATABASE_PASSWORD=" .env | cut -d'=' -f2)
+    if [ -z "$current_pass" ] || [ "$current_pass" = "postgres" ]; then
+        sed -i.bak "s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD=postgres/" .env
+    fi
+else
+    sed -i.bak "s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD=postgres/" .env
+fi
+
+if grep -q "^DATABASE_NAME=" .env; then
+    current_name=$(grep "^DATABASE_NAME=" .env | cut -d'=' -f2)
+    if [ -z "$current_name" ] || [ "$current_name" = "serenibase" ]; then
+        sed -i.bak "s/^DATABASE_NAME=.*/DATABASE_NAME=serenibase/" .env
+    fi
+else
+    sed -i.bak "s/^DATABASE_NAME=.*/DATABASE_NAME=serenibase/" .env
+fi
+
+rm -f .env.bak
+print_step "Database configuration set to defaults"
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      AUTHENTICATION CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+# Check if JWT secret exists and is default, generate new one if needed
+if grep -q "^AUTH_JWT_SECRET=" .env; then
+    current_secret=$(grep "^AUTH_JWT_SECRET=" .env | cut -d'=' -f2)
+    if [[ "$current_secret" =~ "change-this" ]] || [ -z "$current_secret" ]; then
+        new_secret=$(openssl rand -base64 32 | tr -d '\n' | head -c 32)
+        sed -i.bak "s/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=$new_secret/" .env
+        rm -f .env.bak
+        echo "[OK] Generated new JWT Secret: $new_secret"
+    else
+        echo "[OK] Using existing JWT Secret"
+    fi
+else
+    new_secret=$(openssl rand -base64 32 | tr -d '\n' | head -c 32)
+    sed -i.bak "s/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=$new_secret/" .env
+    rm -f .env.bak
+    echo "[OK] Generated new JWT Secret: $new_secret"
+fi
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      EMAIL CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+# Check if email is configured
+if grep -q "^EMAIL_SMTP_USERNAME=" .env; then
+    current_email=$(grep "^EMAIL_SMTP_USERNAME=" .env | cut -d'=' -f2)
+    if [[ "$current_email" =~ "@" ]] && [ "$current_email" != "your_email@gmail.com" ]; then
+        echo "[OK] Using existing email configuration"
+    else
+        print_warning "Email not configured. Please update .env with your email credentials."
+    fi
+else
+    print_warning "Email not configured. Please update .env with your email credentials."
+fi
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      STORAGE CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+echo "Using default MinIO Docker container"
+
+# Set default MinIO storage if not already configured
+if grep -q "^STORAGE_DRIVER=" .env; then
+    current_driver=$(grep "^STORAGE_DRIVER=" .env | cut -d'=' -f2)
+    if [ -z "$current_driver" ] || [ "$current_driver" = "minio" ]; then
+        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
+    fi
+else
+    sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
+fi
+
+sed -i.bak "s|^STORAGE_MINIO_ENDPOINT=.*|STORAGE_MINIO_ENDPOINT=minio:9000|" .env
+sed -i.bak "s|^STORAGE_MINIO_ACCESS_KEY=.*|STORAGE_MINIO_ACCESS_KEY=minioadmin|" .env
+sed -i.bak "s|^STORAGE_MINIO_SECRET_KEY=.*|STORAGE_MINIO_SECRET_KEY=minioadmin|" .env
+sed -i.bak "s|^STORAGE_MINIO_BUCKET=.*|STORAGE_MINIO_BUCKET=serenibase|" .env
+sed -i.bak "s|^STORAGE_MINIO_USE_SSL=.*|STORAGE_MINIO_USE_SSL=false|" .env
+
+rm -f .env.bak
+print_step "Storage configuration set to defaults"
 
 echo ""
 echo -e "${BLUE}========================================================================"

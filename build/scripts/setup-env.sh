@@ -31,7 +31,7 @@ create_env_from_template() {
     convert_to_unix_line_endings "$target_env"
 }
 
-# Append missing variables to existing .env
+# Append missing variables to existing .env while preserving existing values and formatting
 append_missing_env_vars() {
     local template_source="${1:-$SETUP_ENV_DIR/.env.template}"
     local target_env="${2:-.env}"
@@ -47,37 +47,76 @@ append_missing_env_vars() {
         return 0
     fi
     
-    # Read existing .env content
-    local existing_vars=$(grep -E '^[A-Z_]+=.*' "$target_env" 2>/dev/null | cut -d'=' -f1 | sort)
+    # Create a temporary file for the new .env
+    local temp_new_env=$(mktemp)
     
-    # Read template variables
-    local template_vars=$(grep -E '^[A-Z_]+=.*' "$template_source" | cut -d'=' -f1 | sort)
-    
-    # Find missing variables
-    local missing_count=0
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    # Create temporary file for missing vars
-    local temp_missing=$(mktemp)
-    
-    while IFS= read -r var_name; do
-        if ! echo "$existing_vars" | grep -q "^${var_name}$"; then
-            grep "^${var_name}=" "$template_source" >> "$temp_missing"
-            ((missing_count++))
+    # Read existing .env and extract variable names and values
+    declare -A existing_values
+    while IFS='=' read -r var_name var_value; do
+        if [[ "$var_name" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+            existing_values["$var_name"]="$var_value"
         fi
-    done <<< "$template_vars"
+    done < <(grep -E '^[A-Z_][A-Z0-9_]*=' "$target_env" 2>/dev/null)
     
-    if [ $missing_count -gt 0 ]; then
-        echo "" >> "$target_env"
-        echo "# Added by setup script on $timestamp" >> "$target_env"
-        cat "$temp_missing" >> "$target_env"
-        print_step "Added $missing_count missing variable(s) to $target_env"
-    else
-        print_step "All variables already exist in $target_env"
+    local preserved_count=0
+    local added_count=0
+    
+    # Process template line by line
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+            var_name="${BASH_REMATCH[1]}"
+            template_value="${BASH_REMATCH[2]}"
+            
+            # If variable exists in old .env, use that value
+            if [ -n "${existing_values[$var_name]+x}" ]; then
+                echo "${var_name}=${existing_values[$var_name]}" >> "$temp_new_env"
+                ((preserved_count++))
+            else
+                # Use template value for new variables
+                echo "$line" >> "$temp_new_env"
+                ((added_count++))
+            fi
+        else
+            # Keep comments and formatting as-is
+            echo "$line" >> "$temp_new_env"
+        fi
+    done < "$template_source"
+    
+    # Find custom variables not in template
+    local custom_vars=()
+    local template_var_names=$(grep -E '^[A-Z_][A-Z0-9_]*=' "$template_source" | cut -d'=' -f1 | sort)
+    
+    for var_name in "${!existing_values[@]}"; do
+        if ! echo "$template_var_names" | grep -q "^${var_name}$"; then
+            custom_vars+=("${var_name}=${existing_values[$var_name]}")
+        fi
+    done
+    
+    # Append custom variables if any
+    if [ ${#custom_vars[@]} -gt 0 ]; then
+        echo "" >> "$temp_new_env"
+        echo "# ┌──────────────────────────────────────────────────────────────────────────────┐" >> "$temp_new_env"
+        echo "# │                           🔧 CUSTOM VARIABLES                                 │" >> "$temp_new_env"
+        echo "# └──────────────────────────────────────────────────────────────────────────────┘" >> "$temp_new_env"
+        echo "" >> "$temp_new_env"
+        for custom_var in "${custom_vars[@]}"; do
+            echo "$custom_var" >> "$temp_new_env"
+        done
     fi
     
-    rm -f "$temp_missing"
+    # Replace old .env with new one
+    mv "$temp_new_env" "$target_env"
     convert_to_unix_line_endings "$target_env"
+    
+    # Report
+    echo ""
+    print_step "Updated $target_env with proper formatting:"
+    echo "     - Preserved: $preserved_count existing value(s)"
+    echo "     - Added: $added_count new variable(s)"
+    if [ ${#custom_vars[@]} -gt 0 ]; then
+        echo "     - Retained: ${#custom_vars[@]} custom variable(s)"
+    fi
+    echo ""
     
     return 0
 }
