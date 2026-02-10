@@ -2,14 +2,17 @@
 services:
   serenibase:
     build: .
+    command: ["./wait-for-postgres.sh", "postgres", "./main"]
     ports:
       - "8080:8080"
     env_file:
       - .env
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - serenibase-network
+    restart: on-failure:5
 
   postgres:
     image: postgres:15-alpine

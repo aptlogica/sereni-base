@@ -2,11 +2,84 @@
 # ========================================================================
 #                    SERENIBASE SETUP SCRIPT (NO PROMPTS)
 #
-#  Full automated setup with default values - same as interactive setup
-#  but without prompting the user
+#  Full automated setup with default values - REQUIRES SMTP credentials
+#
+#  Usage:
+#    ./setup-y.sh --smtp-host "your_email_host" --smtp-port "587" \
+#                 --smtp-username "your@email.com" --smtp-password "your-app-password"
+#
 # ========================================================================
 
-set -e
+# Don't use 'set -e' to allow proper Ctrl+C handling
+# set -e  # Commented out to handle Ctrl+C gracefully
+
+# Parse command line arguments
+SMTP_HOST=""
+SMTP_PORT=""
+SMTP_USERNAME=""
+SMTP_PASSWORD=""
+SMTP_FROM_EMAIL=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --smtp-host)
+            SMTP_HOST="$2"
+            shift 2
+            ;;
+        --smtp-port)
+            SMTP_PORT="$2"
+            shift 2
+            ;;
+        --smtp-username)
+            SMTP_USERNAME="$2"
+            shift 2
+            ;;
+        --smtp-password)
+            SMTP_PASSWORD="$2"
+            shift 2
+            ;;
+        --smtp-from-email)
+            SMTP_FROM_EMAIL="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> [--smtp-from-email <email>]"
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required SMTP credentials
+if [ -z "$SMTP_HOST" ]; then
+    echo "[ERROR] SMTP host is required. Use --smtp-host <host>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
+
+if [ -z "$SMTP_PORT" ]; then
+    echo "[ERROR] SMTP port is required. Use --smtp-port <port>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
+
+if [ -z "$SMTP_USERNAME" ]; then
+    echo "[ERROR] SMTP username is required. Use --smtp-username <email>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
+
+if [ -z "$SMTP_PASSWORD" ]; then
+    echo "[ERROR] SMTP password is required. Use --smtp-password <password>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
+
+if [ -z "$SMTP_FROM_EMAIL" ]; then
+    echo "[ERROR] SMTP from email is required. Use --smtp-from-email <email>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
 
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,6 +87,39 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Change to project root
 cd "$PROJECT_ROOT"
+
+# Cleanup function to stop all processes on Ctrl+C
+cleanup() {
+    local exit_code=$?
+    
+    # Only cleanup if interrupted (exit code 130 = Ctrl+C or SIGINT)
+    # Don't cleanup on successful completion
+    if [ $exit_code -eq 0 ]; then
+        return 0
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}[!] Setup interrupted by user (Ctrl+C). Cleaning up...${NC}"
+    
+    # Stop any running docker containers started by this script
+    if docker compose -f docker-compose.all.yaml ps -q 2>/dev/null | grep -q .; then
+        echo -e "${YELLOW}[!] Stopping Docker containers...${NC}"
+        docker compose -f docker-compose.all.yaml down 2>/dev/null || true
+    fi
+    
+    # Kill any background processes started by this script
+    local jobs_list=$(jobs -p 2>/dev/null)
+    if [ -n "$jobs_list" ]; then
+        echo -e "${YELLOW}[!] Killing background processes...${NC}"
+        echo "$jobs_list" | xargs kill -9 2>/dev/null || true
+    fi
+    
+    echo -e "${RED}[X] Setup cancelled. All processes stopped.${NC}"
+    exit 130  # Standard exit code for Ctrl+C
+}
+
+# Trap Ctrl+C (SIGINT) and other termination signals
+trap cleanup SIGINT SIGTERM SIGHUP
 
 # Colors for output
 RED='\033[0;31m'
@@ -203,11 +309,11 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_HOST=your_email_host
 EMAIL_SMTP_PORT=587
-EMAIL_SMTP_USERNAME=your_email@gmail.com
-EMAIL_SMTP_PASSWORD=your_app_password
-EMAIL_FROM_EMAIL=your_email@gmail.com
+EMAIL_SMTP_USERNAME=
+EMAIL_SMTP_PASSWORD=
+EMAIL_FROM_EMAIL=
 
 # ┌──────────────────────────────────────────────────────────────────────────────┐
 # │                           📁 STORAGE CONFIGURATION                            │
@@ -319,6 +425,118 @@ fi
 
 # Clean up template file
 rm -f .env.template
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      DATABASE CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+echo "Using default PostgreSQL Docker container"
+
+# Check if database credentials are default or empty, update them
+if grep -q "^DATABASE_USER=" .env; then
+    current_user=$(grep "^DATABASE_USER=" .env | cut -d'=' -f2)
+    if [ -z "$current_user" ] || [ "$current_user" = "postgres" ]; then
+        sed -i.bak "s/^DATABASE_USER=.*/DATABASE_USER=postgres/" .env
+    fi
+else
+    sed -i.bak "s/^DATABASE_USER=.*/DATABASE_USER=postgres/" .env
+fi
+
+if grep -q "^DATABASE_PASSWORD=" .env; then
+    current_pass=$(grep "^DATABASE_PASSWORD=" .env | cut -d'=' -f2)
+    if [ -z "$current_pass" ] || [ "$current_pass" = "postgres" ]; then
+        sed -i.bak "s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD=postgres/" .env
+    fi
+else
+    sed -i.bak "s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD=postgres/" .env
+fi
+
+if grep -q "^DATABASE_NAME=" .env; then
+    current_name=$(grep "^DATABASE_NAME=" .env | cut -d'=' -f2)
+    if [ -z "$current_name" ] || [ "$current_name" = "serenibase" ]; then
+        sed -i.bak "s/^DATABASE_NAME=.*/DATABASE_NAME=serenibase/" .env
+    fi
+else
+    sed -i.bak "s/^DATABASE_NAME=.*/DATABASE_NAME=serenibase/" .env
+fi
+
+rm -f .env.bak
+print_step "Database configuration set to defaults"
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      AUTHENTICATION CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+# Check if JWT secret exists and is default, generate new one if needed
+if grep -q "^AUTH_JWT_SECRET=" .env; then
+    current_secret=$(grep "^AUTH_JWT_SECRET=" .env | cut -d'=' -f2)
+    if [[ "$current_secret" =~ "change-this" ]] || [ -z "$current_secret" ]; then
+        new_secret=$(openssl rand -base64 32 | tr -d '\n' | head -c 32)
+        sed -i.bak "s/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=$new_secret/" .env
+        rm -f .env.bak
+        echo "[OK] Generated new JWT Secret: $new_secret"
+    else
+        echo "[OK] Using existing JWT Secret"
+    fi
+else
+    new_secret=$(openssl rand -base64 32 | tr -d '\n' | head -c 32)
+    sed -i.bak "s/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=$new_secret/" .env
+    rm -f .env.bak
+    echo "[OK] Generated new JWT Secret: $new_secret"
+fi
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      EMAIL CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+# Use SMTP credentials from command line arguments
+echo "Configuring SMTP with provided credentials..."
+echo "  SMTP Host: $SMTP_HOST"
+echo "  SMTP Port: $SMTP_PORT"
+echo "  SMTP Username: $SMTP_USERNAME"
+echo "  From Email: $SMTP_FROM_EMAIL"
+
+sed -i.bak "s/^EMAIL_SMTP_HOST=.*/EMAIL_SMTP_HOST=$SMTP_HOST/" .env
+sed -i.bak "s/^EMAIL_SMTP_PORT=.*/EMAIL_SMTP_PORT=$SMTP_PORT/" .env
+sed -i.bak "s|^EMAIL_SMTP_USERNAME=.*|EMAIL_SMTP_USERNAME=$SMTP_USERNAME|" .env
+sed -i.bak "s|^EMAIL_SMTP_PASSWORD=.*|EMAIL_SMTP_PASSWORD=$SMTP_PASSWORD|" .env
+sed -i.bak "s|^EMAIL_FROM_EMAIL=.*|EMAIL_FROM_EMAIL=$SMTP_FROM_EMAIL|" .env
+rm -f .env.bak
+
+print_step "Email configuration updated"
+
+echo ""
+echo -e "${BLUE}========================================================================"
+echo "                      STORAGE CONFIGURATION"
+echo "========================================================================${NC}"
+echo ""
+
+echo "Using default MinIO Docker container"
+
+# Set default MinIO storage if not already configured
+if grep -q "^STORAGE_DRIVER=" .env; then
+    current_driver=$(grep "^STORAGE_DRIVER=" .env | cut -d'=' -f2)
+    if [ -z "$current_driver" ] || [ "$current_driver" = "minio" ]; then
+        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
+    fi
+else
+    sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
+fi
+
+sed -i.bak "s|^STORAGE_MINIO_ENDPOINT=.*|STORAGE_MINIO_ENDPOINT=minio:9000|" .env
+sed -i.bak "s|^STORAGE_MINIO_ACCESS_KEY=.*|STORAGE_MINIO_ACCESS_KEY=minioadmin|" .env
+sed -i.bak "s|^STORAGE_MINIO_SECRET_KEY=.*|STORAGE_MINIO_SECRET_KEY=minioadmin|" .env
+sed -i.bak "s|^STORAGE_MINIO_BUCKET=.*|STORAGE_MINIO_BUCKET=serenibase|" .env
+sed -i.bak "s|^STORAGE_MINIO_USE_SSL=.*|STORAGE_MINIO_USE_SSL=false|" .env
+
+rm -f .env.bak
+print_step "Storage configuration set to defaults"
 
 echo ""
 echo -e "${BLUE}========================================================================"

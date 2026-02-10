@@ -84,14 +84,6 @@ func (s *authManagementService) sendOtpViaEmail(email string) {
 }
 
 func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error) {
-	// 1. Check if user already exists
-	if _, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, req.Email); err == nil {
-		// If user exists, return error
-		return dto.LoginResponse{}, app_errors.UserAlreadyExists
-	} else if err != app_errors.UserNotFound {
-		return dto.LoginResponse{}, err
-	}
-
 	// 2. Store plain password for JWT service sync before hashing
 	plainPassword := req.Password
 
@@ -432,7 +424,7 @@ func (a *authManagementService) ForgotPassword(ctx context.Context, req dto.Forg
 		"user_id": user.ID.String(),
 	}
 
-	token, err := helpers.GenerateCustomJWT(tokenAttrs, user.ID.String(), 3600) // 1 hour expiry
+	token, err := helpers.GenerateCustomJWT(tokenAttrs, user.ID.String(), 259200)
 	if err != nil {
 		return err
 	}
@@ -582,6 +574,7 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 
 	// Check if email already exists
 	if err := a.validateEmailAvailability(ctx, schema, userData.Email); err != nil {
+		fmt.Printf("Email validation failed for %s: %v\n", userData.Email, err)
 		return tenant.User{}, err
 	}
 
@@ -665,7 +658,7 @@ func (a *authManagementService) generateInvitationToken(ctx context.Context, use
 		"user_id": userID,
 	}
 
-	token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 3600)
+	token, err := helpers.GenerateCustomJWT(tokenAttrs, userID, 259200)
 	if err != nil {
 		return "", err
 	}
