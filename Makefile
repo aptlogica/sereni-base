@@ -9,9 +9,8 @@
 # Detect OS
 ifeq ($(OS),Windows_NT)
     DETECTED_OS := Windows
-    SETUP_SCRIPT := build\scripts\setup.bat
-    SETUP_SCRIPT_Y := build\scripts\setup-y.bat
-    PS_RUNNER := build\scripts\run-batch.ps1
+    SETUP_SCRIPT := build\scripts\setup.ps1
+    SETUP_SCRIPT_Y := build\scripts\setup-y.ps1
     COMPOSE_FILE := docker-compose.all.yaml
 else
     UNAME_S := $(shell uname -s)
@@ -61,7 +60,7 @@ help:
 setup:
 	@echo "Starting SereniBase Setup Wizard..."
 ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -ExecutionPolicy Bypass -File $(PS_RUNNER) -BatchPath $(SETUP_SCRIPT)
+	@powershell -NoProfile -ExecutionPolicy Bypass -File $(SETUP_SCRIPT)
 else
 	@chmod +x $(SETUP_SCRIPT)
 	@bash $(SETUP_SCRIPT)
@@ -71,7 +70,7 @@ endif
 setup-y:
 	@echo "Starting SereniBase Setup with defaults (no prompts)..."
 ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -ExecutionPolicy Bypass -File $(PS_RUNNER) -BatchPath $(SETUP_SCRIPT_Y)
+	@powershell -NoProfile -ExecutionPolicy Bypass -File $(SETUP_SCRIPT_Y)
 else
 	@chmod +x $(SETUP_SCRIPT_Y)
 	@bash $(SETUP_SCRIPT_Y)
