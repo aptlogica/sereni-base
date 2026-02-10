@@ -106,7 +106,6 @@ func (u *userService) GetUserByEmail(ctx context.Context, schema string, email s
 	if err != nil {
 		return tenant.User{}, app_errors.LogDatabaseError(err, "failed to get user by email")
 	}
-
 	if len(usersData) == 0 {
 		return tenant.User{}, app_errors.UserNotFound
 	}
@@ -120,6 +119,8 @@ func (u *userService) GetUserByEmail(ctx context.Context, schema string, email s
 	// if user.DateOfBirth != nil {
 	// 	*user.DateOfBirth = user.DateOfBirth
 	// }
+
+	fmt.Printf("Retrieved user by email %s: %+v\n", email, user)
 	return user, nil
 }
 

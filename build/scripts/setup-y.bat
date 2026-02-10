@@ -3,17 +3,14 @@ REM ========================================================================
 REM                    SERENIBASE SETUP SCRIPT (NO PROMPTS)
 REM                    Windows Batch Version - Using Defaults
 REM ========================================================================
+REM
+REM Ctrl+C Handling:
+REM   Press Ctrl+C to immediately terminate (answers Y automatically)
+REM   Or press Y when prompted to terminate
+REM
+REM ========================================================================
 
 setlocal enabledelayedexpansion
-
-REM Cleanup function for Ctrl+C
-:CLEANUP
-echo.
-echo [!] Setup interrupted. Cleaning up...
-REM Stop any running Docker containers
-docker compose -f docker-compose.all.yaml down >nul 2>&1
-echo [X] Setup cancelled.
-exit /b 1
 
 REM Get the directory where this script is located
 set "SCRIPT_DIR=%~dp0"
@@ -130,11 +127,11 @@ REM Create a temporary file with all default environment variables
     echo EMAIL_HOST=0.0.0.0
     echo EMAIL_PORT=8082
     echo EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-    echo EMAIL_SMTP_HOST=smtp.gmail.com
-    echo EMAIL_SMTP_PORT=587
-    echo EMAIL_SMTP_USERNAME=your_email@gmail.com
-    echo EMAIL_SMTP_PASSWORD=your_app_password
-    echo EMAIL_FROM_EMAIL=your_email@gmail.com
+    echo EMAIL_SMTP_HOST=mailhog
+    echo EMAIL_SMTP_PORT=1025
+    echo EMAIL_SMTP_USERNAME=
+    echo EMAIL_SMTP_PASSWORD=
+    echo EMAIL_FROM_EMAIL=test@example.com
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
     echo # │                           📁 STORAGE CONFIGURATION                            │

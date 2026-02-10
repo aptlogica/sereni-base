@@ -3,6 +3,12 @@ REM ========================================================================
 REM                    SERENIBASE SETUP SCRIPT
 REM                    Windows Batch Version
 REM ========================================================================
+REM
+REM Ctrl+C Handling:
+REM   Press Ctrl+C to immediately terminate (answers Y automatically)
+REM   Or press Y when prompted to terminate
+REM
+REM ========================================================================
 
 setlocal enabledelayedexpansion
 
@@ -121,11 +127,11 @@ REM Create a temporary file with all default environment variables
     echo EMAIL_HOST=0.0.0.0
     echo EMAIL_PORT=8082
     echo EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-    echo EMAIL_SMTP_HOST=smtp.gmail.com
-    echo EMAIL_SMTP_PORT=587
-    echo EMAIL_SMTP_USERNAME=your_email@gmail.com
-    echo EMAIL_SMTP_PASSWORD=your_app_password
-    echo EMAIL_FROM_EMAIL=your_email@gmail.com
+    echo EMAIL_SMTP_HOST=mailhog
+    echo EMAIL_SMTP_PORT=1025
+    echo EMAIL_SMTP_USERNAME=
+    echo EMAIL_SMTP_PASSWORD=
+    echo EMAIL_FROM_EMAIL=test@example.com
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
     echo # │                           📁 STORAGE CONFIGURATION                            │
@@ -306,6 +312,31 @@ echo ========================================================================
 echo                      EMAIL CONFIGURATION
 echo ========================================================================
 echo.
+echo Choose email configuration:
+echo   1. MailHog (Local testing - recommended for development)
+echo   2. Custom SMTP (Gmail, SendGrid, etc.)
+echo.
+
+set /p EMAIL_CHOICE="Enter choice [1]: "
+if "!EMAIL_CHOICE!"=="" set EMAIL_CHOICE=1
+
+if "!EMAIL_CHOICE!"=="1" (
+    echo [OK] Configuring MailHog for email testing...
+    set EMAIL_SMTP_HOST=mailhog
+    set EMAIL_SMTP_PORT=1025
+    set EMAIL_SMTP_USERNAME=
+    set EMAIL_SMTP_PASSWORD=
+    set EMAIL_FROM_EMAIL=test@example.com
+    echo.
+    echo [OK] MailHog configured successfully!
+    echo   - SMTP Server: mailhog:1025
+    echo   - Web UI: http://localhost:8025
+    echo   - All emails will be caught by MailHog (no real emails sent^)
+    echo.
+    goto UPDATE_EMAIL_ENV
+)
+
+echo.
 echo Enter SMTP email configuration:
 echo.
 
@@ -317,21 +348,25 @@ if "!EMAIL_SMTP_PORT!"=="" set EMAIL_SMTP_PORT=587
 
 set /p EMAIL_SMTP_USERNAME="SMTP Username (email): "
 if "!EMAIL_SMTP_USERNAME!"=="" (
-    echo [WARNING] Email username not provided. Email features will not work.
-    set EMAIL_SMTP_USERNAME=your_email@gmail.com
-    set EMAIL_SMTP_PASSWORD=your_app_password
-    set EMAIL_FROM_EMAIL=your_email@gmail.com
-) else (
-    set /p EMAIL_SMTP_PASSWORD="SMTP Password (app password): "
-    if "!EMAIL_SMTP_PASSWORD!"=="" (
-        echo [WARNING] Email password not provided. Email features will not work.
-        set EMAIL_SMTP_PASSWORD=your_app_password
-    )
-    
-    set /p EMAIL_FROM_EMAIL="From Email [!EMAIL_SMTP_USERNAME!]: "
-    if "!EMAIL_FROM_EMAIL!"=="" set EMAIL_FROM_EMAIL=!EMAIL_SMTP_USERNAME!
+    echo [WARNING] Email username not provided. Switching to MailHog for testing.
+    set EMAIL_SMTP_HOST=mailhog
+    set EMAIL_SMTP_PORT=1025
+    set EMAIL_SMTP_USERNAME=
+    set EMAIL_SMTP_PASSWORD=
+    set EMAIL_FROM_EMAIL=test@example.com
+    goto UPDATE_EMAIL_ENV
 )
 
+set /p EMAIL_SMTP_PASSWORD="SMTP Password (app password): "
+if "!EMAIL_SMTP_PASSWORD!"=="" (
+    echo [WARNING] Email password not provided. Email features will not work.
+    set EMAIL_SMTP_PASSWORD=your_app_password
+)
+
+set /p EMAIL_FROM_EMAIL="From Email [!EMAIL_SMTP_USERNAME!]: "
+if "!EMAIL_FROM_EMAIL!"=="" set EMAIL_FROM_EMAIL=!EMAIL_SMTP_USERNAME!
+
+:UPDATE_EMAIL_ENV
 REM Update email configuration in .env
 powershell -Command "(Get-Content '.env') -replace '^EMAIL_SMTP_HOST=.*', 'EMAIL_SMTP_HOST=%EMAIL_SMTP_HOST%' | Set-Content '.env'"
 powershell -Command "(Get-Content '.env') -replace '^EMAIL_SMTP_PORT=.*', 'EMAIL_SMTP_PORT=%EMAIL_SMTP_PORT%' | Set-Content '.env'"

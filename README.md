@@ -1,5 +1,18 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shi- 🎨 **Modern React UI** - Beautiful, responsive interface built with React 18+ and TailwindCSS
+- 🔐 **Secure Authentication** - JWT-based auth with role-based access control (auto-generated secrets)
+- 📧 **Email Notifications** - Built-in email service with MailHog (dev) or custom SMTP support
+- 📁 **Flexible Storage** - Support for local, MinIO (Docker/Custom), and AWS S3 storage.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white---
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| 📋 [Environment Configuration](docs/ENV_CONFIGURATION.md) | Complete guide to all environment variables |
+| 📧 [Email Configuration](docs/EMAIL_CONFIGURATION.md) | MailHog setup and custom SMTP guide |
+| � [Makefile Commands](docs/MAKEFILE_COMMANDS.md) | All available make commands and usage |
+| �🔌 [API Documentation](http://localhost:8080/swagger/index.html) | Interactive API reference (requires running server) |
+| 🐳 [Docker Deployment](docs/ENV_CONFIGURATION.md#-deployment-examples) | Production deployment guide |">
   <img src="https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
@@ -142,19 +155,24 @@ make help
 # 🚀 SETUP
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 make setup          # Interactive setup wizard (recommended)
-make setup-all      # Automated full setup
+make setup-y        # Automated setup with defaults
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🔧 DEVELOPMENT
+# � DOCKER MANAGEMENT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-make up-all         # Start all services
-make down-all       # Stop all services
-make rebuild        # Rebuild and restart
-make logs           # View live logs
-make status         # Show service status
+make up             # Start all services
+make down           # Stop services (keep data)
+make down-all       # Stop services + remove volumes
+make restart        # Restart all services
+make logs           # View service logs (Ctrl+C to exit)
+make ps             # List running services
+make status         # Detailed service status
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧹 MAINTENANCE
+# 🧹 CLEANUP
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+make clean          # Remove containers (keep volumes)
+make clean-all      # Full cleanup (⚠️ removes all data)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 make clean          # Remove all containers & data
 ```

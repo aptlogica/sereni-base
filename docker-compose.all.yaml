@@ -2,14 +2,17 @@
 services:
   serenibase:
     build: .
+    command: ["./wait-for-postgres.sh", "postgres", "./main"]
     ports:
       - "8080:8080"
     env_file:
       - .env
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - serenibase-network
+    restart: on-failure:5
 
   postgres:
     image: postgres:15-alpine
@@ -85,6 +88,17 @@ services:
       FROM_EMAIL: ${EMAIL_FROM_EMAIL}
     ports:
       - "8082:8082"
+    depends_on:
+      - mailhog
+    networks:
+      - serenibase-network
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mailhog
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web UI
     networks:
       - serenibase-network
 

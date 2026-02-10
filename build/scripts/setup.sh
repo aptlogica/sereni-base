@@ -236,11 +236,11 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=smtp.gmail.com
-EMAIL_SMTP_PORT=587
-EMAIL_SMTP_USERNAME=your_email@gmail.com
-EMAIL_SMTP_PASSWORD=your_app_password
-EMAIL_FROM_EMAIL=your_email@gmail.com
+EMAIL_SMTP_HOST=mailhog
+EMAIL_SMTP_PORT=1025
+EMAIL_SMTP_USERNAME=
+EMAIL_SMTP_PASSWORD=
+EMAIL_FROM_EMAIL=test@example.com
 
 # ┌──────────────────────────────────────────────────────────────────────────────┐
 # │                           📁 STORAGE CONFIGURATION                            │
@@ -462,33 +462,59 @@ configure_email() {
     echo "                      EMAIL CONFIGURATION"
     echo "========================================================================${NC}"
     echo ""
-    echo "Enter SMTP email configuration:"
+    echo "Choose email configuration:"
+    echo "  1. MailHog (Local testing - recommended for development)"
+    echo "  2. Custom SMTP (Gmail, SendGrid, etc.)"
     echo ""
+    read -p "Enter choice [1]: " EMAIL_CHOICE
+    EMAIL_CHOICE=${EMAIL_CHOICE:-1}
     
-    read -p "SMTP Host [smtp.gmail.com]: " EMAIL_SMTP_HOST
-    EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-smtp.gmail.com}
-    
-    read -p "SMTP Port [587]: " EMAIL_SMTP_PORT
-    EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
-    
-    read -p "SMTP Username (email): " EMAIL_SMTP_USERNAME
-    
-    if [ -z "$EMAIL_SMTP_USERNAME" ]; then
-        print_warning "Email username not provided. Email features will not work."
-        EMAIL_SMTP_USERNAME="your_email@gmail.com"
-        EMAIL_SMTP_PASSWORD="your_app_password"
-        EMAIL_FROM_EMAIL="your_email@gmail.com"
+    if [ "$EMAIL_CHOICE" == "1" ]; then
+        print_step "Configuring MailHog for email testing..."
+        EMAIL_SMTP_HOST="mailhog"
+        EMAIL_SMTP_PORT="1025"
+        EMAIL_SMTP_USERNAME=""
+        EMAIL_SMTP_PASSWORD=""
+        EMAIL_FROM_EMAIL="test@example.com"
+        
+        echo ""
+        echo -e "${GREEN}✓ MailHog configured successfully!${NC}"
+        echo -e "${CYAN}  - SMTP Server: mailhog:1025${NC}"
+        echo -e "${CYAN}  - Web UI: http://localhost:8025${NC}"
+        echo -e "${CYAN}  - All emails will be caught by MailHog (no real emails sent)${NC}"
+        echo ""
     else
-        read -s -p "SMTP Password (app password): " EMAIL_SMTP_PASSWORD
+        echo ""
+        echo "Enter SMTP email configuration:"
         echo ""
         
-        if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
-            print_warning "Email password not provided. Email features will not work."
-            EMAIL_SMTP_PASSWORD="your_app_password"
-        fi
+        read -p "SMTP Host [smtp.gmail.com]: " EMAIL_SMTP_HOST
+        EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-smtp.gmail.com}
         
-        read -p "From Email [$EMAIL_SMTP_USERNAME]: " EMAIL_FROM_EMAIL
-        EMAIL_FROM_EMAIL=${EMAIL_FROM_EMAIL:-$EMAIL_SMTP_USERNAME}
+        read -p "SMTP Port [587]: " EMAIL_SMTP_PORT
+        EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+        
+        read -p "SMTP Username (email): " EMAIL_SMTP_USERNAME
+        
+        if [ -z "$EMAIL_SMTP_USERNAME" ]; then
+            print_warning "Email username not provided. Switching to MailHog for testing."
+            EMAIL_SMTP_HOST="mailhog"
+            EMAIL_SMTP_PORT="1025"
+            EMAIL_SMTP_USERNAME=""
+            EMAIL_SMTP_PASSWORD=""
+            EMAIL_FROM_EMAIL="test@example.com"
+        else
+            read -s -p "SMTP Password (app password): " EMAIL_SMTP_PASSWORD
+            echo ""
+            
+            if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
+                print_warning "Email password not provided. Email features will not work."
+                EMAIL_SMTP_PASSWORD="your_app_password"
+            fi
+            
+            read -p "From Email [$EMAIL_SMTP_USERNAME]: " EMAIL_FROM_EMAIL
+            EMAIL_FROM_EMAIL=${EMAIL_FROM_EMAIL:-$EMAIL_SMTP_USERNAME}
+        fi
     fi
     
     # Update email configuration in .env

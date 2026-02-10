@@ -237,11 +237,11 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=smtp.gmail.com
-EMAIL_SMTP_PORT=587
-EMAIL_SMTP_USERNAME=your_email@gmail.com
-EMAIL_SMTP_PASSWORD=your_app_password
-EMAIL_FROM_EMAIL=your_email@gmail.com
+EMAIL_SMTP_HOST=mailhog
+EMAIL_SMTP_PORT=1025
+EMAIL_SMTP_USERNAME=
+EMAIL_SMTP_PASSWORD=
+EMAIL_FROM_EMAIL=test@example.com
 
 # ┌──────────────────────────────────────────────────────────────────────────────┐
 # │                           📁 STORAGE CONFIGURATION                            │
