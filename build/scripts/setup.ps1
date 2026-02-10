@@ -6,10 +6,17 @@
 # Ctrl+C Handling:
 #   Press Ctrl+C to immediately terminate the setup
 #
+# SMTP Configuration is REQUIRED - no optional fallback to MailHog
+#
 # ========================================================================
 
 param(
-    [switch]$AutoYes  # For non-interactive setup with defaults
+    [switch]$AutoYes,  # For non-interactive setup with defaults
+    [string]$SmtpHost = "",
+    [string]$SmtpPort = "",
+    [string]$SmtpUsername = "",
+    [string]$SmtpPassword = "",
+    [string]$SmtpFromEmail = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -190,11 +197,11 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=mailhog
-EMAIL_SMTP_PORT=1025
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
 EMAIL_SMTP_USERNAME=
 EMAIL_SMTP_PASSWORD=
-EMAIL_FROM_EMAIL=test@example.com
+EMAIL_FROM_EMAIL=
 
 # ┌──────────────────────────────────────────────────────────────────────────────┐
 # │                           📁 STORAGE CONFIGURATION                            │
@@ -416,55 +423,53 @@ Write-Host "====================================================================
 Write-Host "                      EMAIL CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
-Write-Host "Choose email configuration:"
-Write-Host "  1. MailHog (Local testing - recommended for development)"
-Write-Host "  2. Custom SMTP (Gmail, SendGrid, etc.)"
+Write-Host "Enter SMTP email configuration (REQUIRED):"
 Write-Host ""
 
-if ($AutoYes) {
-    $EMAIL_CHOICE = "1"
+# Use parameters if provided, otherwise prompt
+if ([string]::IsNullOrWhiteSpace($SmtpHost)) {
+    $EMAIL_SMTP_HOST = Read-HostWithCancel -Prompt "SMTP Host" -Default "smtp.gmail.com"
 } else {
-    $EMAIL_CHOICE = Read-Choice -Prompt "Enter choice" -Default "1"
+    $EMAIL_SMTP_HOST = $SmtpHost
+    Write-Host "SMTP Host: $EMAIL_SMTP_HOST"
 }
 
-if ($EMAIL_CHOICE -eq "1") {
-    Write-Host "[OK] Configuring MailHog for email testing..." -ForegroundColor Green
-    $EMAIL_SMTP_HOST = "mailhog"
-    $EMAIL_SMTP_PORT = "1025"
-    $EMAIL_SMTP_USERNAME = ""
-    $EMAIL_SMTP_PASSWORD = ""
-    $EMAIL_FROM_EMAIL = "test@example.com"
-    Write-Host ""
-    Write-Host "[OK] MailHog configured successfully!"
-    Write-Host "   - SMTP Server: mailhog:1025"
-    Write-Host "   - Web UI: http://localhost:8025"
-    Write-Host "   - All emails will be caught by MailHog (no real emails sent)"
-    Write-Host ""
-} else {
-    Write-Host ""
-    Write-Host "Enter SMTP email configuration:"
-    Write-Host ""
-    
-    $EMAIL_SMTP_HOST = Read-HostWithCancel -Prompt "SMTP Host" -Default "smtp.gmail.com"
+if ([string]::IsNullOrWhiteSpace($SmtpPort)) {
     $EMAIL_SMTP_PORT = Read-HostWithCancel -Prompt "SMTP Port" -Default "587"
+} else {
+    $EMAIL_SMTP_PORT = $SmtpPort
+    Write-Host "SMTP Port: $EMAIL_SMTP_PORT"
+}
+
+if ([string]::IsNullOrWhiteSpace($SmtpUsername)) {
     $EMAIL_SMTP_USERNAME = Read-HostWithCancel -Prompt "SMTP Username (email)"
-    
     if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_USERNAME)) {
-        Write-Host "[WARNING] Email username not provided. Switching to MailHog for testing." -ForegroundColor Yellow
-        $EMAIL_SMTP_HOST = "mailhog"
-        $EMAIL_SMTP_PORT = "1025"
-        $EMAIL_SMTP_USERNAME = ""
-        $EMAIL_SMTP_PASSWORD = ""
-        $EMAIL_FROM_EMAIL = "test@example.com"
-    } else {
-        $EMAIL_SMTP_PASSWORD = Read-HostWithCancel -Prompt "SMTP Password (app password)"
-        if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_PASSWORD)) {
-            Write-Host "[WARNING] Email password not provided. Email features will not work." -ForegroundColor Yellow
-            $EMAIL_SMTP_PASSWORD = "your_app_password"
-        }
-        
-        $EMAIL_FROM_EMAIL = Read-HostWithCancel -Prompt "From Email" -Default $EMAIL_SMTP_USERNAME
+        Write-Host "[ERROR] SMTP username is required" -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
     }
+} else {
+    $EMAIL_SMTP_USERNAME = $SmtpUsername
+    Write-Host "SMTP Username: $EMAIL_SMTP_USERNAME"
+}
+
+if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
+    $EMAIL_SMTP_PASSWORD = Read-HostWithCancel -Prompt "SMTP Password (app password)"
+    if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_PASSWORD)) {
+        Write-Host "[ERROR] SMTP password is required" -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+} else {
+    $EMAIL_SMTP_PASSWORD = $SmtpPassword
+    Write-Host "SMTP Password: ********"
+}
+
+if ([string]::IsNullOrWhiteSpace($SmtpFromEmail)) {
+    $EMAIL_FROM_EMAIL = Read-HostWithCancel -Prompt "From Email" -Default $EMAIL_SMTP_USERNAME
+} else {
+    $EMAIL_FROM_EMAIL = $SmtpFromEmail
+    Write-Host "From Email: $EMAIL_FROM_EMAIL"
 }
 
 Update-EnvVar -Key "EMAIL_SMTP_HOST" -Value $EMAIL_SMTP_HOST

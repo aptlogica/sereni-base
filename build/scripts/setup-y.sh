@@ -2,12 +2,71 @@
 # ========================================================================
 #                    SERENIBASE SETUP SCRIPT (NO PROMPTS)
 #
-#  Full automated setup with default values - same as interactive setup
-#  but without prompting the user
+#  Full automated setup with default values - REQUIRES SMTP credentials
+#
+#  Usage:
+#    ./setup-y.sh --smtp-host "smtp.gmail.com" --smtp-port "587" \
+#                 --smtp-username "your@email.com" --smtp-password "your-app-password"
+#
 # ========================================================================
 
 # Don't use 'set -e' to allow proper Ctrl+C handling
 # set -e  # Commented out to handle Ctrl+C gracefully
+
+# Parse command line arguments
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="587"
+SMTP_USERNAME=""
+SMTP_PASSWORD=""
+SMTP_FROM_EMAIL=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --smtp-host)
+            SMTP_HOST="$2"
+            shift 2
+            ;;
+        --smtp-port)
+            SMTP_PORT="$2"
+            shift 2
+            ;;
+        --smtp-username)
+            SMTP_USERNAME="$2"
+            shift 2
+            ;;
+        --smtp-password)
+            SMTP_PASSWORD="$2"
+            shift 2
+            ;;
+        --smtp-from-email)
+            SMTP_FROM_EMAIL="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 --smtp-username <email> --smtp-password <password> [--smtp-host <host>] [--smtp-port <port>] [--smtp-from-email <email>]"
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required SMTP credentials
+if [ -z "$SMTP_USERNAME" ]; then
+    echo "[ERROR] SMTP username is required. Use --smtp-username <email>"
+    echo "Usage: $0 --smtp-username <email> --smtp-password <password> [--smtp-host <host>] [--smtp-port <port>]"
+    exit 1
+fi
+
+if [ -z "$SMTP_PASSWORD" ]; then
+    echo "[ERROR] SMTP password is required. Use --smtp-password <password>"
+    echo "Usage: $0 --smtp-username <email> --smtp-password <password> [--smtp-host <host>] [--smtp-port <port>]"
+    exit 1
+fi
+
+# Default from email to username if not provided
+if [ -z "$SMTP_FROM_EMAIL" ]; then
+    SMTP_FROM_EMAIL="$SMTP_USERNAME"
+fi
 
 # Get script directory and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -237,11 +296,11 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=mailhog
-EMAIL_SMTP_PORT=1025
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
 EMAIL_SMTP_USERNAME=
 EMAIL_SMTP_PASSWORD=
-EMAIL_FROM_EMAIL=test@example.com
+EMAIL_FROM_EMAIL=
 
 # ┌──────────────────────────────────────────────────────────────────────────────┐
 # │                           📁 STORAGE CONFIGURATION                            │
@@ -423,17 +482,21 @@ echo "                      EMAIL CONFIGURATION"
 echo "========================================================================${NC}"
 echo ""
 
-# Check if email is configured
-if grep -q "^EMAIL_SMTP_USERNAME=" .env; then
-    current_email=$(grep "^EMAIL_SMTP_USERNAME=" .env | cut -d'=' -f2)
-    if [[ "$current_email" =~ "@" ]] && [ "$current_email" != "your_email@gmail.com" ]; then
-        echo "[OK] Using existing email configuration"
-    else
-        print_warning "Email not configured. Please update .env with your email credentials."
-    fi
-else
-    print_warning "Email not configured. Please update .env with your email credentials."
-fi
+# Use SMTP credentials from command line arguments
+echo "Configuring SMTP with provided credentials..."
+echo "  SMTP Host: $SMTP_HOST"
+echo "  SMTP Port: $SMTP_PORT"
+echo "  SMTP Username: $SMTP_USERNAME"
+echo "  From Email: $SMTP_FROM_EMAIL"
+
+sed -i.bak "s/^EMAIL_SMTP_HOST=.*/EMAIL_SMTP_HOST=$SMTP_HOST/" .env
+sed -i.bak "s/^EMAIL_SMTP_PORT=.*/EMAIL_SMTP_PORT=$SMTP_PORT/" .env
+sed -i.bak "s|^EMAIL_SMTP_USERNAME=.*|EMAIL_SMTP_USERNAME=$SMTP_USERNAME|" .env
+sed -i.bak "s|^EMAIL_SMTP_PASSWORD=.*|EMAIL_SMTP_PASSWORD=$SMTP_PASSWORD|" .env
+sed -i.bak "s|^EMAIL_FROM_EMAIL=.*|EMAIL_FROM_EMAIL=$SMTP_FROM_EMAIL|" .env
+rm -f .env.bak
+
+print_step "Email configuration updated"
 
 echo ""
 echo -e "${BLUE}========================================================================"

@@ -35,7 +35,6 @@ help:
 	@echo ""
 	@echo "  Quick Start:"
 	@echo "    make setup              - Interactive setup wizard (recommended)"
-	@echo "    make setup-y            - Full setup with default values (no prompts)"
 	@echo ""
 	@echo "  Docker Management:"
 	@echo "    make up                 - Start all services"
