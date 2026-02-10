@@ -33,13 +33,17 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # ==============================================================================
 FROM alpine:3.20
 
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata curl
+# Install runtime dependencies including PostgreSQL client
+RUN apk --no-cache add ca-certificates tzdata curl postgresql-client
 
 WORKDIR /app
 
 # Copy binary and required files from builder
 COPY --from=builder /app/main .
+COPY wait-for-postgres.sh .
+
+# Make wait script executable
+RUN chmod +x wait-for-postgres.sh
 
 # Create assets directory and non-root user for security
 RUN mkdir -p /app/assets && \

@@ -1,5 +1,18 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shi- 🎨 **Modern React UI** - Beautiful, responsive interface built with React 18+ and TailwindCSS
+- 🔐 **Secure Authentication** - JWT-based auth with role-based access control (auto-generated secrets)
+- 📧 **Email Notifications** - Built-in email service with MailHog (dev) or custom SMTP support
+- 📁 **Flexible Storage** - Support for local, MinIO (Docker/Custom), and AWS S3 storage.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white---
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| 📋 [Environment Configuration](docs/ENV_CONFIGURATION.md) | Complete guide to all environment variables |
+| 📧 [Email Configuration](docs/EMAIL_CONFIGURATION.md) | MailHog setup and custom SMTP guide |
+| � [Makefile Commands](docs/MAKEFILE_COMMANDS.md) | All available make commands and usage |
+| �🔌 [API Documentation](http://localhost:8080/swagger/index.html) | Interactive API reference (requires running server) |
+| 🐳 [Docker Deployment](docs/ENV_CONFIGURATION.md#-deployment-examples) | Production deployment guide |">
   <img src="https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
@@ -35,21 +48,23 @@
 
 ## ✨ Features
 
-- 🎨 **Modern React UI** - Beautiful, responsive interface built with React 18+ and TailwindCSS
-- 🔐 **Secure Authentication** - JWT-based auth with role-based access control
+- � **Zero-Config Setup** - No manual .env file needed! Interactive wizard guides you through everything
+- �🎨 **Modern React UI** - Beautiful, responsive interface built with React 18+ and TailwindCSS
+- 🔐 **Secure Authentication** - JWT-based auth with role-based access control (auto-generated secrets)
 - 📧 **Email Notifications** - Built-in email service with SMTP support
-- 📁 **Flexible Storage** - Support for local, MinIO, and AWS S3 storage
+- 📁 **Flexible Storage** - Support for local, MinIO (Docker/Custom), and AWS S3 storage
 - 🦠 **Antivirus Scanning** - Integrated ClamAV for file security
 - 🐳 **Docker Ready** - One-command deployment with Docker Compose
 - 🌍 **Cross-Platform** - Works on Windows, macOS, and Linux
 - 📊 **API Documentation** - Auto-generated Swagger/OpenAPI docs
 - 🔧 **Highly Configurable** - Easy configuration via environment variables
+- 🔄 **Safe Updates** - Re-run setup anytime - preserves your existing configuration
 
 ---
 
 ## 🚀 Quick Start
 
-Get SereniBase running in under 5 minutes!
+Get SereniBase running in under 5 minutes! **No manual configuration needed!** ✨
 
 ### Prerequisites
 
@@ -61,28 +76,40 @@ Before you begin, ensure you have:
 | Docker Compose | v2.0+ | [Install Compose](https://docs.docker.com/compose/install/) |
 | Git | Latest | [Install Git](https://git-scm.com/downloads) |
 
-### 🐧 Linux / macOS
+### One-Command Setup 🎯
+
+**No `.env` file needed!** The setup wizard guides you through everything.
+
+#### 🐧 Linux / macOS
 
 ```bash
-# Clone the repository
+# Clone and setup in one go
 git clone https://github.com/aptlogica/sereni-base.git
 cd sereni-base
-
-# Run the interactive setup wizard
 make setup
 ```
 
-### 🪟 Windows
+#### 🪟 Windows
 
 ```powershell
-# Clone the repository
+# Clone and setup
 git clone https://github.com/aptlogica/sereni-base.git
 cd sereni-base
-
-# Run the setup script (choose one):
-.\build\scripts\setup.bat           # CMD users
-.\build\scripts\setup-all.ps1       # PowerShell users
+make setup
 ```
+
+### 💡 What Happens During Setup?
+
+The interactive wizard will prompt you for:
+
+1. **Database**: Default PostgreSQL or custom database
+2. **Authentication**: Auto-generate JWT secret or provide your own
+3. **Email**: SMTP configuration for notifications
+4. **Storage**: Choose between Local, MinIO, or AWS S3
+5. **Network**: Public host/domain configuration
+6. **Admin Account**: Your admin credentials
+
+**All with smart defaults** - just press Enter to use recommended settings!
 
 ### 🎉 That's it!
 
@@ -128,19 +155,24 @@ make help
 # 🚀 SETUP
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 make setup          # Interactive setup wizard (recommended)
-make setup-all      # Automated full setup
+make setup-y        # Automated setup with defaults
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🔧 DEVELOPMENT
+# � DOCKER MANAGEMENT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-make up-all         # Start all services
-make down-all       # Stop all services
-make rebuild        # Rebuild and restart
-make logs           # View live logs
-make status         # Show service status
+make up             # Start all services
+make down           # Stop services (keep data)
+make down-all       # Stop services + remove volumes
+make restart        # Restart all services
+make logs           # View service logs (Ctrl+C to exit)
+make ps             # List running services
+make status         # Detailed service status
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🧹 MAINTENANCE
+# 🧹 CLEANUP
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+make clean          # Remove containers (keep volumes)
+make clean-all      # Full cleanup (⚠️ removes all data)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 make clean          # Remove all containers & data
 ```
