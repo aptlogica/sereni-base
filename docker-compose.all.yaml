@@ -88,8 +88,6 @@ services:
       FROM_EMAIL: ${EMAIL_FROM_EMAIL}
     ports:
       - "8082:8082"
-    depends_on:
-      - mailhog
     networks:
       - serenibase-network
 
