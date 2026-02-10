@@ -5,7 +5,7 @@
 #  Full automated setup with default values - REQUIRES SMTP credentials
 #
 #  Usage:
-#    ./setup-y.sh --smtp-host "smtp.gmail.com" --smtp-port "587" \
+#    ./setup-y.sh --smtp-host "your_email_host" --smtp-port "587" \
 #                 --smtp-username "your@email.com" --smtp-password "your-app-password"
 #
 # ========================================================================
@@ -14,8 +14,8 @@
 # set -e  # Commented out to handle Ctrl+C gracefully
 
 # Parse command line arguments
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT="587"
+SMTP_HOST=""
+SMTP_PORT=""
 SMTP_USERNAME=""
 SMTP_PASSWORD=""
 SMTP_FROM_EMAIL=""
@@ -44,28 +44,41 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 --smtp-username <email> --smtp-password <password> [--smtp-host <host>] [--smtp-port <port>] [--smtp-from-email <email>]"
+            echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> [--smtp-from-email <email>]"
             exit 1
             ;;
     esac
 done
 
 # Validate required SMTP credentials
+if [ -z "$SMTP_HOST" ]; then
+    echo "[ERROR] SMTP host is required. Use --smtp-host <host>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
+
+if [ -z "$SMTP_PORT" ]; then
+    echo "[ERROR] SMTP port is required. Use --smtp-port <port>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
+fi
+
 if [ -z "$SMTP_USERNAME" ]; then
     echo "[ERROR] SMTP username is required. Use --smtp-username <email>"
-    echo "Usage: $0 --smtp-username <email> --smtp-password <password> [--smtp-host <host>] [--smtp-port <port>]"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
     exit 1
 fi
 
 if [ -z "$SMTP_PASSWORD" ]; then
     echo "[ERROR] SMTP password is required. Use --smtp-password <password>"
-    echo "Usage: $0 --smtp-username <email> --smtp-password <password> [--smtp-host <host>] [--smtp-port <port>]"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
     exit 1
 fi
 
-# Default from email to username if not provided
 if [ -z "$SMTP_FROM_EMAIL" ]; then
-    SMTP_FROM_EMAIL="$SMTP_USERNAME"
+    echo "[ERROR] SMTP from email is required. Use --smtp-from-email <email>"
+    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
+    exit 1
 fi
 
 # Get script directory and project root
@@ -296,7 +309,7 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_HOST=your_email_host
 EMAIL_SMTP_PORT=587
 EMAIL_SMTP_USERNAME=
 EMAIL_SMTP_PASSWORD=

@@ -49,7 +49,7 @@ DATABASE_PASSWORD=postgres
 DATABASE_NAME=serenibase
 AUTH_JWT_SECRET=replace-with-a-strong-random-secret
 
-EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_HOST=your_email_host
 EMAIL_SMTP_PORT=587
 EMAIL_SMTP_USERNAME=your_email@gmail.com
 EMAIL_SMTP_PASSWORD=your_app_password
@@ -80,7 +80,7 @@ These are prompted and configured when you run `make setup`:
 | `DATABASE_PORT` | `5432` | Database port | Database setup (if custom) |
 | `DATABASE_SSL_MODE` | `disable` | SSL mode | Database setup (if custom) |
 | `AUTH_JWT_SECRET` | Auto-generated | JWT signing secret | Authentication setup |
-| `EMAIL_SMTP_HOST` | `smtp.gmail.com` | SMTP server host | Email setup |
+| `EMAIL_SMTP_HOST` | `your_email_host` | SMTP server host | Email setup |
 | `EMAIL_SMTP_PORT` | `587` | SMTP server port | Email setup |
 | `EMAIL_SMTP_USERNAME` | (required) | SMTP username | Email setup |
 | `EMAIL_SMTP_PASSWORD` | (required) | SMTP password | Email setup |
@@ -179,7 +179,7 @@ Press Enter to auto-generate a secure JWT secret.
 
 #### 3. Email Configuration
 ```
-SMTP Host [smtp.gmail.com]:
+SMTP Host [your_email_host]:
 SMTP Port [587]:
 SMTP Username (email):
 SMTP Password (app password):

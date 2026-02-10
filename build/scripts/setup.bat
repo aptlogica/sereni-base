@@ -340,8 +340,8 @@ echo.
 echo Enter SMTP email configuration:
 echo.
 
-set /p EMAIL_SMTP_HOST="SMTP Host [smtp.gmail.com]: "
-if "!EMAIL_SMTP_HOST!"=="" set EMAIL_SMTP_HOST=smtp.gmail.com
+set /p EMAIL_SMTP_HOST="SMTP Host [your_email_host]: "
+if "!EMAIL_SMTP_HOST!"=="" set EMAIL_SMTP_HOST=your_email_host
 
 set /p EMAIL_SMTP_PORT="SMTP Port [587]: "
 if "!EMAIL_SMTP_PORT!"=="" set EMAIL_SMTP_PORT=587

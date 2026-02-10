@@ -93,15 +93,6 @@ services:
     networks:
       - serenibase-network
 
-  mailhog:
-    image: mailhog/mailhog:latest
-    container_name: mailhog
-    ports:
-      - "1025:1025"  # SMTP server
-      - "8025:8025"  # Web UI
-    networks:
-      - serenibase-network
-
   sereni-storage-provider:
     build:
       context: ./services/storage-service
