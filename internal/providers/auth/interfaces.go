@@ -31,4 +31,6 @@ type AuthProvider interface {
 	GenerateToken(ctx context.Context, user tenant.User) (Tokens, error)
 	RefreshToken(ctx context.Context, token string) (Tokens, error)
 	ValidateToken(ctx context.Context, tokenStr string) (Claims, error)
+	Login(ctx context.Context, email, password string) (Tokens, error)
+	Register(ctx context.Context, email, password string, roles []string) error
 }

@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"serenibase/internal/config"
 	"serenibase/internal/utils/helpers"
 	"testing"
 	"time"
@@ -10,6 +11,16 @@ import (
 
 // TestGenerateCustomJWT tests JWT generation
 func TestGenerateCustomJWT(t *testing.T) {
+	// Initialize config if not already set
+	if config.AppConfig == nil {
+		config.AppConfig = &config.Config{
+			Auth: config.AuthConfig{
+				JWT: config.JWTConfig{
+					Secret: "test-secret-key-for-jwt-generation",
+				},
+			},
+		}
+	}
 	tests := []struct {
 		name         string
 		attributes   map[string]interface{}

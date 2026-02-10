@@ -92,7 +92,10 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 		return dto.LoginResponse{}, err
 	}
 
-	// 2. Hash password
+	// 2. Store plain password for JWT service sync before hashing
+	plainPassword := req.Password
+
+	// Hash password for local storage
 	hashed, err := helpers.HashPassword(req.Password)
 	if err != nil {
 		return dto.LoginResponse{}, app_errors.ErrHashed
@@ -105,26 +108,27 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 		return dto.LoginResponse{}, err
 	}
 
-	// 4. Verify Email (Skip OTP for owner) && Initialize
+	// 4. Sync user to JWT service
+	lg := logger.Get()
+
+	// Use the RBAC role names that match the system
+	jwtRoles := []string{appConstant.RBACRoleNames.Owner}
+	if err := a.authProviderService.Register(ctx, insertedUser.Email, plainPassword, jwtRoles); err != nil {
+		lg.Warn().Err(err).Str("email", insertedUser.Email).Msg("Failed to sync owner to JWT service")
+	}
+
+	// 5. Verify Email (Skip OTP for owner) && Initialize
 	userData, err := a.initializeOwner(ctx, insertedUser.ID.String(), insertedUser)
 	if err != nil {
-		return dto.LoginResponse{}, err
+		lg.Error().Err(err).Msg("Failed to initialize owner")
+		return dto.LoginResponse{}, fmt.Errorf("failed to initialize owner: %w", err)
 	}
 
-	createDefaultWorkspace := dto.CreateWorkspaceRequest{
-		Title:       "Default Workspace",
-		Description: helpers.StringPtr(""),
-		CreatedBy:   insertedUser.ID.String(),
-	}
-
-	_, err = a.workspaceManagementService.Create(ctx, createDefaultWorkspace, appConstant.MasterDatabase, insertedUser.ID.String())
-	if err != nil {
-		return dto.LoginResponse{}, err
-	}
-
+	// 6. Assign Owner role to user at system level
 	roleData, err := a.rbacManagementService.GetRoleByName(ctx, appConstant.MasterDatabase, appConstant.RBACRoleNames.Owner)
 	if err != nil {
-		return dto.LoginResponse{}, err
+		lg.Error().Err(err).Msg("Failed to get Owner role")
+		return dto.LoginResponse{}, fmt.Errorf("failed to get Owner role: %w", err)
 	}
 
 	accessMemberReq := dto.AccessMemberDTO{
@@ -137,7 +141,36 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 
 	_, err = a.rbacManagementService.AssignRoleToUser(ctx, appConstant.MasterDatabase, accessMemberReq)
 	if err != nil {
-		return dto.LoginResponse{}, err
+		lg.Error().Err(err).Msg("Failed to assign Owner role")
+		return dto.LoginResponse{}, fmt.Errorf("failed to assign Owner role: %w", err)
+	}
+
+	// 7. Create default workspace
+	createDefaultWorkspace := dto.CreateWorkspaceRequest{
+		Title:       "Default Workspace",
+		Description: helpers.StringPtr(""),
+		CreatedBy:   insertedUser.ID.String(),
+	}
+
+	workspace, err := a.workspaceManagementService.Create(ctx, createDefaultWorkspace, appConstant.MasterDatabase, insertedUser.ID.String())
+	if err != nil {
+		lg.Error().Err(err).Msg("Failed to create default workspace")
+		return dto.LoginResponse{}, fmt.Errorf("failed to create default workspace: %w", err)
+	}
+
+	// 8. Add owner to workspace_members table for legacy compatibility
+	workspaceMemberData := dto.WorkspaceMemberInsertion{
+		ID:          uuid.New(),
+		WorkspaceID: workspace.ID.String(),
+		UserID:      insertedUser.ID.String(),
+		AccessLevel: "owner",
+		BasesIds:    "",
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	tableName := tenant.WorkspaceMember{}.TableName(appConstant.MasterDatabase)
+	if _, err := a.repo.TableService.CreateRecord(tableName, workspaceMemberData.Map()); err != nil {
+		lg.Warn().Err(err).Str("workspace_id", workspace.ID.String()).Msg("Failed to add owner to workspace_members table")
 	}
 
 	loginResponse := dto.LoginResponse{
@@ -148,7 +181,7 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 }
 
 func (a *authManagementService) Login(ctx context.Context, email string, password string) (dto.LoginResponse, error) {
-	// Check user existence
+	// Check user existence in sereni-base
 	masterUser, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, email)
 	if err != nil {
 		if err == app_errors.UserNotFound {
@@ -161,15 +194,30 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 		return dto.LoginResponse{}, app_errors.UserNotActive
 	}
 
-	// Verify Password
+	// Verify Password locally first (as source of truth)
 	if !helpers.CheckPasswordHash(password, masterUser.Password) {
 		return dto.LoginResponse{}, app_errors.InvalidCredentials
 	}
 
-	// Generate Token
-	tokens, err := a.authProviderService.GenerateToken(ctx, masterUser)
+	// Call JWT service login endpoint to get tokens
+	// JWT service only checks if user exists, password validation is done above
+	tokens, err := a.authProviderService.Login(ctx, email, password)
 	if err != nil {
-		return dto.LoginResponse{}, err
+		// User not found in JWT service, sync and retry
+		lg := logger.Get()
+		lg.Info().Str("email", email).Msg("User not found in JWT service, syncing user")
+
+		// Sync user to JWT service
+		if syncErr := a.authProviderService.Register(ctx, email, password, []string{"owner"}); syncErr != nil {
+			lg.Warn().Err(syncErr).Str("email", email).Msg("Failed to sync user to JWT service, user may already exist")
+		}
+
+		// Retry login after sync
+		tokens, err = a.authProviderService.Login(ctx, email, password)
+		if err != nil {
+			lg.Error().Err(err).Str("email", email).Msg("Login failed after sync")
+			return dto.LoginResponse{}, fmt.Errorf("failed to authenticate with JWT service")
+		}
 	}
 
 	// If email not verified:
@@ -446,7 +494,22 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return err
 	}
 
-	return nil
+	// Get user email to sync password with JWT service
+	user, err := a.userManagementService.GetUserByID(ctx, appConstant.MasterDatabase, userId)
+	if err == nil {
+		// Sync new password to JWT service by re-registering
+		// This will overwrite the existing password in JWT service
+		lg := logger.Get()
+		lg.Info().Str("email", user.Email).Msg("Syncing new password to JWT service")
+
+		if syncErr := a.authProviderService.Register(ctx, user.Email, req.NewPassword, []string{"owner"}); syncErr != nil {
+			// If user already exists, that's expected - password mismatch will be fixed on next login
+			lg.Debug().Err(syncErr).Str("email", user.Email).Msg("User already exists in JWT service - will sync on next login")
+		} else {
+			lg.Info().Str("email", user.Email).Msg("Successfully synced new password to JWT service")
+		}
+	}
+
 	return a.cleanUserResetTokens(ctx, userId)
 }
 
@@ -540,6 +603,12 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 	user, err := a.userManagementService.CreateUser(ctx, schema, userCreationReq)
 	if err != nil {
 		return tenant.User{}, err
+	}
+
+	// Sync user to JWT service
+	if err := a.authProviderService.Register(ctx, user.Email, a.userDefaultPassword.Value, []string{"user"}); err != nil {
+		lg := logger.Get()
+		lg.Warn().Err(err).Str("email", user.Email).Msg("Failed to sync user to JWT service")
 	}
 
 	// Handle profile picture file upload
@@ -806,58 +875,58 @@ func (a *authManagementService) demoteFromCoOwner(
 	return err
 }
 
-func (a *authManagementService) updateMemberships(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) error {
-	// Always fetch current memberships
-	currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
-	if err != nil {
-		return err
-	}
+type membershipKey struct {
+	ScopeType string // "workspace" or "base"
+	ScopeID   string // workspace_id or base_id
+	Role      string // role name
+}
 
-	// Build a map for quick lookup of new memberships (by unique key: workspace-level or base-level)
-	type membershipKey struct {
-		ScopeType string // "workspace" or "base"
-		ScopeID   string // workspace_id or base_id
-		Role      string // role name
-	}
+func (a *authManagementService) buildNewMembershipsMap(memberships []dto.MembershipRequest) map[membershipKey]struct{} {
 	newMemberships := make(map[membershipKey]struct{})
-	for _, m := range userData.Membership {
+	for _, m := range memberships {
 		if len(m.Bases) == 0 {
-			// Workspace-level membership
 			key := membershipKey{ScopeType: "workspace", ScopeID: m.WorkspaceID, Role: m.Role}
 			newMemberships[key] = struct{}{}
 		} else {
-			// Base-level memberships
 			for _, b := range m.Bases {
 				key := membershipKey{ScopeType: "base", ScopeID: b.BaseID, Role: b.Role}
 				newMemberships[key] = struct{}{}
 			}
 		}
 	}
+	return newMemberships
+}
 
-	// Remove any current memberships not present in the new array
-	for _, member := range currentAccessMembers {
-		var key membershipKey
-		if member.ScopeType == "workspace" {
-			if member.ScopeID != nil {
-				key = membershipKey{ScopeType: "workspace", ScopeID: *member.ScopeID, Role: member.RoleID} // RoleID is actually role uuid, but we only have role name in MembershipRequest
-			}
-		} else if member.ScopeType == "base" {
-			if member.ScopeID != nil {
-				key = membershipKey{ScopeType: "base", ScopeID: *member.ScopeID, Role: member.RoleID}
-			}
-		}
-		// Note: This will only work if RoleID in DB is the same as Role in MembershipRequest, otherwise you may need to map role uuid to name
+func (a *authManagementService) removeObsoleteMemberships(ctx context.Context, schema, reqBy string, currentMembers []dto.AccessMemberDTO, newMemberships map[membershipKey]struct{}) {
+	for _, member := range currentMembers {
+		key := a.buildMembershipKeyFromAccessMember(member)
 		if _, found := newMemberships[key]; !found {
 			_ = a.RemoveAccessMemberByID(ctx, schema, member.ID.String(), reqBy)
 		}
 	}
+}
 
-	// If membership is empty, we're done (all removed above)
+func (a *authManagementService) buildMembershipKeyFromAccessMember(member dto.AccessMemberDTO) membershipKey {
+	var key membershipKey
+	if member.ScopeID != nil {
+		key = membershipKey{ScopeType: member.ScopeType, ScopeID: *member.ScopeID, Role: member.RoleID}
+	}
+	return key
+}
+
+func (a *authManagementService) updateMemberships(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) error {
+	currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
+	if err != nil {
+		return err
+	}
+
+	newMemberships := a.buildNewMembershipsMap(userData.Membership)
+	a.removeObsoleteMemberships(ctx, schema, reqBy, currentAccessMembers, newMemberships)
+
 	if len(userData.Membership) == 0 {
 		return nil
 	}
 
-	// Add/update memberships as usual
 	_, err = a.rbacManagementService.ProcessUserMemberships(ctx, schema, userData.UserID, reqBy, userData.Membership)
 	return err
 }
@@ -1241,8 +1310,18 @@ func (a *authManagementService) UpdatePassword(ctx context.Context, schema strin
 	if err != nil {
 		return err
 	}
-	// No external sync
-	_ = user
+
+	lg := logger.Get()
+	lg.Info().Str("email", user.Email).Str("user_id", userID).Msg("Syncing updated password to JWT service")
+	// Sync new password to JWT service
+
+	if syncErr := a.authProviderService.Register(ctx, user.Email, updateData.NewPassword, []string{"owner"}); syncErr != nil {
+		// User already exists - expected, log and continue
+		lg.Debug().Err(syncErr).Str("email", user.Email).Msg("User already exists in JWT service - will sync on next login")
+	} else {
+		lg.Info().Str("email", user.Email).Msg("Successfully synced updated password to JWT service")
+	}
+
 	return nil
 }
 

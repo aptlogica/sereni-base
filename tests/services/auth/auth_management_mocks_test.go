@@ -14,23 +14,23 @@ import (
 )
 
 type userManagementServiceMock struct {
-	GetUserProfileByIDFn   func(ctx context.Context, schema string, userID string) (dto.UserResponse, error)
-	UpdateUserProfileFn    func(ctx context.Context, schema string, userID string, updateData dto.UpdateUserProfileRequest) (dto.UserResponse, error)
-	UpdatePasswordFn       func(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) (tenant.User, error)
-	AddAvatarFn            func(ctx context.Context, schema string, userID string, fileHeader *multipart.FileHeader) (dto.UserResponse, error)
-	RemoveAvatarFn         func(ctx context.Context, schema string, userID string) (dto.UserResponse, error)
-	GetUserByEmailFn       func(ctx context.Context, schema string, email string) (tenant.User, error)
-	CreateUserFn           func(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error)
-	UpdateUserFn           func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error)
-	GetUserByIDFn          func(ctx context.Context, schema string, id string) (tenant.User, error)
-	GetAllUsersFn          func(ctx context.Context, schema string) ([]tenant.User, error)
-	GetWorkspacesFn        func(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error)
-	GetBulkUsersFn         func(ctx context.Context, schema string, ids []string) ([]tenant.User, error)
-	GetUsersWithRoleFn     func(ctx context.Context, schema string) ([]dto.UserWithRole, error)
+	GetUserProfileByIDFn      func(ctx context.Context, schema string, userID string) (dto.UserResponse, error)
+	UpdateUserProfileFn       func(ctx context.Context, schema string, userID string, updateData dto.UpdateUserProfileRequest) (dto.UserResponse, error)
+	UpdatePasswordFn          func(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) (tenant.User, error)
+	AddAvatarFn               func(ctx context.Context, schema string, userID string, fileHeader *multipart.FileHeader) (dto.UserResponse, error)
+	RemoveAvatarFn            func(ctx context.Context, schema string, userID string) (dto.UserResponse, error)
+	GetUserByEmailFn          func(ctx context.Context, schema string, email string) (tenant.User, error)
+	CreateUserFn              func(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error)
+	UpdateUserFn              func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error)
+	GetUserByIDFn             func(ctx context.Context, schema string, id string) (tenant.User, error)
+	GetAllUsersFn             func(ctx context.Context, schema string) ([]tenant.User, error)
+	GetWorkspacesFn           func(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error)
+	GetBulkUsersFn            func(ctx context.Context, schema string, ids []string) ([]tenant.User, error)
+	GetUsersWithRoleFn        func(ctx context.Context, schema string) ([]dto.UserWithRole, error)
 	GetActiveUsersForAssignFn func(ctx context.Context, schema string) ([]dto.UserWithRole, error)
-	DeleteUserCompletelyFn func(ctx context.Context, schema string, userID string) error
-	GetUserAccessDetailsFn func(ctx context.Context, schema string, userID string, roles string, workspaceID string) (dto.UserAccessDetailsResponse, error)
-	GetUserRolesAndAccessFn func(ctx context.Context, schema string, userID string, scopeID *string) ([]dto.UserRolesAccessResponse, error)
+	DeleteUserCompletelyFn    func(ctx context.Context, schema string, userID string) error
+	GetUserAccessDetailsFn    func(ctx context.Context, schema string, userID string, roles string, workspaceID string) (dto.UserAccessDetailsResponse, error)
+	GetUserRolesAndAccessFn   func(ctx context.Context, schema string, userID string, scopeID *string) ([]dto.UserRolesAccessResponse, error)
 }
 
 func (m *userManagementServiceMock) GetUserProfileByID(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
@@ -153,21 +153,21 @@ func (m *userManagementServiceMock) GetUserRolesAndAccess(ctx context.Context, s
 }
 
 type workspaceManagementServiceMock struct {
-	CreateFn                    func(ctx context.Context, req dto.CreateWorkspaceRequest, schemaName string, userId string) (dto.WorkspaceResponse, error)
-	GetByIDFn                   func(ctx context.Context, schemaName string, id string) (tenant.Workspace, error)
-	GetAllFn                    func(ctx context.Context, schemaName string) ([]tenant.Workspace, error)
-	UpdateFn                    func(ctx context.Context, schemaName string, id string, req dto.WorkspaceUpdate, userId string) (tenant.Workspace, error)
-	DeleteFn                    func(ctx context.Context, schemaName string, id string) error
-	GetTablesByWorkspaceIdFn    func(ctx context.Context, schemaName string, workspaceID string) ([]dto.TableResponse, error)
-	GetBasesByWorkspaceIdFn     func(ctx context.Context, schemaName string, workspaceMemberData *tenant.WorkspaceMember) ([]tenant.Base, error)
-	GetAllBasesByWorkspaceIdFn  func(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error)
-	GetWorkspaceMemberByUserFn  func(ctx context.Context, schemaName string, userID string) ([]tenant.WorkspaceMember, error)
-	GetWorkspaceMembersFn       func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.WorkspaceMember, error)
-	GetBulkWorkspacesFn         func(ctx context.Context, schemaName string, workspaceIDs []string) ([]tenant.Workspace, error)
-	GetWorkspaceBaseMembersFn   func(ctx context.Context, schemaName string, baseID string) ([]tenant.WorkspaceMember, error)
-	DeleteUserMappingsFn        func(ctx context.Context, schemaName string, userID string) error
+	CreateFn                     func(ctx context.Context, req dto.CreateWorkspaceRequest, schemaName string, userId string) (dto.WorkspaceResponse, error)
+	GetByIDFn                    func(ctx context.Context, schemaName string, id string) (tenant.Workspace, error)
+	GetAllFn                     func(ctx context.Context, schemaName string) ([]tenant.Workspace, error)
+	UpdateFn                     func(ctx context.Context, schemaName string, id string, req dto.WorkspaceUpdate, userId string) (tenant.Workspace, error)
+	DeleteFn                     func(ctx context.Context, schemaName string, id string) error
+	GetTablesByWorkspaceIdFn     func(ctx context.Context, schemaName string, workspaceID string) ([]dto.TableResponse, error)
+	GetBasesByWorkspaceIdFn      func(ctx context.Context, schemaName string, workspaceMemberData *tenant.WorkspaceMember) ([]tenant.Base, error)
+	GetAllBasesByWorkspaceIdFn   func(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error)
+	GetWorkspaceMemberByUserFn   func(ctx context.Context, schemaName string, userID string) ([]tenant.WorkspaceMember, error)
+	GetWorkspaceMembersFn        func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.WorkspaceMember, error)
+	GetBulkWorkspacesFn          func(ctx context.Context, schemaName string, workspaceIDs []string) ([]tenant.Workspace, error)
+	GetWorkspaceBaseMembersFn    func(ctx context.Context, schemaName string, baseID string) ([]tenant.WorkspaceMember, error)
+	DeleteUserMappingsFn         func(ctx context.Context, schemaName string, userID string) error
 	UpdateWorkspaceMemberBasesFn func(ctx context.Context, schemaName string, workspaceID string, userID string, accessLevel string, basesIds string) error
-	RemoveUserFromWorkspaceFn   func(ctx context.Context, schemaName string, workspaceID string, userID string) error
+	RemoveUserFromWorkspaceFn    func(ctx context.Context, schemaName string, workspaceID string, userID string) error
 }
 
 func (m *workspaceManagementServiceMock) Create(ctx context.Context, req dto.CreateWorkspaceRequest, schemaName string, userId string) (dto.WorkspaceResponse, error) {
@@ -304,10 +304,10 @@ func (m *userResetTokenServiceMock) DeleteTokensByUserId(ctx context.Context, us
 
 type rbacManagementServiceMock struct {
 	MockRBACManagementServiceUM
-	GetRoleByNameFn        func(ctx context.Context, schemaName string, name string) (tenant.AccessRole, error)
-	GetRoleByIDFn          func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error)
-	AssignRoleToUserFn     func(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error)
-	GetUserAccessMembersFn func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error)
+	GetRoleByNameFn          func(ctx context.Context, schemaName string, name string) (tenant.AccessRole, error)
+	GetRoleByIDFn            func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error)
+	AssignRoleToUserFn       func(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error)
+	GetUserAccessMembersFn   func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error)
 	ProcessUserMembershipsFn func(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error)
 }
 
@@ -352,7 +352,7 @@ type otpServiceMock struct {
 }
 
 func (m *otpServiceMock) StartCleanup(interval time.Duration) {}
-func (m *otpServiceMock) StopCleanup()                         {}
+func (m *otpServiceMock) StopCleanup()                        {}
 
 func (m *otpServiceMock) Generate(identifier string) string {
 	if m.GenerateFn != nil {
@@ -369,12 +369,12 @@ func (m *otpServiceMock) Verify(identifier, input string) bool {
 }
 
 type emailTemplateServiceMock struct {
-	EmailVerificationOTPBodyFn func(otp string) emailProvider.EmailContent
-	PasswordResetBodyFn        func(resetLink string) emailProvider.EmailContent
-	PlatformInvitationBodyFn   func(firstName, tenantName, resetLink string) emailProvider.EmailContent
-	AddedToWorkspaceBodyFn     func(workspaceName, access string) emailProvider.EmailContent
-	RemovedFromWorkspaceBodyFn func(workspaceLabel string) emailProvider.EmailContent
-	InvitedToWorkspaceBodyFn   func(workspaceName, access string) emailProvider.EmailContent
+	EmailVerificationOTPBodyFn   func(otp string) emailProvider.EmailContent
+	PasswordResetBodyFn          func(resetLink string) emailProvider.EmailContent
+	PlatformInvitationBodyFn     func(firstName, tenantName, resetLink string) emailProvider.EmailContent
+	AddedToWorkspaceBodyFn       func(workspaceName, access string) emailProvider.EmailContent
+	RemovedFromWorkspaceBodyFn   func(workspaceLabel string) emailProvider.EmailContent
+	InvitedToWorkspaceBodyFn     func(workspaceName, access string) emailProvider.EmailContent
 	WorkspaceAccessUpdatedBodyFn func(workspaceName, access string) emailProvider.EmailContent
 }
 
@@ -444,6 +444,8 @@ type authProviderMock struct {
 	GenerateTokenFn func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error)
 	RefreshTokenFn  func(ctx context.Context, token string) (authProviderInterface.Tokens, error)
 	ValidateTokenFn func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error)
+	LoginFn         func(ctx context.Context, email, password string) (authProviderInterface.Tokens, error)
+	RegisterFn      func(ctx context.Context, email, password string, roles []string) error
 }
 
 func (m *authProviderMock) GenerateToken(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
@@ -465,6 +467,20 @@ func (m *authProviderMock) ValidateToken(ctx context.Context, tokenStr string) (
 		return m.ValidateTokenFn(ctx, tokenStr)
 	}
 	return authProviderInterface.Claims{}, nil
+}
+
+func (m *authProviderMock) Login(ctx context.Context, email, password string) (authProviderInterface.Tokens, error) {
+	if m.LoginFn != nil {
+		return m.LoginFn(ctx, email, password)
+	}
+	return authProviderInterface.Tokens{}, nil
+}
+
+func (m *authProviderMock) Register(ctx context.Context, email, password string, roles []string) error {
+	if m.RegisterFn != nil {
+		return m.RegisterFn(ctx, email, password, roles)
+	}
+	return nil
 }
 
 var _ interfaces.UserManagementService = (*userManagementServiceMock)(nil)
