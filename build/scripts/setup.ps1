@@ -640,10 +640,12 @@ Update-EnvVar -Key "SERVER_IP" -Value $PUBLIC_HOST
 Update-EnvVar -Key "BASEUI_VITE_API_BASE_URL" -Value "http://${PUBLIC_HOST}:8080"
 Update-EnvVar -Key "CORS_ALLOWED_ORIGINS" -Value "http://localhost:5050,http://127.0.0.1:5050,http://${PUBLIC_HOST}:5050,http://base-ui:5050,http://serenibase:8080"
 Update-EnvVar -Key "STORAGE_SERVER_IP" -Value $PUBLIC_HOST
+Update-EnvVar -Key "AUTH_RESET_PASSWORD_URL" -Value "http://${PUBLIC_HOST}:5050/reset-password?token=%s"
 
 Write-Host "[OK] Configured PUBLIC_HOST" -ForegroundColor Green
 Write-Host "[OK] Configured SERVER_IP" -ForegroundColor Green
 Write-Host "[OK] Configured BASEUI_VITE_API_BASE_URL" -ForegroundColor Green
+Write-Host "[OK] Configured AUTH_RESET_PASSWORD_URL" -ForegroundColor Green
 
 # ========================================================================
 #                   OWNER REGISTRATION CONFIGURATION

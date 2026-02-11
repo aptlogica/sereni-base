@@ -669,9 +669,13 @@ configure_public_host() {
     # Always ensure CORS includes the public host
     ensure_cors_origin "$PUBLIC_HOST"
     
+    # Always ensure reset-password URL matches public host
+    grep -q "^AUTH_RESET_PASSWORD_URL=" .env || echo "AUTH_RESET_PASSWORD_URL=http://$PUBLIC_HOST:5050/reset-password?token=%s" >> .env
+    
     print_step "Configured PUBLIC_HOST (added if missing)"
     print_step "Configured SERVER_IP (added if missing)"
     print_step "Configured BASEUI_VITE_API_BASE_URL (added if missing)"
+    print_step "Configured AUTH_RESET_PASSWORD_URL (added if missing)"
 }
 
 configure_owner() {

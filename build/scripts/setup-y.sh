@@ -568,6 +568,10 @@ ensure_baseui_api_base_url "$PUBLIC_HOST"
 # Always ensure CORS includes the public host
 ensure_cors_origin "$PUBLIC_HOST"
 
+# Always ensure reset-password URL matches public host
+grep -q "^AUTH_RESET_PASSWORD_URL=" .env || echo "AUTH_RESET_PASSWORD_URL=http://$PUBLIC_HOST:5050/reset-password?token=%s" >> .env
+print_step "Configured AUTH_RESET_PASSWORD_URL (added if missing)"
+
 echo ""
 echo -e "${BLUE}========================================================================"
 echo "                   OWNER REGISTRATION CONFIGURATION"
