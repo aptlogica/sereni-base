@@ -115,7 +115,7 @@ services:
     ports:
       - "8083:8083"
     volumes:
-      - ./services/storage-service/uploads:/app/uploads
+      - ./services/storage-service/uploads:/app/uploads:cached
     depends_on:
       - minio-init
     networks:
@@ -182,7 +182,7 @@ services:
     ports:
       - "3310:3310"
     volumes:
-      - ./data:/data
+      - ./data:/data:cached
     environment:
       - CLAMD_STARTUP_TIMEOUT=180
       - FRESHCLAM_CHECKS=12

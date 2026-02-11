@@ -704,6 +704,31 @@ configure_owner() {
     print_step "Owner configuration set (only added if missing)"
 }
 
+prepare_docker_volumes() {
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                    PREPARING DOCKER VOLUMES"
+    echo "========================================================================${NC}"
+    echo ""
+    
+    # Pre-create required directories with proper permissions
+    # This is especially important on macOS Docker Desktop
+    local dirs_to_create=(
+        "./services/storage-service/uploads"
+        "./data"
+    )
+    
+    for dir in "${dirs_to_create[@]}"; do
+        if [ ! -d "$dir" ]; then
+            echo "Creating directory: $dir"
+            mkdir -p "$dir"
+            chmod 755 "$dir"
+        fi
+    done
+    
+    print_step "Docker volumes prepared (directories created with proper permissions)"
+}
+
 clone_repositories() {
     echo ""
     echo -e "${BLUE}========================================================================"
@@ -751,6 +776,7 @@ configure_storage
 configure_public_host
 configure_owner
 clone_repositories
+prepare_docker_volumes
 start_services
 
 
