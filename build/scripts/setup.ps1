@@ -305,6 +305,55 @@ function Update-EnvVar {
     Set-Content -Path $envPath -Value $content -NoNewline
 }
 
+# Get existing environment variable value from .env file
+function Get-EnvVar {
+    param(
+        [string]$Key
+    )
+    $content = Get-Content $envPath -Raw
+    if ($content -match "(?m)^$Key=(.*)$") {
+        return $matches[1]
+    }
+    return ""
+}
+
+# Prompt for value with priority: existing .env value > default
+function Read-EnvVar {
+    param(
+        [string]$Key,
+        [string]$DefaultValue,
+        [string]$Prompt,
+        [bool]$IsPassword = $false
+    )
+    
+    # Get existing value from .env
+    $existingValue = Get-EnvVar -Key $Key
+    
+    # Use existing value as default if it exists
+    if (-not [string]::IsNullOrWhiteSpace($existingValue)) {
+        # Don't display password fields for privacy
+        if ($IsPassword) {
+            return $existingValue
+        }
+        $DefaultValue = $existingValue
+    }
+    
+    # Prompt user for input
+    if ($IsPassword) {
+        # For passwords, use Read-Host -AsSecureString for security
+        Write-Host -NoNewline "$Prompt [$DefaultValue]: "
+        $input = Read-Host -AsSecureString
+        if ($input.Length -eq 0) {
+            return $DefaultValue
+        }
+        # Convert SecureString back to plain text for storage
+        $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($input)
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+    } else {
+        return Read-HostWithCancel -Prompt $Prompt -Default $DefaultValue
+    }
+}
+
 # ========================================================================
 #                      DATABASE CONFIGURATION
 # ========================================================================
@@ -335,9 +384,9 @@ if ($DB_CHOICE -eq "1") {
         $DATABASE_PASSWORD = "postgres"
         $DATABASE_NAME = "serenibase"
     } else {
-        $DATABASE_USER = Read-HostWithCancel -Prompt "Database User" -Default "postgres"
-        $DATABASE_PASSWORD = Read-HostWithCancel -Prompt "Database Password" -Default "postgres"
-        $DATABASE_NAME = Read-HostWithCancel -Prompt "Database Name" -Default "serenibase"
+        $DATABASE_USER = Read-EnvVar -Key "DATABASE_USER" -DefaultValue "postgres" -Prompt "Database User"
+        $DATABASE_PASSWORD = Read-EnvVar -Key "DATABASE_PASSWORD" -DefaultValue "postgres" -Prompt "Database Password" -IsPassword $true
+        $DATABASE_NAME = Read-EnvVar -Key "DATABASE_NAME" -DefaultValue "serenibase" -Prompt "Database Name"
     }
     
     $DATABASE_HOST = "postgres"
@@ -348,37 +397,37 @@ if ($DB_CHOICE -eq "1") {
     Write-Host "Enter custom database configuration:"
     Write-Host ""
     
-    $DATABASE_HOST = Read-HostWithCancel -Prompt "Database Host"
+    $DATABASE_HOST = Read-EnvVar -Key "DATABASE_HOST" -DefaultValue "" -Prompt "Database Host"
     if ([string]::IsNullOrWhiteSpace($DATABASE_HOST)) {
         Write-Host "[ERROR] Database host is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
         exit 1
     }
     
-    $DATABASE_PORT = Read-HostWithCancel -Prompt "Database Port" -Default "5432"
+    $DATABASE_PORT = Read-EnvVar -Key "DATABASE_PORT" -DefaultValue "5432" -Prompt "Database Port"
     
-    $DATABASE_USER = Read-HostWithCancel -Prompt "Database User"
+    $DATABASE_USER = Read-EnvVar -Key "DATABASE_USER" -DefaultValue "" -Prompt "Database User"
     if ([string]::IsNullOrWhiteSpace($DATABASE_USER)) {
         Write-Host "[ERROR] Database user is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
         exit 1
     }
     
-    $DATABASE_PASSWORD = Read-HostWithCancel -Prompt "Database Password"
+    $DATABASE_PASSWORD = Read-EnvVar -Key "DATABASE_PASSWORD" -DefaultValue "" -Prompt "Database Password" -IsPassword $true
     if ([string]::IsNullOrWhiteSpace($DATABASE_PASSWORD)) {
         Write-Host "[ERROR] Database password is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
         exit 1
     }
     
-    $DATABASE_NAME = Read-HostWithCancel -Prompt "Database Name"
+    $DATABASE_NAME = Read-EnvVar -Key "DATABASE_NAME" -DefaultValue "" -Prompt "Database Name"
     if ([string]::IsNullOrWhiteSpace($DATABASE_NAME)) {
         Write-Host "[ERROR] Database name is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
         exit 1
     }
     
-    $DATABASE_SSL_MODE = Read-HostWithCancel -Prompt "SSL Mode" -Default "disable"
+    $DATABASE_SSL_MODE = Read-EnvVar -Key "DATABASE_SSL_MODE" -DefaultValue "disable" -Prompt "SSL Mode"
 }
 
 Update-EnvVar -Key "DATABASE_HOST" -Value $DATABASE_HOST
@@ -428,21 +477,21 @@ Write-Host ""
 
 # Use parameters if provided, otherwise prompt
 if ([string]::IsNullOrWhiteSpace($SmtpHost)) {
-    $EMAIL_SMTP_HOST = Read-HostWithCancel -Prompt "SMTP Host" -Default "your_email_host"
+    $EMAIL_SMTP_HOST = Read-EnvVar -Key "EMAIL_SMTP_HOST" -DefaultValue "your_email_host" -Prompt "SMTP Host"
 } else {
     $EMAIL_SMTP_HOST = $SmtpHost
     Write-Host "SMTP Host: $EMAIL_SMTP_HOST"
 }
 
 if ([string]::IsNullOrWhiteSpace($SmtpPort)) {
-    $EMAIL_SMTP_PORT = Read-HostWithCancel -Prompt "SMTP Port" -Default "587"
+    $EMAIL_SMTP_PORT = Read-EnvVar -Key "EMAIL_SMTP_PORT" -DefaultValue "587" -Prompt "SMTP Port"
 } else {
     $EMAIL_SMTP_PORT = $SmtpPort
     Write-Host "SMTP Port: $EMAIL_SMTP_PORT"
 }
 
 if ([string]::IsNullOrWhiteSpace($SmtpUsername)) {
-    $EMAIL_SMTP_USERNAME = Read-HostWithCancel -Prompt "SMTP Username (email)"
+    $EMAIL_SMTP_USERNAME = Read-EnvVar -Key "EMAIL_SMTP_USERNAME" -DefaultValue "" -Prompt "SMTP Username (email)"
     if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_USERNAME)) {
         Write-Host "[ERROR] SMTP username is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
@@ -454,7 +503,7 @@ if ([string]::IsNullOrWhiteSpace($SmtpUsername)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
-    $EMAIL_SMTP_PASSWORD = Read-HostWithCancel -Prompt "SMTP Password (app password)"
+    $EMAIL_SMTP_PASSWORD = Read-EnvVar -Key "EMAIL_SMTP_PASSWORD" -DefaultValue "" -Prompt "SMTP Password (app password)" -IsPassword $true
     if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_PASSWORD)) {
         Write-Host "[ERROR] SMTP password is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
@@ -466,7 +515,7 @@ if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($SmtpFromEmail)) {
-    $EMAIL_FROM_EMAIL = Read-HostWithCancel -Prompt "From Email" -Default $EMAIL_SMTP_USERNAME
+    $EMAIL_FROM_EMAIL = Read-EnvVar -Key "EMAIL_FROM_EMAIL" -DefaultValue $EMAIL_SMTP_USERNAME -Prompt "From Email"
 } else {
     $EMAIL_FROM_EMAIL = $SmtpFromEmail
     Write-Host "From Email: $EMAIL_FROM_EMAIL"
@@ -656,7 +705,7 @@ Write-Host "====================================================================
 Write-Host "                   OWNER REGISTRATION CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
-Write-Host "Enter owner registration details (press Enter to use defaults):"
+Write-Host "Enter owner registration details (press Enter to keep existing values):"
 Write-Host ""
 
 if ($AutoYes) {
@@ -665,10 +714,10 @@ if ($AutoYes) {
     $OWNER_EMAIL = "admin@example.com"
     $OWNER_PASSWORD = "Admin@123"
 } else {
-    $OWNER_FIRST_NAME = Read-HostWithCancel -Prompt "First Name" -Default "Admin"
-    $OWNER_LAST_NAME = Read-HostWithCancel -Prompt "Last Name" -Default "User"
-    $OWNER_EMAIL = Read-HostWithCancel -Prompt "Email" -Default "admin@example.com"
-    $OWNER_PASSWORD = Read-HostWithCancel -Prompt "Password" -Default "Admin@123"
+    $OWNER_FIRST_NAME = Read-EnvVar -Key "OWNER_FIRST_NAME" -DefaultValue "Admin" -Prompt "First Name"
+    $OWNER_LAST_NAME = Read-EnvVar -Key "OWNER_LAST_NAME" -DefaultValue "User" -Prompt "Last Name"
+    $OWNER_EMAIL = Read-EnvVar -Key "OWNER_EMAIL" -DefaultValue "admin@example.com" -Prompt "Email"
+    $OWNER_PASSWORD = Read-EnvVar -Key "OWNER_PASSWORD" -DefaultValue "Admin@123" -Prompt "Password" -IsPassword $true
 }
 
 Update-EnvVar -Key "OWNER_FIRST_NAME" -Value $OWNER_FIRST_NAME
@@ -676,7 +725,7 @@ Update-EnvVar -Key "OWNER_LAST_NAME" -Value $OWNER_LAST_NAME
 Update-EnvVar -Key "OWNER_EMAIL" -Value $OWNER_EMAIL
 Update-EnvVar -Key "OWNER_PASSWORD" -Value $OWNER_PASSWORD
 
-Write-Host "[OK] Owner configuration set" -ForegroundColor Green
+Write-Host "[OK] Owner configuration updated" -ForegroundColor Green
 
 # ========================================================================
 #                      CLONING REPOSITORIES
