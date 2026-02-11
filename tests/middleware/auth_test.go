@@ -36,6 +36,16 @@ func (m *MockAuthProvider) RefreshToken(ctx context.Context, token string) (auth
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
+func (m *MockAuthProvider) Login(ctx context.Context, email, password string) (auth.Tokens, error) {
+	args := m.Called(ctx, email, password)
+	return args.Get(0).(auth.Tokens), args.Error(1)
+}
+
+func (m *MockAuthProvider) Register(ctx context.Context, userId, email, password string, roles []string) error {
+	args := m.Called(ctx, userId, email, password, roles)
+	return args.Error(0)
+}
+
 // TestAuthMiddleware tests the authentication middleware
 func TestAuthMiddleware(t *testing.T) {
 	tests := []struct {

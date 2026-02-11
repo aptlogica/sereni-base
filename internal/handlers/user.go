@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"serenibase/internal/dto"
 	"serenibase/internal/services/interfaces"
@@ -35,6 +36,13 @@ func (h *UserHandler) bindUpdateProfileFields(c *gin.Context) dto.UpdateUserProf
 	}
 	if displayName := c.PostForm("display_name"); displayName != "" {
 		updatePayload.DisplayName = &displayName
+	}
+	if activityData := c.PostForm("activity_data"); activityData != "" {
+		// Parse activity_data JSON string
+		var activityMap map[string]interface{}
+		if err := json.Unmarshal([]byte(activityData), &activityMap); err == nil {
+			updatePayload.ActivityData = &activityMap
+		}
 	}
 	if dob := c.PostForm("dob"); dob != "" {
 		updatePayload.DateOfBirth = &dob

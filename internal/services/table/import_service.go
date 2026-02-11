@@ -3,9 +3,11 @@ package services
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"math"
 	"mime/multipart"
+	"serenibase/internal/constant"
 	"serenibase/internal/dto"
 	antivirusProviderInterface "serenibase/internal/providers/antivirus/interfaces"
 	"serenibase/internal/providers/logger"
@@ -61,7 +63,7 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		return dto.ImportTableResponse{}, err
 	}
 
-	if err := s.updateTitleColumn(ctx, schemaName, lg, titleColumnName, &tableResp); err != nil {
+	if err := s.updateTitleColumn(ctx, schemaName, lg, titleColumnName, columnTypes[0], &tableResp); err != nil {
 		return dto.ImportTableResponse{}, err
 	}
 
@@ -178,7 +180,7 @@ func (s *importService) createTable(ctx context.Context, schemaName string, req 
 	return tableResp, nil
 }
 
-func (s *importService) updateTitleColumn(ctx context.Context, schemaName string, lg *zerolog.Logger, titleColumnName string, tableResp *dto.TableResponse) error {
+func (s *importService) updateTitleColumn(ctx context.Context, schemaName string, lg *zerolog.Logger, titleColumnName string, columnType string, tableResp *dto.TableResponse) error {
 	if titleColumnName == "" {
 		return nil
 	}
@@ -195,8 +197,16 @@ func (s *importService) updateTitleColumn(ctx context.Context, schemaName string
 		return nil
 	}
 
-	lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Updating title column name")
-	updateColReq := dto.ColumnUpdate{Title: &titleColumnName}
+	lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Str("columnType", columnType).Msg("Updating title column name and type")
+
+	// Get the database type for the inferred column type
+	dt := s.getDatabaseType(columnType)
+
+	updateColReq := dto.ColumnUpdate{
+		Title: &titleColumnName,
+		UIDT:  &columnType,
+		DT:    &dt,
+	}
 	if _, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq); err != nil {
 		lg.Error().Stack().Err(err).Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Failed to update title column")
 		return err
@@ -232,7 +242,7 @@ func (s *importService) addColumns(ctx context.Context, schemaName string, req d
 			Description: "",
 			Meta:        map[string]interface{}{},
 			UIDT:        colType,
-			DT:          colType,
+			DT:          s.getDatabaseType(colType),
 			OrderIndex:  helpers.Float64Ptr(float64(i + 6)),
 			Virtual:     helpers.BoolPtr(false),
 			System:      helpers.BoolPtr(false),
@@ -338,6 +348,10 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 	isDecimal := true
 	isBool := true
 	isDate := true
+	isEmail := true
+	isURL := true
+	isPhone := true
+	isJSON := true
 
 	hasData := false
 	totalLength := 0
@@ -354,6 +368,7 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 		}
 		hasData = true
 		totalLength += len(val)
+		count++
 
 		// Check Number (integer or decimal)
 		if isNumber || isDecimal {
@@ -369,13 +384,33 @@ func (s *importService) inferType(rows [][]string, colIndex int) string {
 		if isDate {
 			isDate = s.checkDateType(val)
 		}
+
+		// Check Email
+		if isEmail {
+			isEmail = s.checkEmailType(val)
+		}
+
+		// Check URL
+		if isURL {
+			isURL = s.checkURLType(val)
+		}
+
+		// Check Phone
+		if isPhone {
+			isPhone = s.checkPhoneType(val)
+		}
+
+		// Check JSON
+		if isJSON {
+			isJSON = s.checkJSONType(val)
+		}
 	}
 
 	if !hasData {
 		return "text"
 	}
 
-	return s.determineTypeFromFlags(isBool, isNumber, isDecimal, isDate, totalLength, count)
+	return s.determineTypeFromFlags(isBool, isNumber, isDecimal, isDate, isEmail, isURL, isPhone, isJSON, totalLength, count)
 }
 
 func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {
@@ -407,7 +442,30 @@ func (s *importService) checkDateType(val string) bool {
 	return false
 }
 
-func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDate bool, totalLength, count int) string {
+func (s *importService) checkEmailType(val string) bool {
+	return strings.Contains(val, "@") && strings.Contains(val, ".")
+}
+
+func (s *importService) checkURLType(val string) bool {
+	return strings.HasPrefix(val, "http://") || strings.HasPrefix(val, "https://")
+}
+
+func (s *importService) checkPhoneType(val string) bool {
+	// Simple check: contains only digits, spaces, dashes, parentheses, plus
+	for _, r := range val {
+		if !((r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '(' || r == ')' || r == '+') {
+			return false
+		}
+	}
+	return len(val) > 0
+}
+
+func (s *importService) checkJSONType(val string) bool {
+	var js interface{}
+	return json.Unmarshal([]byte(val), &js) == nil
+}
+
+func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDate, isEmail, isURL, isPhone, isJSON bool, totalLength, count int) string {
 	avgLength := 0
 	if count > 0 {
 		avgLength = totalLength / count
@@ -424,10 +482,30 @@ func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDa
 	if isDate {
 		return "date"
 	}
+	if isEmail {
+		return "email"
+	}
+	if isURL {
+		return "url"
+	}
+	if isPhone {
+		return "phoneNumber"
+	}
+	if isJSON {
+		return "json"
+	}
 	if avgLength > 255 {
 		return "longText"
 	}
 	return "text"
+}
+
+func (s *importService) getDatabaseType(uidt string) string {
+	if mapping, exists := constant.UITypeMappings[uidt]; exists {
+		return mapping.Postgres
+	}
+	// Default to TEXT
+	return "TEXT"
 }
 
 func (s *importService) convertValue(val string, typeName string) interface{} {
@@ -452,6 +530,9 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 		return false
 	case "date":
 		// Return string for date, as DB usually handles it or expects string
+		return val
+	case "email", "url", "phoneNumber", "json":
+		// These are stored as text
 		return val
 	}
 	return val

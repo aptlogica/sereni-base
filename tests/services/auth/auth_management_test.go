@@ -107,10 +107,11 @@ func TestNewAuthManagementService(t *testing.T) {
 
 func TestAuthManagement_RegisterOwner_Success(t *testing.T) {
 	t.Parallel()
-	service, userMgmt, workspaceMgmt, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, workspaceMgmt, _, rbacSvc, _, _, _, authProv, tableSvc := setupAuthManagementService()
 
 	ctx := context.Background()
 	userID := uuid.New()
+	workspaceID := uuid.New()
 	user := tenant.User{ID: userID, Email: "owner@example.com", FirstName: "Owner", LastName: "One"}
 
 	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
@@ -126,7 +127,7 @@ func TestAuthManagement_RegisterOwner_Success(t *testing.T) {
 		return updated, nil
 	}
 	workspaceMgmt.CreateFn = func(ctx context.Context, req dto.CreateWorkspaceRequest, schemaName string, userId string) (dto.WorkspaceResponse, error) {
-		return dto.WorkspaceResponse{}, nil
+		return dto.WorkspaceResponse{ID: workspaceID, Title: "Default Workspace"}, nil
 	}
 	rbacSvc.GetRoleByNameFn = func(ctx context.Context, schemaName string, name string) (tenant.AccessRole, error) {
 		return tenant.AccessRole{ID: uuid.New(), Name: appConstant.RBACRoleNames.Owner}, nil
@@ -134,6 +135,15 @@ func TestAuthManagement_RegisterOwner_Success(t *testing.T) {
 	rbacSvc.AssignRoleToUserFn = func(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error) {
 		return nil, nil
 	}
+	// Mock JWT service registration - should be called
+	authProv.RegisterFn = func(ctx context.Context, userId string, email string, password string, roles []string) error {
+		assert.Equal(t, "owner@example.com", email)
+		assert.Equal(t, "plain", password)
+		assert.Contains(t, roles, appConstant.RBACRoleNames.Owner)
+		return nil
+	}
+	// Mock workspace_members table creation
+	tableSvc.On("CreateRecord", mock.Anything, mock.Anything).Return(map[string]interface{}{}, nil)
 
 	resp, err := service.RegisterOwner(ctx, dto.RegisterRequest{
 		Email:     "owner@example.com",
@@ -151,11 +161,11 @@ func TestAuthManagement_RegisterOwner_UserExists(t *testing.T) {
 	service, userMgmt, _, _, _, _, _, _, _, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
-		return tenant.User{ID: uuid.New()}, nil
+	userMgmt.CreateUserFn = func(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error) {
+		return tenant.User{}, app_errors.UserAlreadyExists
 	}
 
-	_, err := service.RegisterOwner(ctx, dto.RegisterRequest{Email: "exists@example.com"})
+	_, err := service.RegisterOwner(ctx, dto.RegisterRequest{Email: "exists@example.com", Password: "pass123"})
 	assert.ErrorIs(t, err, app_errors.UserAlreadyExists)
 }
 
@@ -175,7 +185,7 @@ func TestAuthManagement_Login_EmailNotVerified(t *testing.T) {
 	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
 		return user, nil
 	}
-	authProv.GenerateTokenFn = func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
+	authProv.LoginFn = func(ctx context.Context, email, password string) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
@@ -204,7 +214,8 @@ func TestAuthManagement_Login_Verified(t *testing.T) {
 	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
 		return user, nil
 	}
-	authProv.GenerateTokenFn = func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
+	// Mock JWT service login - should be called
+	authProv.LoginFn = func(ctx context.Context, email string, password string) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
@@ -212,6 +223,47 @@ func TestAuthManagement_Login_Verified(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "a", resp.Token.AccessToken)
 	assert.Equal(t, "r", resp.Token.RefreshToken)
+}
+
+func TestAuthManagement_Login_WithJWTServiceSync(t *testing.T) {
+	service, userMgmt, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
+	ctx := context.Background()
+
+	hashed, _ := helpers.HashPassword("pass123")
+	user := tenant.User{
+		ID:            uuid.New(),
+		Email:         "test@example.com",
+		Password:      hashed,
+		Status:        "active",
+		EmailVerified: true,
+	}
+
+	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
+		return user, nil
+	}
+
+	loginCallCount := 0
+	// Mock JWT service login - first call fails (user not found), second succeeds
+	authProv.LoginFn = func(ctx context.Context, email string, password string) (authProviderInterface.Tokens, error) {
+		loginCallCount++
+		if loginCallCount == 1 {
+			return authProviderInterface.Tokens{}, errors.New("user not found in JWT service")
+		}
+		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
+	}
+
+	// Mock JWT service registration - should be called after first login failure
+	authProv.RegisterFn = func(ctx context.Context, userId string, email string, password string, roles []string) error {
+		assert.Equal(t, "test@example.com", email)
+		assert.Equal(t, "pass123", password)
+		return nil
+	}
+
+	resp, err := service.Login(ctx, "test@example.com", "pass123")
+	assert.NoError(t, err)
+	assert.Equal(t, "a", resp.Token.AccessToken)
+	assert.Equal(t, "r", resp.Token.RefreshToken)
+	assert.Equal(t, 2, loginCallCount, "Login should be called twice - once failing, once succeeding after sync")
 }
 
 func TestAuthManagement_Login_InvalidPassword(t *testing.T) {
@@ -409,7 +461,7 @@ func TestAuthManagement_ForgotPassword_Invalid(t *testing.T) {
 }
 
 func TestAuthManagement_ResetPassword(t *testing.T) {
-	service, userMgmt, _, resetSvc, _, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, _, resetSvc, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
 	token, _ := helpers.GenerateCustomJWT(map[string]interface{}{"user_id": "u1"}, "u1", 3600)
@@ -420,7 +472,15 @@ func TestAuthManagement_ResetPassword(t *testing.T) {
 		return tenant.UserResetToken{UserID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Token: token, IssuedAt: issuedAt}, nil
 	}
 	userMgmt.UpdateUserFn = func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
-		return tenant.User{ID: uuid.MustParse(id)}, nil
+		return tenant.User{ID: uuid.MustParse(id), Email: "user@example.com"}, nil
+	}
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id), Email: "user@example.com"}, nil
+	}
+	authProv.RegisterFn = func(ctx context.Context, userId string, email, password string, roles []string) error {
+		assert.Equal(t, "user@example.com", email)
+		assert.Equal(t, "NewPass123!", password)
+		return nil
 	}
 
 	err := service.ResetPassword(ctx, dto.ResetPasswordRequest{Token: token, NewPassword: "NewPass123!"})
@@ -782,7 +842,7 @@ func TestAuthManagement_FunctionQueriesAndRemoveAccess(t *testing.T) {
 }
 
 func TestAuthManagement_BulkAddsAndUpdatePassword(t *testing.T) {
-	service, userMgmt, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, _, _, rbacSvc, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
 	rbacSvc.ProcessUserMembershipsFn = func(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error) {
@@ -802,7 +862,15 @@ func TestAuthManagement_BulkAddsAndUpdatePassword(t *testing.T) {
 	assert.NoError(t, err)
 
 	userMgmt.UpdatePasswordFn = func(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) (tenant.User, error) {
-		return tenant.User{ID: uuid.MustParse(userID)}, nil
+		return tenant.User{ID: uuid.MustParse(userID), Email: "user@example.com"}, nil
+	}
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id), Email: "user@example.com"}, nil
+	}
+	authProv.RegisterFn = func(ctx context.Context, userId string, email, password string, roles []string) error {
+		assert.Equal(t, "user@example.com", email)
+		assert.Equal(t, "new", password)
+		return nil
 	}
 	err = service.UpdatePassword(ctx, appConstant.MasterDatabase, "00000000-0000-0000-0000-000000000001", dto.UpdateUserPasswordRequest{
 		OldPassword: "old",

@@ -3,12 +3,14 @@ package helpers
 import (
 	"time"
 
+	appConfig "serenibase/internal/config"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var secret = []byte("072887741d659e1f4bacade5c5947226")
-
 func GenerateCustomJWT(attributes map[string]interface{}, subject string, expiresAfter int64) (string, error) {
+	secret := []byte(appConfig.AppConfig.Auth.JWT.Secret)
+
 	claims := jwt.MapClaims{
 		"sub": subject,
 		"iat": time.Now().Unix(),
@@ -30,12 +32,15 @@ func GenerateCustomJWT(attributes map[string]interface{}, subject string, expire
 
 // Create and return values as per instruction
 func DecodeJWT(tokenString string) (jwt.MapClaims, error) {
+	secret := []byte(appConfig.AppConfig.Auth.JWT.Secret)
+
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return secret, nil
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		return claims, nil
 	}
