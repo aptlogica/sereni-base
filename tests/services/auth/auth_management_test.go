@@ -136,7 +136,7 @@ func TestAuthManagement_RegisterOwner_Success(t *testing.T) {
 		return nil, nil
 	}
 	// Mock JWT service registration - should be called
-	authProv.RegisterFn = func(ctx context.Context, email string, password string, roles []string) error {
+	authProv.RegisterFn = func(ctx context.Context, userId string, email string, password string, roles []string) error {
 		assert.Equal(t, "owner@example.com", email)
 		assert.Equal(t, "plain", password)
 		assert.Contains(t, roles, appConstant.RBACRoleNames.Owner)
@@ -161,11 +161,11 @@ func TestAuthManagement_RegisterOwner_UserExists(t *testing.T) {
 	service, userMgmt, _, _, _, _, _, _, _, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
-		return tenant.User{ID: uuid.New()}, nil
+	userMgmt.CreateUserFn = func(ctx context.Context, schema string, req dto.RegisterRequest) (tenant.User, error) {
+		return tenant.User{}, app_errors.UserAlreadyExists
 	}
 
-	_, err := service.RegisterOwner(ctx, dto.RegisterRequest{Email: "exists@example.com"})
+	_, err := service.RegisterOwner(ctx, dto.RegisterRequest{Email: "exists@example.com", Password: "pass123"})
 	assert.ErrorIs(t, err, app_errors.UserAlreadyExists)
 }
 
@@ -253,7 +253,7 @@ func TestAuthManagement_Login_WithJWTServiceSync(t *testing.T) {
 	}
 
 	// Mock JWT service registration - should be called after first login failure
-	authProv.RegisterFn = func(ctx context.Context, email string, password string, roles []string) error {
+	authProv.RegisterFn = func(ctx context.Context, userId string, email string, password string, roles []string) error {
 		assert.Equal(t, "test@example.com", email)
 		assert.Equal(t, "pass123", password)
 		return nil
@@ -477,7 +477,7 @@ func TestAuthManagement_ResetPassword(t *testing.T) {
 	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
 		return tenant.User{ID: uuid.MustParse(id), Email: "user@example.com"}, nil
 	}
-	authProv.RegisterFn = func(ctx context.Context, email, password string, roles []string) error {
+	authProv.RegisterFn = func(ctx context.Context, userId string, email, password string, roles []string) error {
 		assert.Equal(t, "user@example.com", email)
 		assert.Equal(t, "NewPass123!", password)
 		return nil
@@ -867,7 +867,7 @@ func TestAuthManagement_BulkAddsAndUpdatePassword(t *testing.T) {
 	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
 		return tenant.User{ID: uuid.MustParse(id), Email: "user@example.com"}, nil
 	}
-	authProv.RegisterFn = func(ctx context.Context, email, password string, roles []string) error {
+	authProv.RegisterFn = func(ctx context.Context, userId string, email, password string, roles []string) error {
 		assert.Equal(t, "user@example.com", email)
 		assert.Equal(t, "new", password)
 		return nil

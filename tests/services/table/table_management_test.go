@@ -1408,6 +1408,67 @@ func TestUpdateColumnForLookup_TargetBranch(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestUpdateColumnForLink(t *testing.T) {
+	_, _, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+
+	modelID := uuid.New()
+	baseID := uuid.New().String()
+	columnID := uuid.New()
+
+	newTitle := "Updated Link Title"
+	newDescription := "Updated Link Description"
+	updatedBy := "test-user"
+
+	// Create a link column
+	col := tenant.Column{
+		ID:         columnID,
+		ModelID:    modelID.String(),
+		BaseID:     baseID,
+		ColumnName: "link_col",
+		UIDT:       "link",
+		Title:      "Original Title",
+		Meta:       map[string]interface{}{"relation_id": uuid.New().String()},
+	}
+
+	// Expected updated column with only title, description, and metadata fields changed
+	updatedCol := tenant.Column{
+		ID:          columnID,
+		ModelID:     modelID.String(),
+		BaseID:      baseID,
+		ColumnName:  "link_col",
+		UIDT:        "link",
+		Title:       newTitle,
+		Description: &newDescription,
+		Meta:        col.Meta, // Meta should remain unchanged for link updates
+	}
+
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", columnID.String()).Return(col, nil)
+	mockColumn.On("UpdateColumn", mock.Anything, "schema", col.ID.String(), mock.MatchedBy(func(req dto.ColumnUpdate) bool {
+		// Verify that only title, description, updatedBy, and updatedAt are being updated
+		return req.Title != nil && *req.Title == newTitle &&
+			req.Description != nil && *req.Description == newDescription &&
+			req.UpdatedBy == updatedBy &&
+			!req.UpdatedAt.IsZero() &&
+			req.Meta == nil && // Meta should not be updated
+			req.UIDT == nil && // UIDT should not be updated
+			req.DT == nil // DT should not be updated
+	})).Return(updatedCol, nil)
+
+	updateReq := dto.ColumnUpdate{
+		Title:       helpers.StringPtr(newTitle),
+		Description: helpers.StringPtr(newDescription),
+		UpdatedBy:   updatedBy,
+		Meta:        &map[string]interface{}{"some": "data"}, // This should be ignored for link columns
+	}
+
+	resp, err := svc.UpdateColumn(context.Background(), "schema", columnID.String(), updateReq)
+
+	assert.NoError(t, err)
+	assert.Equal(t, newTitle, resp.Title)
+	assert.Equal(t, newDescription, resp.Description)
+	mockColumn.AssertExpectations(t)
+}
+
 func TestGetTableByID_ErrorPaths(t *testing.T) {
 	_, _, _, mockModel, mockColumn, mockView, _, _, svc := setupTableManagementService()
 

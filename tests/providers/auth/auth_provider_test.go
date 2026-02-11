@@ -193,7 +193,7 @@ func TestAuthProviderValidateToken(t *testing.T) {
 		password := "TestPassword123!"
 
 		// Register user with JWT service first
-		err := provider.Register(ctx, email, password, []string{"admin", "user"})
+		err := provider.Register(ctx, "test-user-id-1", email, password, []string{"admin", "user"})
 		if err != nil {
 			t.Logf("Registration might have failed (user may exist): %v", err)
 		}
@@ -216,7 +216,7 @@ func TestAuthProviderValidateToken(t *testing.T) {
 		password := "TestPassword123!"
 
 		// Register and login
-		_ = provider.Register(ctx, email, password, []string{"user"})
+		_ = provider.Register(ctx, "test-user-id-bearer", email, password, []string{"user"})
 		tokens, err := provider.Login(ctx, email, password)
 		require.NoError(t, err)
 
@@ -340,7 +340,7 @@ func TestAuthProviderRefreshToken(t *testing.T) {
 		password := "TestPassword123!"
 
 		// Register and login
-		_ = provider.Register(ctx, email, password, []string{"admin"})
+		_ = provider.Register(ctx, "test-user-id-3", email, password, []string{"admin"})
 		tokens, err := provider.Login(ctx, email, password)
 		require.NoError(t, err)
 
@@ -358,7 +358,7 @@ func TestAuthProviderRefreshToken(t *testing.T) {
 		password := "TestPassword123!"
 
 		// Register and login
-		_ = provider.Register(ctx, email, password, []string{"user", "admin"})
+		_ = provider.Register(ctx, "test-user-id-4", email, password, []string{"user", "admin"})
 		tokens, err := provider.Login(ctx, email, password)
 		require.NoError(t, err)
 
@@ -540,7 +540,8 @@ func TestAuthProviderConcurrentTokenOperations(t *testing.T) {
 		for i := 0; i < numGoroutines; i++ {
 			email := fmt.Sprintf("concurrent%d@example.com", i)
 			password := "TestPassword123!"
-			_ = provider.Register(ctx, email, password, []string{"user"})
+			userID := fmt.Sprintf("test-user-concurrent-%d", i)
+			_ = provider.Register(ctx, userID, email, password, []string{"user"})
 		}
 
 		done := make(chan bool, numGoroutines)
@@ -571,7 +572,7 @@ func TestAuthProviderConcurrentTokenOperations(t *testing.T) {
 		password := "TestPassword123!"
 
 		// Register and login
-		_ = provider.Register(ctx, email, password, []string{"user"})
+		_ = provider.Register(ctx, "test-user-id-validate", email, password, []string{"user"})
 		tokens, err := provider.Login(ctx, email, password)
 		require.NoError(t, err)
 

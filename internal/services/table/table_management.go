@@ -1286,6 +1286,33 @@ func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, sc
 	return nil
 }
 
+func (s tableManagementService) updateColumnForLink(
+	ctx context.Context,
+	schemaName string,
+	columnData dto.ColumnResponse,
+	req dto.ColumnUpdate,
+) (dto.ColumnResponse, error) {
+	// For link columns, only update title, description, last_modified_time and last_modified_by
+	linkUpdateReq := dto.ColumnUpdate{
+		Title:       req.Title,
+		Description: req.Description,
+		UpdatedBy:   req.UpdatedBy,
+		UpdatedAt:   req.UpdatedAt,
+	}
+
+	updatedColumn, err := s.columnsService.UpdateColumn(ctx, schemaName, columnData.ID.String(), linkUpdateReq)
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+
+	var updatedColumnResponse dto.ColumnResponse
+	if err := helpers.StructToStruct(updatedColumn, &updatedColumnResponse); err != nil {
+		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
+	}
+
+	return updatedColumnResponse, nil
+}
+
 func (s tableManagementService) updateColumnForLookup(
 	ctx context.Context,
 	schemaName string,
@@ -1355,6 +1382,10 @@ func (s tableManagementService) UpdateColumn(
 	if req.UIDT != nil && *req.UIDT != "" {
 		dt, _ := s.getDataBaseType(*req.UIDT)
 		req.DT = helpers.StringPtr(dt)
+	}
+
+	if columnData.UIDT == "link" {
+		return s.updateColumnForLink(ctx, schemaName, columnData, req)
 	}
 
 	if columnData.UIDT == "lookup" {

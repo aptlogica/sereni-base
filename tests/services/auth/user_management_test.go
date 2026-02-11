@@ -525,7 +525,7 @@ func (m *MockAuthProviderUM) Login(ctx context.Context, email, password string) 
 	return authProviderInterface.Tokens{}, nil
 }
 
-func (m *MockAuthProviderUM) Register(ctx context.Context, email, password string, roles []string) error {
+func (m *MockAuthProviderUM) Register(ctx context.Context, userId, email, password string, roles []string) error {
 	return nil
 }
 
@@ -737,16 +737,40 @@ func TestUMAddAvatarDeletesExisting(t *testing.T) {
 }
 
 func TestUMGetWorkspacesOwner(t *testing.T) {
-	service, _, _, mockWorkspace, _, _ := setupUserManagementWithDepsLocal()
+	service, _, _, mockWorkspace, mockRBAC, _ := setupUserManagementWithDepsLocal()
 	ctx := context.Background()
 	schema := "test_schema"
+	userID := "u1"
 
+	ownerRoleID := uuid.New()
 	wsID := uuid.New()
+
+	// Mock GetUserAccessMembers to return system-level Owner role
+	mockRBAC.GetUserAccessMembersFn = func(ctx context.Context, schema string, uid string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{
+			{
+				ID:        uuid.New(),
+				UserID:    userID,
+				ScopeType: appConstant.ScopeLevels.System,
+				ScopeID:   nil,
+				RoleID:    ownerRoleID.String(),
+			},
+		}, nil
+	}
+
+	// Mock GetRoleByID to return Owner role
+	mockRBAC.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{
+			ID:   roleID,
+			Name: appConstant.RBACRoleNames.Owner,
+		}, nil
+	}
+
 	mockWorkspace.GetAllFn = func(ctx context.Context, schema string) ([]tenant.Workspace, error) {
 		return []tenant.Workspace{{ID: wsID, Title: "WS"}}, nil
 	}
 
-	resp, err := service.GetWorkspaces(ctx, schema, "u1", appConstant.RBACRoleNames.Owner)
+	resp, err := service.GetWorkspaces(ctx, schema, userID, appConstant.RBACRoleNames.Owner)
 	assert.NoError(t, err)
 	assert.Len(t, resp, 1)
 	assert.Equal(t, appConstant.RBACRoleNames.Owner, resp[0].AccessLevel)
@@ -1439,15 +1463,38 @@ func TestUMGetWorkspacesGetBulkError(t *testing.T) {
 }
 
 func TestUMGetWorkspacesOwnerGetAllError(t *testing.T) {
-	service, _, _, mockWorkspace, _, _ := setupUserManagementWithDepsLocal()
+	service, _, _, mockWorkspace, mockRBAC, _ := setupUserManagementWithDepsLocal()
 	ctx := context.Background()
 	schema := testSchema
+	userID := "u1"
+	ownerRoleID := uuid.New()
+
+	// Mock GetUserAccessMembers to return system-level Owner role
+	mockRBAC.GetUserAccessMembersFn = func(ctx context.Context, schema string, uid string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{
+			{
+				ID:        uuid.New(),
+				UserID:    userID,
+				ScopeType: appConstant.ScopeLevels.System,
+				ScopeID:   nil,
+				RoleID:    ownerRoleID.String(),
+			},
+		}, nil
+	}
+
+	// Mock GetRoleByID to return Owner role
+	mockRBAC.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{
+			ID:   roleID,
+			Name: appConstant.RBACRoleNames.Owner,
+		}, nil
+	}
 
 	mockWorkspace.GetAllFn = func(ctx context.Context, schema string) ([]tenant.Workspace, error) {
 		return nil, errors.New(dbError)
 	}
 
-	_, err := service.GetWorkspaces(ctx, schema, "u1", appConstant.RBACRoleNames.Owner)
+	_, err := service.GetWorkspaces(ctx, schema, userID, appConstant.RBACRoleNames.Owner)
 	assert.Error(t, err)
 }
 

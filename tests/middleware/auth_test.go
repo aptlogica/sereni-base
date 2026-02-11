@@ -41,8 +41,8 @@ func (m *MockAuthProvider) Login(ctx context.Context, email, password string) (a
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
-func (m *MockAuthProvider) Register(ctx context.Context, email, password string, roles []string) error {
-	args := m.Called(ctx, email, password, roles)
+func (m *MockAuthProvider) Register(ctx context.Context, userId, email, password string, roles []string) error {
+	args := m.Called(ctx, userId, email, password, roles)
 	return args.Error(0)
 }
 

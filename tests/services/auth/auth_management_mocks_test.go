@@ -445,7 +445,7 @@ type authProviderMock struct {
 	RefreshTokenFn  func(ctx context.Context, token string) (authProviderInterface.Tokens, error)
 	ValidateTokenFn func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error)
 	LoginFn         func(ctx context.Context, email, password string) (authProviderInterface.Tokens, error)
-	RegisterFn      func(ctx context.Context, email, password string, roles []string) error
+	RegisterFn      func(ctx context.Context, userId, email, password string, roles []string) error
 }
 
 func (m *authProviderMock) GenerateToken(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
@@ -476,9 +476,9 @@ func (m *authProviderMock) Login(ctx context.Context, email, password string) (a
 	return authProviderInterface.Tokens{}, nil
 }
 
-func (m *authProviderMock) Register(ctx context.Context, email, password string, roles []string) error {
+func (m *authProviderMock) Register(ctx context.Context, userId, email, password string, roles []string) error {
 	if m.RegisterFn != nil {
-		return m.RegisterFn(ctx, email, password, roles)
+		return m.RegisterFn(ctx, userId, email, password, roles)
 	}
 	return nil
 }
