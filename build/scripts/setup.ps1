@@ -433,6 +433,24 @@ function Update-EnvVarIfChanged {
     }
 }
 
+# Check if a variable already exists in .env (NEVER override if exists)
+function Test-EnvVarExists {
+    param([string]$Key)
+    $existingValue = Get-EnvVar -Key $Key
+    return -not [string]::IsNullOrWhiteSpace($existingValue)
+}
+
+# Check if ALL variables in the list exist in .env
+function Test-AllEnvVarsExist {
+    param([string[]]$Keys)
+    foreach ($key in $Keys) {
+        if (-not (Test-EnvVarExists -Key $key)) {
+            return $false
+        }
+    }
+    return $true
+}
+
 # ========================================================================
 #                      DATABASE CONFIGURATION
 # ========================================================================
@@ -442,6 +460,13 @@ Write-Host "====================================================================
 Write-Host "                      DATABASE CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
+
+# Check if ALL database variables already exist in .env
+# If they do, skip this entire section (NEVER override)
+if (Test-AllEnvVarsExist -Keys @("DATABASE_HOST", "DATABASE_PORT", "DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_NAME", "DATABASE_SSL_MODE")) {
+    Write-Host "[OK] Database configuration already set in .env (skipping)" -ForegroundColor Green
+} else {
+    
 Write-Host "Choose database setup:"
 Write-Host "  1. Use default PostgreSQL (Docker container)"
 Write-Host "  2. Use custom database credentials"
@@ -517,6 +542,8 @@ Update-EnvVarIfChanged -Key "DATABASE_NAME" -Value $DATABASE_NAME
 Update-EnvVarIfChanged -Key "DATABASE_SSL_MODE" -Value $DATABASE_SSL_MODE
 
 Write-Host "[OK] Database configuration updated" -ForegroundColor Green
+
+} # End of database configuration else block
 
 # ========================================================================
 #                      AUTHENTICATION CONFIGURATION

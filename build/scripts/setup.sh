@@ -242,6 +242,26 @@ update_env_var_if_changed() {
     fi
 }
 
+# Check if a variable already exists in .env (NEVER override if exists)
+var_exists_in_env() {
+    local var_name="$1"
+    local existing_value=$(get_env_var "$var_name")
+    if [ -n "$existing_value" ]; then
+        return 0  # True - variable exists
+    fi
+    return 1  # False - variable doesn't exist
+}
+
+# Check if ALL variables in the list exist in .env
+all_vars_exist_in_env() {
+    for var_name in "$@"; do
+        if ! var_exists_in_env "$var_name"; then
+            return 1  # At least one variable missing
+        fi
+    done
+    return 0  # All variables exist
+}
+
 # Ensure CORS_ALLOWED_ORIGINS includes PUBLIC_HOST:5050
 ensure_cors_origin() {
     local host="$1"
@@ -501,6 +521,13 @@ EOF
 }
 
 configure_database() {
+    # Check if ALL database variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "DATABASE_HOST" "DATABASE_PORT" "DATABASE_USER" "DATABASE_PASSWORD" "DATABASE_NAME" "DATABASE_SSL_MODE"; then
+        print_step "Database configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      DATABASE CONFIGURATION"
@@ -523,9 +550,26 @@ configure_database() {
         DATABASE_PASSWORD=$(prompt_env_var "DATABASE_PASSWORD" "postgres" "Database Password" "true")
         DATABASE_NAME=$(prompt_env_var "DATABASE_NAME" "serenibase" "Database Name")
         
-        DATABASE_HOST="postgres"
-        DATABASE_PORT="5432"
-        DATABASE_SSL_MODE="disable"
+        # Use 5432 only if DATABASE_PORT doesn't exist in .env
+        if var_exists_in_env "DATABASE_PORT"; then
+            DATABASE_PORT=$(get_env_var "DATABASE_PORT")
+        else
+            DATABASE_PORT="5432"
+        fi
+        
+        # Use postgres only if DATABASE_HOST doesn't exist in .env  
+        if var_exists_in_env "DATABASE_HOST"; then
+            DATABASE_HOST=$(get_env_var "DATABASE_HOST")
+        else
+            DATABASE_HOST="postgres"
+        fi
+        
+        # Use disable only if DATABASE_SSL_MODE doesn't exist in .env
+        if var_exists_in_env "DATABASE_SSL_MODE"; then
+            DATABASE_SSL_MODE=$(get_env_var "DATABASE_SSL_MODE")
+        else
+            DATABASE_SSL_MODE="disable"
+        fi
     else
         echo ""
         echo "Enter custom database configuration:"
@@ -572,26 +616,18 @@ configure_database() {
 }
 
 configure_jwt_secret() {
+    # Check if JWT secret already exists in .env
+    # If it does, skip this entire section (NEVER override)
+    if var_exists_in_env "AUTH_JWT_SECRET"; then
+        print_step "JWT Secret already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      AUTHENTICATION CONFIGURATION"
     echo "========================================================================${NC}"
     echo ""
-    
-    # Check if JWT secret already exists
-    existing_secret=$(get_env_var "AUTH_JWT_SECRET")
-    
-    if [ -n "$existing_secret" ] && [ "$existing_secret" != "change-this-to-a-secure-random-string-min32chars" ]; then
-        echo "JWT Secret already configured in .env"
-        read -p "Keep existing secret? (Y/n): " KEEP_SECRET
-        KEEP_SECRET=${KEEP_SECRET:-Y}
-        
-        if [[ "$KEEP_SECRET" =~ ^[Yy]$ ]]; then
-            AUTH_JWT_SECRET="$existing_secret"
-            print_step "Using existing JWT Secret"
-            return
-        fi
-    fi
     
     read -p "JWT Secret (min 32 chars) [press Enter to generate]: " AUTH_JWT_SECRET
     
@@ -606,8 +642,16 @@ configure_jwt_secret() {
     
     print_step "JWT Secret configured"
 }
+}
 
 configure_email() {
+    # Check if ALL email variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "EMAIL_SMTP_HOST" "EMAIL_SMTP_PORT" "EMAIL_SMTP_USERNAME" "EMAIL_SMTP_PASSWORD" "EMAIL_FROM_EMAIL"; then
+        print_step "Email configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      EMAIL CONFIGURATION"
@@ -644,6 +688,13 @@ configure_email() {
 }
 
 configure_storage() {
+    # Check if storage driver is already configured in .env
+    # If it is, skip this entire section (NEVER override)
+    if var_exists_in_env "STORAGE_DRIVER"; then
+        print_step "Storage configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      STORAGE CONFIGURATION"
@@ -762,6 +813,13 @@ configure_storage() {
 }
 
 configure_public_host() {
+    # Check if PUBLIC_HOST already exists in .env
+    # If it does, skip this entire section (NEVER override)
+    if var_exists_in_env "PUBLIC_HOST"; then
+        print_step "Network configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      NETWORK CONFIGURATION"
@@ -801,6 +859,13 @@ configure_public_host() {
 }
 
 configure_owner() {
+    # Check if ALL owner variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "OWNER_FIRST_NAME" "OWNER_LAST_NAME" "OWNER_EMAIL" "OWNER_PASSWORD"; then
+        print_step "Owner configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      OWNER REGISTRATION"
