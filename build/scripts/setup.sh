@@ -26,10 +26,32 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # ========================================================================
-# PARAMETER PARSING - Store all script arguments in associative array
+# PARAMETER PARSING - Store all script arguments (bash 3.2 compatible)
 # ========================================================================
-declare -A SCRIPT_ARGS
+SCRIPT_ARGS=""
 AUTO_YES=false
+
+# Helper function to store script argument (bash 3.2 compatible)
+set_script_arg() {
+    local key="$1"
+    local value="$2"
+    SCRIPT_ARGS="${SCRIPT_ARGS}${key}:::${value}|||"
+}
+
+# Helper function to get script argument (bash 3.2 compatible)
+get_script_arg() {
+    local key="$1"
+    local pattern="${key}:::"
+    
+    if [[ "$SCRIPT_ARGS" == *"$pattern"* ]]; then
+        # Extract the value between key::: and |||
+        local temp="${SCRIPT_ARGS#*$pattern}"
+        local value="${temp%%|||*}"
+        echo "$value"
+        return 0
+    fi
+    return 1
+}
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -42,7 +64,7 @@ while [[ $# -gt 0 ]]; do
             key="${1#--}"
             key="${key%=*}"
             value="${1#*=}"
-            SCRIPT_ARGS["$key"]="$value"
+            set_script_arg "$key" "$value"
             shift
             ;;
         --*)
@@ -52,7 +74,7 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: $1 requires a value"
                 exit 1
             fi
-            SCRIPT_ARGS["$key"]="$2"
+            set_script_arg "$key" "$2"
             shift 2
             ;;
         *)
@@ -164,8 +186,9 @@ resolve_env_var() {
     local default_value="$2"
     
     # Priority 1: Check script arguments
-    if [[ -n "${SCRIPT_ARGS[$var_name]}" ]]; then
-        echo "${SCRIPT_ARGS[$var_name]}"
+    local script_value=$(get_script_arg "$var_name")
+    if [ $? -eq 0 ] && [ -n "$script_value" ]; then
+        echo "$script_value"
         return
     fi
     
@@ -191,8 +214,9 @@ prompt_env_var() {
     local is_password="${4:-false}"
     
     # Priority 1: If script argument provided, use it (can override .env)
-    if [[ -n "${SCRIPT_ARGS[$var_name]}" ]]; then
-        echo "${SCRIPT_ARGS[$var_name]}"
+    local script_value=$(get_script_arg "$var_name")
+    if [ $? -eq 0 ] && [ -n "$script_value" ]; then
+        echo "$script_value"
         return
     fi
     
@@ -538,8 +562,13 @@ configure_database() {
     echo "  1. Use default PostgreSQL (Docker container)"
     echo "  2. Use custom database credentials"
     echo ""
-    read -p "Enter choice [1]: " DB_CHOICE
-    DB_CHOICE=${DB_CHOICE:-1}
+    
+    if [ "$AUTO_YES" = "true" ]; then
+        DB_CHOICE=1
+    else
+        read -p "Enter choice [1]: " DB_CHOICE
+        DB_CHOICE=${DB_CHOICE:-1}
+    fi
     
     if [ "$DB_CHOICE" = "1" ]; then
         echo ""
@@ -707,8 +736,13 @@ configure_storage() {
     echo "  3. MinIO Custom (external MinIO server)"
     echo "  4. AWS S3"
     echo ""
-    read -p "Enter choice [2]: " STORAGE_CHOICE
-    STORAGE_CHOICE=${STORAGE_CHOICE:-2}
+    
+    if [ "$AUTO_YES" = "true" ]; then
+        STORAGE_CHOICE=2
+    else
+        read -p "Enter choice [2]: " STORAGE_CHOICE
+        STORAGE_CHOICE=${STORAGE_CHOICE:-2}
+    fi
     
     if [ "$STORAGE_CHOICE" = "1" ]; then
         echo ""

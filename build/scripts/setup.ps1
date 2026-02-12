@@ -493,9 +493,24 @@ if ($DB_CHOICE -eq "1") {
         $DATABASE_NAME = Read-EnvVar -Key "DATABASE_NAME" -DefaultValue "serenibase" -Prompt "Database Name"
     }
     
-    $DATABASE_HOST = "postgres"
-    $DATABASE_PORT = "5432"
-    $DATABASE_SSL_MODE = "disable"
+    # Use existing values from .env if they exist, otherwise use defaults
+    if (Test-EnvVarExists -Key "DATABASE_PORT") {
+        $DATABASE_PORT = Get-EnvVar -Key "DATABASE_PORT"
+    } else {
+        $DATABASE_PORT = "5432"
+    }
+    
+    if (Test-EnvVarExists -Key "DATABASE_HOST") {
+        $DATABASE_HOST = Get-EnvVar -Key "DATABASE_HOST"
+    } else {
+        $DATABASE_HOST = "postgres"
+    }
+    
+    if (Test-EnvVarExists -Key "DATABASE_SSL_MODE") {
+        $DATABASE_SSL_MODE = Get-EnvVar -Key "DATABASE_SSL_MODE"
+    } else {
+        $DATABASE_SSL_MODE = "disable"
+    }
 } else {
     Write-Host ""
     Write-Host "Enter custom database configuration:"
@@ -555,6 +570,12 @@ Write-Host "                      AUTHENTICATION CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
 
+# Check if JWT secret already exists in .env
+# If it does, skip this entire section (NEVER override)
+if (Test-EnvVarExists -Key "AUTH_JWT_SECRET") {
+    Write-Host "[OK] JWT Secret already set in .env (skipping)" -ForegroundColor Green
+} else {
+
 if ($AutoYes) {
     $AUTH_JWT_SECRET = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((New-Guid).ToString() + (New-Guid).ToString())).Substring(0,32)
     Write-Host "Generated JWT Secret: $AUTH_JWT_SECRET"
@@ -569,6 +590,8 @@ if ($AutoYes) {
 Update-EnvVarIfChanged -Key "AUTH_JWT_SECRET" -Value $AUTH_JWT_SECRET
 Write-Host "[OK] JWT Secret configured" -ForegroundColor Green
 
+} # End of JWT configuration else block
+
 # ========================================================================
 #                      EMAIL CONFIGURATION
 # ========================================================================
@@ -578,6 +601,13 @@ Write-Host "====================================================================
 Write-Host "                      EMAIL CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
+
+# Check if ALL email variables already exist in .env
+# If they do, skip this entire section (NEVER override)
+if (Test-AllEnvVarsExist -Keys @("EMAIL_SMTP_HOST", "EMAIL_SMTP_PORT", "EMAIL_SMTP_USERNAME", "EMAIL_SMTP_PASSWORD", "EMAIL_FROM_EMAIL")) {
+    Write-Host "[OK] Email configuration already set in .env (skipping)" -ForegroundColor Green
+} else {
+
 Write-Host "Enter SMTP email configuration (REQUIRED):"
 Write-Host ""
 
@@ -634,6 +664,8 @@ Update-EnvVarIfChanged -Key "EMAIL_SMTP_PASSWORD" -Value $EMAIL_SMTP_PASSWORD
 Update-EnvVarIfChanged -Key "EMAIL_FROM_EMAIL" -Value $EMAIL_FROM_EMAIL
 
 Write-Host "[OK] Email configuration updated" -ForegroundColor Green
+
+} # End of email configuration else block
 
 # ========================================================================
 #                      STORAGE CONFIGURATION
