@@ -45,7 +45,7 @@ If you prefer to prepare your `.env` file first, create it with minimum required
 ```env
 # These will be asked during setup if not provided
 DATABASE_USER=postgres
-DATABASE_PASSWORD=postgres
+DATABASE_PASSWORD=CHANGEME_DB_PASSWORD
 DATABASE_NAME=serenibase
 AUTH_JWT_SECRET=replace-with-a-strong-random-secret
 
