@@ -186,8 +186,9 @@ resolve_env_var() {
     local default_value="$2"
     
     # Priority 1: Check script arguments
-    local script_value=$(get_script_arg "$var_name")
-    if [ $? -eq 0 ] && [ -n "$script_value" ]; then
+    local script_value
+    script_value=$(get_script_arg "$var_name" 2>/dev/null)
+    if [ -n "$script_value" ]; then
         echo "$script_value"
         return
     fi
@@ -214,8 +215,9 @@ prompt_env_var() {
     local is_password="${4:-false}"
     
     # Priority 1: If script argument provided, use it (can override .env)
-    local script_value=$(get_script_arg "$var_name")
-    if [ $? -eq 0 ] && [ -n "$script_value" ]; then
+    local script_value
+    script_value=$(get_script_arg "$var_name" 2>/dev/null)
+    if [ -n "$script_value" ]; then
         echo "$script_value"
         return
     fi
