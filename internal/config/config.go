@@ -247,7 +247,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("owner_registration.first_name", "Admin")
 	viper.SetDefault("owner_registration.last_name", "User")
 	viper.SetDefault("owner_registration.email", "admin@example.com")
-	viper.SetDefault("owner_registration.password", "Admin@123")
+	viper.SetDefault("owner_registration.password", "CHANGEME_OWNER_PASSWORD")
 
 	viper.SetDefault("cors.allowed_origins", "*")
 	viper.SetDefault("cors.allowed_methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
