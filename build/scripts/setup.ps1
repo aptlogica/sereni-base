@@ -3,21 +3,44 @@
 #                    Windows PowerShell Version
 # ========================================================================
 #
+# Priority for environment variables:
+#   1. Script parameters (highest priority)
+#   2. Existing values from .env file (if exists)
+#   3. Default variable values (lowest priority)
+#
 # Ctrl+C Handling:
 #   Press Ctrl+C to immediately terminate the setup
 #
-# SMTP Configuration is REQUIRED - no optional fallback to MailHog
+# Usage:
+#   .\setup.ps1                                      # Interactive mode
+#   .\setup.ps1 -AutoYes                             # Non-interactive with defaults
+#   .\setup.ps1 -SmtpHost "..." -SmtpPort "..." ... # With custom parameters
 #
 # ========================================================================
 
 param(
     [switch]$AutoYes,  # For non-interactive setup with defaults
+    # SMTP Configuration
     [string]$SmtpHost = "",
     [string]$SmtpPort = "",
     [string]$SmtpUsername = "",
     [string]$SmtpPassword = "",
-    [string]$SmtpFromEmail = ""
+    [string]$SmtpFromEmail = "",
+    # Additional environment variables can be passed as parameters
+    # Example: .\setup.ps1 -PublicHost "myhost.com" -DatabaseHost "db.example.com"
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$UnnamedParameters
 )
+
+# Store all parameters in a hashtable for priority resolution
+$ParameterValues = @{
+    "auto-yes" = $AutoYes
+    "smtp-host" = $SmtpHost
+    "smtp-port" = $SmtpPort
+    "smtp-username" = $SmtpUsername
+    "smtp-password" = $SmtpPassword
+    "smtp-from-email" = $SmtpFromEmail
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -310,6 +333,9 @@ function Get-EnvVar {
     param(
         [string]$Key
     )
+    if (-not (Test-Path $envPath)) {
+        return ""
+    }
     $content = Get-Content $envPath -Raw
     if ($content -match "(?m)^$Key=(.*)$") {
         return $matches[1]
@@ -317,7 +343,38 @@ function Get-EnvVar {
     return ""
 }
 
-# Prompt for value with priority: existing .env value > user input > default
+# Resolve environment variable value with priority system
+# Priority 1: Script parameter (highest)
+# Priority 2: Existing .env value
+# Priority 3: Default value (lowest)
+function Resolve-EnvVar {
+    param(
+        [string]$Key,
+        [string]$DefaultValue
+    )
+    
+    # Priority 1: Check parameter values hashtable
+    if ($ParameterValues.ContainsKey($Key) -and -not [string]::IsNullOrWhiteSpace($ParameterValues[$Key])) {
+        return $ParameterValues[$Key]
+    }
+    
+    # Convert hyphenated key to underscore for environment variable names
+    $envVarKey = $Key -replace "-", "_"
+    
+    # Priority 2: Check existing .env file
+    $existingValue = Get-EnvVar -Key $envVarKey
+    if (-not [string]::IsNullOrWhiteSpace($existingValue)) {
+        return $existingValue
+    }
+    
+    # Priority 3: Use default value
+    return $DefaultValue
+}
+
+# Prompt for value with priority system
+# Priority 1: Script parameter (if provided)
+# Priority 2: Existing .env value
+# Priority 3: Default value
 function Read-EnvVar {
     param(
         [string]$Key,
@@ -326,32 +383,39 @@ function Read-EnvVar {
         [bool]$IsPassword = $false
     )
     
-    # Get existing value from .env
-    $existingValue = Get-EnvVar -Key $Key
+    # Resolve value based on priority system
+    $ResolvedValue = Resolve-EnvVar -Key $Key -DefaultValue $DefaultValue
     
-    # If value exists in .env, use it without prompting (for privacy on passwords)
+    # If in auto-yes mode or parameter was provided, don't prompt
+    if ($AutoYes -or ($ParameterValues.ContainsKey($Key) -and -not [string]::IsNullOrWhiteSpace($ParameterValues[$Key]))) {
+        return $ResolvedValue
+    }
+    
+    # Interactive mode: check if value exists in .env
+    $envVarKey = $Key -replace "-", "_"
+    $existingValue = Get-EnvVar -Key $envVarKey
+    
+    # If value exists in .env, use it as default without prompting for passwords
     if (-not [string]::IsNullOrWhiteSpace($existingValue)) {
-        # Don't display password fields for privacy
         if ($IsPassword) {
             return $existingValue
         }
-        # Use existing value as default shown to user
-        $DefaultValue = $existingValue
+        # Use existing value as the default shown to user
+        $ResolvedValue = $existingValue
     }
     
     # Prompt user for input
     if ($IsPassword) {
-        # For passwords, use Read-Host -AsSecureString for security
-        Write-Host -NoNewline "$Prompt [$DefaultValue]: "
+        Write-Host -NoNewline "$Prompt [$ResolvedValue]: "
         $input = Read-Host -AsSecureString
         if ($input.Length -eq 0) {
-            return $DefaultValue
+            return $ResolvedValue
         }
         # Convert SecureString back to plain text for storage
         $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($input)
         return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
     } else {
-        return Read-HostWithCancel -Prompt $Prompt -Default $DefaultValue
+        return Read-HostWithCancel -Prompt $Prompt -Default $ResolvedValue
     }
 }
 

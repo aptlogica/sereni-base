@@ -3,6 +3,16 @@
 #                    SERENIBASE SETUP SCRIPT
 #
 #  Interactive setup script to configure and deploy SereniBase
+#
+#  Priority for environment variables:
+#    1. Script command-line arguments (highest priority)
+#    2. Existing values from .env file (if exists)
+#    3. Default variable values (lowest priority)
+#
+#  Usage:
+#    ./setup.sh                    # Interactive mode with priority defaults
+#    ./setup.sh --auto-yes         # Non-interactive with all defaults
+#    ./setup.sh --smtp-host="..." --smtp-port="..." [other args]
 # ========================================================================
 
 # Don't use 'set -e' to allow proper Ctrl+C handling
@@ -14,6 +24,44 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Change to project root
 cd "$PROJECT_ROOT"
+
+# ========================================================================
+# PARAMETER PARSING - Store all script arguments in associative array
+# ========================================================================
+declare -A SCRIPT_ARGS
+AUTO_YES=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --auto-yes)
+            AUTO_YES=true
+            shift
+            ;;
+        --*=*)
+            # Handle --key=value format
+            key="${1#--}"
+            key="${key%=*}"
+            value="${1#*=}"
+            SCRIPT_ARGS["$key"]="$value"
+            shift
+            ;;
+        --*)
+            # Handle --key value format
+            key="${1#--}"
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires a value"
+                exit 1
+            fi
+            SCRIPT_ARGS["$key"]="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--auto-yes] [--key=value ...]"
+            exit 1
+            ;;
+    esac
+done
 
 # Cleanup function to stop all processes on Ctrl+C
 cleanup() {
@@ -99,34 +147,71 @@ update_env_var() {
 # Get existing environment variable value from .env file
 get_env_var() {
     local var_name="$1"
+    if [ ! -f ".env" ]; then
+        echo ""
+        return
+    fi
     local value=$(grep -E "^${var_name}=" .env 2>/dev/null | tail -n 1 | cut -d'=' -f2-)
     echo "$value"
 }
 
-# Prompt for value with priority: existing .env value > user input > default
-# Returns the new value that should be set (or empty string if no change)
+# Resolve environment variable value with priority system
+# Priority 1: Script argument (highest)
+# Priority 2: Existing .env value
+# Priority 3: Default value (lowest)
+resolve_env_var() {
+    local var_name="$1"
+    local default_value="$2"
+    
+    # Priority 1: Check script arguments
+    if [[ -n "${SCRIPT_ARGS[$var_name]}" ]]; then
+        echo "${SCRIPT_ARGS[$var_name]}"
+        return
+    fi
+    
+    # Priority 2: Check existing .env file
+    local existing_value=$(get_env_var "$var_name")
+    if [ -n "$existing_value" ]; then
+        echo "$existing_value"
+        return
+    fi
+    
+    # Priority 3: Use default value
+    echo "$default_value"
+}
+
+# Prompt for value with priority system
+# Returns the resolved value based on priority
 prompt_env_var() {
     local var_name="$1"
     local default_value="$2"
     local prompt_text="$3"
     local is_password="${4:-false}"
     
-    # Get existing value from .env
+    # Resolve value based on priority system
+    local resolved_value=$(resolve_env_var "$var_name" "$default_value")
+    
+    # If in auto-yes mode or value came from script arg, don't prompt
+    if [ "$AUTO_YES" = "true" ] || [[ -n "${SCRIPT_ARGS[$var_name]}" ]]; then
+        echo "$resolved_value"
+        return
+    fi
+    
+    # Interactive mode: check if value exists in .env
     local existing_value=$(get_env_var "$var_name")
     
-    # If value exists in .env and it's not a placeholder/default, use it without prompting
+    # If value exists in .env, show it as default without prompting for passwords
     if [ -n "$existing_value" ]; then
-        # Don't prompt for password fields if they already exist (for privacy)
         if [ "$is_password" = "true" ]; then
             echo "$existing_value"
             return
         fi
         # Use existing value as the default shown to user
-        default_value="$existing_value"
+        resolved_value="$existing_value"
     fi
     
-    # Build prompt with default
-    local prompt_msg="$prompt_text [$default_value]: "
+    # Build prompt with resolved default
+    local prompt_msg="$prompt_text [$resolved_value]: "
     
     if [ "$is_password" = "true" ]; then
         read -s -p "$prompt_msg" user_input
@@ -135,11 +220,11 @@ prompt_env_var() {
         read -p "$prompt_msg" user_input
     fi
     
-    # Return user input if provided, otherwise return the default
+    # Return user input if provided, otherwise return the resolved value
     if [ -n "$user_input" ]; then
         echo "$user_input"
     else
-        echo "$default_value"
+        echo "$resolved_value"
     fi
 }
 
@@ -223,11 +308,11 @@ check_prerequisites() {
     fi
 }
 
-# Setup environment
+# Setup environment - Create .env if not exists, merge with template
 setup_environment() {
     echo -e "\n${BLUE}Setting up environment...${NC}\n"
     
-    # Create a temporary file with all default environment variables
+    # Create .env template with all default variables
     cat > .env.template << 'EOF'
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║                         SERENIBASE CONFIGURATION                              ║
@@ -371,11 +456,11 @@ ASSET_MAX_SIZE=5242880
 EOF
     
     if [ ! -f ".env" ]; then
-        # If .env doesn't exist, create it from template
+        # .env doesn't exist, create it from template
         cp .env.template .env
-        print_step "Created .env with default environment variables"
+        print_step "Created .env with environment variables"
     else
-        # If .env exists, append missing variables
+        # .env exists, merge with template (add missing variables)
         print_warning ".env already exists. Checking for missing variables..."
         
         # Read existing .env content

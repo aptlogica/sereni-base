@@ -1,95 +1,34 @@
 #!/bin/bash
 # ========================================================================
-#                    SERENIBASE SETUP SCRIPT (NO PROMPTS)
+#                    SERENIBASE SETUP SCRIPT (AUTO-YES MODE)
 #
-#  Full automated setup with default values - REQUIRES SMTP credentials
+#  Full automated setup with default values
+#  Supports all parameters that setup.sh supports
 #
-#  Usage:
+#  Priority for environment variables:
+#    1. Script command-line arguments (highest priority)
+#    2. Existing values from .env file (if exists)
+#    3. Default variable values (lowest priority)
+#
+#  Usage (with SMTP credentials - recommended):
 #    ./setup-y.sh --smtp-host "your_email_host" --smtp-port "587" \
-#                 --smtp-username "your@email.com" --smtp-password "your-app-password"
+#                 --smtp-username "your@email.com" --smtp-password "your-app-password" \
+#                 --smtp-from-email "your@email.com"
+#
+#  Usage (with any environment variables):
+#    ./setup-y.sh --smtp-host "..." --database-host "..." --public-host "..."
+#
+#  Usage (use all defaults from .env or defaults):
+#    ./setup-y.sh
 #
 # ========================================================================
 
-# Don't use 'set -e' to allow proper Ctrl+C handling
-# set -e  # Commented out to handle Ctrl+C gracefully
-
-# Parse command line arguments
-SMTP_HOST=""
-SMTP_PORT=""
-SMTP_USERNAME=""
-SMTP_PASSWORD=""
-SMTP_FROM_EMAIL=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --smtp-host)
-            SMTP_HOST="$2"
-            shift 2
-            ;;
-        --smtp-port)
-            SMTP_PORT="$2"
-            shift 2
-            ;;
-        --smtp-username)
-            SMTP_USERNAME="$2"
-            shift 2
-            ;;
-        --smtp-password)
-            SMTP_PASSWORD="$2"
-            shift 2
-            ;;
-        --smtp-from-email)
-            SMTP_FROM_EMAIL="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> [--smtp-from-email <email>]"
-            exit 1
-            ;;
-    esac
-done
-
-# Validate required SMTP credentials
-if [ -z "$SMTP_HOST" ]; then
-    echo "[ERROR] SMTP host is required. Use --smtp-host <host>"
-    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
-    exit 1
-fi
-
-if [ -z "$SMTP_PORT" ]; then
-    echo "[ERROR] SMTP port is required. Use --smtp-port <port>"
-    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
-    exit 1
-fi
-
-if [ -z "$SMTP_USERNAME" ]; then
-    echo "[ERROR] SMTP username is required. Use --smtp-username <email>"
-    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
-    exit 1
-fi
-
-if [ -z "$SMTP_PASSWORD" ]; then
-    echo "[ERROR] SMTP password is required. Use --smtp-password <password>"
-    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
-    exit 1
-fi
-
-if [ -z "$SMTP_FROM_EMAIL" ]; then
-    echo "[ERROR] SMTP from email is required. Use --smtp-from-email <email>"
-    echo "Usage: $0 --smtp-host <host> --smtp-port <port> --smtp-username <email> --smtp-password <password> --smtp-from-email <email>"
-    exit 1
-fi
-
-# Get script directory and project root
+# Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Change to project root
-cd "$PROJECT_ROOT"
-
-# Cleanup function to stop all processes on Ctrl+C
-cleanup() {
+# Pass all arguments to setup.sh with --auto-yes flag prepended
+"$SCRIPT_DIR/setup.sh" --auto-yes "$@"
+ {
     local exit_code=$?
     
     # Only cleanup if interrupted (exit code 130 = Ctrl+C or SIGINT)
