@@ -163,6 +163,20 @@ func (s workspaceManagementService) getAllBasesWithWorkspaceRole(ctx context.Con
 	return response, nil
 }
 
+// getSystemLevelRole checks if user has system-level Owner or CoOwner role
+func (s workspaceManagementService) getSystemLevelRole(ctx context.Context, schemaName string, accessMembers []dto.AccessMemberDTO) string {
+	for _, member := range accessMembers {
+		if member.ScopeType == appConstant.ScopeLevels.System && member.ScopeID == nil {
+			// Get the role name from role_id
+			roleName := s.getRoleName(ctx, schemaName, member.RoleID)
+			if roleName == appConstant.RBACRoleNames.Owner || roleName == appConstant.RBACRoleNames.CoOwner {
+				return roleName
+			}
+		}
+	}
+	return ""
+}
+
 // checkWorkspaceLevelAccess checks if user has workspace-level access and returns the role name
 func (s workspaceManagementService) checkWorkspaceLevelAccess(ctx context.Context, schemaName string, workspaceID string, accessMembers []dto.AccessMemberDTO) (string, bool) {
 	for _, member := range accessMembers {
@@ -243,15 +257,20 @@ func (s workspaceManagementService) getBasesWithAccess(ctx context.Context, sche
 }
 
 func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
-	// Check if user has workspace-level role - they can see all bases in workspace
-	if isWorkspaceLevelRole(role) {
-		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, role)
-	}
-
-	// Get user's access members to check for workspace-level or base-level access
+	// Get user's access members to check for system/workspace/base-level access
 	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schemaName, userID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check if user has system-level Owner or CoOwner role - they can see all bases
+	if systemRole := s.getSystemLevelRole(ctx, schemaName, accessMembers); systemRole != "" {
+		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, systemRole)
+	}
+
+	// Check if user has workspace-level role from JWT token - they can see all bases in workspace
+	if isWorkspaceLevelRole(role) {
+		return s.getAllBasesWithWorkspaceRole(ctx, schemaName, workspaceID, role)
 	}
 
 	// Check if user has workspace-level access in accessMembers
@@ -264,7 +283,6 @@ func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context
 
 	// If no base access found, return empty list
 	if len(baseAccessMap) == 0 {
-		fmt.Printf("DEBUG: User %s has no base-level access in workspace %s\n", userID, workspaceID)
 		return []dto.BaseResponse{}, nil
 	}
 

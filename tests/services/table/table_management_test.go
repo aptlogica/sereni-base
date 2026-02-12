@@ -3,9 +3,6 @@ package table_test
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go-postgres-rest/pkg"
 	dbModels "go-postgres-rest/pkg/models"
 	app_errors "serenibase/internal/app-errors"
@@ -14,6 +11,10 @@ import (
 	services "serenibase/internal/services/table"
 	"serenibase/internal/utils/helpers"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestCreateTableWithDefaults_Success(t *testing.T) {
@@ -97,6 +98,53 @@ func TestCreateTableWithDefaults_Errors(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+}
+
+func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
+	_, mockTable, _, mockModel, mockColumn, mockView, _, _, svc := setupTableManagementService()
+
+	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
+	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
+	mockTable.On("CreateTable", mock.Anything).Return(nil)
+
+	// Capture the columns being inserted to verify System field
+	var insertedColumns []dto.ColumnInsertion
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Run(func(args mock.Arguments) {
+		insertedColumns = args.Get(0).([]dto.ColumnInsertion)
+	}).Return([]tenant.Column{
+		{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String(), System: true},
+		{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String(), System: false},
+	}, nil)
+
+	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
+	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	resp, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+
+	assert.NoError(t, err)
+	assert.Equal(t, model.ID, resp.Model.ID)
+
+	// Verify that the System field is properly set based on column definitions
+	// Find the Title column (should have System: false)
+	var titleColumn *dto.ColumnInsertion
+	for i := range insertedColumns {
+		if insertedColumns[i].Title == "Title" {
+			titleColumn = &insertedColumns[i]
+			break
+		}
+	}
+
+	assert.NotNil(t, titleColumn, "Title column should be inserted")
+	assert.False(t, titleColumn.System, "Title column should have System: false")
+
+	// Verify other system columns have System: true
+	for _, col := range insertedColumns {
+		if col.Title == "Id" || col.Title == "Created Time" || col.Title == "Created By" {
+			assert.True(t, col.System, "Column %s should have System: true", col.Title)
+		}
+	}
 }
 
 func TestCreateTableWithDefaultsImport_Success(t *testing.T) {
@@ -410,6 +458,32 @@ func TestUpdateColumn_Variants(t *testing.T) {
 		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{})
 
 		assert.ErrorIs(t, err, app_errors.UpdateNotAllowed)
+	})
+
+	t.Run("title column type update allowed", func(t *testing.T) {
+		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+
+		modelID := uuid.New()
+		colID := uuid.New()
+		// Title column with System: false should allow full updates including type changes
+		col := tenant.Column{ID: colID, ModelID: modelID.String(), BaseID: uuid.New().String(), ColumnName: "title", Title: "Title", UIDT: "text", DT: helpers.StringPtr("TEXT"), System: false}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID.String()).Return(col, nil)
+
+		newTitle := "Name"
+		newUIType := "number"
+		newDT := "INTEGER"
+		updatedCol := tenant.Column{ID: colID, ModelID: modelID.String(), BaseID: col.BaseID, ColumnName: "title", Title: newTitle, UIDT: newUIType, DT: helpers.StringPtr(newDT), System: false}
+		mockColumn.On("UpdateColumn", mock.Anything, "schema", colID.String(), mock.Anything).Return(updatedCol, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", modelID.String()).Return(tenant.Model{Alias: "tbl"}, nil)
+		mockTable.On("AlterTableColumn", mock.Anything).Return(nil)
+		mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		updateReq := dto.ColumnUpdate{Title: &newTitle, UIDT: &newUIType}
+		resp, err := svc.UpdateColumn(context.Background(), "schema", colID.String(), updateReq)
+
+		assert.NoError(t, err)
+		assert.Equal(t, newTitle, resp.Title)
+		assert.Equal(t, newUIType, resp.UIDT)
 	})
 
 	t.Run("lookup update", func(t *testing.T) {
@@ -1332,6 +1406,67 @@ func TestUpdateColumnForLookup_TargetBranch(t *testing.T) {
 
 	_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{})
 	assert.NoError(t, err)
+}
+
+func TestUpdateColumnForLink(t *testing.T) {
+	_, _, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+
+	modelID := uuid.New()
+	baseID := uuid.New().String()
+	columnID := uuid.New()
+
+	newTitle := "Updated Link Title"
+	newDescription := "Updated Link Description"
+	updatedBy := "test-user"
+
+	// Create a link column
+	col := tenant.Column{
+		ID:         columnID,
+		ModelID:    modelID.String(),
+		BaseID:     baseID,
+		ColumnName: "link_col",
+		UIDT:       "link",
+		Title:      "Original Title",
+		Meta:       map[string]interface{}{"relation_id": uuid.New().String()},
+	}
+
+	// Expected updated column with only title, description, and metadata fields changed
+	updatedCol := tenant.Column{
+		ID:          columnID,
+		ModelID:     modelID.String(),
+		BaseID:      baseID,
+		ColumnName:  "link_col",
+		UIDT:        "link",
+		Title:       newTitle,
+		Description: &newDescription,
+		Meta:        col.Meta, // Meta should remain unchanged for link updates
+	}
+
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", columnID.String()).Return(col, nil)
+	mockColumn.On("UpdateColumn", mock.Anything, "schema", col.ID.String(), mock.MatchedBy(func(req dto.ColumnUpdate) bool {
+		// Verify that only title, description, updatedBy, and updatedAt are being updated
+		return req.Title != nil && *req.Title == newTitle &&
+			req.Description != nil && *req.Description == newDescription &&
+			req.UpdatedBy == updatedBy &&
+			!req.UpdatedAt.IsZero() &&
+			req.Meta == nil && // Meta should not be updated
+			req.UIDT == nil && // UIDT should not be updated
+			req.DT == nil // DT should not be updated
+	})).Return(updatedCol, nil)
+
+	updateReq := dto.ColumnUpdate{
+		Title:       helpers.StringPtr(newTitle),
+		Description: helpers.StringPtr(newDescription),
+		UpdatedBy:   updatedBy,
+		Meta:        &map[string]interface{}{"some": "data"}, // This should be ignored for link columns
+	}
+
+	resp, err := svc.UpdateColumn(context.Background(), "schema", columnID.String(), updateReq)
+
+	assert.NoError(t, err)
+	assert.Equal(t, newTitle, resp.Title)
+	assert.Equal(t, newDescription, resp.Description)
+	mockColumn.AssertExpectations(t)
 }
 
 func TestGetTableByID_ErrorPaths(t *testing.T) {

@@ -169,6 +169,12 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 	var colDataList []dto.ColumnInsertion
 	now := time.Now().UTC()
 	for index, column := range columnsData {
+		// Use the System value from the column definition, default to true if not specified
+		systemValue := true
+		if column.System != nil {
+			systemValue = *column.System
+		}
+
 		colData := dto.ColumnInsertion{
 			ID:          uuid.New(),
 			ModelID:     tableData.ID,
@@ -180,7 +186,7 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 			Description: helpers.StringPtr(column.Description),
 			Meta:        map[string]interface{}{},
 			Virtual:     true,
-			System:      true,
+			System:      systemValue,
 			Deleted:     false,
 			OrderIndex:  helpers.Float64Ptr(float64(index)),
 			CreatedAt:   now,
@@ -1280,6 +1286,33 @@ func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, sc
 	return nil
 }
 
+func (s tableManagementService) updateColumnForLink(
+	ctx context.Context,
+	schemaName string,
+	columnData dto.ColumnResponse,
+	req dto.ColumnUpdate,
+) (dto.ColumnResponse, error) {
+	// For link columns, only update title, description, last_modified_time and last_modified_by
+	linkUpdateReq := dto.ColumnUpdate{
+		Title:       req.Title,
+		Description: req.Description,
+		UpdatedBy:   req.UpdatedBy,
+		UpdatedAt:   req.UpdatedAt,
+	}
+
+	updatedColumn, err := s.columnsService.UpdateColumn(ctx, schemaName, columnData.ID.String(), linkUpdateReq)
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+
+	var updatedColumnResponse dto.ColumnResponse
+	if err := helpers.StructToStruct(updatedColumn, &updatedColumnResponse); err != nil {
+		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
+	}
+
+	return updatedColumnResponse, nil
+}
+
 func (s tableManagementService) updateColumnForLookup(
 	ctx context.Context,
 	schemaName string,
@@ -1349,6 +1382,10 @@ func (s tableManagementService) UpdateColumn(
 	if req.UIDT != nil && *req.UIDT != "" {
 		dt, _ := s.getDataBaseType(*req.UIDT)
 		req.DT = helpers.StringPtr(dt)
+	}
+
+	if columnData.UIDT == "link" {
+		return s.updateColumnForLink(ctx, schemaName, columnData, req)
 	}
 
 	if columnData.UIDT == "lookup" {

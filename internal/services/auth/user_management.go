@@ -275,17 +275,17 @@ func (s *userManagementService) GetAllUsers(ctx context.Context, schema string) 
 }
 
 func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string, userID string, roles string) ([]dto.UserWorkspaceResponse, error) {
-	lg := logger.Get()
-	lg.Debug().Str("roles", roles).Msg("Fetching workspaces for user")
-	if roles == appConstant.RBACRoleNames.CoOwner || roles == appConstant.RBACRoleNames.Owner {
-		return s.getAllWorkspacesForOwner(ctx, schema, roles)
-	}
-
 	// Get user's workspace access from RBAC access_members table
 	// This includes both workspace-level and base-level access
 	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
 	if err != nil {
 		return []dto.UserWorkspaceResponse{}, nil
+	}
+
+	// Check if user has system-level Owner or CoOwner role in access_members
+	systemRole := s.getSystemLevelRole(ctx, schema, accessMembers)
+	if systemRole == appConstant.RBACRoleNames.CoOwner || systemRole == appConstant.RBACRoleNames.Owner {
+		return s.getAllWorkspacesForOwner(ctx, schema, systemRole)
 	}
 
 	workspaceAccess := s.buildWorkspaceAccessMapForWorkspaces(accessMembers)
@@ -312,7 +312,6 @@ func (s *userManagementService) GetWorkspaces(ctx context.Context, schema string
 }
 
 func (s *userManagementService) getAllWorkspacesForOwner(ctx context.Context, schema string, roles string) ([]dto.UserWorkspaceResponse, error) {
-	fmt.Println("User is Owner or CoOwner, fetching all workspaces")
 	workspaces, err := s.workspaceManagementService.GetAll(ctx, schema)
 	if err != nil {
 		return nil, err
@@ -328,6 +327,20 @@ func (s *userManagementService) getAllWorkspacesForOwner(ctx context.Context, sc
 		res = append(res, wsResp)
 	}
 	return res, nil
+}
+
+// getSystemLevelRole checks if user has system-level Owner or CoOwner role
+func (s *userManagementService) getSystemLevelRole(ctx context.Context, schema string, accessMembers []dto.AccessMemberDTO) string {
+	for _, member := range accessMembers {
+		if member.ScopeType == appConstant.ScopeLevels.System && member.ScopeID == nil {
+			// Get the role name from role_id
+			roleName := s.getRoleNameByID(ctx, schema, member.RoleID)
+			if roleName == appConstant.RBACRoleNames.Owner || roleName == appConstant.RBACRoleNames.CoOwner {
+				return roleName
+			}
+		}
+	}
+	return ""
 }
 
 func (s *userManagementService) buildWorkspaceAccessMapForWorkspaces(accessMembers []dto.AccessMemberDTO) map[string]string {
@@ -432,7 +445,6 @@ func (s *userManagementService) GetUsersWithRole(ctx context.Context, schema str
 }
 
 func (s *userManagementService) GetActiveUsersForAssign(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
-	lg := logger.Get()
 	functionName := "get_active_users_for_assign"
 	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
@@ -450,12 +462,9 @@ func (s *userManagementService) GetActiveUsersForAssign(ctx context.Context, sch
 			var user dto.UserWithRole
 			if err := helpers.MapToStruct(rec, &user); err == nil {
 				result = append(result, user)
-			} else {
-				lg.Warn().Err(err).Msg("Failed to convert record to UserWithRole")
 			}
 		}
 	}
-	lg.Debug().Interface("result", result).Msg("Retrieved active users for assignment")
 	return result, nil
 }
 
@@ -626,7 +635,7 @@ func (s *userManagementService) handleWorkspaceAccess(
 	member dto.AccessMemberDTO,
 	workspaceAccessMap map[string]*dto.UserRolesAccessResponse,
 ) {
-	lg := logger.Get()
+
 	if member.ScopeID == nil || *member.ScopeID == "" {
 		return
 	}
@@ -634,7 +643,6 @@ func (s *userManagementService) handleWorkspaceAccess(
 	workspaceID := *member.ScopeID
 	workspace, err := s.getWorkspaceByID(ctx, schema, workspaceID)
 	if err != nil {
-		lg.Warn().Err(err).Str("workspaceID", workspaceID).Msg("Failed to get workspace")
 		return
 	}
 
@@ -659,7 +667,6 @@ func (s *userManagementService) handleBaseAccess(
 	member dto.AccessMemberDTO,
 	workspaceAccessMap map[string]*dto.UserRolesAccessResponse,
 ) {
-	lg := logger.Get()
 	if member.ScopeID == nil || *member.ScopeID == "" || member.WorkspaceID == nil || *member.WorkspaceID == "" {
 		return
 	}
@@ -669,7 +676,6 @@ func (s *userManagementService) handleBaseAccess(
 
 	base, err := s.getBaseByID(ctx, schema, baseID)
 	if err != nil {
-		lg.Warn().Err(err).Str("baseID", baseID).Msg("Failed to get base")
 		return
 	}
 
@@ -678,7 +684,6 @@ func (s *userManagementService) handleBaseAccess(
 	if _, exists := workspaceAccessMap[workspaceID]; !exists {
 		workspace, err := s.getWorkspaceByID(ctx, schema, workspaceID)
 		if err != nil {
-			lg.Warn().Err(err).Str("workspaceID", workspaceID).Msg("Failed to get workspace")
 			return
 		}
 
