@@ -673,7 +673,6 @@ configure_jwt_secret() {
     
     print_step "JWT Secret configured"
 }
-}
 
 configure_email() {
     # Check if ALL email variables already exist in .env
