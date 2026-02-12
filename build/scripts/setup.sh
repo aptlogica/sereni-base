@@ -181,37 +181,38 @@ resolve_env_var() {
 }
 
 # Prompt for value with priority system
-# Returns the resolved value based on priority
+# Priority 1: Script argument (highest - can override anything)
+# Priority 2: Existing .env value (protected - never prompted, never overridden)
+# Priority 3: Default value (lowest - only used if no .env value)
 prompt_env_var() {
     local var_name="$1"
     local default_value="$2"
     local prompt_text="$3"
     local is_password="${4:-false}"
     
-    # Resolve value based on priority system
-    local resolved_value=$(resolve_env_var "$var_name" "$default_value")
-    
-    # If in auto-yes mode or value came from script arg, don't prompt
-    if [ "$AUTO_YES" = "true" ] || [[ -n "${SCRIPT_ARGS[$var_name]}" ]]; then
-        echo "$resolved_value"
+    # Priority 1: If script argument provided, use it (can override .env)
+    if [[ -n "${SCRIPT_ARGS[$var_name]}" ]]; then
+        echo "${SCRIPT_ARGS[$var_name]}"
         return
     fi
     
-    # Interactive mode: check if value exists in .env
+    # Priority 2: If value exists in .env, use it SILENTLY (never override)
     local existing_value=$(get_env_var "$var_name")
-    
-    # If value exists in .env, show it as default without prompting for passwords
     if [ -n "$existing_value" ]; then
-        if [ "$is_password" = "true" ]; then
-            echo "$existing_value"
-            return
-        fi
-        # Use existing value as the default shown to user
-        resolved_value="$existing_value"
+        echo "$existing_value"
+        return
     fi
     
-    # Build prompt with resolved default
-    local prompt_msg="$prompt_text [$resolved_value]: "
+    # Priority 3: Value doesn't exist in .env, prompt or use default
+    
+    # If in auto-yes mode, use default without prompting
+    if [ "$AUTO_YES" = "true" ]; then
+        echo "$default_value"
+        return
+    fi
+    
+    # Interactive mode: prompt user for new value
+    local prompt_msg="$prompt_text [$default_value]: "
     
     if [ "$is_password" = "true" ]; then
         read -s -p "$prompt_msg" user_input
@@ -220,11 +221,11 @@ prompt_env_var() {
         read -p "$prompt_msg" user_input
     fi
     
-    # Return user input if provided, otherwise return the resolved value
+    # Return user input if provided, otherwise return the default
     if [ -n "$user_input" ]; then
         echo "$user_input"
     else
-        echo "$resolved_value"
+        echo "$default_value"
     fi
 }
 

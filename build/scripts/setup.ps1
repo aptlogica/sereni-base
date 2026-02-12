@@ -372,9 +372,9 @@ function Resolve-EnvVar {
 }
 
 # Prompt for value with priority system
-# Priority 1: Script parameter (if provided)
-# Priority 2: Existing .env value
-# Priority 3: Default value
+# Priority 1: Script parameter (highest - can override anything)
+# Priority 2: Existing .env value (protected - never prompted, never overridden)
+# Priority 3: Default value (lowest - only used if no .env value)
 function Read-EnvVar {
     param(
         [string]$Key,
@@ -383,39 +383,39 @@ function Read-EnvVar {
         [bool]$IsPassword = $false
     )
     
-    # Resolve value based on priority system
-    $ResolvedValue = Resolve-EnvVar -Key $Key -DefaultValue $DefaultValue
-    
-    # If in auto-yes mode or parameter was provided, don't prompt
-    if ($AutoYes -or ($ParameterValues.ContainsKey($Key) -and -not [string]::IsNullOrWhiteSpace($ParameterValues[$Key]))) {
-        return $ResolvedValue
+    # Priority 1: If script parameter provided, use it (can override .env)
+    if ($ParameterValues.ContainsKey($Key) -and -not [string]::IsNullOrWhiteSpace($ParameterValues[$Key])) {
+        return $ParameterValues[$Key]
     }
     
-    # Interactive mode: check if value exists in .env
+    # Convert hyphenated key to underscore for environment variable names
     $envVarKey = $Key -replace "-", "_"
-    $existingValue = Get-EnvVar -Key $envVarKey
     
-    # If value exists in .env, use it as default without prompting for passwords
+    # Priority 2: If value exists in .env, use it SILENTLY (never override)
+    $existingValue = Get-EnvVar -Key $envVarKey
     if (-not [string]::IsNullOrWhiteSpace($existingValue)) {
-        if ($IsPassword) {
-            return $existingValue
-        }
-        # Use existing value as the default shown to user
-        $ResolvedValue = $existingValue
+        return $existingValue
     }
     
-    # Prompt user for input
+    # Priority 3: Value doesn't exist in .env, prompt or use default
+    
+    # If in auto-yes mode, use default without prompting
+    if ($AutoYes) {
+        return $DefaultValue
+    }
+    
+    # Interactive mode: prompt user for new value
     if ($IsPassword) {
-        Write-Host -NoNewline "$Prompt [$ResolvedValue]: "
+        Write-Host -NoNewline "$Prompt [$DefaultValue]: "
         $input = Read-Host -AsSecureString
         if ($input.Length -eq 0) {
-            return $ResolvedValue
+            return $DefaultValue
         }
         # Convert SecureString back to plain text for storage
         $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($input)
         return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
     } else {
-        return Read-HostWithCancel -Prompt $Prompt -Default $ResolvedValue
+        return Read-HostWithCancel -Prompt $Prompt -Default $DefaultValue
     }
 }
 
