@@ -924,6 +924,36 @@ configure_owner() {
     print_step "Owner configuration updated"
 }
 
+configure_ports() {
+    # Check if ALL port variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "MINIO_API_PORT" "MINIO_CONSOLE_PORT" "BASE_UI_PORT" "ANTIVIRUS_CLAMAV_PORT"; then
+        print_step "Port configuration already set in .env (skipping)"
+        return
+    fi
+    
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      PORT CONFIGURATION"
+    echo "========================================================================${NC}"
+    echo ""
+    echo "Configure container ports (press Enter to use defaults):"
+    echo ""
+    
+    MINIO_API_PORT=$(prompt_env_var "MINIO_API_PORT" "9000" "MinIO API Port")
+    MINIO_CONSOLE_PORT=$(prompt_env_var "MINIO_CONSOLE_PORT" "9001" "MinIO Console Port")
+    BASE_UI_PORT=$(prompt_env_var "BASE_UI_PORT" "5050" "Base UI Port")
+    ANTIVIRUS_CLAMAV_PORT=$(prompt_env_var "ANTIVIRUS_CLAMAV_PORT" "3310" "ClamAV Port")
+    
+    # Update port configuration in .env (only if changed)
+    update_env_var_if_changed "MINIO_API_PORT" "$MINIO_API_PORT"
+    update_env_var_if_changed "MINIO_CONSOLE_PORT" "$MINIO_CONSOLE_PORT"
+    update_env_var_if_changed "BASE_UI_PORT" "$BASE_UI_PORT"
+    update_env_var_if_changed "ANTIVIRUS_CLAMAV_PORT" "$ANTIVIRUS_CLAMAV_PORT"
+    
+    print_step "Port configuration updated"
+}
+
 prepare_docker_volumes() {
     echo ""
     echo -e "${BLUE}========================================================================"
@@ -995,6 +1025,7 @@ configure_email
 configure_storage
 configure_public_host
 configure_owner
+configure_ports
 clone_repositories
 prepare_docker_volumes
 start_services

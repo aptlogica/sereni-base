@@ -866,6 +866,37 @@ Update-EnvVarIfChanged -Key "OWNER_PASSWORD" -Value $OWNER_PASSWORD
 Write-Host "[OK] Owner configuration updated" -ForegroundColor Green
 
 # ========================================================================
+#                      PORT CONFIGURATION
+# ========================================================================
+
+Write-Host ""
+Write-Host "========================================================================"
+Write-Host "                      PORT CONFIGURATION"
+Write-Host "========================================================================"
+Write-Host ""
+Write-Host "Configure container ports (press Enter to use defaults):"
+Write-Host ""
+
+if ($AutoYes) {
+    $MINIO_API_PORT = "9000"
+    $MINIO_CONSOLE_PORT = "9001"
+    $BASE_UI_PORT = "5050"
+    $ANTIVIRUS_CLAMAV_PORT = "3310"
+} else {
+    $MINIO_API_PORT = Read-HostWithCancel -Prompt "MinIO API Port" -Default "9000"
+    $MINIO_CONSOLE_PORT = Read-HostWithCancel -Prompt "MinIO Console Port" -Default "9001"
+    $BASE_UI_PORT = Read-HostWithCancel -Prompt "Base UI Port" -Default "5050"
+    $ANTIVIRUS_CLAMAV_PORT = Read-HostWithCancel -Prompt "ClamAV Port" -Default "3310"
+}
+
+Update-EnvVarIfChanged -Key "MINIO_API_PORT" -Value $MINIO_API_PORT
+Update-EnvVarIfChanged -Key "MINIO_CONSOLE_PORT" -Value $MINIO_CONSOLE_PORT
+Update-EnvVarIfChanged -Key "BASE_UI_PORT" -Value $BASE_UI_PORT
+Update-EnvVarIfChanged -Key "ANTIVIRUS_CLAMAV_PORT" -Value $ANTIVIRUS_CLAMAV_PORT
+
+Write-Host "[OK] Port configuration updated" -ForegroundColor Green
+
+# ========================================================================
 #                      CLONING REPOSITORIES
 # ========================================================================
 
