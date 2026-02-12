@@ -317,7 +317,7 @@ function Get-EnvVar {
     return ""
 }
 
-# Prompt for value with priority: existing .env value > default
+# Prompt for value with priority: existing .env value > user input > default
 function Read-EnvVar {
     param(
         [string]$Key,
@@ -329,12 +329,13 @@ function Read-EnvVar {
     # Get existing value from .env
     $existingValue = Get-EnvVar -Key $Key
     
-    # Use existing value as default if it exists
+    # If value exists in .env, use it without prompting (for privacy on passwords)
     if (-not [string]::IsNullOrWhiteSpace($existingValue)) {
         # Don't display password fields for privacy
         if ($IsPassword) {
             return $existingValue
         }
+        # Use existing value as default shown to user
         $DefaultValue = $existingValue
     }
     
@@ -351,6 +352,20 @@ function Read-EnvVar {
         return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
     } else {
         return Read-HostWithCancel -Prompt $Prompt -Default $DefaultValue
+    }
+}
+
+# Update env var only if the new value is different from existing
+function Update-EnvVarIfChanged {
+    param(
+        [string]$Key,
+        [string]$Value
+    )
+    $existingValue = Get-EnvVar -Key $Key
+    
+    # Only update if the value is different or doesn't exist yet
+    if ($existingValue -ne $Value) {
+        Update-EnvVar -Key $Key -Value $Value
     }
 }
 
@@ -430,12 +445,12 @@ if ($DB_CHOICE -eq "1") {
     $DATABASE_SSL_MODE = Read-EnvVar -Key "DATABASE_SSL_MODE" -DefaultValue "disable" -Prompt "SSL Mode"
 }
 
-Update-EnvVar -Key "DATABASE_HOST" -Value $DATABASE_HOST
-Update-EnvVar -Key "DATABASE_PORT" -Value $DATABASE_PORT
-Update-EnvVar -Key "DATABASE_USER" -Value $DATABASE_USER
-Update-EnvVar -Key "DATABASE_PASSWORD" -Value $DATABASE_PASSWORD
-Update-EnvVar -Key "DATABASE_NAME" -Value $DATABASE_NAME
-Update-EnvVar -Key "DATABASE_SSL_MODE" -Value $DATABASE_SSL_MODE
+Update-EnvVarIfChanged -Key "DATABASE_HOST" -Value $DATABASE_HOST
+Update-EnvVarIfChanged -Key "DATABASE_PORT" -Value $DATABASE_PORT
+Update-EnvVarIfChanged -Key "DATABASE_USER" -Value $DATABASE_USER
+Update-EnvVarIfChanged -Key "DATABASE_PASSWORD" -Value $DATABASE_PASSWORD
+Update-EnvVarIfChanged -Key "DATABASE_NAME" -Value $DATABASE_NAME
+Update-EnvVarIfChanged -Key "DATABASE_SSL_MODE" -Value $DATABASE_SSL_MODE
 
 Write-Host "[OK] Database configuration updated" -ForegroundColor Green
 
@@ -460,7 +475,7 @@ if ($AutoYes) {
     }
 }
 
-Update-EnvVar -Key "AUTH_JWT_SECRET" -Value $AUTH_JWT_SECRET
+Update-EnvVarIfChanged -Key "AUTH_JWT_SECRET" -Value $AUTH_JWT_SECRET
 Write-Host "[OK] JWT Secret configured" -ForegroundColor Green
 
 # ========================================================================
@@ -521,11 +536,11 @@ if ([string]::IsNullOrWhiteSpace($SmtpFromEmail)) {
     Write-Host "From Email: $EMAIL_FROM_EMAIL"
 }
 
-Update-EnvVar -Key "EMAIL_SMTP_HOST" -Value $EMAIL_SMTP_HOST
-Update-EnvVar -Key "EMAIL_SMTP_PORT" -Value $EMAIL_SMTP_PORT
-Update-EnvVar -Key "EMAIL_SMTP_USERNAME" -Value $EMAIL_SMTP_USERNAME
-Update-EnvVar -Key "EMAIL_SMTP_PASSWORD" -Value $EMAIL_SMTP_PASSWORD
-Update-EnvVar -Key "EMAIL_FROM_EMAIL" -Value $EMAIL_FROM_EMAIL
+Update-EnvVarIfChanged -Key "EMAIL_SMTP_HOST" -Value $EMAIL_SMTP_HOST
+Update-EnvVarIfChanged -Key "EMAIL_SMTP_PORT" -Value $EMAIL_SMTP_PORT
+Update-EnvVarIfChanged -Key "EMAIL_SMTP_USERNAME" -Value $EMAIL_SMTP_USERNAME
+Update-EnvVarIfChanged -Key "EMAIL_SMTP_PASSWORD" -Value $EMAIL_SMTP_PASSWORD
+Update-EnvVarIfChanged -Key "EMAIL_FROM_EMAIL" -Value $EMAIL_FROM_EMAIL
 
 Write-Host "[OK] Email configuration updated" -ForegroundColor Green
 
@@ -563,8 +578,8 @@ switch ($STORAGE_CHOICE) {
             $STORAGE_DEV_PATH = Read-HostWithCancel -Prompt "Storage path" -Default "./uploads"
         }
         
-        Update-EnvVar -Key "STORAGE_DRIVER" -Value "local"
-        Update-EnvVar -Key "STORAGE_DEV_PATH" -Value $STORAGE_DEV_PATH
+        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "local"
+        Update-EnvVarIfChanged -Key "STORAGE_DEV_PATH" -Value $STORAGE_DEV_PATH
         Write-Host "[OK] Local filesystem storage configured" -ForegroundColor Green
     }
     "2" {
@@ -581,12 +596,12 @@ switch ($STORAGE_CHOICE) {
             $STORAGE_MINIO_BUCKET = Read-HostWithCancel -Prompt "Bucket Name" -Default "serenibase"
         }
         
-        Update-EnvVar -Key "STORAGE_DRIVER" -Value "minio"
-        Update-EnvVar -Key "STORAGE_MINIO_ENDPOINT" -Value "minio:9000"
-        Update-EnvVar -Key "STORAGE_MINIO_ACCESS_KEY" -Value $STORAGE_MINIO_ACCESS_KEY
-        Update-EnvVar -Key "STORAGE_MINIO_SECRET_KEY" -Value $STORAGE_MINIO_SECRET_KEY
-        Update-EnvVar -Key "STORAGE_MINIO_BUCKET" -Value $STORAGE_MINIO_BUCKET
-        Update-EnvVar -Key "STORAGE_MINIO_USE_SSL" -Value "false"
+        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "minio"
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ENDPOINT" -Value "minio:9000"
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ACCESS_KEY" -Value $STORAGE_MINIO_ACCESS_KEY
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_SECRET_KEY" -Value $STORAGE_MINIO_SECRET_KEY
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_BUCKET" -Value $STORAGE_MINIO_BUCKET
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_USE_SSL" -Value "false"
         Write-Host "[OK] MinIO Docker storage configured" -ForegroundColor Green
     }
     "3" {
@@ -618,12 +633,12 @@ switch ($STORAGE_CHOICE) {
         $STORAGE_MINIO_BUCKET = Read-HostWithCancel -Prompt "Bucket Name" -Default "serenibase"
         $STORAGE_MINIO_USE_SSL = Read-HostWithCancel -Prompt "Use SSL (true/false)" -Default "false"
         
-        Update-EnvVar -Key "STORAGE_DRIVER" -Value "minio"
-        Update-EnvVar -Key "STORAGE_MINIO_ENDPOINT" -Value $STORAGE_MINIO_ENDPOINT
-        Update-EnvVar -Key "STORAGE_MINIO_ACCESS_KEY" -Value $STORAGE_MINIO_ACCESS_KEY
-        Update-EnvVar -Key "STORAGE_MINIO_SECRET_KEY" -Value $STORAGE_MINIO_SECRET_KEY
-        Update-EnvVar -Key "STORAGE_MINIO_BUCKET" -Value $STORAGE_MINIO_BUCKET
-        Update-EnvVar -Key "STORAGE_MINIO_USE_SSL" -Value $STORAGE_MINIO_USE_SSL
+        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "minio"
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ENDPOINT" -Value $STORAGE_MINIO_ENDPOINT
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ACCESS_KEY" -Value $STORAGE_MINIO_ACCESS_KEY
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_SECRET_KEY" -Value $STORAGE_MINIO_SECRET_KEY
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_BUCKET" -Value $STORAGE_MINIO_BUCKET
+        Update-EnvVarIfChanged -Key "STORAGE_MINIO_USE_SSL" -Value $STORAGE_MINIO_USE_SSL
         Write-Host "[OK] Custom MinIO storage configured" -ForegroundColor Green
     }
     "4" {
@@ -654,11 +669,11 @@ switch ($STORAGE_CHOICE) {
             exit 1
         }
         
-        Update-EnvVar -Key "STORAGE_DRIVER" -Value "s3"
-        Update-EnvVar -Key "STORAGE_AWS_REGION" -Value $STORAGE_AWS_REGION
-        Update-EnvVar -Key "STORAGE_AWS_BUCKET" -Value $STORAGE_AWS_BUCKET
-        Update-EnvVar -Key "STORAGE_AWS_ACCESS_KEY" -Value $STORAGE_AWS_ACCESS_KEY
-        Update-EnvVar -Key "STORAGE_AWS_SECRET_KEY" -Value $STORAGE_AWS_SECRET_KEY
+        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "s3"
+        Update-EnvVarIfChanged -Key "STORAGE_AWS_REGION" -Value $STORAGE_AWS_REGION
+        Update-EnvVarIfChanged -Key "STORAGE_AWS_BUCKET" -Value $STORAGE_AWS_BUCKET
+        Update-EnvVarIfChanged -Key "STORAGE_AWS_ACCESS_KEY" -Value $STORAGE_AWS_ACCESS_KEY
+        Update-EnvVarIfChanged -Key "STORAGE_AWS_SECRET_KEY" -Value $STORAGE_AWS_SECRET_KEY
         Write-Host "[OK] AWS S3 storage configured" -ForegroundColor Green
     }
     default {
@@ -684,12 +699,12 @@ if ($AutoYes) {
     $PUBLIC_HOST = Read-HostWithCancel -Prompt "Enter IP/domain" -Default "localhost"
 }
 
-Update-EnvVar -Key "PUBLIC_HOST" -Value $PUBLIC_HOST
-Update-EnvVar -Key "SERVER_IP" -Value $PUBLIC_HOST
-Update-EnvVar -Key "BASEUI_VITE_API_BASE_URL" -Value "http://${PUBLIC_HOST}:8080"
-Update-EnvVar -Key "CORS_ALLOWED_ORIGINS" -Value "http://localhost:5050,http://127.0.0.1:5050,http://${PUBLIC_HOST}:5050,http://base-ui:5050,http://serenibase:8080"
-Update-EnvVar -Key "STORAGE_SERVER_IP" -Value $PUBLIC_HOST
-Update-EnvVar -Key "AUTH_RESET_PASSWORD_URL" -Value "http://${PUBLIC_HOST}:5050/reset-password?token=%s"
+Update-EnvVarIfChanged -Key "PUBLIC_HOST" -Value $PUBLIC_HOST
+Update-EnvVarIfChanged -Key "SERVER_IP" -Value $PUBLIC_HOST
+Update-EnvVarIfChanged -Key "BASEUI_VITE_API_BASE_URL" -Value "http://${PUBLIC_HOST}:8080"
+Update-EnvVarIfChanged -Key "CORS_ALLOWED_ORIGINS" -Value "http://localhost:5050,http://127.0.0.1:5050,http://${PUBLIC_HOST}:5050,http://base-ui:5050,http://serenibase:8080"
+Update-EnvVarIfChanged -Key "STORAGE_SERVER_IP" -Value $PUBLIC_HOST
+Update-EnvVarIfChanged -Key "AUTH_RESET_PASSWORD_URL" -Value "http://${PUBLIC_HOST}:5050/reset-password?token=%s"
 
 Write-Host "[OK] Configured PUBLIC_HOST" -ForegroundColor Green
 Write-Host "[OK] Configured SERVER_IP" -ForegroundColor Green
@@ -720,10 +735,10 @@ if ($AutoYes) {
     $OWNER_PASSWORD = Read-EnvVar -Key "OWNER_PASSWORD" -DefaultValue "Admin@123" -Prompt "Password" -IsPassword $true
 }
 
-Update-EnvVar -Key "OWNER_FIRST_NAME" -Value $OWNER_FIRST_NAME
-Update-EnvVar -Key "OWNER_LAST_NAME" -Value $OWNER_LAST_NAME
-Update-EnvVar -Key "OWNER_EMAIL" -Value $OWNER_EMAIL
-Update-EnvVar -Key "OWNER_PASSWORD" -Value $OWNER_PASSWORD
+Update-EnvVarIfChanged -Key "OWNER_FIRST_NAME" -Value $OWNER_FIRST_NAME
+Update-EnvVarIfChanged -Key "OWNER_LAST_NAME" -Value $OWNER_LAST_NAME
+Update-EnvVarIfChanged -Key "OWNER_EMAIL" -Value $OWNER_EMAIL
+Update-EnvVarIfChanged -Key "OWNER_PASSWORD" -Value $OWNER_PASSWORD
 
 Write-Host "[OK] Owner configuration updated" -ForegroundColor Green
 

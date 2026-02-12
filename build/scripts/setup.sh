@@ -103,7 +103,8 @@ get_env_var() {
     echo "$value"
 }
 
-# Prompt for value with priority: existing .env value > default
+# Prompt for value with priority: existing .env value > user input > default
+# Returns the new value that should be set (or empty string if no change)
 prompt_env_var() {
     local var_name="$1"
     local default_value="$2"
@@ -113,13 +114,14 @@ prompt_env_var() {
     # Get existing value from .env
     local existing_value=$(get_env_var "$var_name")
     
-    # Use existing value as default if it exists
+    # If value exists in .env and it's not a placeholder/default, use it without prompting
     if [ -n "$existing_value" ]; then
         # Don't prompt for password fields if they already exist (for privacy)
         if [ "$is_password" = "true" ]; then
             echo "$existing_value"
             return
         fi
+        # Use existing value as the default shown to user
         default_value="$existing_value"
     fi
     
@@ -133,11 +135,24 @@ prompt_env_var() {
         read -p "$prompt_msg" user_input
     fi
     
-    # Use user input if provided, otherwise use default
+    # Return user input if provided, otherwise return the default
     if [ -n "$user_input" ]; then
         echo "$user_input"
     else
         echo "$default_value"
+    fi
+}
+
+# Update env var only if the new value is different from existing
+update_env_var_if_changed() {
+    local var_name="$1"
+    local new_value="$2"
+    
+    local existing_value=$(get_env_var "$var_name")
+    
+    # Only update if the value is different or doesn't exist yet
+    if [ "$existing_value" != "$new_value" ]; then
+        update_env_var "$var_name" "$new_value"
     fi
 }
 
@@ -459,13 +474,13 @@ configure_database() {
         DATABASE_SSL_MODE=$(prompt_env_var "DATABASE_SSL_MODE" "disable" "SSL Mode")
     fi
     
-    # Update database configuration in .env
-    update_env_var "DATABASE_HOST" "$DATABASE_HOST"
-    update_env_var "DATABASE_PORT" "$DATABASE_PORT"
-    update_env_var "DATABASE_USER" "$DATABASE_USER"
-    update_env_var "DATABASE_PASSWORD" "$DATABASE_PASSWORD"
-    update_env_var "DATABASE_NAME" "$DATABASE_NAME"
-    update_env_var "DATABASE_SSL_MODE" "$DATABASE_SSL_MODE"
+    # Update database configuration in .env (only if changed)
+    update_env_var_if_changed "DATABASE_HOST" "$DATABASE_HOST"
+    update_env_var_if_changed "DATABASE_PORT" "$DATABASE_PORT"
+    update_env_var_if_changed "DATABASE_USER" "$DATABASE_USER"
+    update_env_var_if_changed "DATABASE_PASSWORD" "$DATABASE_PASSWORD"
+    update_env_var_if_changed "DATABASE_NAME" "$DATABASE_NAME"
+    update_env_var_if_changed "DATABASE_SSL_MODE" "$DATABASE_SSL_MODE"
     
     print_step "Database configuration updated"
 }
@@ -500,8 +515,8 @@ configure_jwt_secret() {
         echo "Generated JWT Secret: $AUTH_JWT_SECRET"
     fi
     
-    # Update JWT secret in .env
-    update_env_var "AUTH_JWT_SECRET" "$AUTH_JWT_SECRET"
+    # Update JWT secret in .env (only if changed)
+    update_env_var_if_changed "AUTH_JWT_SECRET" "$AUTH_JWT_SECRET"
     
     print_step "JWT Secret configured"
 }
@@ -532,12 +547,12 @@ configure_email() {
     
     EMAIL_FROM_EMAIL=$(prompt_env_var "EMAIL_FROM_EMAIL" "$EMAIL_SMTP_USERNAME" "From Email")
     
-    # Update email configuration in .env
-    update_env_var "EMAIL_SMTP_HOST" "$EMAIL_SMTP_HOST"
-    update_env_var "EMAIL_SMTP_PORT" "$EMAIL_SMTP_PORT"
-    update_env_var "EMAIL_SMTP_USERNAME" "$EMAIL_SMTP_USERNAME"
-    update_env_var "EMAIL_SMTP_PASSWORD" "$EMAIL_SMTP_PASSWORD"
-    update_env_var "EMAIL_FROM_EMAIL" "$EMAIL_FROM_EMAIL"
+    # Update email configuration in .env (only if changed)
+    update_env_var_if_changed "EMAIL_SMTP_HOST" "$EMAIL_SMTP_HOST"
+    update_env_var_if_changed "EMAIL_SMTP_PORT" "$EMAIL_SMTP_PORT"
+    update_env_var_if_changed "EMAIL_SMTP_USERNAME" "$EMAIL_SMTP_USERNAME"
+    update_env_var_if_changed "EMAIL_SMTP_PASSWORD" "$EMAIL_SMTP_PASSWORD"
+    update_env_var_if_changed "EMAIL_FROM_EMAIL" "$EMAIL_FROM_EMAIL"
     
     print_step "Email configuration updated"
 }
@@ -564,8 +579,8 @@ configure_storage() {
         
         STORAGE_DEV_PATH=$(prompt_env_var "STORAGE_DEV_PATH" "./uploads" "Storage path")
         
-        update_env_var "STORAGE_DRIVER" "local"
-        update_env_var "STORAGE_DEV_PATH" "$STORAGE_DEV_PATH"
+        update_env_var_if_changed "STORAGE_DRIVER" "local"
+        update_env_var_if_changed "STORAGE_DEV_PATH" "$STORAGE_DEV_PATH"
         
         print_step "Local filesystem storage configured"
         
@@ -577,12 +592,12 @@ configure_storage() {
         STORAGE_MINIO_SECRET_KEY=$(prompt_env_var "STORAGE_MINIO_SECRET_KEY" "minioadmin" "MinIO Secret Key" "true")
         STORAGE_MINIO_BUCKET=$(prompt_env_var "STORAGE_MINIO_BUCKET" "serenibase" "Bucket Name")
         
-        update_env_var "STORAGE_DRIVER" "minio"
-        update_env_var "STORAGE_MINIO_ENDPOINT" "minio:9000"
-        update_env_var "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
-        update_env_var "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
-        update_env_var "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
-        update_env_var "STORAGE_MINIO_USE_SSL" "false"
+        update_env_var_if_changed "STORAGE_DRIVER" "minio"
+        update_env_var_if_changed "STORAGE_MINIO_ENDPOINT" "minio:9000"
+        update_env_var_if_changed "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
+        update_env_var_if_changed "STORAGE_MINIO_USE_SSL" "false"
         
         print_step "MinIO Docker storage configured"
         
@@ -612,12 +627,12 @@ configure_storage() {
         STORAGE_MINIO_BUCKET=$(prompt_env_var "STORAGE_MINIO_BUCKET" "serenibase" "Bucket Name")
         STORAGE_MINIO_USE_SSL=$(prompt_env_var "STORAGE_MINIO_USE_SSL" "false" "Use SSL (true/false)")
         
-        update_env_var "STORAGE_DRIVER" "minio"
-        update_env_var "STORAGE_MINIO_ENDPOINT" "$STORAGE_MINIO_ENDPOINT"
-        update_env_var "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
-        update_env_var "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
-        update_env_var "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
-        update_env_var "STORAGE_MINIO_USE_SSL" "$STORAGE_MINIO_USE_SSL"
+        update_env_var_if_changed "STORAGE_DRIVER" "minio"
+        update_env_var_if_changed "STORAGE_MINIO_ENDPOINT" "$STORAGE_MINIO_ENDPOINT"
+        update_env_var_if_changed "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
+        update_env_var_if_changed "STORAGE_MINIO_USE_SSL" "$STORAGE_MINIO_USE_SSL"
         
         print_step "Custom MinIO storage configured"
         
@@ -646,11 +661,11 @@ configure_storage() {
             exit 1
         fi
         
-        update_env_var "STORAGE_DRIVER" "s3"
-        update_env_var "STORAGE_AWS_REGION" "$STORAGE_AWS_REGION"
-        update_env_var "STORAGE_AWS_BUCKET" "$STORAGE_AWS_BUCKET"
-        update_env_var "STORAGE_AWS_ACCESS_KEY" "$STORAGE_AWS_ACCESS_KEY"
-        update_env_var "STORAGE_AWS_SECRET_KEY" "$STORAGE_AWS_SECRET_KEY"
+        update_env_var_if_changed "STORAGE_DRIVER" "s3"
+        update_env_var_if_changed "STORAGE_AWS_REGION" "$STORAGE_AWS_REGION"
+        update_env_var_if_changed "STORAGE_AWS_BUCKET" "$STORAGE_AWS_BUCKET"
+        update_env_var_if_changed "STORAGE_AWS_ACCESS_KEY" "$STORAGE_AWS_ACCESS_KEY"
+        update_env_var_if_changed "STORAGE_AWS_SECRET_KEY" "$STORAGE_AWS_SECRET_KEY"
         
         print_step "AWS S3 storage configured"
         
@@ -678,10 +693,10 @@ configure_public_host() {
         PUBLIC_HOST="localhost"
     fi
 
-    # Update public host related variables
-    update_env_var "PUBLIC_HOST" "$PUBLIC_HOST"
-    update_env_var "SERVER_IP" "$PUBLIC_HOST"
-    update_env_var "STORAGE_SERVER_IP" "$PUBLIC_HOST"
+    # Update public host related variables (only if changed)
+    update_env_var_if_changed "PUBLIC_HOST" "$PUBLIC_HOST"
+    update_env_var_if_changed "SERVER_IP" "$PUBLIC_HOST"
+    update_env_var_if_changed "STORAGE_SERVER_IP" "$PUBLIC_HOST"
 
     # Always ensure Base UI API URL matches public host
     ensure_baseui_api_base_url "$PUBLIC_HOST"
@@ -689,8 +704,8 @@ configure_public_host() {
     # Always ensure CORS includes the public host
     ensure_cors_origin "$PUBLIC_HOST"
     
-    # Always ensure reset-password URL matches public host
-    update_env_var "AUTH_RESET_PASSWORD_URL" "http://$PUBLIC_HOST:5050/reset-password?token=%s"
+    # Always ensure reset-password URL matches public host (only if changed)
+    update_env_var_if_changed "AUTH_RESET_PASSWORD_URL" "http://$PUBLIC_HOST:5050/reset-password?token=%s"
     
     print_step "Configured PUBLIC_HOST"
     print_step "Configured SERVER_IP"
@@ -714,11 +729,11 @@ configure_owner() {
     OWNER_EMAIL=$(prompt_env_var "OWNER_EMAIL" "admin@example.com" "Email")
     OWNER_PASSWORD=$(prompt_env_var "OWNER_PASSWORD" "Admin@123" "Password" "true")
 
-    # Update .env file with owner configuration
-    update_env_var "OWNER_FIRST_NAME" "$OWNER_FIRST_NAME"
-    update_env_var "OWNER_LAST_NAME" "$OWNER_LAST_NAME"
-    update_env_var "OWNER_EMAIL" "$OWNER_EMAIL"
-    update_env_var "OWNER_PASSWORD" "$OWNER_PASSWORD"
+    # Update .env file with owner configuration (only if changed)
+    update_env_var_if_changed "OWNER_FIRST_NAME" "$OWNER_FIRST_NAME"
+    update_env_var_if_changed "OWNER_LAST_NAME" "$OWNER_LAST_NAME"
+    update_env_var_if_changed "OWNER_EMAIL" "$OWNER_EMAIL"
+    update_env_var_if_changed "OWNER_PASSWORD" "$OWNER_PASSWORD"
 
     print_step "Owner configuration updated"
 }
