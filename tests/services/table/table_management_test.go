@@ -127,7 +127,7 @@ func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
 	assert.Equal(t, model.ID, resp.Model.ID)
 
 	// Verify that the System field is properly set based on column definitions
-	// Find the Title column (should have System: false)
+	// Find the Title column (should have System: true)
 	var titleColumn *dto.ColumnInsertion
 	for i := range insertedColumns {
 		if insertedColumns[i].Title == "Title" {
@@ -137,11 +137,11 @@ func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
 	}
 
 	assert.NotNil(t, titleColumn, "Title column should be inserted")
-	assert.False(t, titleColumn.System, "Title column should have System: false")
+	assert.True(t, titleColumn.System, "Title column should have System: true")
 
 	// Verify other system columns have System: true
 	for _, col := range insertedColumns {
-		if col.Title == "Id" || col.Title == "Created Time" || col.Title == "Created By" {
+		if col.Title == "Id" || col.Title == "Created Time" || col.Title == "Created By" || col.Title == "Title" {
 			assert.True(t, col.System, "Column %s should have System: true", col.Title)
 		}
 	}
@@ -458,6 +458,31 @@ func TestUpdateColumn_Variants(t *testing.T) {
 		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{})
 
 		assert.ErrorIs(t, err, app_errors.UpdateNotAllowed)
+	})
+
+	t.Run("system with title allowed", func(t *testing.T) {
+		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+
+		modelID := uuid.New()
+		colID := uuid.New()
+		col := tenant.Column{ID: colID, ModelID: modelID.String(), BaseID: uuid.New().String(), ColumnName: "title", Title: "Title", UIDT: "text", DT: helpers.StringPtr("TEXT"), System: true}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID.String()).Return(col, nil)
+
+		newTitle := "Name"
+		newUIType := "number"
+		newDT := "INTEGER"
+		updatedCol := tenant.Column{ID: colID, ModelID: modelID.String(), BaseID: col.BaseID, ColumnName: "title", Title: newTitle, UIDT: newUIType, DT: helpers.StringPtr(newDT), System: true}
+		mockColumn.On("UpdateColumn", mock.Anything, "schema", colID.String(), mock.Anything).Return(updatedCol, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", modelID.String()).Return(tenant.Model{Alias: "tbl"}, nil)
+		mockTable.On("AlterTableColumn", mock.Anything).Return(nil)
+		mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		updateReq := dto.ColumnUpdate{Title: &newTitle, UIDT: &newUIType}
+		resp, err := svc.UpdateColumn(context.Background(), "schema", colID.String(), updateReq)
+
+		assert.NoError(t, err)
+		assert.Equal(t, newTitle, resp.Title)
+		assert.Equal(t, newUIType, resp.UIDT)
 	})
 
 	t.Run("title column type update allowed", func(t *testing.T) {

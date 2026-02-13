@@ -42,7 +42,8 @@ func NewBaseManagementService(
 	}
 }
 
-func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
+// insertBase is a helper method that handles the common base insertion logic
+func (s baseManagementService) insertBase(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
 	}
@@ -51,24 +52,22 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 		return tenant.Base{}, app_errors.InvalidPayload
 	}
 	insertionReq := dto.BaseInsertion{
-		// Copy fields from req to insertionReq
 		WorkspaceID: id,
 		Title:       req.Title,
 		Description: req.Description,
-		// ... copy other fields ...
-		CreatedBy: req.CreatedBy,
-		UpdatedBy: req.CreatedBy,
+		CreatedBy:   req.CreatedBy,
+		UpdatedBy:   req.CreatedBy,
 	}
-	insertedBase, err := s.baseService.BaseInsertion(ctx, insertionReq, schemaName)
+	return s.baseService.BaseInsertion(ctx, insertionReq, schemaName)
+}
+
+func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
+	insertedBase, err := s.insertBase(ctx, req, schemaName, userId)
 	if err != nil {
 		return tenant.Base{}, err
 	}
 
-	var base dto.BaseResponse
-	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
-		return tenant.Base{}, app_errors.ErrStructToStruct
-	}
-
+	id, _ := uuid.Parse(req.WorkspaceID)
 	tableInsertionData := dto.CreateTableRequest{
 		BaseID:      insertedBase.ID.String(),
 		WorkspaceID: id.String(),
@@ -83,11 +82,11 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 		return tenant.Base{}, err
 	}
 
-	if err := helpers.StructToStruct(insertedBase, &base); err != nil {
-		return tenant.Base{}, app_errors.ErrStructToStruct
-	}
-
 	return insertedBase, nil
+}
+
+func (s baseManagementService) CreateBaseWithoutTable(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
+	return s.insertBase(ctx, req, schemaName, userId)
 }
 
 func (s baseManagementService) CreateBaseWithImage(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string, fileHeader *multipart.FileHeader) (tenant.Base, error) {

@@ -1253,11 +1253,20 @@ func (s tableManagementService) DeleteView(
 
 func (s tableManagementService) allowUpdate(columnData dto.ColumnResponse) bool {
 	if *columnData.System {
+		if columnData.ColumnName == "title" {
+			return true
+		}
 		return false
 	}
 	return true
 }
 
+func (s tableManagementService) allowDelete(columnData dto.ColumnResponse) bool {
+	if *columnData.System {
+		return false
+	}
+	return true
+}
 func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, schemaName string, tableName string, columnName string, newDataType string, emptyBefore bool) error {
 	lg := logger.Get()
 	functionName := "convert_column_type"
@@ -1701,7 +1710,7 @@ func (s tableManagementService) DeleteColumn(
 		return s.handleDeleteColumnForLink(ctx, schemaName, columnData)
 	}
 
-	ok := s.allowUpdate(columnData)
+	ok := s.allowDelete(columnData)
 	if !ok {
 		return app_errors.DeleteNotAllowed
 	}

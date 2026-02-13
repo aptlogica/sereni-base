@@ -132,6 +132,9 @@ func (s *StubBaseManagementService) CreateBase(ctx context.Context, req dto.Crea
 	}
 	return tenant.Base{}, nil
 }
+func (s *StubBaseManagementService) CreateBaseWithoutTable(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
+	return tenant.Base{}, nil
+}
 func (s *StubBaseManagementService) CreateBaseWithImage(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string, fileHeader *multipart.FileHeader) (tenant.Base, error) {
 	return tenant.Base{}, nil
 }

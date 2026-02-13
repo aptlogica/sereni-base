@@ -328,6 +328,93 @@ func TestNewBaseManagementService(t *testing.T) {
 	assert.NotNil(t, service)
 }
 
+func TestBaseManagementService_CreateBase(t *testing.T) {
+	t.Run("success with default table", func(t *testing.T) {
+		_, _, mockBase, mockTableManagement, _, _, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
+
+		result, err := service.CreateBase(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base", CreatedBy: "user"}, "schema", "user")
+
+		assert.NoError(t, err)
+		assert.Equal(t, inserted.ID, result.ID)
+		mockBase.AssertExpectations(t)
+		mockTableManagement.AssertExpectations(t)
+	})
+
+	t.Run("base insertion error", func(t *testing.T) {
+		_, _, mockBase, _, _, _, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(tenant.Base{}, errors.New("insert failed"))
+
+		_, err := service.CreateBase(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("table creation error", func(t *testing.T) {
+		_, _, mockBase, mockTableManagement, _, _, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, errors.New("table creation failed"))
+
+		_, err := service.CreateBase(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid workspace id", func(t *testing.T) {
+		_, _, _, _, _, _, service := setupBaseManagementService()
+
+		_, err := service.CreateBase(context.Background(), dto.CreateBaseRequest{WorkspaceID: "invalid-uuid", Title: "Base"}, "schema", "user")
+
+		assert.Error(t, err)
+		assert.Equal(t, app_errors.InvalidPayload, err)
+	})
+}
+
+func TestBaseManagementService_CreateBaseWithoutTable(t *testing.T) {
+	t.Run("success without default table", func(t *testing.T) {
+		_, _, mockBase, _, _, _, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+
+		result, err := service.CreateBaseWithoutTable(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base", CreatedBy: "user"}, "schema", "user")
+
+		assert.NoError(t, err)
+		assert.Equal(t, inserted.ID, result.ID)
+		mockBase.AssertExpectations(t)
+	})
+
+	t.Run("base insertion error", func(t *testing.T) {
+		_, _, mockBase, _, _, _, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(tenant.Base{}, errors.New("insert failed"))
+
+		_, err := service.CreateBaseWithoutTable(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user")
+
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid workspace id", func(t *testing.T) {
+		_, _, _, _, _, _, service := setupBaseManagementService()
+
+		_, err := service.CreateBaseWithoutTable(context.Background(), dto.CreateBaseRequest{WorkspaceID: "invalid-uuid", Title: "Base"}, "schema", "user")
+
+		assert.Error(t, err)
+		assert.Equal(t, app_errors.InvalidPayload, err)
+	})
+}
+
 func TestCreateBaseWithImage(t *testing.T) {
 	t.Run("no file", func(t *testing.T) {
 		_, _, mockBase, mockTableManagement, _, _, service := setupBaseManagementService()
