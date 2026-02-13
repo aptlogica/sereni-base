@@ -63,8 +63,24 @@ func (s *importService) Import(ctx context.Context, schemaName string, req dto.C
 		return dto.ImportTableResponse{}, err
 	}
 
-	if err := s.updateTitleColumn(ctx, schemaName, lg, titleColumnName, columnTypes[0], &tableResp); err != nil {
-		return dto.ImportTableResponse{}, err
+	titleColumnID := ""
+	for _, col := range tableResp.Columns {
+		if col.Title == "Title" {
+			titleColumnID = col.ID.String()
+			break
+		}
+	}
+
+	if titleColumnID != "" {
+		dt := s.getDatabaseType(columnTypes[0])
+		updateColReq := dto.ColumnUpdate{
+			Title: &titleColumnName,
+			UIDT:  &columnTypes[0],
+			DT:    &dt,
+		}
+		if _, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq); err != nil {
+			return dto.ImportTableResponse{}, err
+		}
 	}
 
 	columnMap, err := s.addColumns(ctx, schemaName, req, headers, columnTypes, tableResp, lg)

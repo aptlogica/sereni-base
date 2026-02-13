@@ -190,7 +190,7 @@ var SystemColumns = []dto.AddColumnRequest{
 		DT:          "TEXT",
 		OrderIndex:  helpers.Float64Ptr(1),
 		Virtual:     helpers.BoolPtr(false),
-		System:      helpers.BoolPtr(false),
+		System:      helpers.BoolPtr(true),
 	},
 	{
 		Title:       "Created Time",
