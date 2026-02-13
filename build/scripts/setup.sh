@@ -3,6 +3,16 @@
 #                    SERENIBASE SETUP SCRIPT
 #
 #  Interactive setup script to configure and deploy SereniBase
+#
+#  Priority for environment variables:
+#    1. Script command-line arguments (highest priority)
+#    2. Existing values from .env file (if exists)
+#    3. Default variable values (lowest priority)
+#
+#  Usage:
+#    ./setup.sh                    # Interactive mode with priority defaults
+#    ./setup.sh --auto-yes         # Non-interactive with all defaults
+#    ./setup.sh --smtp-host="..." --smtp-port="..." [other args]
 # ========================================================================
 
 # Don't use 'set -e' to allow proper Ctrl+C handling
@@ -14,6 +24,66 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Change to project root
 cd "$PROJECT_ROOT"
+
+# ========================================================================
+# PARAMETER PARSING - Store all script arguments (bash 3.2 compatible)
+# ========================================================================
+SCRIPT_ARGS=""
+AUTO_YES=false
+
+# Helper function to store script argument (bash 3.2 compatible)
+set_script_arg() {
+    local key="$1"
+    local value="$2"
+    SCRIPT_ARGS="${SCRIPT_ARGS}${key}:::${value}|||"
+}
+
+# Helper function to get script argument (bash 3.2 compatible)
+get_script_arg() {
+    local key="$1"
+    local pattern="${key}:::"
+    
+    if [[ "$SCRIPT_ARGS" == *"$pattern"* ]]; then
+        # Extract the value between key::: and |||
+        local temp="${SCRIPT_ARGS#*$pattern}"
+        local value="${temp%%|||*}"
+        echo "$value"
+        return 0
+    fi
+    return 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --auto-yes)
+            AUTO_YES=true
+            shift
+            ;;
+        --*=*)
+            # Handle --key=value format
+            key="${1#--}"
+            key="${key%=*}"
+            value="${1#*=}"
+            set_script_arg "$key" "$value"
+            shift
+            ;;
+        --*)
+            # Handle --key value format
+            key="${1#--}"
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires a value"
+                exit 1
+            fi
+            set_script_arg "$key" "$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--auto-yes] [--key=value ...]"
+            exit 1
+            ;;
+    esac
+done
 
 # Cleanup function to stop all processes on Ctrl+C
 cleanup() {
@@ -96,6 +166,128 @@ update_env_var() {
     fi
 }
 
+# Get existing environment variable value from .env file
+get_env_var() {
+    local var_name="$1"
+    if [ ! -f ".env" ]; then
+        echo ""
+        return
+    fi
+    local value=$(grep -E "^${var_name}=" .env 2>/dev/null | tail -n 1 | cut -d'=' -f2- | tr -d '\r')
+    echo "$value"
+}
+
+# Resolve environment variable value with priority system
+# Priority 1: Script argument (highest)
+# Priority 2: Existing .env value
+# Priority 3: Default value (lowest)
+resolve_env_var() {
+    local var_name="$1"
+    local default_value="$2"
+    
+    # Priority 1: Check script arguments
+    local script_value
+    script_value=$(get_script_arg "$var_name" 2>/dev/null)
+    if [ -n "$script_value" ]; then
+        echo "$script_value"
+        return
+    fi
+    
+    # Priority 2: Check existing .env file
+    local existing_value=$(get_env_var "$var_name")
+    if [ -n "$existing_value" ]; then
+        echo "$existing_value"
+        return
+    fi
+    
+    # Priority 3: Use default value
+    echo "$default_value"
+}
+
+# Prompt for value with priority system
+# Priority 1: Script argument (highest - can override anything)
+# Priority 2: Existing .env value (protected - never prompted, never overridden)
+# Priority 3: Default value (lowest - only used if no .env value)
+prompt_env_var() {
+    local var_name="$1"
+    local default_value="$2"
+    local prompt_text="$3"
+    local is_password="${4:-false}"
+    
+    # Priority 1: If script argument provided, use it (can override .env)
+    local script_value
+    script_value=$(get_script_arg "$var_name" 2>/dev/null)
+    if [ -n "$script_value" ]; then
+        echo "$script_value"
+        return
+    fi
+    
+    # Priority 2: If value exists in .env, use it SILENTLY (never override)
+    local existing_value=$(get_env_var "$var_name")
+    if [ -n "$existing_value" ]; then
+        echo "$existing_value"
+        return
+    fi
+    
+    # Priority 3: Value doesn't exist in .env, prompt or use default
+    
+    # If in auto-yes mode, use default without prompting
+    if [ "$AUTO_YES" = "true" ]; then
+        echo "$default_value"
+        return
+    fi
+    
+    # Interactive mode: prompt user for new value
+    local prompt_msg="$prompt_text [$default_value]: "
+    
+    if [ "$is_password" = "true" ]; then
+        read -s -p "$prompt_msg" user_input
+        echo ""
+    else
+        read -p "$prompt_msg" user_input
+    fi
+    
+    # Return user input if provided, otherwise return the default
+    if [ -n "$user_input" ]; then
+        echo "$user_input"
+    else
+        echo "$default_value"
+    fi
+}
+
+# Update env var only if the new value is different from existing
+update_env_var_if_changed() {
+    local var_name="$1"
+    local new_value="$2"
+    
+    local existing_value=$(get_env_var "$var_name")
+    
+    # Only update if the value is different or doesn't exist yet
+    if [ "$existing_value" != "$new_value" ]; then
+        update_env_var "$var_name" "$new_value"
+    fi
+}
+
+# Check if a variable already exists in .env (NEVER override if exists)
+var_exists_in_env() {
+    local var_name="$1"
+    local existing_value=$(get_env_var "$var_name")
+    if [ -n "$existing_value" ]; then
+        return 0  # True - variable exists
+    fi
+    return 1  # False - variable doesn't exist
+}
+
+# Check if ALL variables in the list exist in .env
+all_vars_exist_in_env() {
+    for var_name in "$@"; do
+        if ! var_exists_in_env "$var_name"; then
+            return 1  # At least one variable missing
+        fi
+    done
+    return 0  # All variables exist
+}
+
 # Ensure CORS_ALLOWED_ORIGINS includes PUBLIC_HOST:5050
 ensure_cors_origin() {
     local host="$1"
@@ -163,26 +355,26 @@ check_prerequisites() {
     fi
 }
 
-# Setup environment
+# Setup environment - Create .env if not exists, merge with template
 setup_environment() {
     echo -e "\n${BLUE}Setting up environment...${NC}\n"
     
-    # Create a temporary file with all default environment variables
+    # Create .env template with all default variables (using ASCII for compatibility)
     cat > .env.template << 'EOF'
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║                         SERENIBASE CONFIGURATION                              ║
-# ║                  Generated by Interactive Setup Script                        ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+# ==============================================================================
+#                         SERENIBASE CONFIGURATION
+#                  Generated by Interactive Setup Script
+# ==============================================================================
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🌐 NETWORK CONFIGURATION                            │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           NETWORK CONFIGURATION
+# ------------------------------------------------------------------------------
 
 PUBLIC_HOST=localhost
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🖥️  SERVER CONFIGURATION                            │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           SERVER CONFIGURATION
+# ------------------------------------------------------------------------------
 
 SERVER_HOST=0.0.0.0
 SERVER_PORT=8080
@@ -191,9 +383,9 @@ SERVER_WRITE_TIMEOUT=30
 SERVER_ENV=dev
 SERVER_SCHEME=http
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🗄️  DATABASE CONFIGURATION                          │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           DATABASE CONFIGURATION
+# ------------------------------------------------------------------------------
 
 DATABASE_HOST=postgres
 DATABASE_PORT=5432
@@ -205,9 +397,9 @@ DATABASE_MAX_OPEN_CONNS=25
 DATABASE_MAX_IDLE_CONNS=5
 DATABASE_CONN_MAX_LIFETIME=1h
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🔐 AUTHENTICATION CONFIGURATION                     │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           AUTHENTICATION CONFIGURATION
+# ------------------------------------------------------------------------------
 
 AUTH_URL=http://jwt-provider:8081
 AUTH_RESET_PASSWORD_URL=http://localhost:5050/reset-password?token=%s
@@ -218,9 +410,9 @@ AUTH_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://sereniba
 AUTH_ENV=development
 AUTH_LOG_LEVEL=info
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           👤 ADMIN ACCOUNT                                    │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           ADMIN ACCOUNT
+# ------------------------------------------------------------------------------
 
 OWNER_FIRST_NAME=Admin
 OWNER_LAST_NAME=User
@@ -228,23 +420,23 @@ OWNER_EMAIL=admin@example.com
 OWNER_PASSWORD=Admin@123
 TEMPORARY_USER_PASSWORD=FC4i;<S8q?~0
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           📧 EMAIL CONFIGURATION                              │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           EMAIL CONFIGURATION
+# ------------------------------------------------------------------------------
 
 EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=your_email_host
-EMAIL_SMTP_PORT=587
+EMAIL_SMTP_HOST=
+EMAIL_SMTP_PORT=
 EMAIL_SMTP_USERNAME=
 EMAIL_SMTP_PASSWORD=
 EMAIL_FROM_EMAIL=
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           📁 STORAGE CONFIGURATION                            │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           STORAGE CONFIGURATION
+# ------------------------------------------------------------------------------
 
 STORAGE_URL=http://sereni-storage-provider:8083/api/v1
 STORAGE_SERVER_PORT=8083
@@ -263,9 +455,9 @@ STORAGE_MINIO_BUCKET=serenibase
 STORAGE_MINIO_USE_SSL=false
 STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🦠 ANTIVIRUS CONFIGURATION                          │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           ANTIVIRUS CONFIGURATION
+# ------------------------------------------------------------------------------
 
 ANTIVIRUS_URL=http://antivirus-service:8084
 ANTIVIRUS_HOST=0.0.0.0
@@ -277,24 +469,24 @@ ANTIVIRUS_CLAMAV_ADDRESS=clamav:3310
 ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS=30
 ANTIVIRUS_MAX_UPLOAD_SIZE_MB=32
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🎨 FRONTEND CONFIGURATION                           │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           FRONTEND CONFIGURATION
+# ------------------------------------------------------------------------------
 
 BASEUI_VITE_API_BASE_URL=http://localhost:8080
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           🔒 CORS CONFIGURATION                               │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           CORS CONFIGURATION
+# ------------------------------------------------------------------------------
 
 CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://base-ui:5050,http://serenibase:8080
 CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS,PATCH
 CORS_ALLOWED_HEADERS=Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization,accept,origin,Cache-Control,X-Requested-With,schema,workspace,base
 CORS_ALLOW_CREDENTIALS=true
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           📝 LOGGING CONFIGURATION                            │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           LOGGING CONFIGURATION
+# ------------------------------------------------------------------------------
 
 LOG_LEVEL=info
 LOG_FILE=app.log
@@ -303,19 +495,19 @@ LOG_MAX_BACKUPS=10
 LOG_MAX_AGE=30
 LOG_COMPRESS=true
 
-# ┌──────────────────────────────────────────────────────────────────────────────┐
-# │                           📦 ASSET CONFIGURATION                              │
-# └──────────────────────────────────────────────────────────────────────────────┘
+# ------------------------------------------------------------------------------
+#                           ASSET CONFIGURATION
+# ------------------------------------------------------------------------------
 
 ASSET_MAX_SIZE=5242880
 EOF
     
     if [ ! -f ".env" ]; then
-        # If .env doesn't exist, create it from template
+        # .env doesn't exist, create it from template
         cp .env.template .env
-        print_step "Created .env with default environment variables"
+        print_step "Created .env with environment variables"
     else
-        # If .env exists, append missing variables
+        # .env exists, merge with template (add missing variables)
         print_warning ".env already exists. Checking for missing variables..."
         
         # Read existing .env content
@@ -355,6 +547,13 @@ EOF
 }
 
 configure_database() {
+    # Check if ALL database variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "DATABASE_HOST" "DATABASE_PORT" "DATABASE_USER" "DATABASE_PASSWORD" "DATABASE_NAME" "DATABASE_SSL_MODE"; then
+        print_step "Database configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      DATABASE CONFIGURATION"
@@ -365,76 +564,111 @@ configure_database() {
     echo "  1. Use default PostgreSQL (Docker container)"
     echo "  2. Use custom database credentials"
     echo ""
-    read -p "Enter choice [1]: " DB_CHOICE
-    DB_CHOICE=${DB_CHOICE:-1}
+    
+    if [ "$AUTO_YES" = "true" ]; then
+        DB_CHOICE=1
+    else
+        read -p "Enter choice [1]: " DB_CHOICE
+        DB_CHOICE=${DB_CHOICE:-1}
+    fi
     
     if [ "$DB_CHOICE" = "1" ]; then
         echo ""
         echo "Using default PostgreSQL Docker container"
         echo ""
         
-        read -p "Database User [postgres]: " DATABASE_USER
-        DATABASE_USER=${DATABASE_USER:-postgres}
+        DATABASE_USER=$(prompt_env_var "DATABASE_USER" "postgres" "Database User")
+        DATABASE_PASSWORD=$(prompt_env_var "DATABASE_PASSWORD" "postgres" "Database Password" "true")
+        DATABASE_NAME=$(prompt_env_var "DATABASE_NAME" "serenibase" "Database Name")
         
-        read -p "Database Password [postgres]: " DATABASE_PASSWORD
-        DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+        # DATABASE_PORT: Used for external host connections (e.g., localhost:5432)
+        # For Docker-to-Docker internal connections, always use 5432
+        if var_exists_in_env "DATABASE_PORT"; then
+            DATABASE_PORT=$(get_env_var "DATABASE_PORT")
+        else
+            DATABASE_PORT="5432"
+        fi
         
-        read -p "Database Name [serenibase]: " DATABASE_NAME
-        DATABASE_NAME=${DATABASE_NAME:-serenibase}
+        # DATABASE_HOST: For external connections (localhost or IP address)
+        # For Docker-to-Docker internal connections, always use 'postgres' (service name)
+        if var_exists_in_env "DATABASE_HOST"; then
+            DATABASE_HOST=$(get_env_var "DATABASE_HOST")
+        else
+            DATABASE_HOST="postgres"
+        fi
         
-        DATABASE_HOST="postgres"
-        DATABASE_PORT="5432"
-        DATABASE_SSL_MODE="disable"
+        # DATABASE_INTERNAL_HOST and DATABASE_INTERNAL_PORT are used by applications
+        # running INSIDE docker-compose network to connect to PostgreSQL container
+        # These should always be: postgres:5432 (service name and internal port)
+        DATABASE_INTERNAL_HOST="postgres"
+        DATABASE_INTERNAL_PORT="5432"
+        
+        # Use disable only if DATABASE_SSL_MODE doesn't exist in .env
+        if var_exists_in_env "DATABASE_SSL_MODE"; then
+            DATABASE_SSL_MODE=$(get_env_var "DATABASE_SSL_MODE")
+        else
+            DATABASE_SSL_MODE="disable"
+        fi
     else
         echo ""
         echo "Enter custom database configuration:"
         echo ""
         
-        read -p "Database Host: " DATABASE_HOST
+        DATABASE_HOST=$(prompt_env_var "DATABASE_HOST" "" "Database Host")
         if [ -z "$DATABASE_HOST" ]; then
             print_error "Database host is required"
             exit 1
         fi
         
-        read -p "Database Port [5432]: " DATABASE_PORT
-        DATABASE_PORT=${DATABASE_PORT:-5432}
+        DATABASE_PORT=$(prompt_env_var "DATABASE_PORT" "5432" "Database Port")
         
-        read -p "Database User: " DATABASE_USER
+        DATABASE_USER=$(prompt_env_var "DATABASE_USER" "" "Database User")
         if [ -z "$DATABASE_USER" ]; then
             print_error "Database user is required"
             exit 1
         fi
         
-        read -s -p "Database Password: " DATABASE_PASSWORD
-        echo ""
+        DATABASE_PASSWORD=$(prompt_env_var "DATABASE_PASSWORD" "" "Database Password" "true")
         if [ -z "$DATABASE_PASSWORD" ]; then
             print_error "Database password is required"
             exit 1
         fi
         
-        read -p "Database Name: " DATABASE_NAME
+        DATABASE_NAME=$(prompt_env_var "DATABASE_NAME" "" "Database Name")
         if [ -z "$DATABASE_NAME" ]; then
             print_error "Database name is required"
             exit 1
         fi
         
-        read -p "SSL Mode [disable]: " DATABASE_SSL_MODE
-        DATABASE_SSL_MODE=${DATABASE_SSL_MODE:-disable}
+        DATABASE_SSL_MODE=$(prompt_env_var "DATABASE_SSL_MODE" "disable" "SSL Mode")
     fi
     
-    # Update database configuration in .env
-    sed -i.bak "s/^DATABASE_HOST=.*/DATABASE_HOST=$DATABASE_HOST/" .env
-    sed -i.bak "s/^DATABASE_PORT=.*/DATABASE_PORT=$DATABASE_PORT/" .env
-    sed -i.bak "s/^DATABASE_USER=.*/DATABASE_USER=$DATABASE_USER/" .env
-    sed -i.bak "s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD=$DATABASE_PASSWORD/" .env
-    sed -i.bak "s/^DATABASE_NAME=.*/DATABASE_NAME=$DATABASE_NAME/" .env
-    sed -i.bak "s/^DATABASE_SSL_MODE=.*/DATABASE_SSL_MODE=$DATABASE_SSL_MODE/" .env
-    rm -f .env.bak
+    # Update database configuration in .env (only if changed)
+    update_env_var_if_changed "DATABASE_HOST" "$DATABASE_HOST"
+    update_env_var_if_changed "DATABASE_PORT" "$DATABASE_PORT"
+    update_env_var_if_changed "DATABASE_USER" "$DATABASE_USER"
+    update_env_var_if_changed "DATABASE_PASSWORD" "$DATABASE_PASSWORD"
+    update_env_var_if_changed "DATABASE_NAME" "$DATABASE_NAME"
+    update_env_var_if_changed "DATABASE_SSL_MODE" "$DATABASE_SSL_MODE"
+    
+    # Set internal Docker connection variables (used by services inside docker-compose)
+    # These are always postgres:5432 for container-to-container communication
+    if [ "$DB_CHOICE" = "1" ]; then
+        update_env_var_if_changed "DATABASE_INTERNAL_HOST" "postgres"
+        update_env_var_if_changed "DATABASE_INTERNAL_PORT" "5432"
+    fi
     
     print_step "Database configuration updated"
 }
 
 configure_jwt_secret() {
+    # Check if JWT secret already exists in .env AND is not the default placeholder
+    local current_jwt_secret=$(get_env_var "AUTH_JWT_SECRET")
+    if [ -n "$current_jwt_secret" ] && [ "$current_jwt_secret" != "change-this-to-a-secure-random-string-min32chars" ]; then
+        print_step "JWT Secret already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      AUTHENTICATION CONFIGURATION"
@@ -449,9 +683,8 @@ configure_jwt_secret() {
         echo "Generated JWT Secret: $AUTH_JWT_SECRET"
     fi
     
-    # Update JWT secret in .env
-    sed -i.bak "s/^AUTH_JWT_SECRET=.*/AUTH_JWT_SECRET=$AUTH_JWT_SECRET/" .env
-    rm -f .env.bak
+    # Update JWT secret in .env (only if changed)
+    update_env_var_if_changed "AUTH_JWT_SECRET" "$AUTH_JWT_SECRET"
     
     print_step "JWT Secret configured"
 }
@@ -462,43 +695,75 @@ configure_email() {
     echo "                      EMAIL CONFIGURATION"
     echo "========================================================================${NC}"
     echo ""
-    echo "Enter SMTP email configuration (REQUIRED):"
+    echo "Enter SMTP email configuration (press Enter to keep existing values):"
     echo ""
     
-    read -p "SMTP Host [your_email_host]: " EMAIL_SMTP_HOST
-    EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-your_email_host}
+    # Get current values from .env to use as defaults
+    local current_smtp_host=$(get_env_var "EMAIL_SMTP_HOST")
+    local current_smtp_port=$(get_env_var "EMAIL_SMTP_PORT")
+    local current_smtp_username=$(get_env_var "EMAIL_SMTP_USERNAME")
+    local current_smtp_password=$(get_env_var "EMAIL_SMTP_PASSWORD")
+    local current_from_email=$(get_env_var "EMAIL_FROM_EMAIL")
     
-    read -p "SMTP Port [587]: " EMAIL_SMTP_PORT
-    EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+    # Set defaults - use current value if exists, otherwise use reasonable defaults
+    local default_smtp_host="${current_smtp_host:=smtp.gmail.com}"
+    local default_smtp_port="${current_smtp_port:=587}"
+    local default_smtp_username="${current_smtp_username:=}"
+    local default_smtp_password="${current_smtp_password:=}"
+    local default_from_email="${current_from_email:=}"
     
-    read -p "SMTP Username (email): " EMAIL_SMTP_USERNAME
-    if [ -z "$EMAIL_SMTP_USERNAME" ]; then
-        print_error "SMTP username is required"
-        exit 1
+    # Always prompt for each field, using current value as default
+    if [ "$AUTO_YES" = true ]; then
+        EMAIL_SMTP_HOST="${default_smtp_host}"
+        EMAIL_SMTP_PORT="${default_smtp_port}"
+        EMAIL_SMTP_USERNAME="${default_smtp_username}"
+        EMAIL_SMTP_PASSWORD="${default_smtp_password}"
+        EMAIL_FROM_EMAIL="${default_from_email:-$EMAIL_SMTP_USERNAME}"
+    else
+        # Interactive prompts
+        read -p "SMTP Host [${default_smtp_host}]: " EMAIL_SMTP_HOST
+        EMAIL_SMTP_HOST="${EMAIL_SMTP_HOST:-$default_smtp_host}"
+        
+        read -p "SMTP Port [${default_smtp_port}]: " EMAIL_SMTP_PORT
+        EMAIL_SMTP_PORT="${EMAIL_SMTP_PORT:-$default_smtp_port}"
+        
+        read -p "SMTP Username (email) [${default_smtp_username}]: " EMAIL_SMTP_USERNAME
+        EMAIL_SMTP_USERNAME="${EMAIL_SMTP_USERNAME:-$default_smtp_username}"
+        if [ -z "$EMAIL_SMTP_USERNAME" ]; then
+            print_error "SMTP username is required"
+            exit 1
+        fi
+        
+        read -sp "SMTP Password (app password) [${default_smtp_password}]: " EMAIL_SMTP_PASSWORD
+        EMAIL_SMTP_PASSWORD="${EMAIL_SMTP_PASSWORD:-$default_smtp_password}"
+        echo ""
+        if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
+            print_error "SMTP password is required"
+            exit 1
+        fi
+        
+        read -p "From Email [${default_from_email:-$EMAIL_SMTP_USERNAME}]: " EMAIL_FROM_EMAIL
+        EMAIL_FROM_EMAIL="${EMAIL_FROM_EMAIL:-${default_from_email:-$EMAIL_SMTP_USERNAME}}"
     fi
     
-    read -s -p "SMTP Password (app password): " EMAIL_SMTP_PASSWORD
-    echo ""
-    if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
-        print_error "SMTP password is required"
-        exit 1
-    fi
-    
-    read -p "From Email [$EMAIL_SMTP_USERNAME]: " EMAIL_FROM_EMAIL
-    EMAIL_FROM_EMAIL=${EMAIL_FROM_EMAIL:-$EMAIL_SMTP_USERNAME}
-    
-    # Update email configuration in .env
-    sed -i.bak "s/^EMAIL_SMTP_HOST=.*/EMAIL_SMTP_HOST=$EMAIL_SMTP_HOST/" .env
-    sed -i.bak "s/^EMAIL_SMTP_PORT=.*/EMAIL_SMTP_PORT=$EMAIL_SMTP_PORT/" .env
-    sed -i.bak "s|^EMAIL_SMTP_USERNAME=.*|EMAIL_SMTP_USERNAME=$EMAIL_SMTP_USERNAME|" .env
-    sed -i.bak "s|^EMAIL_SMTP_PASSWORD=.*|EMAIL_SMTP_PASSWORD=$EMAIL_SMTP_PASSWORD|" .env
-    sed -i.bak "s|^EMAIL_FROM_EMAIL=.*|EMAIL_FROM_EMAIL=$EMAIL_FROM_EMAIL|" .env
-    rm -f .env.bak
+    # Update email configuration in .env (only if changed)
+    update_env_var_if_changed "EMAIL_SMTP_HOST" "$EMAIL_SMTP_HOST"
+    update_env_var_if_changed "EMAIL_SMTP_PORT" "$EMAIL_SMTP_PORT"
+    update_env_var_if_changed "EMAIL_SMTP_USERNAME" "$EMAIL_SMTP_USERNAME"
+    update_env_var_if_changed "EMAIL_SMTP_PASSWORD" "$EMAIL_SMTP_PASSWORD"
+    update_env_var_if_changed "EMAIL_FROM_EMAIL" "$EMAIL_FROM_EMAIL"
     
     print_step "Email configuration updated"
 }
 
 configure_storage() {
+    # Check if storage driver is already configured in .env
+    # If it is, skip this entire section (NEVER override)
+    if var_exists_in_env "STORAGE_DRIVER"; then
+        print_step "Storage configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      STORAGE CONFIGURATION"
@@ -511,19 +776,22 @@ configure_storage() {
     echo "  3. MinIO Custom (external MinIO server)"
     echo "  4. AWS S3"
     echo ""
-    read -p "Enter choice [2]: " STORAGE_CHOICE
-    STORAGE_CHOICE=${STORAGE_CHOICE:-2}
+    
+    if [ "$AUTO_YES" = "true" ]; then
+        STORAGE_CHOICE=2
+    else
+        read -p "Enter choice [2]: " STORAGE_CHOICE
+        STORAGE_CHOICE=${STORAGE_CHOICE:-2}
+    fi
     
     if [ "$STORAGE_CHOICE" = "1" ]; then
         echo ""
         echo "Using local filesystem storage"
         
-        read -p "Storage path [./uploads]: " STORAGE_DEV_PATH
-        STORAGE_DEV_PATH=${STORAGE_DEV_PATH:-./uploads}
+        STORAGE_DEV_PATH=$(prompt_env_var "STORAGE_DEV_PATH" "./uploads" "Storage path")
         
-        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=local|" .env
-        sed -i.bak "s|^STORAGE_DEV_PATH=.*|STORAGE_DEV_PATH=$STORAGE_DEV_PATH|" .env
-        rm -f .env.bak
+        update_env_var_if_changed "STORAGE_DRIVER" "local"
+        update_env_var_if_changed "STORAGE_DEV_PATH" "$STORAGE_DEV_PATH"
         
         print_step "Local filesystem storage configured"
         
@@ -531,22 +799,16 @@ configure_storage() {
         echo ""
         echo "Using default MinIO Docker container"
         
-        read -p "MinIO Access Key [minioadmin]: " STORAGE_MINIO_ACCESS_KEY
-        STORAGE_MINIO_ACCESS_KEY=${STORAGE_MINIO_ACCESS_KEY:-minioadmin}
+        STORAGE_MINIO_ACCESS_KEY=$(prompt_env_var "STORAGE_MINIO_ACCESS_KEY" "minioadmin" "MinIO Access Key")
+        STORAGE_MINIO_SECRET_KEY=$(prompt_env_var "STORAGE_MINIO_SECRET_KEY" "minioadmin" "MinIO Secret Key" "true")
+        STORAGE_MINIO_BUCKET=$(prompt_env_var "STORAGE_MINIO_BUCKET" "serenibase" "Bucket Name")
         
-        read -p "MinIO Secret Key [minioadmin]: " STORAGE_MINIO_SECRET_KEY
-        STORAGE_MINIO_SECRET_KEY=${STORAGE_MINIO_SECRET_KEY:-minioadmin}
-        
-        read -p "Bucket Name [serenibase]: " STORAGE_MINIO_BUCKET
-        STORAGE_MINIO_BUCKET=${STORAGE_MINIO_BUCKET:-serenibase}
-        
-        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
-        sed -i.bak "s|^STORAGE_MINIO_ENDPOINT=.*|STORAGE_MINIO_ENDPOINT=minio:9000|" .env
-        sed -i.bak "s|^STORAGE_MINIO_ACCESS_KEY=.*|STORAGE_MINIO_ACCESS_KEY=$STORAGE_MINIO_ACCESS_KEY|" .env
-        sed -i.bak "s|^STORAGE_MINIO_SECRET_KEY=.*|STORAGE_MINIO_SECRET_KEY=$STORAGE_MINIO_SECRET_KEY|" .env
-        sed -i.bak "s|^STORAGE_MINIO_BUCKET=.*|STORAGE_MINIO_BUCKET=$STORAGE_MINIO_BUCKET|" .env
-        sed -i.bak "s|^STORAGE_MINIO_USE_SSL=.*|STORAGE_MINIO_USE_SSL=false|" .env
-        rm -f .env.bak
+        update_env_var_if_changed "STORAGE_DRIVER" "minio"
+        update_env_var_if_changed "STORAGE_MINIO_ENDPOINT" "minio:9000"
+        update_env_var_if_changed "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
+        update_env_var_if_changed "STORAGE_MINIO_USE_SSL" "false"
         
         print_step "MinIO Docker storage configured"
         
@@ -555,38 +817,33 @@ configure_storage() {
         echo "Enter custom MinIO configuration:"
         echo ""
         
-        read -p "MinIO Endpoint (host:port): " STORAGE_MINIO_ENDPOINT
+        STORAGE_MINIO_ENDPOINT=$(prompt_env_var "STORAGE_MINIO_ENDPOINT" "" "MinIO Endpoint (host:port)")
         if [ -z "$STORAGE_MINIO_ENDPOINT" ]; then
             print_error "MinIO endpoint is required"
             exit 1
         fi
         
-        read -p "MinIO Access Key: " STORAGE_MINIO_ACCESS_KEY
+        STORAGE_MINIO_ACCESS_KEY=$(prompt_env_var "STORAGE_MINIO_ACCESS_KEY" "" "MinIO Access Key")
         if [ -z "$STORAGE_MINIO_ACCESS_KEY" ]; then
             print_error "MinIO access key is required"
             exit 1
         fi
         
-        read -s -p "MinIO Secret Key: " STORAGE_MINIO_SECRET_KEY
-        echo ""
+        STORAGE_MINIO_SECRET_KEY=$(prompt_env_var "STORAGE_MINIO_SECRET_KEY" "" "MinIO Secret Key" "true")
         if [ -z "$STORAGE_MINIO_SECRET_KEY" ]; then
             print_error "MinIO secret key is required"
             exit 1
         fi
         
-        read -p "Bucket Name [serenibase]: " STORAGE_MINIO_BUCKET
-        STORAGE_MINIO_BUCKET=${STORAGE_MINIO_BUCKET:-serenibase}
+        STORAGE_MINIO_BUCKET=$(prompt_env_var "STORAGE_MINIO_BUCKET" "serenibase" "Bucket Name")
+        STORAGE_MINIO_USE_SSL=$(prompt_env_var "STORAGE_MINIO_USE_SSL" "false" "Use SSL (true/false)")
         
-        read -p "Use SSL (true/false) [false]: " STORAGE_MINIO_USE_SSL
-        STORAGE_MINIO_USE_SSL=${STORAGE_MINIO_USE_SSL:-false}
-        
-        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=minio|" .env
-        sed -i.bak "s|^STORAGE_MINIO_ENDPOINT=.*|STORAGE_MINIO_ENDPOINT=$STORAGE_MINIO_ENDPOINT|" .env
-        sed -i.bak "s|^STORAGE_MINIO_ACCESS_KEY=.*|STORAGE_MINIO_ACCESS_KEY=$STORAGE_MINIO_ACCESS_KEY|" .env
-        sed -i.bak "s|^STORAGE_MINIO_SECRET_KEY=.*|STORAGE_MINIO_SECRET_KEY=$STORAGE_MINIO_SECRET_KEY|" .env
-        sed -i.bak "s|^STORAGE_MINIO_BUCKET=.*|STORAGE_MINIO_BUCKET=$STORAGE_MINIO_BUCKET|" .env
-        sed -i.bak "s|^STORAGE_MINIO_USE_SSL=.*|STORAGE_MINIO_USE_SSL=$STORAGE_MINIO_USE_SSL|" .env
-        rm -f .env.bak
+        update_env_var_if_changed "STORAGE_DRIVER" "minio"
+        update_env_var_if_changed "STORAGE_MINIO_ENDPOINT" "$STORAGE_MINIO_ENDPOINT"
+        update_env_var_if_changed "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
+        update_env_var_if_changed "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
+        update_env_var_if_changed "STORAGE_MINIO_USE_SSL" "$STORAGE_MINIO_USE_SSL"
         
         print_step "Custom MinIO storage configured"
         
@@ -595,34 +852,31 @@ configure_storage() {
         echo "Enter AWS S3 configuration:"
         echo ""
         
-        read -p "AWS Region [us-east-1]: " STORAGE_AWS_REGION
-        STORAGE_AWS_REGION=${STORAGE_AWS_REGION:-us-east-1}
+        STORAGE_AWS_REGION=$(prompt_env_var "STORAGE_AWS_REGION" "us-east-1" "AWS Region")
         
-        read -p "S3 Bucket Name: " STORAGE_AWS_BUCKET
+        STORAGE_AWS_BUCKET=$(prompt_env_var "STORAGE_AWS_BUCKET" "" "S3 Bucket Name")
         if [ -z "$STORAGE_AWS_BUCKET" ]; then
             print_error "S3 bucket name is required"
             exit 1
         fi
         
-        read -p "AWS Access Key: " STORAGE_AWS_ACCESS_KEY
+        STORAGE_AWS_ACCESS_KEY=$(prompt_env_var "STORAGE_AWS_ACCESS_KEY" "" "AWS Access Key")
         if [ -z "$STORAGE_AWS_ACCESS_KEY" ]; then
             print_error "AWS access key is required"
             exit 1
         fi
         
-        read -s -p "AWS Secret Key: " STORAGE_AWS_SECRET_KEY
-        echo ""
+        STORAGE_AWS_SECRET_KEY=$(prompt_env_var "STORAGE_AWS_SECRET_KEY" "" "AWS Secret Key" "true")
         if [ -z "$STORAGE_AWS_SECRET_KEY" ]; then
             print_error "AWS secret key is required"
             exit 1
         fi
         
-        sed -i.bak "s|^STORAGE_DRIVER=.*|STORAGE_DRIVER=s3|" .env
-        sed -i.bak "s|^STORAGE_AWS_REGION=.*|STORAGE_AWS_REGION=$STORAGE_AWS_REGION|" .env
-        sed -i.bak "s|^STORAGE_AWS_BUCKET=.*|STORAGE_AWS_BUCKET=$STORAGE_AWS_BUCKET|" .env
-        sed -i.bak "s|^STORAGE_AWS_ACCESS_KEY=.*|STORAGE_AWS_ACCESS_KEY=$STORAGE_AWS_ACCESS_KEY|" .env
-        sed -i.bak "s|^STORAGE_AWS_SECRET_KEY=.*|STORAGE_AWS_SECRET_KEY=$STORAGE_AWS_SECRET_KEY|" .env
-        rm -f .env.bak
+        update_env_var_if_changed "STORAGE_DRIVER" "s3"
+        update_env_var_if_changed "STORAGE_AWS_REGION" "$STORAGE_AWS_REGION"
+        update_env_var_if_changed "STORAGE_AWS_BUCKET" "$STORAGE_AWS_BUCKET"
+        update_env_var_if_changed "STORAGE_AWS_ACCESS_KEY" "$STORAGE_AWS_ACCESS_KEY"
+        update_env_var_if_changed "STORAGE_AWS_SECRET_KEY" "$STORAGE_AWS_SECRET_KEY"
         
         print_step "AWS S3 storage configured"
         
@@ -633,6 +887,13 @@ configure_storage() {
 }
 
 configure_public_host() {
+    # Check if PUBLIC_HOST already exists in .env
+    # If it does, skip this entire section (NEVER override)
+    if var_exists_in_env "PUBLIC_HOST"; then
+        print_step "Network configuration already set in .env (skipping)"
+        return
+    fi
+    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      NETWORK CONFIGURATION"
@@ -642,26 +903,18 @@ configure_public_host() {
     echo "Enter your public IP address or domain name:"
     echo "(Examples: 192.168.1.100, myapp.example.com, or localhost for local development)"
     echo ""
-    read -p "IP/Domain [localhost]: " PUBLIC_HOST
+    
+    PUBLIC_HOST=$(prompt_env_var "PUBLIC_HOST" "localhost" "IP/Domain")
 
     # Use localhost as default if nothing entered
     if [ -z "$PUBLIC_HOST" ]; then
         PUBLIC_HOST="localhost"
     fi
 
-    # Escape special characters for sed
-    ESCAPED_HOST=$(printf '%s\n' "$PUBLIC_HOST" | sed -e 's/[&/\\]/\\&/g')
-
-    # Update .env file - only add if variable doesn't exist yet
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        grep -q "^PUBLIC_HOST=" .env || echo "PUBLIC_HOST=$ESCAPED_HOST" >> .env
-        grep -q "^SERVER_IP=" .env || echo "SERVER_IP=$ESCAPED_HOST" >> .env
-        grep -q "^STORAGE_SERVER_IP=" .env || echo "STORAGE_SERVER_IP=$ESCAPED_HOST" >> .env
-    else
-        grep -q "^PUBLIC_HOST=" .env || echo "PUBLIC_HOST=$ESCAPED_HOST" >> .env
-        grep -q "^SERVER_IP=" .env || echo "SERVER_IP=$ESCAPED_HOST" >> .env
-        grep -q "^STORAGE_SERVER_IP=" .env || echo "STORAGE_SERVER_IP=$ESCAPED_HOST" >> .env
-    fi
+    # Update public host related variables (only if changed)
+    update_env_var_if_changed "PUBLIC_HOST" "$PUBLIC_HOST"
+    update_env_var_if_changed "SERVER_IP" "$PUBLIC_HOST"
+    update_env_var_if_changed "STORAGE_SERVER_IP" "$PUBLIC_HOST"
 
     # Always ensure Base UI API URL matches public host
     ensure_baseui_api_base_url "$PUBLIC_HOST"
@@ -669,35 +922,100 @@ configure_public_host() {
     # Always ensure CORS includes the public host
     ensure_cors_origin "$PUBLIC_HOST"
     
-    print_step "Configured PUBLIC_HOST (added if missing)"
-    print_step "Configured SERVER_IP (added if missing)"
-    print_step "Configured BASEUI_VITE_API_BASE_URL (added if missing)"
+    # Always ensure reset-password URL matches public host (only if changed)
+    update_env_var_if_changed "AUTH_RESET_PASSWORD_URL" "http://$PUBLIC_HOST:5050/reset-password?token=%s"
+    
+    print_step "Configured PUBLIC_HOST"
+    print_step "Configured SERVER_IP"
+    print_step "Configured STORAGE_SERVER_IP"
+    print_step "Configured BASEUI_VITE_API_BASE_URL"
+    print_step "Configured AUTH_RESET_PASSWORD_URL"
 }
 
 configure_owner() {
-    echo "\n${BLUE}Owner Registration Configuration${NC}\n"
+    # Check if ALL owner variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "OWNER_FIRST_NAME" "OWNER_LAST_NAME" "OWNER_EMAIL" "OWNER_PASSWORD"; then
+        print_step "Owner configuration already set in .env (skipping)"
+        return
+    fi
     
-    echo "Enter owner registration details (press Enter to use defaults):"
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      OWNER REGISTRATION"
+    echo "========================================================================${NC}"
     echo ""
     
-    read -p "First Name [Admin]: " OWNER_FIRST_NAME
-    read -p "Last Name [User]: " OWNER_LAST_NAME
-    read -p "Email [admin@example.com]: " OWNER_EMAIL
-    read -s -p "Password [Admin@123]: " OWNER_PASSWORD
+    echo "Enter owner registration details (press Enter to keep existing values):"
     echo ""
+    
+    OWNER_FIRST_NAME=$(prompt_env_var "OWNER_FIRST_NAME" "Admin" "First Name")
+    OWNER_LAST_NAME=$(prompt_env_var "OWNER_LAST_NAME" "User" "Last Name")
+    OWNER_EMAIL=$(prompt_env_var "OWNER_EMAIL" "admin@example.com" "Email")
+    OWNER_PASSWORD=$(prompt_env_var "OWNER_PASSWORD" "Admin@123" "Password" "true")
 
-    OWNER_FIRST_NAME=${OWNER_FIRST_NAME:-Admin}
-    OWNER_LAST_NAME=${OWNER_LAST_NAME:-User}
-    OWNER_EMAIL=${OWNER_EMAIL:-admin@example.com}
-    OWNER_PASSWORD=${OWNER_PASSWORD:-Admin@123}
+    # Update .env file with owner configuration (only if changed)
+    update_env_var_if_changed "OWNER_FIRST_NAME" "$OWNER_FIRST_NAME"
+    update_env_var_if_changed "OWNER_LAST_NAME" "$OWNER_LAST_NAME"
+    update_env_var_if_changed "OWNER_EMAIL" "$OWNER_EMAIL"
+    update_env_var_if_changed "OWNER_PASSWORD" "$OWNER_PASSWORD"
 
-    # Update .env file with owner configuration - only add if not already present
-    grep -q "^OWNER_FIRST_NAME=" .env || echo "OWNER_FIRST_NAME=$OWNER_FIRST_NAME" >> .env
-    grep -q "^OWNER_LAST_NAME=" .env || echo "OWNER_LAST_NAME=$OWNER_LAST_NAME" >> .env
-    grep -q "^OWNER_EMAIL=" .env || echo "OWNER_EMAIL=$OWNER_EMAIL" >> .env
-    grep -q "^OWNER_PASSWORD=" .env || echo "OWNER_PASSWORD=$OWNER_PASSWORD" >> .env
+    print_step "Owner configuration updated"
+}
 
-    print_step "Owner configuration set (only added if missing)"
+configure_ports() {
+    # Check if ALL port variables already exist in .env
+    # If they do, skip this entire section (NEVER override)
+    if all_vars_exist_in_env "MINIO_API_PORT" "MINIO_CONSOLE_PORT" "BASE_UI_PORT" "ANTIVIRUS_CLAMAV_PORT"; then
+        print_step "Port configuration already set in .env (skipping)"
+        return
+    fi
+    
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                      PORT CONFIGURATION"
+    echo "========================================================================${NC}"
+    echo ""
+    echo "Configure container ports (press Enter to use defaults):"
+    echo ""
+    
+    MINIO_API_PORT=$(prompt_env_var "MINIO_API_PORT" "9000" "MinIO API Port")
+    MINIO_CONSOLE_PORT=$(prompt_env_var "MINIO_CONSOLE_PORT" "9001" "MinIO Console Port")
+    BASE_UI_PORT=$(prompt_env_var "BASE_UI_PORT" "5050" "Base UI Port")
+    ANTIVIRUS_CLAMAV_PORT=$(prompt_env_var "ANTIVIRUS_CLAMAV_PORT" "3310" "ClamAV Port")
+    
+    # Update port configuration in .env (only if changed)
+    update_env_var_if_changed "MINIO_API_PORT" "$MINIO_API_PORT"
+    update_env_var_if_changed "MINIO_CONSOLE_PORT" "$MINIO_CONSOLE_PORT"
+    update_env_var_if_changed "BASE_UI_PORT" "$BASE_UI_PORT"
+    update_env_var_if_changed "ANTIVIRUS_CLAMAV_PORT" "$ANTIVIRUS_CLAMAV_PORT"
+    
+    print_step "Port configuration updated"
+}
+
+prepare_docker_volumes() {
+    echo ""
+    echo -e "${BLUE}========================================================================"
+    echo "                    PREPARING DOCKER VOLUMES"
+    echo "========================================================================${NC}"
+    echo ""
+    
+    # Pre-create required directories with proper permissions
+    # This is especially important on macOS Docker Desktop
+    local dirs_to_create=(
+        "./services/storage-service/uploads"
+        "./data"
+    )
+    
+    for dir in "${dirs_to_create[@]}"; do
+        if [ ! -d "$dir" ]; then
+            echo "Creating directory: $dir"
+            mkdir -p "$dir"
+            chmod 755 "$dir"
+        fi
+    done
+    
+    print_step "Docker volumes prepared (directories created with proper permissions)"
 }
 
 clone_repositories() {
@@ -746,9 +1064,18 @@ configure_email
 configure_storage
 configure_public_host
 configure_owner
+configure_ports
 clone_repositories
+prepare_docker_volumes
 start_services
 
+# Read final values from .env for display (with fallbacks)
+PUBLIC_HOST=$(get_env_var "PUBLIC_HOST")
+[ -z "$PUBLIC_HOST" ] && PUBLIC_HOST="localhost"
+OWNER_EMAIL=$(get_env_var "OWNER_EMAIL")
+[ -z "$OWNER_EMAIL" ] && OWNER_EMAIL="admin@example.com"
+OWNER_PASSWORD=$(get_env_var "OWNER_PASSWORD")
+[ -z "$OWNER_PASSWORD" ] && OWNER_PASSWORD="Admin@123"
 
 echo ""
 echo -e "${BLUE}========================================================================"
@@ -756,9 +1083,9 @@ echo "                      SETUP COMPLETE!"
 echo "========================================================================${NC}"
 echo ""
 echo -e "${GREEN}Access your application at:${NC}"
-echo "  Frontend:  http://$PUBLIC_HOST:5050"
-echo "  Backend:   http://$PUBLIC_HOST:8080"
-echo "  MinIO:     http://$PUBLIC_HOST:9001"
+echo "  Frontend:  http://${PUBLIC_HOST}:5050"
+echo "  Backend:   http://${PUBLIC_HOST}:8080"
+echo "  MinIO:     http://${PUBLIC_HOST}:9001"
 echo ""
 echo -e "${GREEN}Default admin credentials:${NC}"
 echo "  Email:    $OWNER_EMAIL"
