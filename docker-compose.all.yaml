@@ -4,9 +4,14 @@ services:
     build: .
     command: ["./wait-for-postgres.sh", "postgres", "./main"]
     ports:
-      - "8080:8080"
+      - "${SERVER_PORT}:${SERVER_PORT}"
     env_file:
       - .env
+    environment:
+      # Use internal Docker DNS for database connection (container-to-container)
+      # This overrides DATABASE_HOST from .env to ensure internal connectivity
+      - DATABASE_HOST=${DATABASE_INTERNAL_HOST:-postgres}
+      - DATABASE_PORT=${DATABASE_INTERNAL_PORT:-5432}
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,7 +28,7 @@ services:
       - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
       - POSTGRES_DB=${DATABASE_NAME}
     ports:
-      - "5432:5432"
+      - "${DATABASE_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -51,7 +56,7 @@ services:
       CLAMAV_TIMEOUT_SECONDS: ${ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS}
       MAX_UPLOAD_SIZE_MB: ${ANTIVIRUS_MAX_UPLOAD_SIZE_MB}
     ports:
-      - "8084:8084"
+      - "${ANTIVIRUS_PORT}:${ANTIVIRUS_PORT}"
     networks:
       - serenibase-network
 
@@ -68,7 +73,7 @@ services:
       ENV: ${AUTH_ENV}
       LOG_LEVEL: ${AUTH_LOG_LEVEL}
     ports:
-      - "8081:8081"
+      - "${AUTH_PORT}:${AUTH_PORT}"
     networks:
       - serenibase-network
 
@@ -87,7 +92,7 @@ services:
       SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD}
       FROM_EMAIL: ${EMAIL_FROM_EMAIL}
     ports:
-      - "8082:8082"
+      - "${EMAIL_PORT}:${EMAIL_PORT}"
     networks:
       - serenibase-network
 
@@ -113,9 +118,9 @@ services:
       MINIO_USE_SSL: ${STORAGE_MINIO_USE_SSL}
       ALLOWED_ORIGINS: ${STORAGE_ALLOWED_ORIGINS}
     ports:
-      - "8083:8083"
+      - "${STORAGE_SERVER_PORT}:${STORAGE_SERVER_PORT}"
     volumes:
-      - ./services/storage-service/uploads:/app/uploads
+      - ./services/storage-service/uploads:/app/uploads:cached
     depends_on:
       - minio-init
     networks:
@@ -124,8 +129,8 @@ services:
   minio:
     image: minio/minio:latest
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       MINIO_ROOT_USER: ${STORAGE_MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${STORAGE_MINIO_SECRET_KEY}
@@ -168,7 +173,7 @@ services:
     env_file:
       - .env
     ports:
-      - "5050:5050"
+      - "${BASE_UI_PORT:-5050}:5050"
     restart: unless-stopped
     networks:
       - serenibase-network
@@ -180,9 +185,9 @@ services:
     env_file:
       - .env
     ports:
-      - "3310:3310"
+      - "${ANTIVIRUS_CLAMAV_PORT:-3310}:3310"
     volumes:
-      - ./data:/data
+      - ./data:/data:cached
     environment:
       - CLAMD_STARTUP_TIMEOUT=180
       - FRESHCLAM_CHECKS=12

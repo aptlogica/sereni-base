@@ -520,9 +520,11 @@ powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch 
 powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^BASEUI_VITE_API_BASE_URL=') { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; Set-Content '.env' -Value $content -NoNewline"
 powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^CORS_ALLOWED_ORIGINS=') { $content += \"`nCORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080\" }; Set-Content '.env' -Value $content -NoNewline"
 powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^STORAGE_SERVER_IP=') { $content += \"`nSTORAGE_SERVER_IP=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^AUTH_RESET_PASSWORD_URL=') { $content += \"`nAUTH_RESET_PASSWORD_URL=http://%PUBLIC_HOST%:5050/reset-password?token=%%s\" }; Set-Content '.env' -Value $content -NoNewline"
 echo [OK] Configured PUBLIC_HOST (added if missing)
 echo [OK] Configured SERVER_IP (added if missing)
 echo [OK] Configured BASEUI_VITE_API_BASE_URL (added if missing)
+echo [OK] Configured AUTH_RESET_PASSWORD_URL (added if missing)
 
 echo.
 echo ========================================================================
