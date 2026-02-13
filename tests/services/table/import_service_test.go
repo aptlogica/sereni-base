@@ -143,6 +143,11 @@ func (m *MockBaseManagementService) CreateBase(ctx context.Context, req dto.Crea
 	return args.Get(0).(tenant.Base), args.Error(1)
 }
 
+func (m *MockBaseManagementService) CreateBaseWithoutTable(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
+	args := m.Called(ctx, req, schemaName, userId)
+	return args.Get(0).(tenant.Base), args.Error(1)
+}
+
 // Unused methods
 func (m *MockBaseManagementService) CreateBaseWithImage(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string, fileHeader *multipart.FileHeader) (tenant.Base, error) {
 	return tenant.Base{}, nil
@@ -288,7 +293,7 @@ func TestImport_EnsureBaseErrors(t *testing.T) {
 	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{Title: "T"}, file)
 	assert.Error(t, err)
 
-	mockBase.On("CreateBase", mock.Anything, mock.Anything, "schema", "user").
+	mockBase.On("CreateBaseWithoutTable", mock.Anything, mock.Anything, "schema", "user").
 		Return(tenant.Base{}, errors.New("fail"))
 	_, err = svc.Import(context.Background(), "schema", dto.CreateTableRequest{Title: "T", WorkspaceID: "ws", CreatedBy: "user"}, file)
 	assert.Error(t, err)
@@ -300,7 +305,7 @@ func TestImport_EnsureBaseSuccess(t *testing.T) {
 
 	file := makeFileHeader(t, "data.csv", "Title\nA\n")
 	newBaseID := uuid.New()
-	mockBase.On("CreateBase", mock.Anything, mock.Anything, "schema", "user").
+	mockBase.On("CreateBaseWithoutTable", mock.Anything, mock.Anything, "schema", "user").
 		Return(tenant.Base{ID: newBaseID}, nil)
 
 	var captured dto.CreateTableRequest

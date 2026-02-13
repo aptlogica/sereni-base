@@ -129,7 +129,7 @@ func (s *importService) ensureBase(ctx context.Context, schemaName string, req *
 		CreatedBy:   req.CreatedBy,
 	}
 
-	newBase, err := s.baseManagementService.CreateBase(ctx, createBaseReq, schemaName, req.CreatedBy)
+	newBase, err := s.baseManagementService.CreateBaseWithoutTable(ctx, createBaseReq, schemaName, req.CreatedBy)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("baseName", baseName).Msg("Failed to create base for import")
 		return fmt.Errorf("failed to create base: %w", err)

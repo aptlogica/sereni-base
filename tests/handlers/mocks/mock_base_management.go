@@ -73,6 +73,21 @@ func (mr *MockBaseManagementServiceMockRecorder) CreateBase(ctx, req, schemaName
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateBase", reflect.TypeOf((*MockBaseManagementService)(nil).CreateBase), ctx, req, schemaName, userId)
 }
 
+// CreateBaseWithoutTable mocks base method.
+func (m *MockBaseManagementService) CreateBaseWithoutTable(ctx context.Context, req dto.CreateBaseRequest, schemaName, userId string) (tenant.Base, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateBaseWithoutTable", ctx, req, schemaName, userId)
+	ret0, _ := ret[0].(tenant.Base)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateBaseWithoutTable indicates an expected call of CreateBaseWithoutTable.
+func (mr *MockBaseManagementServiceMockRecorder) CreateBaseWithoutTable(ctx, req, schemaName, userId any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateBaseWithoutTable", reflect.TypeOf((*MockBaseManagementService)(nil).CreateBaseWithoutTable), ctx, req, schemaName, userId)
+}
+
 // CreateBaseWithImage mocks base method.
 func (m *MockBaseManagementService) CreateBaseWithImage(ctx context.Context, req dto.CreateBaseRequest, schemaName, userId string, fileHeader *multipart.FileHeader) (tenant.Base, error) {
 	m.ctrl.T.Helper()
