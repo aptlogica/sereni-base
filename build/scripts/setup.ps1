@@ -493,7 +493,8 @@ if ($DB_CHOICE -eq "1") {
         $DATABASE_NAME = Read-EnvVar -Key "DATABASE_NAME" -DefaultValue "serenibase" -Prompt "Database Name"
     }
     
-    # Use existing values from .env if they exist, otherwise use defaults
+    # DATABASE_PORT and DATABASE_HOST are for external/host connections
+    # For Docker-to-Docker internal connections, use DATABASE_INTERNAL_HOST and DATABASE_INTERNAL_PORT
     if (Test-EnvVarExists -Key "DATABASE_PORT") {
         $DATABASE_PORT = Get-EnvVar -Key "DATABASE_PORT"
     } else {
@@ -511,6 +512,10 @@ if ($DB_CHOICE -eq "1") {
     } else {
         $DATABASE_SSL_MODE = "disable"
     }
+    
+    # Set internal Docker connection variables (always use for container-to-container communication)
+    $DATABASE_INTERNAL_HOST = "postgres"
+    $DATABASE_INTERNAL_PORT = "5432"
 } else {
     Write-Host ""
     Write-Host "Enter custom database configuration:"
@@ -555,6 +560,13 @@ Update-EnvVarIfChanged -Key "DATABASE_USER" -Value $DATABASE_USER
 Update-EnvVarIfChanged -Key "DATABASE_PASSWORD" -Value $DATABASE_PASSWORD
 Update-EnvVarIfChanged -Key "DATABASE_NAME" -Value $DATABASE_NAME
 Update-EnvVarIfChanged -Key "DATABASE_SSL_MODE" -Value $DATABASE_SSL_MODE
+
+# Set internal Docker connection variables (used by services inside docker-compose)
+# These are always postgres:5432 for container-to-container communication
+if ($DB_CHOICE -eq "1") {
+    Update-EnvVarIfChanged -Key "DATABASE_INTERNAL_HOST" -Value "postgres"
+    Update-EnvVarIfChanged -Key "DATABASE_INTERNAL_PORT" -Value "5432"
+}
 
 Write-Host "[OK] Database configuration updated" -ForegroundColor Green
 

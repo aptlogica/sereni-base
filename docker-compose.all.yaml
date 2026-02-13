@@ -7,6 +7,11 @@ services:
       - "${SERVER_PORT}:${SERVER_PORT}"
     env_file:
       - .env
+    environment:
+      # Use internal Docker DNS for database connection (container-to-container)
+      # This overrides DATABASE_HOST from .env to ensure internal connectivity
+      - DATABASE_HOST=${DATABASE_INTERNAL_HOST:-postgres}
+      - DATABASE_PORT=${DATABASE_INTERNAL_PORT:-5432}
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,7 +28,7 @@ services:
       - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
       - POSTGRES_DB=${DATABASE_NAME}
     ports:
-      - "${DATABASE_PORT}:${DATABASE_PORT}"
+      - "${DATABASE_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql

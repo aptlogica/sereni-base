@@ -581,19 +581,27 @@ configure_database() {
         DATABASE_PASSWORD=$(prompt_env_var "DATABASE_PASSWORD" "postgres" "Database Password" "true")
         DATABASE_NAME=$(prompt_env_var "DATABASE_NAME" "serenibase" "Database Name")
         
-        # Use 5432 only if DATABASE_PORT doesn't exist in .env
+        # DATABASE_PORT: Used for external host connections (e.g., localhost:5432)
+        # For Docker-to-Docker internal connections, always use 5432
         if var_exists_in_env "DATABASE_PORT"; then
             DATABASE_PORT=$(get_env_var "DATABASE_PORT")
         else
             DATABASE_PORT="5432"
         fi
         
-        # Use postgres only if DATABASE_HOST doesn't exist in .env  
+        # DATABASE_HOST: For external connections (localhost or IP address)
+        # For Docker-to-Docker internal connections, always use 'postgres' (service name)
         if var_exists_in_env "DATABASE_HOST"; then
             DATABASE_HOST=$(get_env_var "DATABASE_HOST")
         else
             DATABASE_HOST="postgres"
         fi
+        
+        # DATABASE_INTERNAL_HOST and DATABASE_INTERNAL_PORT are used by applications
+        # running INSIDE docker-compose network to connect to PostgreSQL container
+        # These should always be: postgres:5432 (service name and internal port)
+        DATABASE_INTERNAL_HOST="postgres"
+        DATABASE_INTERNAL_PORT="5432"
         
         # Use disable only if DATABASE_SSL_MODE doesn't exist in .env
         if var_exists_in_env "DATABASE_SSL_MODE"; then
@@ -642,6 +650,13 @@ configure_database() {
     update_env_var_if_changed "DATABASE_PASSWORD" "$DATABASE_PASSWORD"
     update_env_var_if_changed "DATABASE_NAME" "$DATABASE_NAME"
     update_env_var_if_changed "DATABASE_SSL_MODE" "$DATABASE_SSL_MODE"
+    
+    # Set internal Docker connection variables (used by services inside docker-compose)
+    # These are always postgres:5432 for container-to-container communication
+    if [ "$DB_CHOICE" = "1" ]; then
+        update_env_var_if_changed "DATABASE_INTERNAL_HOST" "postgres"
+        update_env_var_if_changed "DATABASE_INTERNAL_PORT" "5432"
+    fi
     
     print_step "Database configuration updated"
 }
