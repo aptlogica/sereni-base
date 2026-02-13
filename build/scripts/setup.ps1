@@ -61,19 +61,17 @@ function Read-HostWithCancel {
     )
     
     if ($Default) {
-        $displayPrompt = "$Prompt [$Default]: "
+        $displayPrompt = "$Prompt [$Default]"
     } else {
-        $displayPrompt = "${Prompt}: "
+        $displayPrompt = $Prompt
     }
     
-    Write-Host -NoNewline $displayPrompt
-    
     try {
-        $input = Read-Host
-        if ([string]::IsNullOrWhiteSpace($input)) {
+        $userInput = Read-Host -Prompt $displayPrompt
+        if ([string]::IsNullOrWhiteSpace($userInput)) {
             return $Default
         }
-        return $input
+        return $userInput
     } catch {
         Write-Host "`n`n[!] Setup cancelled by user." -ForegroundColor Yellow
         exit 130
@@ -87,14 +85,14 @@ function Read-Choice {
         [string]$Default = "1"
     )
     
-    Write-Host -NoNewline "$Prompt [$Default]: "
+    $displayPrompt = "$Prompt [$Default]"
     
     try {
-        $input = Read-Host
-        if ([string]::IsNullOrWhiteSpace($input)) {
+        $userChoice = Read-Host -Prompt $displayPrompt
+        if ([string]::IsNullOrWhiteSpace($userChoice)) {
             return $Default
         }
-        return $input
+        return $userChoice
     } catch {
         Write-Host "`n`n[!] Setup cancelled by user." -ForegroundColor Yellow
         exit 130
@@ -220,8 +218,8 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=your_email_host
-EMAIL_SMTP_PORT=587
+EMAIL_SMTP_HOST=
+EMAIL_SMTP_PORT=
 EMAIL_SMTP_USERNAME=
 EMAIL_SMTP_PASSWORD=
 EMAIL_FROM_EMAIL=
@@ -338,7 +336,8 @@ function Get-EnvVar {
     }
     $content = Get-Content $envPath -Raw
     if ($content -match "(?m)^$Key=(.*)$") {
-        return $matches[1]
+        # Remove any trailing carriage return (from Unix line endings)
+        return $matches[1] -replace '\r', ''
     }
     return ""
 }
@@ -406,13 +405,13 @@ function Read-EnvVar {
     
     # Interactive mode: prompt user for new value
     if ($IsPassword) {
-        Write-Host -NoNewline "$Prompt [$DefaultValue]: "
-        $input = Read-Host -AsSecureString
-        if ($input.Length -eq 0) {
+        $displayPrompt = if ($DefaultValue) { "$Prompt [$DefaultValue]" } else { $Prompt }
+        $userInput = Read-Host -Prompt $displayPrompt -AsSecureString
+        if ($userInput.Length -eq 0) {
             return $DefaultValue
         }
         # Convert SecureString back to plain text for storage
-        $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($input)
+        $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($userInput)
         return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
     } else {
         return Read-HostWithCancel -Prompt $Prompt -Default $DefaultValue
@@ -614,59 +613,88 @@ Write-Host "                      EMAIL CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
 
-# Check if ALL email variables already exist in .env
-# If they do, skip this entire section (NEVER override)
-if (Test-AllEnvVarsExist -Keys @("EMAIL_SMTP_HOST", "EMAIL_SMTP_PORT", "EMAIL_SMTP_USERNAME", "EMAIL_SMTP_PASSWORD", "EMAIL_FROM_EMAIL")) {
-    Write-Host "[OK] Email configuration already set in .env (skipping)" -ForegroundColor Green
-} else {
-
-Write-Host "Enter SMTP email configuration (REQUIRED):"
+Write-Host "Enter SMTP email configuration (press Enter to keep existing values):"
 Write-Host ""
 
-# Use parameters if provided, otherwise prompt
-if ([string]::IsNullOrWhiteSpace($SmtpHost)) {
-    $EMAIL_SMTP_HOST = Read-EnvVar -Key "EMAIL_SMTP_HOST" -DefaultValue "your_email_host" -Prompt "SMTP Host"
-} else {
+# Get current values from .env to use as defaults
+$currentSmtpHost = Get-EnvVar -Key "EMAIL_SMTP_HOST"
+$currentSmtpPort = Get-EnvVar -Key "EMAIL_SMTP_PORT"
+$currentSmtpUsername = Get-EnvVar -Key "EMAIL_SMTP_USERNAME"
+$currentSmtpPassword = Get-EnvVar -Key "EMAIL_SMTP_PASSWORD"
+$currentFromEmail = Get-EnvVar -Key "EMAIL_FROM_EMAIL"
+
+# Always prompt for each field, using .env value as default (or use parameter if provided)
+if (-not [string]::IsNullOrWhiteSpace($SmtpHost)) {
     $EMAIL_SMTP_HOST = $SmtpHost
-    Write-Host "SMTP Host: $EMAIL_SMTP_HOST"
-}
-
-if ([string]::IsNullOrWhiteSpace($SmtpPort)) {
-    $EMAIL_SMTP_PORT = Read-EnvVar -Key "EMAIL_SMTP_PORT" -DefaultValue "587" -Prompt "SMTP Port"
 } else {
-    $EMAIL_SMTP_PORT = $SmtpPort
-    Write-Host "SMTP Port: $EMAIL_SMTP_PORT"
+    if ($AutoYes) {
+        $EMAIL_SMTP_HOST = if ([string]::IsNullOrWhiteSpace($currentSmtpHost)) { "smtp.gmail.com" } else { $currentSmtpHost }
+    } else {
+        $defaultHost = if ([string]::IsNullOrWhiteSpace($currentSmtpHost)) { "smtp.gmail.com" } else { $currentSmtpHost }
+        $userInput = Read-Host "SMTP Host [$defaultHost]"
+        $EMAIL_SMTP_HOST = if ([string]::IsNullOrWhiteSpace($userInput)) { $defaultHost } else { $userInput }
+    }
 }
 
-if ([string]::IsNullOrWhiteSpace($SmtpUsername)) {
-    $EMAIL_SMTP_USERNAME = Read-EnvVar -Key "EMAIL_SMTP_USERNAME" -DefaultValue "" -Prompt "SMTP Username (email)"
+if (-not [string]::IsNullOrWhiteSpace($SmtpPort)) {
+    $EMAIL_SMTP_PORT = $SmtpPort
+} else {
+    if ($AutoYes) {
+        $EMAIL_SMTP_PORT = if ([string]::IsNullOrWhiteSpace($currentSmtpPort)) { "587" } else { $currentSmtpPort }
+    } else {
+        $defaultPort = if ([string]::IsNullOrWhiteSpace($currentSmtpPort)) { "587" } else { $currentSmtpPort }
+        $userInput = Read-Host "SMTP Port [$defaultPort]"
+        $EMAIL_SMTP_PORT = if ([string]::IsNullOrWhiteSpace($userInput)) { $defaultPort } else { $userInput }
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SmtpUsername)) {
+    $EMAIL_SMTP_USERNAME = $SmtpUsername
+} else {
+    if ($AutoYes) {
+        $EMAIL_SMTP_USERNAME = $currentSmtpUsername
+    } else {
+        $userInput = Read-Host "SMTP Username (email) [$currentSmtpUsername]"
+        $EMAIL_SMTP_USERNAME = if ([string]::IsNullOrWhiteSpace($userInput)) { $currentSmtpUsername } else { $userInput }
+    }
     if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_USERNAME)) {
         Write-Host "[ERROR] SMTP username is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
         exit 1
     }
-} else {
-    $EMAIL_SMTP_USERNAME = $SmtpUsername
-    Write-Host "SMTP Username: $EMAIL_SMTP_USERNAME"
 }
 
-if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
-    $EMAIL_SMTP_PASSWORD = Read-EnvVar -Key "EMAIL_SMTP_PASSWORD" -DefaultValue "" -Prompt "SMTP Password (app password)" -IsPassword $true
+if (-not [string]::IsNullOrWhiteSpace($SmtpPassword)) {
+    $EMAIL_SMTP_PASSWORD = $SmtpPassword
+} else {
+    if ($AutoYes) {
+        $EMAIL_SMTP_PASSWORD = $currentSmtpPassword
+    } else {
+        $inputPassword = Read-Host "SMTP Password (app password) [$currentSmtpPassword]" -AsSecureString
+        if ($inputPassword.Length -eq 0) {
+            $EMAIL_SMTP_PASSWORD = $currentSmtpPassword
+        } else {
+            $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($inputPassword)
+            $EMAIL_SMTP_PASSWORD = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+        }
+    }
     if ([string]::IsNullOrWhiteSpace($EMAIL_SMTP_PASSWORD)) {
         Write-Host "[ERROR] SMTP password is required" -ForegroundColor Red
         Read-Host "Press Enter to exit"
         exit 1
     }
-} else {
-    $EMAIL_SMTP_PASSWORD = $SmtpPassword
-    Write-Host "SMTP Password: ********"
 }
 
-if ([string]::IsNullOrWhiteSpace($SmtpFromEmail)) {
-    $EMAIL_FROM_EMAIL = Read-EnvVar -Key "EMAIL_FROM_EMAIL" -DefaultValue $EMAIL_SMTP_USERNAME -Prompt "From Email"
-} else {
+if (-not [string]::IsNullOrWhiteSpace($SmtpFromEmail)) {
     $EMAIL_FROM_EMAIL = $SmtpFromEmail
-    Write-Host "From Email: $EMAIL_FROM_EMAIL"
+} else {
+    if ($AutoYes) {
+        $EMAIL_FROM_EMAIL = if ([string]::IsNullOrWhiteSpace($currentFromEmail)) { $EMAIL_SMTP_USERNAME } else { $currentFromEmail }
+    } else {
+        $defaultFromEmail = if ([string]::IsNullOrWhiteSpace($currentFromEmail)) { $EMAIL_SMTP_USERNAME } else { $currentFromEmail }
+        $userInput = Read-Host "From Email [$defaultFromEmail]"
+        $EMAIL_FROM_EMAIL = if ([string]::IsNullOrWhiteSpace($userInput)) { $defaultFromEmail } else { $userInput }
+    }
 }
 
 Update-EnvVarIfChanged -Key "EMAIL_SMTP_HOST" -Value $EMAIL_SMTP_HOST
@@ -676,8 +704,6 @@ Update-EnvVarIfChanged -Key "EMAIL_SMTP_PASSWORD" -Value $EMAIL_SMTP_PASSWORD
 Update-EnvVarIfChanged -Key "EMAIL_FROM_EMAIL" -Value $EMAIL_FROM_EMAIL
 
 Write-Host "[OK] Email configuration updated" -ForegroundColor Green
-
-} # End of email configuration else block
 
 # ========================================================================
 #                      STORAGE CONFIGURATION
@@ -836,10 +862,10 @@ if ($AutoYes) {
 
 Update-EnvVarIfChanged -Key "PUBLIC_HOST" -Value $PUBLIC_HOST
 Update-EnvVarIfChanged -Key "SERVER_IP" -Value $PUBLIC_HOST
-Update-EnvVarIfChanged -Key "BASEUI_VITE_API_BASE_URL" -Value "http://${PUBLIC_HOST}:8080"
-Update-EnvVarIfChanged -Key "CORS_ALLOWED_ORIGINS" -Value "http://localhost:5050,http://127.0.0.1:5050,http://${PUBLIC_HOST}:5050,http://base-ui:5050,http://serenibase:8080"
+Update-EnvVarIfChanged -Key "BASEUI_VITE_API_BASE_URL" -Value "http://$PUBLIC_HOST:8080"
+Update-EnvVarIfChanged -Key "CORS_ALLOWED_ORIGINS" -Value "http://localhost:5050,http://127.0.0.1:5050,http://$PUBLIC_HOST:5050,http://base-ui:5050,http://serenibase:8080"
 Update-EnvVarIfChanged -Key "STORAGE_SERVER_IP" -Value $PUBLIC_HOST
-Update-EnvVarIfChanged -Key "AUTH_RESET_PASSWORD_URL" -Value "http://${PUBLIC_HOST}:5050/reset-password?token=%s"
+Update-EnvVarIfChanged -Key "AUTH_RESET_PASSWORD_URL" -Value "http://$PUBLIC_HOST:5050/reset-password?token=%s"
 
 Write-Host "[OK] Configured PUBLIC_HOST" -ForegroundColor Green
 Write-Host "[OK] Configured SERVER_IP" -ForegroundColor Green
@@ -954,9 +980,9 @@ Write-Host "                      SETUP COMPLETE!"
 Write-Host "========================================================================"
 Write-Host ""
 Write-Host "Access your application at:"
-Write-Host "  Frontend:  http://${PUBLIC_HOST}:5050"
-Write-Host "  Backend:   http://${PUBLIC_HOST}:8080"
-Write-Host "  MinIO:     http://${PUBLIC_HOST}:9001"
+Write-Host "  Frontend:  http://$PUBLIC_HOST:5050"
+Write-Host "  Backend:   http://$PUBLIC_HOST:8080"
+Write-Host "  MinIO:     http://$PUBLIC_HOST:9001"
 Write-Host ""
 Write-Host "Default admin credentials:"
 Write-Host "  Email:    $OWNER_EMAIL"

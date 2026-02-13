@@ -428,8 +428,8 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 EMAIL_HOST=0.0.0.0
 EMAIL_PORT=8082
 EMAIL_ALLOWED_ORIGIN=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
-EMAIL_SMTP_HOST=your_email_host
-EMAIL_SMTP_PORT=587
+EMAIL_SMTP_HOST=
+EMAIL_SMTP_PORT=
 EMAIL_SMTP_USERNAME=
 EMAIL_SMTP_PASSWORD=
 EMAIL_FROM_EMAIL=
@@ -690,37 +690,61 @@ configure_jwt_secret() {
 }
 
 configure_email() {
-    # Check if ALL email variables already exist in .env
-    # If they do, skip this entire section (NEVER override)
-    if all_vars_exist_in_env "EMAIL_SMTP_HOST" "EMAIL_SMTP_PORT" "EMAIL_SMTP_USERNAME" "EMAIL_SMTP_PASSWORD" "EMAIL_FROM_EMAIL"; then
-        print_step "Email configuration already set in .env (skipping)"
-        return
-    fi
-    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      EMAIL CONFIGURATION"
     echo "========================================================================${NC}"
     echo ""
-    echo "Enter SMTP email configuration (REQUIRED):"
+    echo "Enter SMTP email configuration (press Enter to keep existing values):"
     echo ""
     
-    EMAIL_SMTP_HOST=$(prompt_env_var "EMAIL_SMTP_HOST" "your_email_host" "SMTP Host")
-    EMAIL_SMTP_PORT=$(prompt_env_var "EMAIL_SMTP_PORT" "587" "SMTP Port")
+    # Get current values from .env to use as defaults
+    local current_smtp_host=$(get_env_var "EMAIL_SMTP_HOST")
+    local current_smtp_port=$(get_env_var "EMAIL_SMTP_PORT")
+    local current_smtp_username=$(get_env_var "EMAIL_SMTP_USERNAME")
+    local current_smtp_password=$(get_env_var "EMAIL_SMTP_PASSWORD")
+    local current_from_email=$(get_env_var "EMAIL_FROM_EMAIL")
     
-    EMAIL_SMTP_USERNAME=$(prompt_env_var "EMAIL_SMTP_USERNAME" "" "SMTP Username (email)")
-    if [ -z "$EMAIL_SMTP_USERNAME" ]; then
-        print_error "SMTP username is required"
-        exit 1
+    # Set defaults - use current value if exists, otherwise use reasonable defaults
+    local default_smtp_host="${current_smtp_host:=smtp.gmail.com}"
+    local default_smtp_port="${current_smtp_port:=587}"
+    local default_smtp_username="${current_smtp_username:=}"
+    local default_smtp_password="${current_smtp_password:=}"
+    local default_from_email="${current_from_email:=}"
+    
+    # Always prompt for each field, using current value as default
+    if [ "$AUTO_YES" = true ]; then
+        EMAIL_SMTP_HOST="${default_smtp_host}"
+        EMAIL_SMTP_PORT="${default_smtp_port}"
+        EMAIL_SMTP_USERNAME="${default_smtp_username}"
+        EMAIL_SMTP_PASSWORD="${default_smtp_password}"
+        EMAIL_FROM_EMAIL="${default_from_email:-$EMAIL_SMTP_USERNAME}"
+    else
+        # Interactive prompts
+        read -p "SMTP Host [${default_smtp_host}]: " EMAIL_SMTP_HOST
+        EMAIL_SMTP_HOST="${EMAIL_SMTP_HOST:-$default_smtp_host}"
+        
+        read -p "SMTP Port [${default_smtp_port}]: " EMAIL_SMTP_PORT
+        EMAIL_SMTP_PORT="${EMAIL_SMTP_PORT:-$default_smtp_port}"
+        
+        read -p "SMTP Username (email) [${default_smtp_username}]: " EMAIL_SMTP_USERNAME
+        EMAIL_SMTP_USERNAME="${EMAIL_SMTP_USERNAME:-$default_smtp_username}"
+        if [ -z "$EMAIL_SMTP_USERNAME" ]; then
+            print_error "SMTP username is required"
+            exit 1
+        fi
+        
+        read -sp "SMTP Password (app password) [${default_smtp_password}]: " EMAIL_SMTP_PASSWORD
+        EMAIL_SMTP_PASSWORD="${EMAIL_SMTP_PASSWORD:-$default_smtp_password}"
+        echo ""
+        if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
+            print_error "SMTP password is required"
+            exit 1
+        fi
+        
+        read -p "From Email [${default_from_email:-$EMAIL_SMTP_USERNAME}]: " EMAIL_FROM_EMAIL
+        EMAIL_FROM_EMAIL="${EMAIL_FROM_EMAIL:-${default_from_email:-$EMAIL_SMTP_USERNAME}}"
     fi
-    
-    EMAIL_SMTP_PASSWORD=$(prompt_env_var "EMAIL_SMTP_PASSWORD" "" "SMTP Password (app password)" "true")
-    if [ -z "$EMAIL_SMTP_PASSWORD" ]; then
-        print_error "SMTP password is required"
-        exit 1
-    fi
-    
-    EMAIL_FROM_EMAIL=$(prompt_env_var "EMAIL_FROM_EMAIL" "$EMAIL_SMTP_USERNAME" "From Email")
     
     # Update email configuration in .env (only if changed)
     update_env_var_if_changed "EMAIL_SMTP_HOST" "$EMAIL_SMTP_HOST"
