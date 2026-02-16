@@ -1615,6 +1615,12 @@ func (s tableManagementService) DeleteColumnForTable(
 	schemaName string,
 	columnData tenant.Column,
 ) error {
+	// Delete dependent lookup columns before deleting this column
+	err := s.deleteDependentLookupColumns(ctx, schemaName, columnData.ID.String())
+	if err != nil {
+		return err
+	}
+
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(columnData, &columnResponse); err != nil {
 		return app_errors.ErrStructToStruct
@@ -1624,7 +1630,7 @@ func (s tableManagementService) DeleteColumnForTable(
 		return s.handleDeleteColumnForLink(ctx, schemaName, columnResponse)
 	}
 
-	err := s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
+	err = s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
 	if err != nil {
 		return err
 	}
