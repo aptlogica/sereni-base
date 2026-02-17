@@ -113,8 +113,11 @@ func (s baseManagementService) CreateBaseWithImage(ctx context.Context, req dto.
 			Files: []*multipart.FileHeader{fileHeader},
 		}
 		assets, err := s.assetManagementService.Upload(ctx, uploadReq, schemaName)
-		if err != nil || len(assets) == 0 {
-			return insertedBase, nil // Return base without image if upload fails
+		if err != nil {
+			return tenant.Base{}, err
+		}
+		if len(assets) == 0 {
+			return tenant.Base{}, app_errors.StorageUploadFailed
 		}
 		imagePath := assets[0].Url
 
@@ -158,14 +161,34 @@ func (s baseManagementService) GetAllBases(ctx context.Context, schemaName strin
 	return s.baseService.GetBasesByWorkspace(ctx, schemaName, workspaceId)
 }
 
-func (s baseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string) (tenant.Base, error) {
+func (s baseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string, fileHeader *multipart.FileHeader, removeImage string) (tenant.Base, error) {
 	if req.UpdatedBy == "" {
 		req.UpdatedBy = userId
 	}
+	// First update base fields
 	updatedBase, err := s.baseService.UpdateBase(ctx, schemaName, id, req)
 	if err != nil {
 		return tenant.Base{}, err
 	}
+
+	// If image file provided, handle upload and update
+	if fileHeader != nil {
+		updatedBase, err = s.AddBaseImage(ctx, schemaName, id, fileHeader, userId)
+		if err != nil {
+			return tenant.Base{}, err
+		}
+		return updatedBase, nil
+	}
+
+	// If remove image requested, handle removal
+	if removeImage == "true" {
+		updatedBase, err = s.RemoveBaseImage(ctx, schemaName, id, userId)
+		if err != nil {
+			return tenant.Base{}, err
+		}
+		return updatedBase, nil
+	}
+
 	return updatedBase, nil
 }
 
@@ -227,8 +250,11 @@ func (s baseManagementService) AddBaseImage(ctx context.Context, schema string, 
 		Files: []*multipart.FileHeader{fileHeader},
 	}
 	assets, err := s.assetManagementService.Upload(ctx, uploadReq, schema)
-	if err != nil || len(assets) == 0 {
+	if err != nil {
 		return tenant.Base{}, err
+	}
+	if len(assets) == 0 {
+		return tenant.Base{}, app_errors.StorageUploadFailed
 	}
 	imagePath := assets[0].Url
 

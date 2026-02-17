@@ -207,16 +207,16 @@ func (mr *MockBaseManagementServiceMockRecorder) RemoveUserFromBase(ctx, schemaN
 }
 
 // UpdateBase mocks base method.
-func (m *MockBaseManagementService) UpdateBase(ctx context.Context, schemaName, id string, req dto.BaseUpdate, userId string) (tenant.Base, error) {
+func (m *MockBaseManagementService) UpdateBase(ctx context.Context, schemaName, id string, req dto.BaseUpdate, userId string, fileHeader *multipart.FileHeader, removeImage string) (tenant.Base, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateBase", ctx, schemaName, id, req, userId)
+	ret := m.ctrl.Call(m, "UpdateBase", ctx, schemaName, id, req, userId, fileHeader, removeImage)
 	ret0, _ := ret[0].(tenant.Base)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateBase indicates an expected call of UpdateBase.
-func (mr *MockBaseManagementServiceMockRecorder) UpdateBase(ctx, schemaName, id, req, userId any) *gomock.Call {
+func (mr *MockBaseManagementServiceMockRecorder) UpdateBase(ctx, schemaName, id, req, userId, fileHeader, removeImage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBase", reflect.TypeOf((*MockBaseManagementService)(nil).UpdateBase), ctx, schemaName, id, req, userId)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateBase", reflect.TypeOf((*MockBaseManagementService)(nil).UpdateBase), ctx, schemaName, id, req, userId, fileHeader, removeImage)
 }

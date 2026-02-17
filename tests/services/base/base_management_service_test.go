@@ -439,10 +439,9 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
 
 		fh := &multipart.FileHeader{Filename: "image.gif"}
-		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
+		_, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
-		assert.NoError(t, err)
-		assert.Equal(t, inserted.ID, result.ID)
+		assert.Error(t, err)
 	})
 
 	t.Run("upload error", func(t *testing.T) {
@@ -550,7 +549,7 @@ func TestUpdateBase_ProxyAndDefaultUser(t *testing.T) {
 		return req.UpdatedBy == "user"
 	})).Return(base, nil)
 
-	result, err := service.UpdateBase(context.Background(), "schema", base.ID.String(), dto.BaseUpdate{}, "user")
+	result, err := service.UpdateBase(context.Background(), "schema", base.ID.String(), dto.BaseUpdate{}, "user", nil, "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, base.ID, result.ID)

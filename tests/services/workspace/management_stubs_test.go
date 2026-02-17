@@ -124,6 +124,7 @@ type StubBaseManagementService struct {
 	GetAllBasesWithAccessFn func(ctx context.Context, schemaName string, workspaceMemberData *tenant.WorkspaceMember) ([]tenant.Base, error)
 	GetBasesByWorkspaceFn   func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error)
 	GetBaseByIDFn           func(ctx context.Context, schemaName string, id string) (tenant.Base, error)
+	UpdateBaseFn            func(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string, fileHeader *multipart.FileHeader, removeImage string) (tenant.Base, error)
 }
 
 func (s *StubBaseManagementService) CreateBase(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userId string) (tenant.Base, error) {
@@ -150,7 +151,10 @@ func (s *StubBaseManagementService) GetAllBasesWithAccess(ctx context.Context, s
 	}
 	return []tenant.Base{}, nil
 }
-func (s *StubBaseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string) (tenant.Base, error) {
+func (s *StubBaseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string, fileHeader *multipart.FileHeader, removeImage string) (tenant.Base, error) {
+	if s.UpdateBaseFn != nil {
+		return s.UpdateBaseFn(ctx, schemaName, id, req, userId, fileHeader, removeImage)
+	}
 	return tenant.Base{}, nil
 }
 func (s *StubBaseManagementService) DeleteBase(ctx context.Context, schemaName string, id string) error {

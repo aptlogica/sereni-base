@@ -110,7 +110,7 @@ func TestBaseHandler_UpdateBase_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
@@ -132,8 +132,7 @@ func TestBaseHandler_UpdateBase_WithImage(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
-	mockService.EXPECT().AddBaseImage(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -161,8 +160,7 @@ func TestBaseHandler_UpdateBase_RemoveImage(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
-	mockService.EXPECT().RemoveBaseImage(gomock.Any(), "test", "b1", "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -189,7 +187,7 @@ func TestBaseHandler_UpdateBase_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, errors.New("update failed"))
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("update failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -215,8 +213,7 @@ func TestBaseHandler_UpdateBase_AddImageError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
-	mockService.EXPECT().AddBaseImage(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, errors.New("add image failed"))
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("add image failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -244,8 +241,7 @@ func TestBaseHandler_UpdateBase_RemoveImageError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
-	mockService.EXPECT().RemoveBaseImage(gomock.Any(), "test", "b1", "user123").Return(tenant.Base{}, errors.New("remove image failed"))
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("remove image failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}

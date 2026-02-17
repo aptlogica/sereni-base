@@ -158,7 +158,7 @@ func (m *MockBaseManagementService) GetBaseByID(ctx context.Context, schemaName 
 func (m *MockBaseManagementService) GetAllBasesWithAccess(ctx context.Context, schemaName string, workspaceMemberData *tenant.WorkspaceMember) ([]tenant.Base, error) {
 	return nil, nil
 }
-func (m *MockBaseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string) (tenant.Base, error) {
+func (m *MockBaseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string, fileHeader *multipart.FileHeader, removeImage string) (tenant.Base, error) {
 	return tenant.Base{}, nil
 }
 func (m *MockBaseManagementService) DeleteBase(ctx context.Context, schemaName string, id string) error {
