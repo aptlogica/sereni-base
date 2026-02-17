@@ -42,11 +42,9 @@ WORKDIR /app
 COPY --from=builder /app/main .
 COPY wait-for-postgres.sh .
 
-# Make wait script executable
-RUN chmod +x wait-for-postgres.sh
-
 # Create assets directory and non-root user for security
-RUN mkdir -p /app/assets && \
+RUN chmod +x wait-for-postgres.sh && \
+    mkdir -p /app/assets && \
     adduser -D -s /bin/sh serenibase && \
     chown -R serenibase:serenibase /app
 

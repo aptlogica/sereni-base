@@ -6,6 +6,7 @@ import (
 	"go-postgres-rest/pkg"
 	dbModels "go-postgres-rest/pkg/models"
 	"mime/multipart"
+	"regexp"
 	app_errors "serenibase/internal/app-errors"
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
@@ -527,8 +528,16 @@ func (s tableManagementService) deleteViewsForModel(ctx context.Context, schemaN
 }
 
 func (s tableManagementService) slugify(input string) string {
-	slug := strings.ToLower(input)
-	slug = strings.ReplaceAll(slug, " ", "_")
+	// Replace spaces with underscores
+	slug := strings.ReplaceAll(input, " ", "_")
+	// Remove special characters, keeping only letters, numbers, and underscores
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_]+`)
+	slug = reg.ReplaceAllString(slug, "")
+	// Ensure it starts with a letter or underscore
+	if slug == "" || (slug[0] >= '0' && slug[0] <= '9') {
+		slug = "table_" + slug
+	}
+	slug = strings.ToLower(slug)
 	timestamp := time.Now().Unix()
 	return slug + "_" + fmt.Sprintf("%d", timestamp)
 }
@@ -1606,6 +1615,12 @@ func (s tableManagementService) DeleteColumnForTable(
 	schemaName string,
 	columnData tenant.Column,
 ) error {
+	// Delete dependent lookup columns before deleting this column
+	err := s.deleteDependentLookupColumns(ctx, schemaName, columnData.ID.String())
+	if err != nil {
+		return err
+	}
+
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(columnData, &columnResponse); err != nil {
 		return app_errors.ErrStructToStruct
@@ -1615,7 +1630,7 @@ func (s tableManagementService) DeleteColumnForTable(
 		return s.handleDeleteColumnForLink(ctx, schemaName, columnResponse)
 	}
 
-	err := s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
+	err = s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
 	if err != nil {
 		return err
 	}
@@ -1710,6 +1725,12 @@ func (s tableManagementService) DeleteColumn(
 		return s.handleDeleteColumnForLink(ctx, schemaName, columnData)
 	}
 
+	// Delete dependent lookup columns before deleting this column
+	err = s.deleteDependentLookupColumns(ctx, schemaName, id)
+	if err != nil {
+		return err
+	}
+
 	ok := s.allowDelete(columnData)
 	if !ok {
 		return app_errors.DeleteNotAllowed
@@ -1738,6 +1759,11 @@ func (s tableManagementService) DeleteColumn(
 		if ok {
 			_ = s.removeLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumn.ColumnName)
 		}
+		// Actually delete the lookup column since it's virtual
+		err = s.columnsService.DeleteColumn(ctx, schemaName, id)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -1751,6 +1777,35 @@ func (s tableManagementService) DeleteColumn(
 		return err
 	}
 
+	return nil
+}
+
+func (s tableManagementService) deleteDependentLookupColumns(ctx context.Context, schemaName string, columnID string) error {
+	allColumns, err := s.columnsService.GetAllColumns(ctx, schemaName)
+	if err != nil {
+		return err
+	}
+
+	var dependentIDs []string
+	for _, col := range allColumns {
+		if col.UIDT == "lookup" {
+			lookupColumnID, _, ok := s.validateMetaForLookup(col.Meta)
+			if ok && lookupColumnID == columnID {
+				dependentIDs = append(dependentIDs, col.ID.String())
+			}
+		}
+	}
+
+	for _, depID := range dependentIDs {
+		err = s.DeleteColumn(ctx, schemaName, depID)
+		if err != nil {
+			// If the dependent column is not found, it might have been deleted already, so ignore
+			if err == app_errors.ColumnNotFound {
+				continue
+			}
+			return err
+		}
+	}
 	return nil
 }
 
