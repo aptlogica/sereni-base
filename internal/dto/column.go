@@ -80,6 +80,7 @@ func (c *ColumnInsertion) Map() map[string]interface{} {
 // ColumnUpdate is used when updating an existing column
 type ColumnUpdate struct {
 	Title       *string                 `db:"title" json:"title,omitempty"`
+	ColumnName  *string                 `db:"column_name" json:"column_name,omitempty"`
 	Description *string                 `db:"description" json:"description,omitempty"`
 	Meta        *map[string]interface{} `db:"meta" json:"meta,omitempty"`
 	UIDT        *string                 `db:"uidt" json:"uidt,omitempty"`
@@ -98,15 +99,19 @@ func (c *ColumnUpdate) Map() map[string]interface{} {
 	if c.Title != nil {
 		result["title"] = *c.Title
 	}
+	if c.ColumnName != nil {
+		result["column_name"] = *c.ColumnName
+	}
 	if c.Description != nil {
-		result["Description"] = *c.Description
+		result["description"] = *c.Description
 	}
 	if c.Meta != nil {
-		result["Meta"] = helpers.InterfaceToJSONString(*c.Meta)
+		result["meta"] = helpers.InterfaceToJSONString(*c.Meta)
 	}
 	if c.DT != nil {
 		result["dt"] = *c.DT
 	}
+
 	if c.UIDT != nil {
 		result["uidt"] = *c.UIDT
 	}
