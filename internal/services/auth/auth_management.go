@@ -182,16 +182,9 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 	}
 
 	// Call JWT service login endpoint to get tokens
-	// JWT service only checks if user exists, password validation is done above
-	tokens, err := a.authProviderService.Login(ctx, email, password)
+	tokens, err := a.authProviderService.GenerateToken(ctx, masterUser)
 	if err != nil {
-		// User not found in JWT service, sync and retry
-
-		// Retry login after sync
-		tokens, err = a.authProviderService.Login(ctx, email, password)
-		if err != nil {
-			return dto.LoginResponse{}, fmt.Errorf("failed to authenticate with JWT service")
-		}
+		return dto.LoginResponse{}, fmt.Errorf("failed to authenticate with JWT service: %w", err)
 	}
 
 	// If email not verified:

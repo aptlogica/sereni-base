@@ -304,14 +304,11 @@ func (a *AuthProviderService) Login(ctx context.Context, email, password string)
 	req.Header.Set(contentTypeHeader, contentTypeJSON)
 
 	resp, err := a.httpClient.Do(req)
+
 	if err != nil {
 		return Tokens{}, fmt.Errorf(errCallAuthService, err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return Tokens{}, fmt.Errorf("authentication failed with status: %d", resp.StatusCode)
-	}
 
 	var tokenResp authServiceTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
