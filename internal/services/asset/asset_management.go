@@ -6,6 +6,7 @@ import (
 	"go-postgres-rest/pkg"
 	"image"
 	_ "image/gif"
+	"image/jpeg"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
@@ -22,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
+	"github.com/nfnt/resize"
 )
 
 type assetManagementService struct {
@@ -122,15 +123,18 @@ func (s *assetManagementService) uploadMainFile(objectName string, file io.Reade
 	return response.Url, nil
 }
 
-// getThumbnailUrl generates a thumbnail for image files using the imaging library.
+// getThumbnailUrl generates a thumbnail for image files.
 // Thumbnails are JPEG, max 200px on the longest edge.
 func (s *assetManagementService) getThumbnailUrl(
 	fileHeader *multipart.FileHeader, contentType, fileName, filePath string, schema string,
 ) string {
 	isImage := strings.HasPrefix(contentType, "image/") &&
+		contentType != "image/tiff" &&
 		(strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".jpg") ||
 			strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".jpeg") ||
-			strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".png"))
+			strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".png")) &&
+		!strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".tiff") &&
+		!strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".tif")
 
 	if !isImage {
 		return filePath // non-image files: thumbnail is same as url
@@ -146,21 +150,21 @@ func (s *assetManagementService) getThumbnailUrl(
 	}
 	defer file.Close()
 
-	// Decode using imaging
-	srcImg, err := imaging.Decode(file)
+	// Decode using standard library
+	srcImg, _, err := image.Decode(file)
 	if err != nil {
-		fmt.Println("getThumbnailUrl(imaging): decode failed:", err)
+		fmt.Println("getThumbnailUrl: decode failed:", err)
 		return filePath
 	}
 
 	// Resize so that the largest edge is thumbnailMaxSize px (preserve aspect)
-	thumbImg := imaging.Thumbnail(srcImg, thumbnailMaxSize, thumbnailMaxSize, imaging.Lanczos)
+	thumbImg := resize.Thumbnail(uint(thumbnailMaxSize), uint(thumbnailMaxSize), srcImg, resize.Lanczos3)
 
 	// Encode to JPEG (quality=75)
 	var buf bytes.Buffer
-	err = imaging.Encode(&buf, thumbImg, imaging.JPEG, imaging.JPEGQuality(75))
+	err = jpeg.Encode(&buf, thumbImg, &jpeg.Options{Quality: 75})
 	if err != nil {
-		fmt.Println("getThumbnailUrl(imaging): encode failed:", err)
+		fmt.Println("getThumbnailUrl: encode failed:", err)
 		return filePath
 	}
 
