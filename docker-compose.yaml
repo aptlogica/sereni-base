@@ -5,7 +5,8 @@ services:
     build: .
     ports:
       - "8080:8080"
-    # Using config.yaml instead of environment variables
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy

@@ -121,27 +121,10 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 
 	req.UpdatedBy = userId
 
-	updatedBase, err := h.baseManagementService.UpdateBase(c.Request.Context(), schemaName, id, req, userId)
+	updatedBase, err := h.baseManagementService.UpdateBase(c.Request.Context(), schemaName, id, req, userId, fileHeader, removeImage)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
-	}
-
-	// Handle image: add if file provided, else remove if requested
-	if fileHeader != nil {
-		var imgErr error
-		updatedBase, imgErr = h.baseManagementService.AddBaseImage(c.Request.Context(), schemaName, id, fileHeader, userId)
-		if imgErr != nil {
-			response.CheckAndSendError(c, imgErr)
-			return
-		}
-	} else if removeImage == "true" {
-		var remErr error
-		updatedBase, remErr = h.baseManagementService.RemoveBaseImage(c.Request.Context(), schemaName, id, userId)
-		if remErr != nil {
-			response.CheckAndSendError(c, remErr)
-			return
-		}
 	}
 
 	response.SendSuccess(c, "base updated successfully", updatedBase)

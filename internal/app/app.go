@@ -211,7 +211,7 @@ func New(cfg *config.Config) (*App, error) {
 		RequestLogger:           middleware.RequestLogger,
 		DatabaseQueryLogger:     middleware.DatabaseQueryLogger,
 		RequestSizeLimit:        middleware.RequestSizeLimit,
-		AuthMiddleware:          func() gin.HandlerFunc { return middleware.AuthMiddleware(authProvider) },
+		AuthMiddleware:          func() gin.HandlerFunc { return middleware.AuthMiddleware(authProvider, userManagementService) },
 		FileSizeLimitMiddleware: middleware.FileSizeLimitMiddleware,
 		ScopeHeaderMiddleware:   func(scope string) gin.HandlerFunc { return middleware.ScopeHeaderMiddleware(scope) },
 		WorkspaceAndBaseAccessValidationMiddleware: func(allowedAccess []string) gin.HandlerFunc {
