@@ -2753,9 +2753,7 @@ func (s tableManagementService) unlinkRowData(
 	ctx context.Context,
 	params unlinkRowDataParams,
 ) error {
-	lg := logger.Get()
 	if params.SourceDataType == "INT" {
-		lg.Debug().Msg("Unlinking single row")
 		targetRowId := params.RowData[params.Column.ColumnName].(int64)
 		return s.unlinkSingleRow(ctx, unlinkSingleRowParams{
 			Request:         params.Request,
@@ -2770,7 +2768,7 @@ func (s tableManagementService) unlinkRowData(
 	}
 
 	// handle multiple (INT[])
-	targetRowIds := params.RowData[params.TargetColumn.ColumnName].([]int64)
+	targetRowIds := params.RowData[params.Column.ColumnName].([]int64)
 	for _, targetRowId := range targetRowIds {
 		if err := s.unlinkSingleRow(ctx, unlinkSingleRowParams{
 			Request:         params.Request,
