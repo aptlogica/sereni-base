@@ -35,19 +35,14 @@ func (m *MockAuthProvider) GenerateToken(ctx context.Context, user tenant.User) 
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
-func (m *MockAuthProvider) RefreshToken(ctx context.Context, token string) (auth.Tokens, error) {
-	args := m.Called(ctx, token)
+func (m *MockAuthProvider) RefreshToken(ctx context.Context, token, userId, email, password string, roles []string) (auth.Tokens, error) {
+	args := m.Called(ctx, token, userId, email, password, roles)
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
-func (m *MockAuthProvider) Login(ctx context.Context, email, password string) (auth.Tokens, error) {
-	args := m.Called(ctx, email, password)
-	return args.Get(0).(auth.Tokens), args.Error(1)
-}
-
-func (m *MockAuthProvider) Register(ctx context.Context, userId, email, password string, roles []string) error {
+func (m *MockAuthProvider) Login(ctx context.Context, userId, email, password string, roles []string) (auth.Tokens, error) {
 	args := m.Called(ctx, userId, email, password, roles)
-	return args.Error(0)
+	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
 // MockUserManagementService is a mock implementation of UserManagementService interface

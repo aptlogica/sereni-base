@@ -512,7 +512,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 	})
 
 	t.Run("lookup update", func(t *testing.T) {
-		_, _, _, _, mockColumn, _, mockRel, _, svc := setupTableManagementService()
+		_, _, _, mockModel, mockColumn, _, mockRel, _, svc := setupTableManagementService()
 
 		modelID := uuid.New()
 		baseID := uuid.New().String()
@@ -529,12 +529,14 @@ func TestUpdateColumn_Variants(t *testing.T) {
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupID).Return(lookupCol, nil)
 		mockColumn.On("UpdateColumn", mock.Anything, "schema", col.ID.String(), mock.Anything).Return(updatedCol, nil)
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", newLookupID).Return(newLookupCol, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", newLookupCol.ModelID).Return(tenant.Model{Alias: "lk"}, nil)
 
 		rel := tenant.Relation{ID: uuid.MustParse(relationID), SourceModelID: modelID.String()}
 		mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(rel, nil)
 		mockRel.On("UpdateRelation", mock.Anything, relationID, mock.Anything, "schema").Return(tenant.Relation{}, nil)
 
-		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{})
+		updateMeta := map[string]interface{}{"lookup_column_id": newLookupID, "relation_id": relationID}
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: &updateMeta})
 
 		assert.NoError(t, err)
 	})
@@ -636,6 +638,7 @@ func TestDeleteColumn_Variants(t *testing.T) {
 		mockColumn.On("DeleteColumn", mock.Anything, "schema", sourceColID).Return(nil)
 		mockColumn.On("DeleteColumn", mock.Anything, "schema", targetColID).Return(nil)
 		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", sourceModelID).Return([]tenant.Column{}, nil)
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", targetModelID).Return([]tenant.Column{}, nil)
 
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", targetColID).Return(tenant.Column{ID: uuid.MustParse(targetColID), ModelID: targetModelID, BaseID: uuid.New().String(), ColumnName: "tgt"}, nil)
 
@@ -1288,6 +1291,7 @@ func TestDeleteTable_WithLinkColumn(t *testing.T) {
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", targetColID).Return(tenant.Column{ID: uuid.MustParse(targetColID), ModelID: targetModelID, BaseID: uuid.New().String(), ColumnName: "tgt"}, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", targetColID).Return(nil)
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", targetModelID).Return([]tenant.Column{}, nil)
 
 	mockModel.On("GetModelByID", mock.Anything, "schema", targetModelID).Return(tenant.Model{Alias: "tgt", ID: uuid.MustParse(targetModelID)}, nil)
 	mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)
@@ -1410,7 +1414,7 @@ func TestCheckAttachmentType_Variants(t *testing.T) {
 }
 
 func TestUpdateColumnForLookup_TargetBranch(t *testing.T) {
-	_, _, _, _, mockColumn, _, mockRel, _, svc := setupTableManagementService()
+	_, _, _, mockModel, mockColumn, _, mockRel, _, svc := setupTableManagementService()
 
 	modelID := uuid.New()
 	baseID := uuid.New().String()
@@ -1424,12 +1428,14 @@ func TestUpdateColumnForLookup_TargetBranch(t *testing.T) {
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupID).Return(lookupCol, nil)
 	mockColumn.On("UpdateColumn", mock.Anything, "schema", col.ID.String(), mock.Anything).Return(updatedCol, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", lookupCol.ModelID).Return(tenant.Model{Alias: "lk"}, nil)
 
 	rel := tenant.Relation{ID: uuid.MustParse(relationID), TargetModelID: modelID.String(), TargetLookupColumns: []string{"src", "other"}}
 	mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(rel, nil)
 	mockRel.On("UpdateRelation", mock.Anything, relationID, mock.Anything, "schema").Return(tenant.Relation{}, nil)
 
-	_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{})
+	updateMeta := map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID}
+	_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: &updateMeta})
 	assert.NoError(t, err)
 }
 
