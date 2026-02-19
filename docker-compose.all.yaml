@@ -152,11 +152,15 @@ services:
       MINIO_ACCESS_KEY: ${STORAGE_MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${STORAGE_MINIO_SECRET_KEY}
       MINIO_BUCKET: ${STORAGE_MINIO_BUCKET}
+    volumes:
+      - ./cors.json:/cors.json  # Mount CORS config
     entrypoint: >
       sh -c '
         /usr/bin/mc alias set myminio http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY;
         /usr/bin/mc mb -p myminio/$$MINIO_BUCKET;
         /usr/bin/mc anonymous set download myminio/$$MINIO_BUCKET;
+        /usr/bin/mc cors set /cors.json myminio/$$MINIO_BUCKET;
+        echo "Bucket $$MINIO_BUCKET ready with CORS";
       '
     depends_on:
       minio:

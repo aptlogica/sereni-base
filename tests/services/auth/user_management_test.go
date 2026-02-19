@@ -513,7 +513,7 @@ func (m *MockAuthProviderUM) GenerateToken(ctx context.Context, user tenant.User
 	return authProviderInterface.Tokens{}, nil
 }
 
-func (m *MockAuthProviderUM) RefreshToken(ctx context.Context, token string) (authProviderInterface.Tokens, error) {
+func (m *MockAuthProviderUM) RefreshToken(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
 	return authProviderInterface.Tokens{}, nil
 }
 
@@ -521,12 +521,8 @@ func (m *MockAuthProviderUM) ValidateToken(ctx context.Context, tokenStr string)
 	return authProviderInterface.Claims{}, nil
 }
 
-func (m *MockAuthProviderUM) Login(ctx context.Context, email, password string) (authProviderInterface.Tokens, error) {
+func (m *MockAuthProviderUM) Login(ctx context.Context, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
 	return authProviderInterface.Tokens{}, nil
-}
-
-func (m *MockAuthProviderUM) Register(ctx context.Context, userId, email, password string, roles []string) error {
-	return nil
 }
 
 func setupUserManagementTest() (interfaces.UserManagementService, *MockUserServiceUM, *MockAssetManagementServiceUM, *MockTableServiceUM) {

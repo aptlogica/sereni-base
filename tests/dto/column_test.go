@@ -135,8 +135,8 @@ func TestColumnUpdateMap(t *testing.T) {
 	if m["title"] != "Updated Title" {
 		t.Errorf("Map() title = %v, want %v", m["title"], "Updated Title")
 	}
-	if m["Description"] != "Updated description" {
-		t.Errorf("Map() Description = %v, want %v", m["Description"], "Updated description")
+	if m["description"] != "Updated description" {
+		t.Errorf("Map() description = %v, want %v", m["description"], "Updated description")
 	}
 	if m["uidt"] != "SingleLineText" {
 		t.Errorf("Map() uidt = %v, want %v", m["uidt"], "SingleLineText")

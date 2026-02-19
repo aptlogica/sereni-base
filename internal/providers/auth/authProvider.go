@@ -38,17 +38,11 @@ type AuthProviderService struct {
 	httpClient *http.Client
 }
 
-// Request/Response models matching auth-service API (from swagger docs)
-type authServiceRegisterRequest struct {
+type authServiceLoginRequest struct {
 	UserId   string   `json:"user_id,omitempty"`
 	Email    string   `json:"email"`
 	Password string   `json:"password"`
 	Roles    []string `json:"roles,omitempty"`
-}
-
-type authServiceLoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
 }
 
 type authServiceTokenResponse struct {
@@ -84,7 +78,11 @@ type authServiceValidateResponse struct {
 }
 
 type authServiceRefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken  string `json:"refresh_token"`
+	UserId        string `json:"user_id"`
+	Email         string `json:"email"`
+	Roles         string `json:"roles,omitempty"`
+	EmailVerified bool   `json:"email_verified"`
 }
 
 type authServiceVerifyRequest struct {
@@ -238,10 +236,14 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 	}, nil
 }
 
-func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string) (Tokens, error) {
+func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string, userId, email, password string, roles []string) (Tokens, error) {
 	// Call auth-service /auth/refresh endpoint
 	reqBody := authServiceRefreshRequest{
-		RefreshToken: tokenStr,
+		RefreshToken:  tokenStr,
+		UserId:        userId,
+		Email:         email,
+		Roles:         fmt.Sprintf("%v", roles), // Convert roles slice to string
+		EmailVerified: true,                     // Assuming email is verified for refresh, adjust as needed
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -284,10 +286,12 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string)
 
 // Login authenticates a user and returns JWT tokens
 // Calls POST /auth/login on auth-service
-func (a *AuthProviderService) Login(ctx context.Context, email, password string) (Tokens, error) {
+func (a *AuthProviderService) Login(ctx context.Context, userId, email, password string, roles []string) (Tokens, error) {
 	reqBody := authServiceLoginRequest{
+		UserId:   userId,
 		Email:    email,
 		Password: password,
+		Roles:    roles,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -323,47 +327,6 @@ func (a *AuthProviderService) Login(ctx context.Context, email, password string)
 		AccessToken:  tokenResp.Data.AccessToken,
 		RefreshToken: tokenResp.Data.RefreshToken,
 	}, nil
-}
-
-// Register creates a new user in auth-service
-// Calls POST /auth/register on auth-service
-// Note: This returns user profile, not tokens. Use Login after registration to get tokens.
-func (a *AuthProviderService) Register(ctx context.Context, userId, email, password string, roles []string) error {
-	reqBody := authServiceRegisterRequest{
-		UserId:   userId,
-		Email:    email,
-		Password: password,
-		Roles:    roles,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf(errMarshalRequest, err)
-	}
-
-	url := fmt.Sprintf("%s/auth/register", a.AuthConfig.URL)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf(errCreateRequest, err)
-	}
-
-	req.Header.Set(contentTypeHeader, contentTypeJSON)
-
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf(errCallAuthService, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusConflict {
-		return fmt.Errorf("user already exists")
-	}
-
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("registration failed with status: %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 // VerifyToken checks if a token is valid (returns boolean)

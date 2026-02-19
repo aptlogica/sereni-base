@@ -442,9 +442,9 @@ func (m *emailServiceMock) Enqueue(job emailProvider.EmailJob) {
 
 type authProviderMock struct {
 	GenerateTokenFn func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error)
-	RefreshTokenFn  func(ctx context.Context, token string) (authProviderInterface.Tokens, error)
+	RefreshTokenFn  func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error)
 	ValidateTokenFn func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error)
-	LoginFn         func(ctx context.Context, email, password string) (authProviderInterface.Tokens, error)
+	LoginFn         func(ctx context.Context, userId, email, password string, roles []string) (authProviderInterface.Tokens, error)
 	RegisterFn      func(ctx context.Context, userId, email, password string, roles []string) error
 }
 
@@ -455,9 +455,9 @@ func (m *authProviderMock) GenerateToken(ctx context.Context, user tenant.User) 
 	return authProviderInterface.Tokens{}, nil
 }
 
-func (m *authProviderMock) RefreshToken(ctx context.Context, token string) (authProviderInterface.Tokens, error) {
+func (m *authProviderMock) RefreshToken(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
 	if m.RefreshTokenFn != nil {
-		return m.RefreshTokenFn(ctx, token)
+		return m.RefreshTokenFn(ctx, token, userId, email, password, roles)
 	}
 	return authProviderInterface.Tokens{}, nil
 }
@@ -469,9 +469,9 @@ func (m *authProviderMock) ValidateToken(ctx context.Context, tokenStr string) (
 	return authProviderInterface.Claims{}, nil
 }
 
-func (m *authProviderMock) Login(ctx context.Context, email, password string) (authProviderInterface.Tokens, error) {
+func (m *authProviderMock) Login(ctx context.Context, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
 	if m.LoginFn != nil {
-		return m.LoginFn(ctx, email, password)
+		return m.LoginFn(ctx, userId, email, password, roles)
 	}
 	return authProviderInterface.Tokens{}, nil
 }

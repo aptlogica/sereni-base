@@ -84,9 +84,6 @@ func (s *authManagementService) sendOtpViaEmail(email string) {
 }
 
 func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.RegisterRequest) (dto.LoginResponse, error) {
-	// 2. Store plain password for JWT service sync before hashing
-	plainPassword := req.Password
-
 	// Hash password for local storage
 	hashed, err := helpers.HashPassword(req.Password)
 	if err != nil {
@@ -101,8 +98,6 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 	}
 
 	// Use the RBAC role names that match the system
-	jwtRoles := []string{appConstant.RBACRoleNames.Owner}
-	_ = a.authProviderService.Register(ctx, insertedUser.ID.String(), insertedUser.Email, plainPassword, jwtRoles)
 
 	// 5. Verify Email (Skip OTP for owner) && Initialize
 	userData, err := a.initializeOwner(ctx, insertedUser.ID.String(), insertedUser)
@@ -248,17 +243,10 @@ func (a *authManagementService) initializeOwner(ctx context.Context, userId stri
 }
 
 func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyEmailRequest) (dto.LoginResponse, error) {
-	// Original logic: RefreshToken(req.Token) -> Extract claims -> Check OTP -> addUserWithTenant -> SetEmailVerified
-
-	// We need to validate the token (which is likely a RefreshToken from Register response)
-	tokenData, err := a.authProviderService.RefreshToken(ctx, req.Token)
-	if err != nil {
-		return dto.LoginResponse{}, err
-	}
 
 	// Extract info from token
 	// Assuming RefreshToken has UserID in claims
-	claims, err := a.authProviderService.ValidateToken(ctx, tokenData.RefreshToken)
+	claims, err := a.authProviderService.ValidateToken(ctx, req.Token)
 	// ValidateToken might fail if it expects access token format?
 	// But our local JWT ValidateToken works for any valid JWT signed by us.
 	if err != nil {
@@ -308,12 +296,8 @@ func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyE
 }
 
 func (a *authManagementService) ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error {
-	// Similar logic to VerifyEmail to get user
-	tokenData, err := a.authProviderService.RefreshToken(ctx, req.Token)
-	if err != nil {
-		return err
-	}
-	claims, err := a.authProviderService.ValidateToken(ctx, tokenData.RefreshToken)
+
+	claims, err := a.authProviderService.ValidateToken(ctx, req.Token)
 	if err != nil {
 		return err
 	}
@@ -335,7 +319,7 @@ func (a *authManagementService) ResendOTP(ctx context.Context, req dto.ResendOTP
 }
 
 func (a *authManagementService) RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (dto.TokenResponse, error) {
-	tokens, err := a.authProviderService.RefreshToken(ctx, req.RefeshToken)
+	tokens, err := a.authProviderService.RefreshToken(ctx, req.RefeshToken, req.UserID, req.Email, req.Password, req.Roles)
 	if err != nil {
 		return dto.TokenResponse{}, err
 	}
@@ -461,14 +445,6 @@ func (a *authManagementService) ResetPassword(ctx context.Context, req dto.Reset
 		return err
 	}
 
-	// Get user email to sync password with JWT service
-	user, err := a.userManagementService.GetUserByID(ctx, appConstant.MasterDatabase, userId)
-	if err == nil {
-		// Sync new password to JWT service by re-registering
-		// This will overwrite the existing password in JWT service
-		_ = a.authProviderService.Register(ctx, user.ID.String(), user.Email, req.NewPassword, []string{"owner"})
-	}
-
 	return a.cleanUserResetTokens(ctx, userId)
 }
 
@@ -563,9 +539,6 @@ func (a *authManagementService) AddUser(ctx context.Context, schema string, user
 	if err != nil {
 		return tenant.User{}, err
 	}
-
-	// Sync user to JWT service
-	_ = a.authProviderService.Register(ctx, user.ID.String(), user.Email, a.userDefaultPassword.Value, []string{"user"})
 
 	// Handle profile picture file upload
 	if err := a.handleProfilePicture(ctx, schema, user.ID.String(), userData.ProfilePic); err != nil {
@@ -1262,15 +1235,8 @@ func (a *authManagementService) DeleteUserCompletely(ctx context.Context, schema
 }
 
 func (a *authManagementService) UpdatePassword(ctx context.Context, schema string, userID string, updateData dto.UpdateUserPasswordRequest) error {
-	user, err := a.userManagementService.UpdatePassword(ctx, schema, userID, updateData)
-	if err != nil {
-		return err
-	}
-
-	// Sync new password to JWT service
-	_ = a.authProviderService.Register(ctx, user.ID.String(), user.Email, updateData.NewPassword, []string{"owner"})
-
-	return nil
+	_, err := a.userManagementService.UpdatePassword(ctx, schema, userID, updateData)
+	return err
 }
 
 // BulkAddMembers adds multiple members to a workspace with their memberships

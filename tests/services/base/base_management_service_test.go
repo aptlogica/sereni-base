@@ -439,9 +439,10 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
 
 		fh := &multipart.FileHeader{Filename: "image.gif"}
-		_, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
+		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
-		assert.Error(t, err)
+		assert.NoError(t, err)
+		assert.Equal(t, inserted.ID, result.ID)
 	})
 
 	t.Run("upload error", func(t *testing.T) {
@@ -456,8 +457,8 @@ func TestCreateBaseWithImage(t *testing.T) {
 		fh := &multipart.FileHeader{Filename: "image.png"}
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
-		assert.NoError(t, err)
-		assert.Equal(t, inserted.ID, result.ID)
+		assert.Error(t, err)
+		assert.Equal(t, uuid.Nil, result.ID)
 	})
 
 	t.Run("update error", func(t *testing.T) {

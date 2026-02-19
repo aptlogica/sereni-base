@@ -48,7 +48,11 @@ type ResendOTPRequest struct {
 }
 
 type RefreshTokenRequest struct {
-	RefeshToken string `json:"refresh_token" binding:"required" format:"jwt"`
+	RefeshToken string   `json:"refresh_token" binding:"required" format:"jwt"`
+	UserID      string   `json:"user_id" binding:"required" format:"uuid"`
+	Email       string   `json:"email" binding:"required,email" format:"email"`
+	Password    string   `json:"password" binding:"required,min=8" format:"string"`
+	Roles       []string `json:"roles" binding:"required" format:"array"`
 }
 
 type ForgotPasswordRequest struct {
