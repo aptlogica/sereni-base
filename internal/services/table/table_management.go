@@ -939,6 +939,7 @@ func (s tableManagementService) removeLookupColumnInRelation(
 	relationID string,
 	lookupColumnName string,
 ) error {
+	fmt.Println("removeLookupColumnInRelation...")
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationID, schemaName)
 	if err != nil {
 		lg := logger.Get()
@@ -966,20 +967,33 @@ func (s tableManagementService) removeLookupColumnInRelation(
 	return nil
 }
 
-func (s tableManagementService) removeLookupColumnFromList(columns []string, columnToRemove string, columnType string) []string {
-	lg := logger.Get()
-	lg.Debug().Str("type", fmt.Sprintf("%T", columns)).Msg(fmt.Sprintf("Type of %s", columnType))
+func (s tableManagementService) removeLookupColumnFromList(
+	columns []string,
+	columnToRemove string,
+	columnType string,
+) []string {
 
-	if columns != nil {
-		newArr := make([]string, 0)
-		for _, col := range columns {
-			if col != columnToRemove {
-				newArr = append(newArr, col)
-			}
-		}
-		return newArr
+	lg := logger.Get()
+	lg.Debug().
+		Str("type", fmt.Sprintf("%T", columns)).
+		Msg(fmt.Sprintf("Type of %s", columnType))
+
+	if columns == nil {
+		return []string{}
 	}
-	return []string{}
+
+	newArr := make([]string, 0, len(columns))
+	removed := false
+
+	for _, col := range columns {
+		if col == columnToRemove && !removed {
+			removed = true // skip only the first match
+			continue
+		}
+		newArr = append(newArr, col)
+	}
+
+	return newArr
 }
 
 func (s tableManagementService) addColumnWithLookup(
@@ -1747,12 +1761,85 @@ func (s tableManagementService) DeleteColumnAndCleanUp(
 	return nil
 }
 
+// DeleteUsedLookupColumn checks for linked columns in all models, then for each linked model,
+// checks for lookup columns referencing the deleted column, and deletes them using DeleteColumnAndCleanUp.
+func (s tableManagementService) DeleteUsedLookupColumn(ctx context.Context, schemaName string, columnData dto.ColumnResponse) error {
+	// 1. Get all columns for the modelId from columnData
+	columns, err := s.GetColumnsByModelID(ctx, schemaName, columnData.ModelID.String())
+	if err != nil {
+		return err
+	}
+
+	for _, col := range columns {
+		// 2. If column is a link type
+		if col.UIDT == "links" {
+			// 3. Get the linked model ID from meta (relation_id)
+			relation, ok := col.Meta["relation"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			linkedModelID, ok := relation["with"].(string)
+			fmt.Println("linkedModelID: ", linkedModelID)
+			if !ok || linkedModelID == "" {
+				continue
+			}
+
+			// 5. Get all columns from the linked model
+			linkedColumns, err := s.GetColumnsByModelID(ctx, schemaName, linkedModelID)
+			if err != nil {
+				return err
+			}
+
+			for _, linkedCol := range linkedColumns {
+				// 6. If column is lookup and lookup_column_id matches deleted column
+				if linkedCol.UIDT == "lookup" {
+					lookupColumnID, ok := linkedCol.Meta["lookup_column_id"].(string)
+					if ok && lookupColumnID == columnData.ID.String() {
+						// 7. Delete this lookup column
+						fmt.Printf("column_id", linkedCol.ID.String())
+						err := s.DeleteUsedLookupColumnForRelation(ctx, schemaName, linkedCol)
+						if err != nil {
+							return err
+						}
+
+						err = s.reorderColumnsAfterDelete(ctx, schemaName, linkedCol.ModelID.String(), linkedCol)
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s tableManagementService) DeleteUsedLookupColumnForRelation(ctx context.Context, schemaName string, columnData dto.ColumnResponse) error {
+	lookupColumnID, relationID, _ := s.validateMetaForLookup(columnData.Meta)
+
+	lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
+	if err != nil {
+		return err
+	}
+
+	err = s.removeLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumn.ColumnName)
+	if err != nil {
+		return err
+	}
+
+	err = s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
 func (s tableManagementService) DeleteColumn(
 	ctx context.Context,
 	schemaName string,
 	id string,
 ) error {
-	lg := logger.Get()
 	// Check if the column exists
 	columnData, err := s.GetColumnById(ctx, schemaName, id)
 	if err != nil {
@@ -1763,30 +1850,20 @@ func (s tableManagementService) DeleteColumn(
 	}
 
 	if columnData.UIDT == "lookup" {
-		lg.Debug().Msg("Deleting lookup column")
-		lookupColumnID, relationID, _ := s.validateMetaForLookup(columnData.Meta)
-
-		lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
-		if err != nil {
-			return err
-		}
-
-		err = s.removeLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumn.ColumnName)
-		if err != nil {
-			return err
-		}
-
-		err = s.columnsService.DeleteColumn(ctx, schemaName, id)
-		if err != nil {
-			return err
-		}
-		return nil
+		return s.DeleteUsedLookupColumnForRelation(ctx, schemaName, columnData)
 	}
 
 	ok := s.allowDelete(columnData)
 	if !ok {
 		return app_errors.DeleteNotAllowed
 	}
+
+	// go func() {
+	err = s.DeleteUsedLookupColumn(ctx, schemaName, columnData)
+	if err != nil {
+		logger.Get().Error().Err(err).Msg("Failed to delete used lookup column in background")
+	}
+	// }()
 
 	return s.DeleteColumnAndCleanUp(ctx, schemaName, id, columnData)
 }
