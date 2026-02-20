@@ -157,10 +157,16 @@ configure_host_interactive() {
         echo ""
     fi
     
-    echo "Enter your public IP address or domain name:"
+    echo "Enter PUBLIC_HOST configuration (press Enter to keep existing values):"
     echo "(Examples: 192.168.1.100, myapp.example.com, or localhost for local development)"
     echo ""
-    read -p "IP/Domain [localhost]: " PUBLIC_HOST
+    
+    local current_public_host
+    current_public_host=$(grep -E '^PUBLIC_HOST=' "$target_env" 2>/dev/null | tail -n 1 | cut -d'=' -f2- | tr -d '\r')
+    local default_public_host="${current_public_host:-localhost}"
+    
+    read -p "PUBLIC_HOST [${default_public_host}]: " PUBLIC_HOST
+    PUBLIC_HOST="${PUBLIC_HOST:-$default_public_host}"
     
     # Use localhost as default if nothing entered
     if [ -z "$PUBLIC_HOST" ]; then

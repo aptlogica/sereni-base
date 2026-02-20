@@ -510,21 +510,22 @@ echo ========================================================================
 echo                      NETWORK CONFIGURATION
 echo ========================================================================
 echo.
-set /p PUBLIC_HOST="Enter IP/domain [localhost]: "
-if "%PUBLIC_HOST%"=="" set PUBLIC_HOST=localhost
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^PUBLIC_HOST=' } | Select-Object -Last 1; if ($line) { $line.Split('=',2)[1] } else { 'localhost' }"`) do set "CURRENT_PUBLIC_HOST=%%i"
+if "!CURRENT_PUBLIC_HOST!"=="" set "CURRENT_PUBLIC_HOST=localhost"
+set /p PUBLIC_HOST="Enter IP/domain [!CURRENT_PUBLIC_HOST!]: "
+if "!PUBLIC_HOST!"=="" set "PUBLIC_HOST=!CURRENT_PUBLIC_HOST!"
 
-REM Update .env file with PUBLIC_HOST, BASEUI_VITE_API_BASE_URL and STORAGE_SERVER_IP
-REM Only add if the key doesn't exist already
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^PUBLIC_HOST=') { $content += \"`nPUBLIC_HOST=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^SERVER_IP=') { $content += \"`nSERVER_IP=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^BASEUI_VITE_API_BASE_URL=') { $content += \"`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; Set-Content '.env' -Value $content -NoNewline"
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^CORS_ALLOWED_ORIGINS=') { $content += \"`nCORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080\" }; Set-Content '.env' -Value $content -NoNewline"
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^STORAGE_SERVER_IP=') { $content += \"`nSTORAGE_SERVER_IP=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^AUTH_RESET_PASSWORD_URL=') { $content += \"`nAUTH_RESET_PASSWORD_URL=http://%PUBLIC_HOST%:5050/reset-password?token=%%s\" }; Set-Content '.env' -Value $content -NoNewline"
-echo [OK] Configured PUBLIC_HOST (added if missing)
-echo [OK] Configured SERVER_IP (added if missing)
-echo [OK] Configured BASEUI_VITE_API_BASE_URL (added if missing)
-echo [OK] Configured AUTH_RESET_PASSWORD_URL (added if missing)
+REM Update .env file with PUBLIC_HOST and dependent network values (replace existing, append if missing)
+powershell -NoProfile -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^PUBLIC_HOST=') { $content = $content -replace '(?m)^PUBLIC_HOST=.*$', 'PUBLIC_HOST=%PUBLIC_HOST%' } else { $content += \"`r`nPUBLIC_HOST=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -NoProfile -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^SERVER_IP=') { $content = $content -replace '(?m)^SERVER_IP=.*$', 'SERVER_IP=%PUBLIC_HOST%' } else { $content += \"`r`nSERVER_IP=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -NoProfile -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^BASEUI_VITE_API_BASE_URL=') { $content = $content -replace '(?m)^BASEUI_VITE_API_BASE_URL=.*$', 'BASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080' } else { $content += \"`r`nBASEUI_VITE_API_BASE_URL=http://%PUBLIC_HOST%:8080\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -NoProfile -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^CORS_ALLOWED_ORIGINS=') { $content = $content -replace '(?m)^CORS_ALLOWED_ORIGINS=.*$', 'CORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080' } else { $content += \"`r`nCORS_ALLOWED_ORIGINS=http://localhost:5050,http://127.0.0.1:5050,http://%PUBLIC_HOST%:5050,http://base-ui:5050,http://serenibase:8080\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -NoProfile -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^STORAGE_SERVER_IP=') { $content = $content -replace '(?m)^STORAGE_SERVER_IP=.*$', 'STORAGE_SERVER_IP=%PUBLIC_HOST%' } else { $content += \"`r`nSTORAGE_SERVER_IP=%PUBLIC_HOST%\" }; Set-Content '.env' -Value $content -NoNewline"
+powershell -NoProfile -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^AUTH_RESET_PASSWORD_URL=') { $content = $content -replace '(?m)^AUTH_RESET_PASSWORD_URL=.*$', 'AUTH_RESET_PASSWORD_URL=http://%PUBLIC_HOST%:5050/reset-password?token=%%s' } else { $content += \"`r`nAUTH_RESET_PASSWORD_URL=http://%PUBLIC_HOST%:5050/reset-password?token=%%s\" }; Set-Content '.env' -Value $content -NoNewline"
+echo [OK] Configured PUBLIC_HOST
+echo [OK] Configured SERVER_IP
+echo [OK] Configured BASEUI_VITE_API_BASE_URL
+echo [OK] Configured AUTH_RESET_PASSWORD_URL
 
 echo.
 echo ========================================================================

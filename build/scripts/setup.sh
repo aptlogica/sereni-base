@@ -887,24 +887,25 @@ configure_storage() {
 }
 
 configure_public_host() {
-    # Check if PUBLIC_HOST already exists in .env
-    # If it does, skip this entire section (NEVER override)
-    if var_exists_in_env "PUBLIC_HOST"; then
-        print_step "Network configuration already set in .env (skipping)"
-        return
-    fi
-    
     echo ""
     echo -e "${BLUE}========================================================================"
     echo "                      NETWORK CONFIGURATION"
     echo "========================================================================${NC}"
     echo ""
-
-    echo "Enter your public IP address or domain name:"
+    echo "Enter PUBLIC_HOST configuration (press Enter to keep existing values):"
     echo "(Examples: 192.168.1.100, myapp.example.com, or localhost for local development)"
     echo ""
-    
-    PUBLIC_HOST=$(prompt_env_var "PUBLIC_HOST" "localhost" "IP/Domain")
+
+    local current_public_host
+    current_public_host=$(get_env_var "PUBLIC_HOST")
+    local default_public_host="${current_public_host:-localhost}"
+
+    if [ "$AUTO_YES" = "true" ]; then
+        PUBLIC_HOST="$default_public_host"
+    else
+        read -p "PUBLIC_HOST [${default_public_host}]: " PUBLIC_HOST
+        PUBLIC_HOST="${PUBLIC_HOST:-$default_public_host}"
+    fi
 
     # Use localhost as default if nothing entered
     if [ -z "$PUBLIC_HOST" ]; then

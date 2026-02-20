@@ -856,11 +856,17 @@ Write-Host "====================================================================
 Write-Host "                      NETWORK CONFIGURATION"
 Write-Host "========================================================================"
 Write-Host ""
+Write-Host "Enter PUBLIC_HOST configuration (press Enter to keep existing values):"
+Write-Host "(Examples: 192.168.1.100, myapp.example.com, or localhost for local development)"
+Write-Host ""
 
 if ($AutoYes) {
-    $PUBLIC_HOST = "localhost"
+    $currentPublicHost = Get-EnvVar -Key "PUBLIC_HOST"
+    $PUBLIC_HOST = if ([string]::IsNullOrWhiteSpace($currentPublicHost)) { "localhost" } else { $currentPublicHost }
 } else {
-    $PUBLIC_HOST = Read-HostWithCancel -Prompt "Enter IP/domain" -Default "localhost"
+    $currentPublicHost = Get-EnvVar -Key "PUBLIC_HOST"
+    $defaultPublicHost = if ([string]::IsNullOrWhiteSpace($currentPublicHost)) { "localhost" } else { $currentPublicHost }
+    $PUBLIC_HOST = Read-HostWithCancel -Prompt "PUBLIC_HOST" -Default $defaultPublicHost
 }
 
 # Ensure PUBLIC_HOST is never empty
