@@ -19,6 +19,8 @@ require (
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
+	github.com/swaggo/files v1.0.1
+	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
 	go-postgres-rest v0.0.0-00010101000000-000000000000
 	go.uber.org/mock v0.6.0
@@ -39,6 +41,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
+	github.com/gin-contrib/cors v1.7.6 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.19.6 // indirect

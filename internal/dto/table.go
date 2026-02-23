@@ -14,21 +14,21 @@ type CreateTableRequest struct {
 }
 
 type TableResponse struct {
-	Model   ModelResponse            `json:"model" mapstructure:"model" example:"{...}"`
-	Columns []ColumnResponse         `json:"columns" mapstructure:"columns" example:"[{...}]"`
-	Views   []ViewResponse           `json:"views" mapstructure:"views" example:"[{...}]"`
-	Records []map[string]interface{} `json:"records" mapstructure:"records" example:"[{...}]"`
+	Model   ModelResponse            `json:"model" mapstructure:"model"`
+	Columns []ColumnResponse         `json:"columns" mapstructure:"columns"`
+	Views   []ViewResponse           `json:"views" mapstructure:"views"`
+	Records []map[string]interface{} `json:"records" mapstructure:"records"`
 }
 
 type TablePageResponse struct {
-	Columns []ColumnResponse         `json:"columns" mapstructure:"columns" example:"[{...}]"`
-	Records []map[string]interface{} `json:"records" mapstructure:"records" example:"[{...}]"`
+	Columns []ColumnResponse         `json:"columns" mapstructure:"columns"`
+	Records []map[string]interface{} `json:"records" mapstructure:"records"`
 }
 
 type UpdateTableRequest struct {
 	Title       *string                `db:"title" json:"title,omitempty" mapstructure:"title"`
 	Description *string                `json:"description" example:"A description of the table" format:"string"`
-	Meta        map[string]interface{} `json:"meta,omitempty" example:"{\"key1\": \"value1\"}"`
+	Meta        map[string]interface{} `json:"meta,omitempty"`
 	UpdatedBy   string                 `json:"last_modified_by,omitempty"`
 	UpdatedAt   time.Time              `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
 }
@@ -71,7 +71,7 @@ type InsertRowDataRequest struct {
 	ModelID   string       `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
 	ColumnId  string       `json:"column_id" binding:"required" example:"col-123"`
 	RowId     int          `json:"row_id" binding:"required" example:"1"`
-	Value     *interface{} `json:"value" example:"Some value"`
+	Value     *interface{} `json:"value"`
 	UpdatedBy string       `json:"last_modified_by,omitempty"`
 }
 
@@ -82,7 +82,7 @@ type DeleteRowDataRequest struct {
 
 type BulkDeleteRowsRequest struct {
 	ModelID string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
-	RowIds  []int  `json:"row_ids" binding:"required,min=1" example:"[1,2,3,4,5]"`
+	RowIds  []int  `json:"row_ids" binding:"required,min=1"`
 }
 
 type UpdateRowDataLinksRequest struct {

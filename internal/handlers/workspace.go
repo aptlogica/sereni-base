@@ -22,6 +22,20 @@ func NewWorkspaceHandler(workspaceManagementService interfaces.WorkspaceManageme
 	}
 }
 
+// @Summary      Create a workspace
+// @Description  Persists a new workspace entity for the tenant, storing the title and metadata provided by the requester.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.CreateWorkspaceRequest  true  "Workspace payload"
+// @Success      201      {object}  dto.WorkspaceResponse      "Workspace created"
+// @Failure      400      {object}  models.ErrorResponse        "Bad Request — missing title or workspace data"
+// @Failure      401      {object}  models.ErrorResponse        "Unauthorized — invalid credentials"
+// @Failure      403      {object}  models.ErrorResponse        "Forbidden — insufficient privileges"
+// @Failure      500      {object}  models.ErrorResponse        "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/create [post]
 func (h *WorkspaceHandler) CreateWorkspace(c *gin.Context) {
 	var req dto.CreateWorkspaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -47,6 +61,21 @@ func (h *WorkspaceHandler) CreateWorkspace(c *gin.Context) {
 	response.SendSuccess(c, "Workspace created successfully", workspace)
 }
 
+// @Summary      Get workspace by ID
+// @Description  Returns the workspace record that matches the provided ID with all tenant metadata.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string            true  "Workspace ID"
+// @Success      200  {object}  models.SuccessResponse  "Workspace retrieved successfully (data contains workspace fields)"
+// @Failure      400  {object}  models.ErrorResponse  "Bad Request — invalid ID"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized — invalid token"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden — not allowed to read this workspace"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — workspace missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/{id} [get]
 func (h *WorkspaceHandler) GetWorkspaceByID(c *gin.Context) {
 	id := c.Param("id") // directly fetch from URI like /workspaces/:id
 
@@ -62,6 +91,18 @@ func (h *WorkspaceHandler) GetWorkspaceByID(c *gin.Context) {
 	response.SendSuccess(c, "Workspace retrieved successfully", workspace)
 }
 
+// @Summary      List all workspaces
+// @Description  Returns every workspace visible to the tenant including metadata.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Success      200  {object}  models.SuccessResponse  "Workspaces retrieved successfully (data contains workspace list)"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized — invalid token"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden — insufficient privileges"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/ [get]
 func (h *WorkspaceHandler) GetAllWorkspaces(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -75,6 +116,22 @@ func (h *WorkspaceHandler) GetAllWorkspaces(c *gin.Context) {
 	response.SendSuccess(c, "Workspaces retrieved successfully", workspaces)
 }
 
+// @Summary      Update workspace metadata
+// @Description  Applies the supplied fields to the workspace record. Empty fields are ignored.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id       path      string               true  "Workspace ID"
+// @Param        request  body      dto.WorkspaceUpdate   true  "Fields to patch"
+// @Success      200      {object}  models.SuccessResponse  "Workspace updated successfully (data contains updated workspace)"
+// @Failure      400      {object}  models.ErrorResponse  "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse  "Unauthorized — invalid token"
+// @Failure      403      {object}  models.ErrorResponse  "Forbidden — insufficient privileges"
+// @Failure      404      {object}  models.ErrorResponse  "Not Found — workspace missing"
+// @Failure      500      {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/{id} [put]
 func (h *WorkspaceHandler) UpdateWorkspace(c *gin.Context) {
 	var req dto.WorkspaceUpdate
 
@@ -104,6 +161,21 @@ func (h *WorkspaceHandler) UpdateWorkspace(c *gin.Context) {
 	response.SendSuccess(c, "Workspace updated successfully", workspace)
 }
 
+// @Summary      Delete a workspace
+// @Description  Removes the workspace and its tables, returning success once cleanup finishes.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string  true  "Workspace ID"
+// @Success      200  {object}  models.SuccessResponse  "Workspace deleted"
+// @Failure      400  {object}  models.ErrorResponse    "Bad Request — invalid workspace id"
+// @Failure      401  {object}  models.ErrorResponse    "Unauthorized — invalid token"
+// @Failure      403  {object}  models.ErrorResponse    "Forbidden — not allowed to delete"
+// @Failure      404  {object}  models.ErrorResponse    "Not Found — workspace missing"
+// @Failure      500  {object}  models.ErrorResponse    "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/{id} [delete]
 func (h *WorkspaceHandler) DeleteWorkspace(c *gin.Context) {
 	id := c.Param("id") // directly fetch from URI like /workspaces/:id
 
@@ -118,6 +190,20 @@ func (h *WorkspaceHandler) DeleteWorkspace(c *gin.Context) {
 	response.SendSuccess(c, "Workspace deleted successfully", nil)
 }
 
+// @Summary      Get tables scoped to a workspace
+// @Description  Returns the table definitions owned by the workspace so front-end can render the schema.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string            true  "Workspace ID"
+// @Success      200  {array}   dto.TableResponse  "Tables listed"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized — invalid token"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden — insufficient access"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — workspace missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/{id}/tables [get]
 func (h *WorkspaceHandler) GetTablesByWorkspaceId(c *gin.Context) {
 	workspaceID := c.Param("id") // expects route like /workspaces/:id/tables
 
@@ -133,6 +219,20 @@ func (h *WorkspaceHandler) GetTablesByWorkspaceId(c *gin.Context) {
 	response.SendSuccess(c, "Tables retrieved successfully", tables)
 }
 
+// @Summary      List bases for a workspace
+// @Description  Returns every base the workspace owns, including access-level meta for the requesting user.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string            true  "Workspace ID"
+// @Success      200  {array}   dto.BaseResponse   "Bases retrieved"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized — invalid authentication"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden — missing access level"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — workspace missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/{id}/bases [get]
 func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 	workspaceID := c.Param("id") // expects route like /workspaces/:id/bases
 
@@ -158,6 +258,21 @@ func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 }
 
 // BulkAddMembers adds multiple members to workspace with their memberships
+// @Summary      Bulk add members to workspace
+// @Description  Creates multiple workspace access records using the memberships described in the request.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id       path      string                  true  "Target workspace ID"
+// @Param        request  body      dto.BulkAddMembersRequest  true  "Array of member and membership definitions"
+// @Success      200      {object}  dto.BulkAddMembersResponse  "Bulk member addition results"
+// @Failure      400      {object}  models.ErrorResponse        "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse        "Unauthorized — invalid token"
+// @Failure      403      {object}  models.ErrorResponse        "Forbidden — not allowed to bulk add"
+// @Failure      500      {object}  models.ErrorResponse        "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /workspace/{id}/bulk-add-members [post]
 func (h *WorkspaceHandler) BulkAddMembers(c *gin.Context) {
 	var req dto.BulkAddMembersRequest
 
@@ -186,6 +301,21 @@ func (h *WorkspaceHandler) BulkAddMembers(c *gin.Context) {
 }
 
 // BulkAddBaseMembers adds multiple members to bases
+// @Summary      Bulk add members to a base
+// @Description  Adds multiple users to the provided base according to their requested base roles.
+// @Tags         Admin Workspace
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id       path      string                       true  "Base ID"
+// @Param        request  body      dto.BulkAddBaseMembersRequest  true  "Bulk membership payload"
+// @Success      200      {object}  dto.BulkAddMembersResponse     "Bulk additions reported"
+// @Failure      400      {object}  models.ErrorResponse           "Bad Request — missing fields"
+// @Failure      401      {object}  models.ErrorResponse           "Unauthorized — invalid token"
+// @Failure      403      {object}  models.ErrorResponse           "Forbidden — insufficient privileges"
+// @Failure      500      {object}  models.ErrorResponse           "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /base/{id}/bulk-add-members [post]
 func (h *WorkspaceHandler) BulkAddBaseMembers(c *gin.Context) {
 	baseID := c.Param("id")
 	var req dto.BulkAddBaseMembersRequest
