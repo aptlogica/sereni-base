@@ -3,6 +3,16 @@ param(
     [string]$TemplateSource = ".env.template"
 )
 
+# Write UTF-8 text without BOM to keep .env portable across shells and Docker.
+function Set-TextFileNoBom {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 # Function to extract variable value from .env content
 function Get-EnvValue {
     param([string]$Content, [string]$VarName)
@@ -85,7 +95,7 @@ if ($customVars.Count -gt 0) {
 }
 
 # Write the new content
-$newEnvContent | Set-Content $TargetEnv -Encoding UTF8
+Set-TextFileNoBom -Path $TargetEnv -Content (($newEnvContent -join "`n") + "`n")
 
 # Report
 Write-Host ""

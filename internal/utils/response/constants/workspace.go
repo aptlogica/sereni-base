@@ -28,7 +28,7 @@ var WorkspaceError = struct {
 	DescriptionInvalid:        "WSP_3012",
 	IdRequired:                "WSP_3013",
 	IdInvalid:                 "WSP_3014",
-	ErrWorkspaceInsertion:     "WSP_3013",
+	ErrWorkspaceInsertion:     "WSP_3017",
 	WorkspaceMemberNotFound:   "WSP_3015",
 	ErrUserAlreadyInWorkspace: "WSP_3016",
 }

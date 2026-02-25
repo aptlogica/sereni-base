@@ -150,11 +150,11 @@ func TestResendOTPRequestFields(t *testing.T) {
 
 func TestRefreshTokenRequestFields(t *testing.T) {
 	req := dto.RefreshTokenRequest{
-		RefeshToken: "refresh-token",
+		RefreshToken: "refresh-token",
 	}
 
-	if req.RefeshToken != "refresh-token" {
-		t.Errorf("RefeshToken = %v, want %v", req.RefeshToken, "refresh-token")
+	if req.RefreshToken != "refresh-token" {
+		t.Errorf("RefreshToken = %v, want %v", req.RefreshToken, "refresh-token")
 	}
 }
 

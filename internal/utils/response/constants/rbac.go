@@ -63,63 +63,63 @@ type RBACResponseCode struct {
 
 var RBACError = RBACResponseCode{
 	// Role errors
-	RoleNotFound:         "RBAC_ROLE_NOT_FOUND",
-	RoleAlreadyExists:    "RBAC_ROLE_ALREADY_EXISTS",
-	RoleDeleteFailed:     "RBAC_ROLE_DELETE_FAILED",
-	RoleUpdateFailed:     "RBAC_ROLE_UPDATE_FAILED",
-	InvalidRolePriority:  "RBAC_INVALID_ROLE_PRIORITY",
-	RoleAssignmentFailed: "RBAC_ROLE_ASSIGNMENT_FAILED",
-	RoleRemovalFailed:    "RBAC_ROLE_REMOVAL_FAILED",
+	RoleNotFound:         "RBAC_ERR_7001",
+	RoleAlreadyExists:    "RBAC_ERR_7002",
+	RoleDeleteFailed:     "RBAC_ERR_7003",
+	RoleUpdateFailed:     "RBAC_ERR_7004",
+	InvalidRolePriority:  "RBAC_ERR_7005",
+	RoleAssignmentFailed: "RBAC_ERR_7006",
+	RoleRemovalFailed:    "RBAC_ERR_7007",
 
 	// Resource errors
-	ResourceNotFound:      "RBAC_RESOURCE_NOT_FOUND",
-	ResourceAlreadyExists: "RBAC_RESOURCE_ALREADY_EXISTS",
-	ResourceCreateFailed:  "RBAC_RESOURCE_CREATE_FAILED",
-	ResourceDeleteFailed:  "RBAC_RESOURCE_DELETE_FAILED",
-	InvalidResourceCode:   "RBAC_INVALID_RESOURCE_CODE",
+	ResourceNotFound:      "RBAC_ERR_7008",
+	ResourceAlreadyExists: "RBAC_ERR_7009",
+	ResourceCreateFailed:  "RBAC_ERR_7010",
+	ResourceDeleteFailed:  "RBAC_ERR_7011",
+	InvalidResourceCode:   "RBAC_ERR_7012",
 
 	// Action errors
-	ActionNotFound:      "RBAC_ACTION_NOT_FOUND",
-	ActionAlreadyExists: "RBAC_ACTION_ALREADY_EXISTS",
-	ActionCreateFailed:  "RBAC_ACTION_CREATE_FAILED",
-	ActionDeleteFailed:  "RBAC_ACTION_DELETE_FAILED",
-	InvalidActionCode:   "RBAC_INVALID_ACTION_CODE",
+	ActionNotFound:      "RBAC_ERR_7013",
+	ActionAlreadyExists: "RBAC_ERR_7014",
+	ActionCreateFailed:  "RBAC_ERR_7015",
+	ActionDeleteFailed:  "RBAC_ERR_7016",
+	InvalidActionCode:   "RBAC_ERR_7017",
 
 	// Permission errors
-	PermissionNotFound:      "RBAC_PERMISSION_NOT_FOUND",
-	PermissionAlreadyExists: "RBAC_PERMISSION_ALREADY_EXISTS",
-	PermissionCreateFailed:  "RBAC_PERMISSION_CREATE_FAILED",
-	PermissionDeleteFailed:  "RBAC_PERMISSION_DELETE_FAILED",
-	InvalidPermissionCombo:  "RBAC_INVALID_PERMISSION_COMBO",
+	PermissionNotFound:      "RBAC_ERR_7018",
+	PermissionAlreadyExists: "RBAC_ERR_7019",
+	PermissionCreateFailed:  "RBAC_ERR_7020",
+	PermissionDeleteFailed:  "RBAC_ERR_7021",
+	InvalidPermissionCombo:  "RBAC_ERR_7022",
 
 	// Role-Permission errors
-	RolePermissionNotFound:     "RBAC_ROLE_PERMISSION_NOT_FOUND",
-	RolePermissionExists:       "RBAC_ROLE_PERMISSION_EXISTS",
-	RolePermissionCreateFailed: "RBAC_ROLE_PERMISSION_CREATE_FAILED",
-	RolePermissionDeleteFailed: "RBAC_ROLE_PERMISSION_DELETE_FAILED",
+	RolePermissionNotFound:     "RBAC_ERR_7023",
+	RolePermissionExists:       "RBAC_ERR_7024",
+	RolePermissionCreateFailed: "RBAC_ERR_7025",
+	RolePermissionDeleteFailed: "RBAC_ERR_7026",
 
 	// Access Member errors
-	AccessMemberNotFound:      "RBAC_ACCESS_MEMBER_NOT_FOUND",
-	AccessMemberAlreadyExists: "RBAC_ACCESS_MEMBER_ALREADY_EXISTS",
-	AccessMemberCreateFailed:  "RBAC_ACCESS_MEMBER_CREATE_FAILED",
-	AccessMemberDeleteFailed:  "RBAC_ACCESS_MEMBER_DELETE_FAILED",
-	InvalidAccessScope:        "RBAC_INVALID_ACCESS_SCOPE",
-	MissingScopeID:            "RBAC_MISSING_SCOPE_ID",
-	UserNotInScope:            "RBAC_USER_NOT_IN_SCOPE",
+	AccessMemberNotFound:      "RBAC_ERR_7027",
+	AccessMemberAlreadyExists: "RBAC_ERR_7028",
+	AccessMemberCreateFailed:  "RBAC_ERR_7029",
+	AccessMemberDeleteFailed:  "RBAC_ERR_7030",
+	InvalidAccessScope:        "RBAC_ERR_7031",
+	MissingScopeID:            "RBAC_ERR_7032",
+	UserNotInScope:            "RBAC_ERR_7033",
 
 	// Permission check errors
-	PermissionDenied:       "RBAC_PERMISSION_DENIED",
-	AccessDenied:           "RBAC_ACCESS_DENIED",
-	InsufficientPrivileges: "RBAC_INSUFFICIENT_PRIVILEGES",
+	PermissionDenied:       "RBAC_ERR_7034",
+	AccessDenied:           "RBAC_ERR_7035",
+	InsufficientPrivileges: "RBAC_ERR_7036",
 
 	// Bulk operation errors
-	BulkAssignmentFailed: "RBAC_BULK_ASSIGNMENT_FAILED",
-	BulkRemovalFailed:    "RBAC_BULK_REMOVAL_FAILED",
-	EmptyUserList:        "RBAC_EMPTY_USER_LIST",
+	BulkAssignmentFailed: "RBAC_ERR_7037",
+	BulkRemovalFailed:    "RBAC_ERR_7038",
+	EmptyUserList:        "RBAC_ERR_7039",
 
 	// Scope errors
-	InvalidScopeType: "RBAC_INVALID_SCOPE_TYPE",
-	ScopeNotFound:    "RBAC_SCOPE_NOT_FOUND",
+	InvalidScopeType: "RBAC_ERR_7040",
+	ScopeNotFound:    "RBAC_ERR_7041",
 }
 
 // RBAC error codes mapping - Added to existing ErrorCodes map in constants.go

@@ -43,7 +43,7 @@ type UserResponse struct {
 	DeletedAt   *time.Time `db:"deleted_at" json:"deleted_at" mapstructure:"deleted_at"`
 	IsDeleted   bool       `db:"is_deleted" json:"is_deleted" mapstructure:"is_deleted"`
 	DateOfBirth *string    `db:"date_of_birth" json:"dob" mapstructure:"date_of_birth"`
-	Country     string     `db:"country" json:"country,omitempty" mapstructure:"country"`
+	Country     string     `db:"country" json:"country" mapstructure:"country"`
 }
 
 type UserInsertion struct {
