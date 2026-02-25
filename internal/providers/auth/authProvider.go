@@ -10,7 +10,6 @@ import (
 
 	appErrors "serenibase/internal/app-errors"
 	"serenibase/internal/config"
-	"serenibase/internal/models/tenant"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -38,14 +37,14 @@ type AuthProviderService struct {
 	httpClient *http.Client
 }
 
-type authServiceLoginRequest struct {
-	UserId   string   `json:"user_id,omitempty"`
-	Email    string   `json:"email"`
-	Password string   `json:"password"`
-	Roles    []string `json:"roles,omitempty"`
+type AuthServiceLoginRequest struct {
+	Id            string   `json:"id"`
+	Email         string   `json:"email"`
+	EmailVerified bool     `json:"email_verified"`
+	Roles         []string `json:"roles"`
 }
 
-type authServiceTokenResponse struct {
+type AuthServiceTokenResponse struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -77,12 +76,8 @@ type authServiceValidateResponse struct {
 	} `json:"data"`
 }
 
-type authServiceRefreshRequest struct {
-	RefreshToken  string `json:"refresh_token"`
-	UserId        string `json:"user_id"`
-	Email         string `json:"email"`
-	Roles         string `json:"roles,omitempty"`
-	EmailVerified bool   `json:"email_verified"`
+type AuthServiceRefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
 }
 
 type authServiceVerifyRequest struct {
@@ -115,54 +110,6 @@ type JWTServiceClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (a *AuthProviderService) GenerateToken(ctx context.Context, user tenant.User) (Tokens, error) {
-	// Generate tokens locally since auth-service requires password and may not have user synced
-	// This is the pragmatic solution until we implement user synchronization or a service-to-service endpoint
-	now := time.Now()
-
-	// Create Access Token
-	accessClaims := CustomClaims{
-		UserId:        user.ID.String(),
-		Email:         user.Email,
-		EmailVerified: user.EmailVerified,
-		Roles:         user.Roles,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(a.AuthConfig.JWT.AccessTokenExpiry) * time.Second)),
-			IssuedAt:  jwt.NewNumericDate(now),
-			Issuer:    a.AuthConfig.JWT.Issuer,
-		},
-	}
-
-	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	signedAccessToken, err := accessToken.SignedString([]byte(a.AuthConfig.JWT.Secret))
-	if err != nil {
-		return Tokens{}, fmt.Errorf("failed to sign access token: %w", err)
-	}
-
-	// Create Refresh Token
-	refreshClaims := CustomClaims{
-		UserId:        user.ID.String(),
-		Email:         user.Email,
-		Roles:         user.Roles,
-		EmailVerified: user.EmailVerified,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(a.AuthConfig.JWT.RefreshTokenExpiry) * time.Second)),
-			IssuedAt:  jwt.NewNumericDate(now),
-			Issuer:    a.AuthConfig.JWT.Issuer,
-		},
-	}
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	signedRefreshToken, err := refreshToken.SignedString([]byte(a.AuthConfig.JWT.Secret))
-	if err != nil {
-		return Tokens{}, fmt.Errorf("failed to sign refresh token: %w", err)
-	}
-
-	return Tokens{
-		AccessToken:  signedAccessToken,
-		RefreshToken: signedRefreshToken,
-	}, nil
-}
-
 func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string) (Claims, error) {
 	// Remove "Bearer " prefix if present
 	if len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
@@ -182,6 +129,7 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 	url := fmt.Sprintf("%s/auth/validate-token", a.AuthConfig.URL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
+		fmt.Println("err:::::::", err)
 		return Claims{}, fmt.Errorf(errCreateRequest, err)
 	}
 
@@ -189,63 +137,33 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
+		fmt.Println("err:::::::", err)
 		return Claims{}, fmt.Errorf(errCallAuthService, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return Claims{}, appErrors.TokenInvalid
-	}
-
 	var validateResp authServiceValidateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&validateResp); err != nil {
+		fmt.Println("err validateResp:::::::", err)
 		return Claims{}, fmt.Errorf(errDecodeResponse, err)
 	}
 
 	if !validateResp.Success {
-		return Claims{}, appErrors.TokenInvalid
-	}
-
-	// Parse the token to extract user_id (sub claim)
-	// JWT service validate endpoint doesn't return the sub field, so we need to decode it ourselves
-	token, err := jwt.ParseWithClaims(tokenStr, &JWTServiceClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
+		if validateResp.Code != "TOKEN_EXPIRED" {
+			return Claims{}, appErrors.TokenExpired
 		}
-		return []byte(a.AuthConfig.JWT.Secret), nil
-	})
-
-	if err != nil {
-		return Claims{}, fmt.Errorf("failed to parse token: %w", err)
-	}
-
-	claims, ok := token.Claims.(*JWTServiceClaims)
-	if !ok || !token.Valid {
 		return Claims{}, appErrors.TokenInvalid
-	}
-
-	// Use Sub (standard JWT claim) if present, otherwise fall back to UserId
-	userID := claims.Sub
-	if userID == "" {
-		userID = claims.UserId
 	}
 
 	return Claims{
-		UserId: userID,       // User ID from sub or user_id claim
-		Roles:  claims.Roles, // Roles from token claims (already a string)
+		UserId: validateResp.Data.UserID, // User ID from sub or user_id claim
+		Roles:  validateResp.Data.Roles,  // Roles from token claims (already a string)
 	}, nil
 }
 
-func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string, userId, email, password string, roles []string) (Tokens, error) {
+func (a *AuthProviderService) RefreshToken(ctx context.Context, reqBody AuthServiceRefreshRequest) (Tokens, error) {
 	// Call auth-service /auth/refresh endpoint
-	reqBody := authServiceRefreshRequest{
-		RefreshToken:  tokenStr,
-		UserId:        userId,
-		Email:         email,
-		Roles:         fmt.Sprintf("%v", roles), // Convert roles slice to string
-		EmailVerified: true,                     // Assuming email is verified for refresh, adjust as needed
-	}
-
+	
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return Tokens{}, fmt.Errorf(errMarshalRequest, err)
@@ -269,7 +187,7 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string,
 		return Tokens{}, appErrors.TokenInvalid
 	}
 
-	var tokenResp authServiceTokenResponse
+	var tokenResp AuthServiceTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return Tokens{}, fmt.Errorf(errDecodeResponse, err)
 	}
@@ -286,18 +204,13 @@ func (a *AuthProviderService) RefreshToken(ctx context.Context, tokenStr string,
 
 // Login authenticates a user and returns JWT tokens
 // Calls POST /auth/login on auth-service
-func (a *AuthProviderService) Login(ctx context.Context, userId, email, password string, roles []string) (Tokens, error) {
-	reqBody := authServiceLoginRequest{
-		UserId:   userId,
-		Email:    email,
-		Password: password,
-		Roles:    roles,
-	}
-
+func (a *AuthProviderService) Login(ctx context.Context, reqBody AuthServiceLoginRequest) (Tokens, error) {
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return Tokens{}, fmt.Errorf(errMarshalRequest, err)
 	}
+
+	fmt.Println("jsonData: ", jsonData)
 
 	url := fmt.Sprintf("%s/auth/login", a.AuthConfig.URL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -314,7 +227,7 @@ func (a *AuthProviderService) Login(ctx context.Context, userId, email, password
 	}
 	defer resp.Body.Close()
 
-	var tokenResp authServiceTokenResponse
+	var tokenResp AuthServiceTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return Tokens{}, fmt.Errorf(errDecodeResponse, err)
 	}
@@ -327,56 +240,4 @@ func (a *AuthProviderService) Login(ctx context.Context, userId, email, password
 		AccessToken:  tokenResp.Data.AccessToken,
 		RefreshToken: tokenResp.Data.RefreshToken,
 	}, nil
-}
-
-// VerifyToken checks if a token is valid (returns boolean)
-// Calls POST /auth/verify-token on auth-service
-func (a *AuthProviderService) VerifyToken(ctx context.Context, tokenStr string) (bool, error) {
-	// Remove "Bearer " prefix if present
-	if len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
-		tokenStr = tokenStr[7:]
-	}
-
-	reqBody := authServiceVerifyRequest{
-		Token: tokenStr,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return false, fmt.Errorf(errMarshalRequest, err)
-	}
-
-	url := fmt.Sprintf("%s/auth/verify-token", a.AuthConfig.URL)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return false, fmt.Errorf(errCreateRequest, err)
-	}
-
-	req.Header.Set(contentTypeHeader, contentTypeJSON)
-
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return false, fmt.Errorf(errCallAuthService, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return false, nil
-	}
-
-	var verifyResp authServiceVerifyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&verifyResp); err != nil {
-		return false, fmt.Errorf(errDecodeResponse, err)
-	}
-
-	if !verifyResp.Success {
-		return false, nil
-	}
-
-	// The data map should contain "valid": true/false
-	if valid, ok := verifyResp.Data["valid"]; ok {
-		return valid, nil
-	}
-
-	return false, nil
 }

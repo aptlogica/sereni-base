@@ -394,10 +394,10 @@ func TestAuthManagement_RefreshToken_ValidateToken(t *testing.T) {
 		return authProviderInterface.Claims{UserId: "u1", Roles: "admin"}, nil
 	}
 
-	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefeshToken: "bad"})
+	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "bad"})
 	assert.Error(t, err)
 
-	resp, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefeshToken: "ok"})
+	resp, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "ok"})
 	assert.NoError(t, err)
 	assert.Equal(t, "a", resp.AccessToken)
 
@@ -1070,7 +1070,7 @@ func TestAuthManagement_RefreshTokenRequest(t *testing.T) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
-	resp, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefeshToken: "r"})
+	resp, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "r"})
 	assert.NoError(t, err)
 	assert.Equal(t, "a", resp.AccessToken)
 }
@@ -1282,7 +1282,7 @@ func TestAuthManagement_RefreshToken_Empty(t *testing.T) {
 	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{}, nil
 	}
-	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefeshToken: "r"})
+	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "r"})
 	assert.NoError(t, err)
 }
 
@@ -2101,7 +2101,7 @@ func TestAuthManagement_RefreshToken_Error(t *testing.T) {
 	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{}, errors.New("bad")
 	}
-	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefeshToken: "bad"})
+	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "bad"})
 	assert.Error(t, err)
 }
 
@@ -2155,4 +2155,3 @@ func TestAuthManagement_RemoveUserFromBase_EmailTemplateSet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "u@example.com", job.To)
 }
-

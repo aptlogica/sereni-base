@@ -3,18 +3,18 @@ package dto
 import "github.com/google/uuid"
 
 type RegisterRequest struct {
-	ID            uuid.UUID `json:"id,omitempty" format:"uuid"`
+	ID            uuid.UUID `json:"id," format:"uuid"`
 	Email         string    `json:"email" binding:"required,email" example:"johndoe@example.com" format:"email"`
 	FirstName     string    `json:"first_name" binding:"required" example:"John" format:"string"`
 	LastName      string    `json:"last_name" binding:"required" example:"Doe" format:"string"`
 	Password      string    `json:"password" binding:"required,min=8" example:"strongpassword123" format:"string"`
-	AuthProvider  string    `json:"auth_provider,omitempty" example:"local" format:"string"`
-	Status        string    `json:"status,omitempty" example:"active" format:"string"`
-	EmailVerified bool      `json:"email_verified,omitempty" example:"true" format:"bool"`
-	DateOfBirth   *string   `json:"dob,omitempty" example:"17-11-2025" format:"string"`
-	Country       string    `json:"country,omitempty" example:"US" format:"string"`
-	Timezone      string    `json:"timezone,omitempty" example:"UTC" format:"string"`
-	Roles         string    `json:"roles,omitempty" example:"user" format:"string"`
+	AuthProvider  string    `json:"auth_provider," example:"local" format:"string"`
+	Status        string    `json:"status," example:"active" format:"string"`
+	EmailVerified bool      `json:"email_verified," example:"true" format:"bool"`
+	DateOfBirth   *string   `json:"dob," example:"17-11-2025" format:"string"`
+	Country       string    `json:"country," example:"US" format:"string"`
+	Timezone      string    `json:"timezone," example:"UTC" format:"string"`
+	Roles         string    `json:"roles," example:"user" format:"string"`
 }
 
 type RegisterResponse struct {
@@ -38,9 +38,9 @@ type TokenResponse struct {
 
 type LoginResponse struct {
 	User *UserResponse `json:"user" binding:"required" format:"object"`
-	// Tenant    *TenantResponse    `json:"tenant,omitempty" format:"object"`
+	// Tenant    *TenantResponse    `json:"tenant," format:"object"`
 	Token *TokenResponse `json:"token" binding:"required" format:"object"`
-	// Workspace *WorkspaceResponse `json:"workspace,omitempty" format:"object"`
+	// Workspace *WorkspaceResponse `json:"workspace," format:"object"`
 }
 
 type ResendOTPRequest struct {
@@ -48,11 +48,7 @@ type ResendOTPRequest struct {
 }
 
 type RefreshTokenRequest struct {
-	RefeshToken string   `json:"refresh_token" binding:"required" format:"jwt"`
-	UserID      string   `json:"user_id" binding:"required" format:"uuid"`
-	Email       string   `json:"email" binding:"required,email" format:"email"`
-	Password    string   `json:"password" binding:"required,min=8" format:"string"`
-	Roles       []string `json:"roles" binding:"required" format:"array"`
+	RefreshToken string `json:"refresh_token" binding:"required" format:"jwt"`
 }
 
 type ForgotPasswordRequest struct {
@@ -70,8 +66,8 @@ type TokenValidationRequest struct {
 
 type TokenValidationResponse struct {
 	Valid  bool   `json:"valid"`
-	UserID string `json:"user_id,omitempty"`
-	Roles  string `json:"roles,omitempty"`
+	UserID string `json:"user_id,"`
+	Roles  string `json:"roles,"`
 }
 
 type LogoutRequest struct {

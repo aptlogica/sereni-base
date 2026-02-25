@@ -40,13 +40,13 @@ type User struct {
 	LockedUntil         *time.Time `db:"locked_until" json:"locked_until" mapstructure:"locked_until"`
 	PasswordChangedAt   *time.Time `db:"password_changed_at" json:"password_changed_at" mapstructure:"password_changed_at"`
 	Roles               string     `db:"roles" json:"roles" mapstructure:"roles"`
-	DateOfBirth         string     `db:"date_of_birth" json:"date_of_birth,omitempty" format:"2006-01-02" mapstructure:"date_of_birth"`
-	Country             string     `db:"country" json:"country,omitempty" mapstructure:"country"`
+	DateOfBirth         string     `db:"date_of_birth" json:"date_of_birth" format:"2006-01-02" mapstructure:"date_of_birth"`
+	Country             string     `db:"country" json:"country" mapstructure:"country"`
 
-	CreatedAt time.Time  `db:"created_time" json:"created_time,omitempty" mapstructure:"created_time"`
-	UpdatedAt time.Time  `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
-	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty" mapstructure:"deleted_at"`
-	IsDeleted bool       `db:"is_deleted" json:"is_deleted,omitempty" mapstructure:"is_deleted"`
+	CreatedAt time.Time  `db:"created_time" json:"created_time" mapstructure:"created_time"`
+	UpdatedAt time.Time  `db:"last_modified_time" json:"last_modified_time" mapstructure:"last_modified_time"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at" mapstructure:"deleted_at"`
+	IsDeleted bool       `db:"is_deleted" json:"is_deleted" mapstructure:"is_deleted"`
 }
 
 func (User) TableName(prefix string) string {

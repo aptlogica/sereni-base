@@ -193,6 +193,8 @@ func (h *UserHandler) GetWorkspaces(c *gin.Context) {
 	rolesVal, _ := c.Get("roles")
 	roles, _ := rolesVal.(string)
 
+	fmt.Println("userID: ", userId)
+
 	workspaces, err := h.userManagementService.GetWorkspaces(c.Request.Context(), schemaName, userId, roles)
 	if err != nil {
 		response.CheckAndSendError(c, err)

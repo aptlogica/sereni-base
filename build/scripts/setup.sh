@@ -146,6 +146,24 @@ print_error() {
     echo -e "${RED}[X]${NC} $1"
 }
 
+# Generate a random secret with cross-platform fallbacks.
+generate_random_secret() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -base64 48 | tr -d '\n' | head -c 48
+        return
+    fi
+    if command -v base64 >/dev/null 2>&1; then
+        head -c 48 /dev/urandom | base64 | tr -d '\n' | head -c 48
+        return
+    fi
+    # Last resort: timestamp + pid + shell random
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$(date +%s)$$$RANDOM$RANDOM$RANDOM" | shasum -a 256 | cut -c1-48
+    else
+        printf '%s' "$(date +%s)$$$RANDOM$RANDOM$RANDOM"
+    fi
+}
+
 # Update a single environment variable in .env (overwrite if exists)
 update_env_var() {
     local var_name="$1"
@@ -404,6 +422,8 @@ DATABASE_CONN_MAX_LIFETIME=1h
 AUTH_URL=http://jwt-provider:8081
 AUTH_RESET_PASSWORD_URL=http://localhost:5050/reset-password?token=%s
 AUTH_JWT_SECRET=change-this-to-a-secure-random-string-min32chars
+ACCESS_TOKEN_DURATION=15m
+REFRESH_TOKEN_DURATION=168h
 AUTH_PORT=8081
 AUTH_HOST=0.0.0.0
 AUTH_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
@@ -675,14 +695,17 @@ configure_jwt_secret() {
     echo "========================================================================${NC}"
     echo ""
     
-    read -p "JWT Secret (min 32 chars) [press Enter to generate]: " AUTH_JWT_SECRET
-    
-    if [ -z "$AUTH_JWT_SECRET" ]; then
-        # Generate random JWT secret
-        AUTH_JWT_SECRET=$(openssl rand -base64 32 | tr -d '\n' | head -c 32)
+    if [ "$AUTO_YES" = "true" ]; then
+        AUTH_JWT_SECRET=$(generate_random_secret)
         echo "Generated JWT Secret: $AUTH_JWT_SECRET"
+    else
+        read -p "JWT Secret (min 32 chars) [press Enter to generate]: " AUTH_JWT_SECRET
+        if [ -z "$AUTH_JWT_SECRET" ]; then
+            AUTH_JWT_SECRET=$(generate_random_secret)
+            echo "Generated JWT Secret: $AUTH_JWT_SECRET"
+        fi
     fi
-    
+
     # Update JWT secret in .env (only if changed)
     update_env_var_if_changed "AUTH_JWT_SECRET" "$AUTH_JWT_SECRET"
     
@@ -1053,6 +1076,23 @@ start_services() {
     sleep 10
 
     docker compose -f docker-compose.all.yaml ps
+
+    local ps_output
+    ps_output="$(docker compose -f docker-compose.all.yaml ps 2>/dev/null || true)"
+    if echo "$ps_output" | grep -Eqi 'unhealthy|exit|restarting'; then
+        print_warning "Some services are not healthy yet. Collecting quick diagnostics..."
+        echo ""
+        echo "$ps_output"
+        echo ""
+        local bad_services
+        bad_services="$(echo "$ps_output" | awk 'tolower($0) ~ /unhealthy|exit|restarting/ {print $1}')"
+        for svc in $bad_services; do
+            echo "----- Last logs for $svc -----"
+            docker compose -f docker-compose.all.yaml logs --tail=80 "$svc" 2>/dev/null || true
+            echo ""
+        done
+        print_warning "Fix the above service errors, then run: docker compose -f docker-compose.all.yaml up -d"
+    fi
 }
 
 # Entry point
@@ -1091,6 +1131,8 @@ echo ""
 echo -e "${GREEN}Default admin credentials:${NC}"
 echo "  Email:    $OWNER_EMAIL"
 echo "  Password: $OWNER_PASSWORD"
+echo ""
+echo -e "${YELLOW}NOTE: Timezone is set to UTC. You can change it from Profile settings.${NC}"
 echo ""
 echo -e "${YELLOW}WARNING: Remember to change default passwords in production!${NC}"
 echo ""

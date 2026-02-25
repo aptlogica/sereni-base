@@ -15,17 +15,17 @@ var BaseError = struct {
 	IdInvalid          ResponseCode
 	BaseNotFound       ResponseCode
 }{
-	ErrNotFound:        "WSP_3006",
-	BaseAlreadyExists:  "WSP_3005",
-	BaseNotCreated:     "WSP_3007",
-	BaseNotUpdated:     "WSP_3008",
-	BaseNotDeleted:     "WSP_3009",
-	NameRequired:       "WSP_3010",
-	NameInvalid:        "WSP_3011",
-	DescriptionInvalid: "WSP_3012",
-	IdRequired:         "WSP_3013",
-	IdInvalid:          "WSP_3014",
-	BaseNotFound:       "WSP_3015",
+	ErrNotFound:        "BAS_6001",
+	BaseAlreadyExists:  "BAS_6002",
+	BaseNotCreated:     "BAS_6003",
+	BaseNotUpdated:     "BAS_6004",
+	BaseNotDeleted:     "BAS_6005",
+	NameRequired:       "BAS_6006",
+	NameInvalid:        "BAS_6007",
+	DescriptionInvalid: "BAS_6008",
+	IdRequired:         "BAS_6009",
+	IdInvalid:          "BAS_6010",
+	BaseNotFound:       "BAS_6011",
 }
 
 var BaseErrorCodes = map[ResponseCode]MetaResponse{
@@ -69,12 +69,12 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Base description is invalid",
 		Description: "The Base description provided is invalid",
 	},
-	WorkspaceError.IdRequired: {
+	BaseError.IdRequired: {
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Workspace ID is required",
 		Description: "The workspace ID field is required and was not provided",
 	},
-	WorkspaceError.IdInvalid: {
+	BaseError.IdInvalid: {
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Workspace ID is invalid",
 		Description: "The workspace ID provided is invalid",
@@ -91,9 +91,9 @@ var BaseSuccess = struct {
 	BaseUpdated ResponseCode
 	BaseDeleted ResponseCode
 }{
-	BaseCreated: "WSP_SUCCESS_3001",
-	BaseUpdated: "WSP_SUCCESS_3002",
-	BaseDeleted: "WSP_SUCCESS_3003",
+	BaseCreated: "BAS_SUCCESS_6001",
+	BaseUpdated: "BAS_SUCCESS_6002",
+	BaseDeleted: "BAS_SUCCESS_6003",
 }
 
 var BaseSuccessCodes = map[ResponseCode]MetaResponse{

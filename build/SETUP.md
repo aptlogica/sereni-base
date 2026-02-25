@@ -1,5 +1,7 @@
 # SereniBase Setup Guide
 
+For a full beginner-friendly from-scratch guide, see `build/SETUP_COMPLETE_GUIDE.md`.
+
 ## Prerequisites
 
 Before you begin, make sure you have the following installed:

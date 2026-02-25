@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"serenibase/internal/models/tenant"
 )
 
 type Tokens struct {
@@ -12,7 +11,6 @@ type Tokens struct {
 
 type Claims struct {
 	UserId   string `json:"user_id"`
-	TenantId string `json:"tenant_id"`
 	Roles    string `json:"roles"`
 }
 
@@ -28,8 +26,7 @@ type AuthResult struct {
 }
 
 type AuthProvider interface {
-	GenerateToken(ctx context.Context, user tenant.User) (Tokens, error)
-	RefreshToken(ctx context.Context, token string, userId, email, password string, roles []string) (Tokens, error)
+	RefreshToken(ctx context.Context, reqBody AuthServiceRefreshRequest) (Tokens, error)
 	ValidateToken(ctx context.Context, tokenStr string) (Claims, error)
-	Login(ctx context.Context, userId, email, password string, roles []string) (Tokens, error)
+	Login(ctx context.Context, reqBody AuthServiceLoginRequest) (Tokens, error)
 }
