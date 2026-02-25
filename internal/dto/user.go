@@ -216,30 +216,24 @@ type UserWithRole struct {
 	ActivityData interface{} `db:"activity_data" json:"activity_data" mapstructure:"activity_data"`
 
 	// Authentication
-	AuthProvider  string    `db:"auth_provider" json:"auth_provider" mapstructure:"auth_provider"`
-	ExternalID    uuid.UUID `db:"external_id" json:"external_id" mapstructure:"external_id"`
-	MFAEnabled    bool      `db:"mfa_enabled" json:"mfa_enabled" mapstructure:"mfa_enabled"`
-	MFASecret     string    `db:"mfa_secret" json:"mfa_secret" mapstructure:"mfa_secret"`
-	EmailVerified bool      `db:"email_verified" json:"email_verified" mapstructure:"email_verified"`
-	Phone         string    `db:"phone" json:"phone" mapstructure:"phone"`
-	PhoneVerified bool      `db:"phone_verified" json:"phone_verified" mapstructure:"phone_verified"`
+	AuthProvider  string `db:"auth_provider" json:"auth_provider" mapstructure:"auth_provider"`
+	EmailVerified bool   `db:"email_verified" json:"email_verified" mapstructure:"email_verified"`
+	Phone         string `db:"phone" json:"phone" mapstructure:"phone"`
+	PhoneVerified bool   `db:"phone_verified" json:"phone_verified" mapstructure:"phone_verified"`
 
 	// Account status
 	Status       string     `db:"status" json:"status" mapstructure:"status"`
 	LastLoginAt  *time.Time `db:"last_login_at" json:"last_login_at" mapstructure:"last_login_at"`
 	LastActiveAt *time.Time `db:"last_active_at" json:"last_active_at" mapstructure:"last_active_at"`
 	Timezone     string     `db:"timezone" json:"timezone" mapstructure:"timezone"`
+	Country      string     `db:"country" json:"country" mapstructure:"country"`
 	Locale       string     `db:"locale" json:"locale" mapstructure:"locale"`
 
 	// Security
-	FailedLoginAttempts int        `db:"failed_login_attempts" json:"failed_login_attempts" mapstructure:"failed_login_attempts"`
-	LockedUntil         *time.Time `db:"locked_until" json:"locked_until" mapstructure:"locked_until"`
-	PasswordChangedAt   *string    `db:"password_changed_at" json:"password_changed_at" mapstructure:"password_changed_at"`
+	PasswordChangedAt *string `db:"password_changed_at" json:"password_changed_at" mapstructure:"password_changed_at"`
 
-	CreatedAt string     `db:"created_time" json:"created_time" mapstructure:"created_time"`
-	UpdatedAt string     `db:"last_modified_time" json:"last_modified_time" mapstructure:"last_modified_time"`
-	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at" mapstructure:"deleted_at"`
-	IsDeleted bool       `db:"is_deleted" json:"is_deleted" mapstructure:"is_deleted"`
+	CreatedAt string `db:"created_time" json:"created_time" mapstructure:"created_time"`
+	UpdatedAt string `db:"last_modified_time" json:"last_modified_time" mapstructure:"last_modified_time"`
 
 	Roles []map[string]interface{} `json:"roles" db:"roles" mapstructure:"roles"`
 }
