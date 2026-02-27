@@ -799,6 +799,79 @@ func TestAttachmentsAndBulkDelete(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("update attachment with []interface{} payload", func(t *testing.T) {
+		stubTable := &StubTableService{}
+		stubBulk := &StubBulkService{}
+		mockModel := &MockModelService{}
+		mockColumn := &MockColumnService{}
+		mockView := &MockViewService{}
+		mockRel := &MockRelationshipService{}
+		mockAsset := &MockAssetManagementService{}
+
+		modelID := uuid.New().String()
+		colID := "col"
+		assetID := uuid.New()
+
+		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "attachments", UIDT: "attachment"}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID).Return(col, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl"}, nil)
+
+		mockAsset.On("UpdateAsset", mock.Anything, assetID.String(), mock.Anything, "schema").Return(tenant.Assets{
+			ID:    assetID,
+			Title: "updated-file",
+			Url:   "https://cdn.example/new",
+		}, nil)
+
+		stubTable.GetTableDataFn = func(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error) {
+			return []map[string]interface{}{
+				{
+					"id": 1,
+					"attachments": []interface{}{
+						map[string]interface{}{
+							"id":    assetID.String(),
+							"title": "old-file",
+							"url":   "https://cdn.example/old",
+						},
+						map[string]interface{}{
+							"id":    uuid.New().String(),
+							"title": "keep-file",
+							"url":   "https://cdn.example/keep",
+						},
+					},
+				},
+			}, nil
+		}
+		stubTable.UpdateRecordFn = func(tableName string, id interface{}, data map[string]interface{}) (map[string]interface{}, error) {
+			return map[string]interface{}{"id": id, "attachments": data["attachments"]}, nil
+		}
+
+		svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
+
+		resp, err := svc.UpdateAttachment(context.Background(), "schema", dto.UpdateAttachmentRequest{
+			ModelID:  modelID,
+			ColumnId: colID,
+			RowId:    1,
+			AssetId:  assetID.String(),
+			Content: dto.AssetUpdate{
+				Title: "updated-file",
+			},
+		})
+		assert.NoError(t, err)
+		attachments, ok := resp.Record["attachments"].([]map[string]interface{})
+		assert.True(t, ok)
+		assert.Len(t, attachments, 2)
+
+		var updated map[string]interface{}
+		for _, a := range attachments {
+			if id, _ := a["id"].(string); id == assetID.String() {
+				updated = a
+				break
+			}
+		}
+		assert.NotNil(t, updated)
+		assert.Equal(t, "updated-file", updated["title"])
+	})
+
 	t.Run("bulk delete rows", func(t *testing.T) {
 		stubTable := &StubTableService{}
 		stubBulk := &StubBulkService{}

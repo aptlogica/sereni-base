@@ -2998,6 +2998,21 @@ func (s tableManagementService) updateSpecificAttachment(attachments []tenant.As
 	return attachments
 }
 
+func (s tableManagementService) attachmentValuesToAssets(attachmentValue interface{}) []tenant.Assets {
+	attachmentMaps := s.checkAttachmentType(attachmentValue)
+	assets := make([]tenant.Assets, 0, len(attachmentMaps))
+
+	for _, attachmentMap := range attachmentMaps {
+		var asset tenant.Assets
+		if err := helpers.MapToStruct(attachmentMap, &asset); err != nil {
+			continue
+		}
+		assets = append(assets, asset)
+	}
+
+	return assets
+}
+
 func (s tableManagementService) UpdateAttachment(
 	ctx context.Context,
 	schemaName string,
@@ -3013,7 +3028,7 @@ func (s tableManagementService) UpdateAttachment(
 		return dto.RecordResponse{}, err
 	}
 
-	attachments := rowData[columnName].([]tenant.Assets) // existing attachments
+	attachments := s.attachmentValuesToAssets(rowData[columnName])
 
 	updatedAsset, err := s.assetManagementService.UpdateAsset(ctx, req.AssetId, req.Content, schemaName)
 	if err != nil {
@@ -3022,7 +3037,7 @@ func (s tableManagementService) UpdateAttachment(
 
 	updatedAttachments := s.updateSpecificAttachment(attachments, updatedAsset)
 
-	attachmentValue := s.mergeAttachmentValues(rowData[columnName], s.assetsToMaps(updatedAttachments))
+	attachmentValue := s.assetsToMaps(updatedAttachments)
 
 	data := map[string]interface{}{
 		columnName:           attachmentValue,
