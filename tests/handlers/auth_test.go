@@ -265,13 +265,13 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 			expectedCode: http.StatusInternalServerError,
 		},
 		{
-			name:        "successful refresh",
+			name: "successful refresh",
 			requestBody: dto.RefreshTokenRequest{
-				RefeshToken: "valid-refresh-token",
-				UserID:      "user-1",
-				Email:       "test@example.com",
-				Password:    "password123",
-				Roles:       []string{"admin"},
+				RefreshToken: "valid-refresh-token",
+				UserID:       "user-1",
+				Email:        "test@example.com",
+				Password:     "password123",
+				Roles:        []string{"admin"},
 			},
 			mockSetup: func(m *mocks.MockAuthManagementService) {
 				m.EXPECT().RefreshToken(gomock.Any(), gomock.Any()).Return(
@@ -281,13 +281,13 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 			expectedCode: http.StatusOK,
 		},
 		{
-			name:        "service error",
+			name: "service error",
 			requestBody: dto.RefreshTokenRequest{
-				RefeshToken: "invalid-token",
-				UserID:      "user-1",
-				Email:       "test@example.com",
-				Password:    "password123",
-				Roles:       []string{"admin"},
+				RefreshToken: "invalid-token",
+				UserID:       "user-1",
+				Email:        "test@example.com",
+				Password:     "password123",
+				Roles:        []string{"admin"},
 			},
 			mockSetup: func(m *mocks.MockAuthManagementService) {
 				m.EXPECT().RefreshToken(gomock.Any(), gomock.Any()).Return(

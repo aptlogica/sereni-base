@@ -139,21 +139,25 @@ func (h *AuthHandler) ResendOTP(c *gin.Context) {
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req dto.RefreshTokenRequest
+	fmt.Println("RefreshToken")
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if ve, ok := err.(validator.ValidationErrors); ok {
 			response.SendError(c, validators.RefreshTokenRequestError(ve[0]))
 			return
 		}
+		fmt.Println("RefreshTokenRequestError: ", err)
 		response.CheckAndSendError(c, err)
 		return
 	}
 
 	refreshResp, err := h.authManagementService.RefreshToken(c.Request.Context(), req)
 	if err != nil {
+		fmt.Println("RefreshToken err: ", err)
 		response.CheckAndSendError(c, err)
 		return
 	}
+	fmt.Println("refreshResp: ", refreshResp)
 
 	response.SendSuccess(c, responseConst.AuthSuccess.RefreshToken, refreshResp)
 

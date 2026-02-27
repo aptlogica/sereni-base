@@ -3,7 +3,6 @@ package scripts
 import (
 	"context"
 	"fmt"
-	"os"
 	"serenibase/internal/config"
 	"serenibase/internal/constant"
 	"serenibase/internal/dto"
@@ -237,11 +236,6 @@ func initAuthProviders(cfg *config.Config) authProviders {
 }
 
 func PrepareOwnerRegisterRequest(cfg *config.Config) dto.RegisterRequest {
-	country := os.Getenv("COUNTRY")
-	if country == "" {
-		country = "US"
-	}
-
 	return dto.RegisterRequest{
 		ID:            uuid.New(),
 		Email:         cfg.OwnerRegistration.Email,
@@ -251,8 +245,8 @@ func PrepareOwnerRegisterRequest(cfg *config.Config) dto.RegisterRequest {
 		AuthProvider:  "local",
 		Status:        "active",
 		EmailVerified: true,
-		Country:       country,
-		Timezone:      time.Now().Location().String(),
+		Country:       "",
+		Timezone:      "UTC",
 		Roles:         constant.RBACRoleNames.Owner,
 	}
 }

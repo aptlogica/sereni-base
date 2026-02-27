@@ -159,7 +159,7 @@ func (a *authManagementService) RegisterOwner(ctx context.Context, req dto.Regis
 
 func (a *authManagementService) Login(ctx context.Context, email string, password string) (dto.LoginResponse, error) {
 	// Check user existence in sereni-base
-	masterUser, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, email)
+	user, err := a.userManagementService.GetUserByEmail(ctx, appConstant.MasterDatabase, email)
 	if err != nil {
 		if err == app_errors.UserNotFound {
 			return dto.LoginResponse{}, app_errors.InvalidCredentials
@@ -167,26 +167,32 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 		return dto.LoginResponse{}, err
 	}
 
-	if masterUser.Status != "active" {
+	if user.Status != "active" {
 		return dto.LoginResponse{}, app_errors.UserNotActive
 	}
 
 	// Verify Password locally first (as source of truth)
-	if !helpers.CheckPasswordHash(password, masterUser.Password) {
+	if !helpers.CheckPasswordHash(password, user.Password) {
 		return dto.LoginResponse{}, app_errors.InvalidCredentials
 	}
 
 	// Call JWT service login endpoint to get tokens
-	tokens, err := a.authProviderService.GenerateToken(ctx, masterUser)
+	reqBody := authProviderInterface.AuthServiceLoginRequest{
+		Id:            user.ID.String(),
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		Roles:         []string{user.Roles},
+	}
+	tokens, err := a.authProviderService.Login(ctx, reqBody)
 	if err != nil {
 		return dto.LoginResponse{}, fmt.Errorf("failed to authenticate with JWT service: %w", err)
 	}
 
 	// If email not verified:
-	if !masterUser.EmailVerified {
+	if !user.EmailVerified {
 		return dto.LoginResponse{
 			User: &dto.UserResponse{
-				ID: masterUser.ID,
+				ID: user.ID,
 			},
 			Token: &dto.TokenResponse{
 				RefreshToken: tokens.RefreshToken,
@@ -195,7 +201,7 @@ func (a *authManagementService) Login(ctx context.Context, email string, passwor
 	}
 
 	var userResponse dto.UserResponse
-	if err := helpers.StructToStruct(masterUser, &userResponse); err != nil {
+	if err := helpers.StructToStruct(user, &userResponse); err != nil {
 		return dto.LoginResponse{}, app_errors.ErrMapToStruct
 	}
 
@@ -276,7 +282,13 @@ func (a *authManagementService) VerifyEmail(ctx context.Context, req dto.VerifyE
 	// We also need to update user.EmailVerified = true locally for token generation
 	user.EmailVerified = true
 
-	tokens, err := a.authProviderService.GenerateToken(ctx, user)
+	reqBody := authProviderInterface.AuthServiceLoginRequest{
+		Id:            user.ID.String(),
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		Roles:         []string{user.Roles},
+	}
+	tokens, err := a.authProviderService.Login(ctx, reqBody)
 	if err != nil {
 		return dto.LoginResponse{}, err
 	}
@@ -319,7 +331,11 @@ func (a *authManagementService) ResendOTP(ctx context.Context, req dto.ResendOTP
 }
 
 func (a *authManagementService) RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (dto.TokenResponse, error) {
-	tokens, err := a.authProviderService.RefreshToken(ctx, req.RefeshToken, req.UserID, req.Email, req.Password, req.Roles)
+
+	reqBody := authProviderInterface.AuthServiceRefreshRequest{
+		RefreshToken:  req.RefreshToken,
+	}
+	tokens, err := a.authProviderService.RefreshToken(ctx, reqBody)
 	if err != nil {
 		return dto.TokenResponse{}, err
 	}

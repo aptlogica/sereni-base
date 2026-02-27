@@ -103,6 +103,8 @@ REM Create a temporary file with all default environment variables
     echo AUTH_URL=http://jwt-provider:8081
     echo AUTH_RESET_PASSWORD_URL=http://localhost:5050/reset-password?token=%%s
     echo AUTH_JWT_SECRET=change-this-to-a-secure-random-string-min32chars
+    echo ACCESS_TOKEN_DURATION=15m
+    echo REFRESH_TOKEN_DURATION=168h
     echo AUTH_PORT=8081
     echo AUTH_HOST=0.0.0.0
     echo AUTH_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
@@ -599,6 +601,8 @@ echo.
 echo Default admin credentials:
 echo   Email:    %OWNER_EMAIL%
 echo   Password: %OWNER_PASSWORD%
+echo.
+echo NOTE: Timezone is set to UTC. You can change it from Profile settings.
 echo.
 echo WARNING: Remember to change default passwords in production!
 echo.

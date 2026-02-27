@@ -53,6 +53,16 @@ trap {
     exit 130
 }
 
+# Write UTF-8 text without BOM so Docker/.env parsers behave consistently across OSes.
+function Set-TextFileNoBom {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 # Function to read input with Ctrl+C support
 function Read-HostWithCancel {
     param(
@@ -194,6 +204,8 @@ DATABASE_CONN_MAX_LIFETIME=1h
 AUTH_URL=http://jwt-provider:8081
 AUTH_RESET_PASSWORD_URL=http://localhost:5050/reset-password?token=%s
 AUTH_JWT_SECRET=change-this-to-a-secure-random-string-min32chars
+ACCESS_TOKEN_DURATION=15m
+REFRESH_TOKEN_DURATION=168h
 AUTH_PORT=8081
 AUTH_HOST=0.0.0.0
 AUTH_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
@@ -295,10 +307,10 @@ ASSET_MAX_SIZE=5242880
 $envTemplatePath = Join-Path $ProjectRoot ".env.template"
 $script:envPath = Join-Path $ProjectRoot ".env"
 
-Set-Content -Path $envTemplatePath -Value $envTemplate -Encoding UTF8 -NoNewline
+Set-TextFileNoBom -Path $envTemplatePath -Content $envTemplate
 
 if (-not (Test-Path $script:envPath)) {
-    Copy-Item $envTemplatePath $script:envPath
+    Set-TextFileNoBom -Path $script:envPath -Content $envTemplate
     Write-Host "[OK] Created .env with default environment variables" -ForegroundColor Green
 } else {
     Write-Host "[!] .env already exists. Checking for missing variables..." -ForegroundColor Yellow
@@ -324,7 +336,7 @@ function Update-EnvVar {
     } else {
         $content = $content.TrimEnd() + "`n$Key=$Value`n"
     }
-    Set-Content -Path $script:envPath -Value $content -Encoding UTF8 -NoNewline
+    Set-TextFileNoBom -Path $script:envPath -Content $content
 }
 
 # Get existing environment variable value from .env file
@@ -988,6 +1000,32 @@ Start-Sleep -Seconds 10
 
 docker compose -f docker-compose.all.yaml ps
 
+$psOutput = docker compose -f docker-compose.all.yaml ps | Out-String
+if ($psOutput -match "(?im)unhealthy|exited|restarting") {
+    Write-Host ""
+    Write-Host "[!] Some services are not healthy yet. Collecting quick diagnostics..." -ForegroundColor Yellow
+    Write-Host $psOutput
+
+    $badServices = @()
+    foreach ($line in ($psOutput -split "`r?`n")) {
+        if ($line -match "(?i)unhealthy|exited|restarting") {
+            $serviceName = ($line -split "\s+")[0]
+            if (-not [string]::IsNullOrWhiteSpace($serviceName)) {
+                $badServices += $serviceName
+            }
+        }
+    }
+    $badServices = $badServices | Select-Object -Unique
+
+    foreach ($service in $badServices) {
+        Write-Host ""
+        Write-Host "----- Last logs for $service -----" -ForegroundColor Yellow
+        docker compose -f docker-compose.all.yaml logs --tail=80 $service
+    }
+    Write-Host ""
+    Write-Host "[!] Fix the failing services above, then run: docker compose -f docker-compose.all.yaml up -d" -ForegroundColor Yellow
+}
+
 # Read final values from .env for display (with fallbacks)
 $displayPublicHost = Get-EnvVar -Key "PUBLIC_HOST"
 if ([string]::IsNullOrWhiteSpace($displayPublicHost)) { $displayPublicHost = "localhost" }
@@ -1010,6 +1048,8 @@ Write-Host "Default admin credentials:"
 Write-Host "  Email:    $displayOwnerEmail"
 Write-Host "  Password: $displayOwnerPassword"
 Write-Host ""
+Write-Host "NOTE: Timezone is set to UTC. You can change it from Profile settings." -ForegroundColor Yellow
+Write-Host ""
 Write-Host "WARNING: Remember to change default passwords in production!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Useful commands:"
@@ -1018,4 +1058,6 @@ Write-Host "  make down-all  - Stop all services"
 Write-Host "  make clean     - Remove all data"
 Write-Host ""
 
-Read-Host "Press Enter to exit"
+if (-not $AutoYes) {
+    Read-Host "Press Enter to exit"
+}
