@@ -240,6 +240,7 @@ func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mid
 		am := row.Group("")
 		am.Use(middlewares.FileSizeLimitMiddleware())
 		am.POST("/attachment/add", handlers.Table.AddAttachment)
+		am.POST("/attachment/update", handlers.Table.UpdateAttachment)
 
 		row.POST("/attachment/remove", handlers.Table.RemoveAttachments)
 	}

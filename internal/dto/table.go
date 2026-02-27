@@ -100,6 +100,14 @@ type AddAttachmentRequest struct {
 	RowId    int    `json:"row_id" binding:"required" example:"1"`
 }
 
+type UpdateAttachmentRequest struct {
+	ModelID  string       `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnId string       `json:"column_id" binding:"required" example:"col-123"`
+	RowId    int          `json:"row_id" binding:"required" example:"1"`
+	AssetId  string       `json:"asset_id" binding:"required" example:"asset-456"`
+	Content  AssetUpdate `json:"content" binding:"required" example:"{\"file_name\": \"document.pdf\", \"file_size\": 102400, \"file_type\": \"application/pdf\"}"`
+}
+
 type RemoveAttachmentsRequest struct {
 	ModelID     string   `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
 	ColumnId    string   `json:"column_id" binding:"required" example:"col-123"`

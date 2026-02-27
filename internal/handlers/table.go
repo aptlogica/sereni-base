@@ -758,6 +758,30 @@ func (h *TableHandler) AddAttachment(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
 }
 
+
+func (h *TableHandler) UpdateAttachment(c *gin.Context) {
+	var req dto.UpdateAttachmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.UpdateAttachmentRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	record, err := h.tableManagementService.UpdateAttachment(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+}
+
 // @Summary      Remove attachments from a row
 // @Description  Deletes the requested attachment references for a row and returns the updated record metadata.
 // @Tags         Admin Table Column

@@ -2960,7 +2960,7 @@ func (s tableManagementService) AddAttachment(
 		return dto.RecordResponse{}, err
 	}
 
-	columnName, tableName, err := s.getColumnNameAndTableName(ctx, schemaName, req)
+	columnName, tableName, err := s.getColumnNameAndTableName(ctx, schemaName, req.ColumnId, req.ModelID)
 	if err != nil {
 		return dto.RecordResponse{}, err
 	}
@@ -2983,6 +2983,56 @@ func (s tableManagementService) AddAttachment(
 		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to add attachment to record")
 	}
 
+	return dto.RecordResponse{
+		Record: insertedRecord,
+	}, nil
+}
+
+func (s tableManagementService) updateSpecificAttachment(attachments []tenant.Assets, updatedAttachment tenant.Assets) []tenant.Assets {
+	for i, asset := range attachments {
+		if asset.ID == updatedAttachment.ID {
+			attachments[i] = updatedAttachment
+			break
+		}
+	}
+	return attachments
+}
+
+func (s tableManagementService) UpdateAttachment(
+	ctx context.Context,
+	schemaName string,
+	req dto.UpdateAttachmentRequest,
+) (dto.RecordResponse, error) {
+	columnName, tableName, err := s.getColumnNameAndTableName(ctx, schemaName, req.ColumnId, req.ModelID)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+
+	rowData, err := s.getRowByID(ctx, tableName, req.RowId)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+
+	attachments := rowData[columnName].([]tenant.Assets) // existing attachments
+
+	updatedAsset, err := s.assetManagementService.UpdateAsset(ctx, req.AssetId, req.Content, schemaName)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+
+	updatedAttachments := s.updateSpecificAttachment(attachments, updatedAsset)
+
+	attachmentValue := s.mergeAttachmentValues(rowData[columnName], s.assetsToMaps(updatedAttachments))
+
+	data := map[string]interface{}{
+		columnName:           attachmentValue,
+		"last_modified_time": time.Now().UTC(),
+	}
+
+	insertedRecord, err := s.repo.TableService.UpdateRecord(tableName, req.RowId, data)
+	if err != nil {
+		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to add attachment to record")
+	}
 	return dto.RecordResponse{
 		Record: insertedRecord,
 	}, nil
@@ -3111,9 +3161,10 @@ func (s tableManagementService) uploadAssets(ctx context.Context, schemaName str
 func (s tableManagementService) getColumnNameAndTableName(
 	ctx context.Context,
 	schemaName string,
-	req dto.AddAttachmentRequest,
+	columnId string,
+	modelId string,
 ) (string, string, error) {
-	columnData, err := s.GetColumnById(ctx, schemaName, req.ColumnId)
+	columnData, err := s.GetColumnById(ctx, schemaName, columnId)
 	if err != nil {
 		return "", "", err
 	}
@@ -3123,7 +3174,7 @@ func (s tableManagementService) getColumnNameAndTableName(
 		return "", "", app_errors.UpdateNotAllowed
 	}
 
-	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	model, err := s.modelService.GetModelByID(ctx, schemaName, modelId)
 	if err != nil {
 		return "", "", err
 	}
