@@ -1,0 +1,5425 @@
+basePath: /api/v1
+definitions:
+  dto.ActivateUserRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
+  dto.AddColumnRequest:
+    properties:
+      base_id:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      dt:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      model_id:
+        type: string
+      order_index:
+        type: number
+      system:
+        type: boolean
+      title:
+        type: string
+      uidt:
+        type: string
+      virtual:
+        type: boolean
+    type: object
+  dto.AddUserRequest:
+    type: object
+  dto.AssetUpdate:
+    properties:
+      last_modified_time:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.BaseAccessInfo:
+    properties:
+      id:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.BaseMembership:
+    properties:
+      base_id:
+        type: string
+      role:
+        type: string
+    type: object
+  dto.BaseResponse:
+    properties:
+      access_level:
+        type: string
+      config:
+        additionalProperties: true
+        type: object
+      created_by:
+        type: string
+      created_time:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      image:
+        type: string
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      row_count:
+        type: integer
+      settings:
+        additionalProperties: true
+        description: Settings and metadata
+        type: object
+      status:
+        description: Status and visibility
+        type: string
+      storage_used_bytes:
+        type: integer
+      table_count:
+        description: Resource tracking
+        type: integer
+      tables:
+        items:
+          $ref: '#/definitions/dto.TableResponse'
+        type: array
+      title:
+        type: string
+      type:
+        description: Database connection (for external sources)
+        type: string
+      visibility:
+        type: string
+      workspace_id:
+        type: string
+    type: object
+  dto.BaseRoleAccess:
+    properties:
+      access:
+        type: string
+      base_id:
+        type: string
+      base_name:
+        type: string
+    type: object
+  dto.BaseUpdate:
+    properties:
+      config:
+        additionalProperties: true
+        type: object
+      description:
+        type: string
+      image:
+        type: string
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      row_count:
+        type: integer
+      settings:
+        additionalProperties: true
+        type: object
+      status:
+        type: string
+      storage_used_bytes:
+        type: integer
+      table_count:
+        type: integer
+      title:
+        type: string
+      type:
+        type: string
+      visibility:
+        type: string
+    type: object
+  dto.BulkAddBaseMembersRequest:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/dto.BulkMemberRequest'
+        minItems: 1
+        type: array
+    required:
+    - members
+    type: object
+  dto.BulkAddMembersRequest:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/dto.BulkMemberRequest'
+        minItems: 1
+        type: array
+    required:
+    - members
+    type: object
+  dto.BulkAddMembersResponse:
+    properties:
+      failed:
+        items:
+          $ref: '#/definitions/dto.MemberAddFailure'
+        type: array
+      success:
+        items:
+          type: string
+        type: array
+      total:
+        type: integer
+    type: object
+  dto.BulkAssetRequest:
+    properties:
+      ids:
+        example:
+        - '["id1"'
+        - '"id2"]'
+        items:
+          format: array
+          type: string
+        type: array
+    required:
+    - ids
+    type: object
+  dto.BulkDeleteRowsRequest:
+    properties:
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      row_ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - model_id
+    - row_ids
+    type: object
+  dto.BulkMemberRequest:
+    properties:
+      memberships:
+        items:
+          $ref: '#/definitions/dto.MembershipRequest'
+        minItems: 1
+        type: array
+      user_id:
+        type: string
+    required:
+    - memberships
+    - user_id
+    type: object
+  dto.ColumnResponse:
+    properties:
+      base_id:
+        type: string
+      column_name:
+        type: string
+      created_by:
+        type: string
+      created_time:
+        type: string
+      deleted:
+        type: boolean
+      description:
+        type: string
+      dt:
+        type: string
+      id:
+        type: string
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      model_id:
+        type: string
+      order_index:
+        type: number
+      system:
+        type: boolean
+      title:
+        type: string
+      uidt:
+        type: string
+      virtual:
+        type: boolean
+    type: object
+  dto.ColumnUpdate:
+    properties:
+      deleted:
+        type: boolean
+      description:
+        type: string
+      dt:
+        type: string
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      order_index:
+        type: number
+      system:
+        type: boolean
+      title:
+        type: string
+      uidt:
+        type: string
+      virtual:
+        type: boolean
+    type: object
+  dto.CreateBaseRequest:
+    properties:
+      created_by:
+        type: string
+      description:
+        type: string
+      title:
+        type: string
+      workspace_id:
+        type: string
+    type: object
+  dto.CreateMemberRequest:
+    properties:
+      membership:
+        items:
+          $ref: '#/definitions/dto.MembershipRequest'
+        type: array
+      user_id:
+        type: string
+    type: object
+  dto.CreateOrganizationRequest:
+    properties:
+      address:
+        type: string
+      city:
+        type: string
+      country:
+        type: string
+      description:
+        type: string
+      email:
+        type: string
+      logo:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      phone:
+        type: string
+      settings:
+        additionalProperties: true
+        type: object
+      state:
+        type: string
+      website:
+        type: string
+      zip_code:
+        type: string
+    required:
+    - email
+    - name
+    type: object
+  dto.CreateRowRequest:
+    properties:
+      created_by:
+        type: string
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+    required:
+    - model_id
+    type: object
+  dto.CreateTableRequest:
+    properties:
+      base_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      created_by:
+        type: string
+      description:
+        example: A description of the table
+        format: string
+        type: string
+      order_index:
+        example: 1
+        type: number
+      title:
+        example: My Table
+        format: string
+        type: string
+      workspace_id:
+        example: workspace-abc-123
+        type: string
+    required:
+    - base_id
+    - title
+    - workspace_id
+    type: object
+  dto.CreateViewRequest:
+    properties:
+      base_id:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      model_id:
+        type: string
+      order_index:
+        type: number
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  dto.CreateWorkspaceRequest:
+    properties:
+      created_by:
+        type: string
+      description:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.DeactivateUserRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
+  dto.DeleteRowDataRequest:
+    properties:
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      row_id:
+        example: 1
+        type: integer
+    required:
+    - model_id
+    - row_id
+    type: object
+  dto.EditUserRequest:
+    type: object
+  dto.ForgotPasswordRequest:
+    properties:
+      email:
+        example: johndoe@example.com
+        format: email
+        type: string
+    required:
+    - email
+    type: object
+  dto.InsertRowDataRequest:
+    properties:
+      column_id:
+        example: col-123
+        type: string
+      last_modified_by:
+        type: string
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      row_id:
+        example: 1
+        type: integer
+      value: {}
+    required:
+    - column_id
+    - model_id
+    - row_id
+    type: object
+  dto.LoginRequest:
+    properties:
+      email:
+        example: johndoe@example.com
+        format: email
+        type: string
+      password:
+        example: strongpassword123
+        format: string
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  dto.LoginResponse:
+    properties:
+      token:
+        allOf:
+        - $ref: '#/definitions/dto.TokenResponse'
+        description: Tenant    *TenantResponse    `json:"tenant,omitempty" format:"object"`
+        format: object
+      user:
+        allOf:
+        - $ref: '#/definitions/dto.UserResponse'
+        format: object
+    required:
+    - token
+    - user
+    type: object
+  dto.LogoutRequest:
+    properties:
+      token:
+        format: jwt
+        type: string
+    required:
+    - token
+    type: object
+  dto.MemberAddFailure:
+    properties:
+      error:
+        type: string
+      user_id:
+        type: string
+    type: object
+  dto.MembershipRequest:
+    properties:
+      bases:
+        items:
+          $ref: '#/definitions/dto.BaseMembership'
+        type: array
+      role:
+        type: string
+      workspace_id:
+        type: string
+    type: object
+  dto.ModelResponse:
+    properties:
+      alias:
+        type: string
+      base_id:
+        type: string
+      created_by:
+        type: string
+      created_time:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      order_index:
+        type: number
+      title:
+        type: string
+      workspace_id:
+        type: string
+    type: object
+  dto.OrganizationResponse:
+    properties:
+      address:
+        type: string
+      city:
+        type: string
+      country:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      last_modified_by:
+        type: string
+      logo:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      phone:
+        type: string
+      settings:
+        additionalProperties: true
+        type: object
+      state:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      website:
+        type: string
+      zip_code:
+        type: string
+    type: object
+  dto.RecordResponse:
+    properties:
+      record:
+        additionalProperties: true
+        type: object
+    type: object
+  dto.RecordsResponse:
+    properties:
+      records:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    type: object
+  dto.RefreshTokenRequest:
+    properties:
+      refresh_token:
+        format: jwt
+        type: string
+    required:
+    - refresh_token
+    type: object
+  dto.RemoveAttachmentsRequest:
+    properties:
+      attachments:
+        example:
+        - asset-456
+        items:
+          type: string
+        type: array
+      column_id:
+        example: col-123
+        type: string
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      row_id:
+        example: 1
+        type: integer
+    required:
+    - attachments
+    - column_id
+    - model_id
+    - row_id
+    type: object
+  dto.RemoveMemberRequest:
+    properties:
+      user_id:
+        type: string
+    type: object
+  dto.RemoveUserRequest:
+    properties:
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
+  dto.ReorderColumnRequest:
+    properties:
+      source_column_id:
+        type: string
+      target_column_id:
+        type: string
+    type: object
+  dto.ResendOTPRequest:
+    properties:
+      token:
+        format: jwt
+        type: string
+    required:
+    - token
+    type: object
+  dto.ResetPasswordRequest:
+    properties:
+      new_password:
+        example: newstrongpassword456
+        format: string
+        minLength: 8
+        type: string
+      token:
+        example: 36a72062-10c7-41d4-8c6f-e4625b211a56
+        format: uuid
+        type: string
+    required:
+    - new_password
+    - token
+    type: object
+  dto.TableResponse:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/dto.ColumnResponse'
+        type: array
+      model:
+        $ref: '#/definitions/dto.ModelResponse'
+      records:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      views:
+        items:
+          $ref: '#/definitions/dto.ViewResponse'
+        type: array
+    type: object
+  dto.TokenResponse:
+    properties:
+      access_token:
+        format: jwt
+        type: string
+      refresh_token:
+        format: jwt
+        type: string
+    required:
+    - access_token
+    - refresh_token
+    type: object
+  dto.TokenValidationRequest:
+    properties:
+      token:
+        format: jwt
+        type: string
+    required:
+    - token
+    type: object
+  dto.TokenValidationResponse:
+    properties:
+      roles:
+        type: string
+      user_id:
+        type: string
+      valid:
+        type: boolean
+    type: object
+  dto.UpdateOrganizationRequest:
+    properties:
+      address:
+        type: string
+      city:
+        type: string
+      country:
+        type: string
+      description:
+        type: string
+      email:
+        type: string
+      logo:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      phone:
+        type: string
+      settings:
+        additionalProperties: true
+        type: object
+      state:
+        type: string
+      status:
+        type: string
+      website:
+        type: string
+      zip_code:
+        type: string
+    type: object
+  dto.UpdateRowDataLinksRequest:
+    properties:
+      action:
+        enum:
+        - link
+        - unlink
+        example: link
+        type: string
+      column_id:
+        example: col-123
+        type: string
+      last_modified_by:
+        type: string
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      source_row_id:
+        example: 1
+        type: integer
+      target_row_id:
+        example: 2
+        type: integer
+    required:
+    - action
+    - column_id
+    - model_id
+    - source_row_id
+    - target_row_id
+    type: object
+  dto.UpdateTableRequest:
+    properties:
+      description:
+        example: A description of the table
+        format: string
+        type: string
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      title:
+        type: string
+    type: object
+  dto.UpdateUserPasswordRequest:
+    properties:
+      new_password:
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
+  dto.UpdateUserProfileRequest:
+    type: object
+  dto.UserAccessDetailsResponse:
+    properties:
+      workspaces:
+        items:
+          $ref: '#/definitions/dto.WorkspaceAccessInfo'
+        type: array
+    type: object
+  dto.UserResponse:
+    properties:
+      activity_data: {}
+      auth_provider:
+        description: Authentication
+        type: string
+      avatar:
+        type: string
+      country:
+        type: string
+      created_time:
+        type: string
+      deleted_at:
+        type: string
+      display_name:
+        type: string
+      dob:
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      external_id:
+        type: string
+      failed_login_attempts:
+        description: Security
+        type: integer
+      first_name:
+        type: string
+      id:
+        type: string
+      is_deleted:
+        type: boolean
+      last_active_at:
+        type: string
+      last_login_at:
+        type: string
+      last_modified_time:
+        type: string
+      last_name:
+        type: string
+      locale:
+        type: string
+      locked_until:
+        type: string
+      mfa_enabled:
+        type: boolean
+      mfa_secret:
+        type: string
+      password_changed_at:
+        type: string
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
+      status:
+        description: Account status
+        type: string
+      timezone:
+        type: string
+    type: object
+  dto.UserRolesAccessResponse:
+    properties:
+      access:
+        type: string
+      bases:
+        items:
+          $ref: '#/definitions/dto.BaseRoleAccess'
+        type: array
+      workspace_id:
+        type: string
+      workspace_name:
+        type: string
+    type: object
+  dto.UserWithRole:
+    properties:
+      activity_data: {}
+      auth_provider:
+        description: Authentication
+        type: string
+      avatar:
+        type: string
+      created_time:
+        type: string
+      deleted_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      external_id:
+        type: string
+      failed_login_attempts:
+        description: Security
+        type: integer
+      first_name:
+        type: string
+      id:
+        type: string
+      is_deleted:
+        type: boolean
+      last_active_at:
+        type: string
+      last_login_at:
+        type: string
+      last_modified_time:
+        type: string
+      last_name:
+        type: string
+      locale:
+        type: string
+      locked_until:
+        type: string
+      mfa_enabled:
+        type: boolean
+      mfa_secret:
+        type: string
+      password_changed_at:
+        type: string
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
+      roles:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      status:
+        description: Account status
+        type: string
+      timezone:
+        type: string
+    type: object
+  dto.UserWorkspaceResponse:
+    properties:
+      access_level:
+        type: string
+      created_time:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      slug:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.VerifyEmailRequest:
+    properties:
+      otp:
+        example: "123456"
+        format: string
+        type: string
+      token:
+        format: jwt
+        type: string
+    required:
+    - otp
+    - token
+    type: object
+  dto.ViewResponse:
+    properties:
+      alias:
+        type: string
+      base_id:
+        type: string
+      created_by:
+        type: string
+      created_time:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      lock_type:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      model_id:
+        type: string
+      order_index:
+        type: number
+      password:
+        type: string
+      public:
+        type: boolean
+      title:
+        type: string
+      type:
+        type: string
+      uuid:
+        type: string
+    type: object
+  dto.ViewUpdate:
+    properties:
+      description:
+        type: string
+      is_default:
+        type: boolean
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      lock_type:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      order_index:
+        type: number
+      password:
+        type: string
+      public:
+        type: boolean
+      title:
+        type: string
+      type:
+        type: string
+      uuid:
+        type: string
+    type: object
+  dto.WorkspaceAccessInfo:
+    properties:
+      access_level:
+        type: string
+      bases:
+        items:
+          $ref: '#/definitions/dto.BaseAccessInfo'
+        type: array
+      id:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.WorkspaceMemberResponse:
+    properties:
+      access_level:
+        type: string
+      activity_data: {}
+      auth_provider:
+        description: Authentication
+        type: string
+      avatar:
+        type: string
+      created_time:
+        type: string
+      deleted_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      email_verified:
+        type: boolean
+      external_id:
+        type: string
+      failed_login_attempts:
+        description: Security
+        type: integer
+      first_name:
+        type: string
+      id:
+        type: string
+      is_deleted:
+        type: boolean
+      last_active_at:
+        type: string
+      last_login_at:
+        type: string
+      last_modified_time:
+        type: string
+      last_name:
+        type: string
+      locale:
+        type: string
+      locked_until:
+        type: string
+      mfa_enabled:
+        type: boolean
+      mfa_secret:
+        type: string
+      password_changed_at:
+        type: string
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
+      status:
+        description: Account status
+        type: string
+      timezone:
+        type: string
+    type: object
+  dto.WorkspaceResponse:
+    properties:
+      bases:
+        items:
+          $ref: '#/definitions/dto.BaseResponse'
+        type: array
+      created_by:
+        type: string
+      created_time:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      slug:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  dto.WorkspaceUpdate:
+    properties:
+      description:
+        type: string
+      is_default:
+        type: boolean
+      last_modified_by:
+        type: string
+      last_modified_time:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      slug:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  models.ErrorDetail:
+    properties:
+      code:
+        example: USER_VAL_2001
+        type: string
+      message:
+        example: Email is required
+        type: string
+    type: object
+  models.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/models.ErrorDetail'
+      message:
+        example: Validation failed
+        type: string
+      meta:
+        $ref: '#/definitions/models.Meta'
+      success:
+        example: false
+        type: boolean
+    type: object
+  models.Meta:
+    properties:
+      code:
+        example: USER_SUCCESS_2001
+        type: string
+      http_status:
+        example: 200
+        type: integer
+    type: object
+  models.SuccessResponse:
+    properties:
+      data: {}
+      message:
+        example: Operation completed successfully
+        type: string
+      meta:
+        $ref: '#/definitions/models.Meta'
+      success:
+        example: true
+        type: boolean
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@serenibase.com
+    name: API Support Team
+  description: |-
+    Serenibase is a workspace management platform that layers guardrails on PostgreSQL tables and permissions.
+    It centralizes workspace/base/table creation, membership, and asset/connectivity workflows along with RBAC controls.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: Serenibase API
+  version: "1.0"
+paths:
+  /asset/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the asset record and underlying storage references for
+        the given ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Asset deleted successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient permissions
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — asset not found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an asset
+      tags:
+      - Admin Asset
+    patch:
+      consumes:
+      - application/json
+      description: Updates the title or other metadata for an existing asset record.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AssetUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated asset returned inside success.data
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid asset ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — asset missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — invalid title
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update asset metadata
+      tags:
+      - Admin Asset
+  /asset/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Returns the metadata for the requested asset IDs so the UI can
+        render thumbnails.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: List of asset IDs
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkAssetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bulk assets returned inside data
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — empty ID list
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — some assets missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Retrieve a batch of assets
+      tags:
+      - Admin Asset
+  /asset/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Accepts multipart files (images/documents) and stores them while
+        validating size and type limits.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Files to upload
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stored assets list returned in success.data
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid form or missing files
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "413":
+          description: Payload Too Large — file exceeds limit
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload multiple assets
+      tags:
+      - Admin Asset
+  /asset/upload-image:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Accepts exactly one image file, validates the MIME type, and stores
+        it alongside metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Single image to upload
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stored image asset returned in success.data
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing image or invalid format
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "413":
+          description: Payload Too Large — file exceeds size limit
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload a single image asset
+      tags:
+      - Admin Asset
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Accepts a registered email, sends a reset token, and records the
+        request to prevent spam.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Email address that owns the account
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password reset token issued
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing or invalid email
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — email not registered
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Start password reset flow
+      tags:
+      - Auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the provided email/password pair and returns the refreshed
+        login tokens plus the user profile when the credentials are correct.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Login payload with email and password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login successful, returns user details and tokens
+          schema:
+            $ref: '#/definitions/dto.LoginResponse'
+        "400":
+          description: Bad Request — malformed JSON or missing required fields
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid credentials
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed on one or more fields
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Authenticate with email and password
+      tags:
+      - Auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Invalidates the supplied refresh token so the session cannot be
+        reused.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Refresh token to invalidate
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LogoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Logout succeeded
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing field
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — token already invalid or missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Log out current session
+      tags:
+      - Auth
+  /auth/otp/resend:
+    post:
+      consumes:
+      - application/json
+      description: Reissues one-time password SMS/email for the given verification
+        token when the previous code expired or was lost.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Existing verification token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResendOTPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OTP resent successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing or invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — token already consumed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "429":
+          description: Too Many Requests — rate limit exceeded for OTP resends
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Resend throttled OTP
+      tags:
+      - Auth
+  /auth/otp/verify:
+    post:
+      consumes:
+      - application/json
+      description: Consumes the OTP and token from the user to confirm ownership of
+        the mailbox, then issues the standard login payload.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Token and OTP used for email verification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.VerifyEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Email verified and login response returned
+          schema:
+            $ref: '#/definitions/dto.LoginResponse'
+        "400":
+          description: Bad Request — malformed token/OTP or missing parameters
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — OTP invalid or expired
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Verify email via OTP
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a refresh token for a new access/refresh token pair so
+        ongoing sessions stay authenticated.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Refresh token payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: New access and refresh tokens
+          schema:
+            $ref: '#/definitions/dto.TokenResponse'
+        "400":
+          description: Bad Request — missing refresh token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — refresh token invalid or revoked
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Refresh authentication tokens
+      tags:
+      - Auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Validates the reset token and new password, updates the stored
+        credentials, and invalidates the token.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Reset token and new password payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password updated successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing fields or invalid token format
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — token expired or already used
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Reset password using token
+      tags:
+      - Auth
+  /auth/validate-token:
+    post:
+      consumes:
+      - application/json
+      description: Checks whether a token is still valid and returns metadata about
+        the owner.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Token to validate
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.TokenValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Token validity and metadata
+          schema:
+            $ref: '#/definitions/dto.TokenValidationResponse'
+        "400":
+          description: Bad Request — malformed token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — token invalid
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Validate a token
+      tags:
+      - Auth
+  /auth/verify-token:
+    post:
+      consumes:
+      - application/json
+      description: Ensures the supplied token is authentic and returns the user metadata
+        embedded within it.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Token to verify
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.TokenValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Token signature verified
+          schema:
+            $ref: '#/definitions/dto.TokenValidationResponse'
+        "400":
+          description: Bad Request — missing token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — token invalid or expired
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Verify a token issued by the system
+      tags:
+      - Auth
+  /base/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the base record permanently from the schema.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Base deleted successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid base id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — not allowed to delete base
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a base
+      tags:
+      - Admin Base
+    get:
+      consumes:
+      - application/json
+      description: Fetches the base identified by ID including visibility, config,
+        and metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Base retrieved successfully
+          schema:
+            $ref: '#/definitions/dto.BaseResponse'
+        "400":
+          description: Bad Request — invalid base id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — missing access
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get base details
+      tags:
+      - Admin Base
+    put:
+      consumes:
+      - multipart/form-data
+      description: Applies the form fields and optional uploaded image to update a
+        base record.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BaseUpdate'
+      - description: New base image
+        in: formData
+        name: image
+        type: file
+      - description: Pass true to drop the existing image
+        in: formData
+        name: remove_image
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated base data
+          schema:
+            $ref: '#/definitions/dto.BaseResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update base metadata
+      tags:
+      - Admin Base
+  /base/{id}/bulk-add-members:
+    post:
+      consumes:
+      - application/json
+      description: Adds multiple users to the provided base according to their requested
+        base roles.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Bulk membership payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkAddBaseMembersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bulk additions reported
+          schema:
+            $ref: '#/definitions/dto.BulkAddMembersResponse'
+        "400":
+          description: Bad Request — missing fields
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk add members to a base
+      tags:
+      - Admin Workspace
+  /base/{id}/image:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes the stored image for a base and returns the updated base
+        metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Image removed and base returned
+          schema:
+            $ref: '#/definitions/dto.BaseResponse'
+        "400":
+          description: Bad Request — invalid id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove base image
+      tags:
+      - Admin Base
+    post:
+      consumes:
+      - multipart/form-data
+      description: Attaches an image file to the base metadata and returns the updated
+        base record.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Image to upload
+        in: formData
+        name: image
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Image stored and base returned
+          schema:
+            $ref: '#/definitions/dto.BaseResponse'
+        "400":
+          description: Bad Request — invalid id or missing image
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — no permission to edit base image
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload a base image
+      tags:
+      - Admin Base
+  /base/{id}/members:
+    get:
+      consumes:
+      - application/json
+      description: Returns all users attached to the base and their assigned roles.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Base members retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.WorkspaceMemberResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient base access
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List base members
+      tags:
+      - Admin
+  /base/{id}/members-with-roles:
+    get:
+      consumes:
+      - application/json
+      description: Returns base members annotated with their assigned roles for RBAC
+        audits.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Members with RBAC role data
+          schema:
+            items:
+              $ref: '#/definitions/dto.UserWithRole'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List base members with roles
+      tags:
+      - Admin
+  /base/{id}/remove:
+    post:
+      consumes:
+      - application/json
+      description: Removes access for the supplied user ID on the specific base.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User to revoke base membership from
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RemoveMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User removed from base
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid base or payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient permissions
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base or user missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove a member from a base
+      tags:
+      - Admin
+  /base/{id}/tables:
+    get:
+      consumes:
+      - application/json
+      description: Lists the tables that were created under the base identified by
+        the path ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tables retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.TableResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — no access to this base
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — base missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get tables inside a base
+      tags:
+      - Admin Base
+  /base/create:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Persists a base associated with a workspace and optional description,
+        returning the stored base data.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Base payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateBaseRequest'
+      - description: Workspace ID ownership
+        in: formData
+        name: workspace_id
+        required: true
+        type: string
+      - description: Optional base image
+        in: formData
+        name: image
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Base created
+          schema:
+            $ref: '#/definitions/dto.BaseResponse'
+        "400":
+          description: Bad Request — missing title or workspace
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — not allowed to create base
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new base
+      tags:
+      - Admin Base
+  /column/:
+    get:
+      consumes:
+      - application/json
+      description: Returns every column defined in the tenant schema.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Columns retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.ColumnResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all columns
+      tags:
+      - Admin Table Column
+  /column/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the column definition permanently from the model.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Column ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Column deleted
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid column id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — column missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a column
+      tags:
+      - Admin Table Column
+    get:
+      consumes:
+      - application/json
+      description: Returns a single column definition so clients can inspect its type
+        and metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Column ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Column retrieved successfully
+          schema:
+            $ref: '#/definitions/dto.ColumnResponse'
+        "400":
+          description: Bad Request — invalid column ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — column missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get column by ID
+      tags:
+      - Admin Table Column
+    patch:
+      consumes:
+      - application/json
+      description: Updates column metadata (title, meta) for the provided column ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Column ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Column fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ColumnUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated column returned
+          schema:
+            $ref: '#/definitions/dto.ColumnResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — column missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a column
+      tags:
+      - Admin Table Column
+  /column/create:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new column within the specified model and returns the
+        column definition.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Column creation payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AddColumnRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Column created
+          schema:
+            $ref: '#/definitions/dto.ColumnResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add a column to a model
+      tags:
+      - Admin Table Column
+  /column/reorder:
+    post:
+      consumes:
+      - application/json
+      description: Moves the column order by taking a source and target column and
+        returning the refreshed ordering.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Source and target column IDs
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ReorderColumnRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Columns re-ordered
+          schema:
+            items:
+              $ref: '#/definitions/dto.ColumnResponse'
+            type: array
+        "400":
+          description: Bad Request — invalid columns
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reorder columns
+      tags:
+      - Admin Table Column
+  /health:
+    get:
+      description: Returns 200 to signal the authentication handler is running.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+      summary: Health probe
+      tags:
+      - System
+  /health/live:
+    get:
+      description: Quick check that the auth handler process is still alive.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Process is alive
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+      summary: Liveness probe
+      tags:
+      - System
+  /health/ready:
+    get:
+      description: Indicates the authentication handler has finished startup routines
+        and is ready to accept requests.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is ready
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+      summary: Readiness probe
+      tags:
+      - System
+  /organization:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves all organizations within the tenant schema for administrative
+        dashboards.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Organizations returned
+          schema:
+            items:
+              $ref: '#/definitions/dto.OrganizationResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List organizations
+      tags:
+      - Admin
+    post:
+      consumes:
+      - application/json
+      description: Persists a new organization record with contacts and metadata for
+        future workspaces and RBAC.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Organization creation payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateOrganizationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Organization created
+          schema:
+            $ref: '#/definitions/dto.OrganizationResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "409":
+          description: Conflict — organization already exists
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an organization
+      tags:
+      - Admin
+  /organization/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes the organization from the schema.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Organization deleted
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — organization missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete organization
+      tags:
+      - Admin
+    get:
+      consumes:
+      - application/json
+      description: Fetches the organization record identified by the path parameter.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Organization returned
+          schema:
+            $ref: '#/definitions/dto.OrganizationResponse'
+        "400":
+          description: Bad Request — invalid ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — organization missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get organization by ID
+      tags:
+      - Admin
+    put:
+      consumes:
+      - application/json
+      description: Updates the organization profile and settings fields.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Organization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateOrganizationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Organization updated
+          schema:
+            $ref: '#/definitions/dto.OrganizationResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — organization missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update organization
+      tags:
+      - Admin
+  /organization/by-email:
+    get:
+      consumes:
+      - application/json
+      description: Looks up an organization using the provided email address.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Organization contact email
+        in: query
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Organization returned
+          schema:
+            $ref: '#/definitions/dto.OrganizationResponse'
+        "400":
+          description: Bad Request — email missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — organization missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get organization by email
+      tags:
+      - Admin
+  /row/attachment/add:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads attachments for the given model/column/row triplet and
+        returns the row record with references.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Model ID
+        in: formData
+        name: model_id
+        required: true
+        type: string
+      - description: Column ID
+        in: formData
+        name: column_id
+        required: true
+        type: string
+      - description: Row index
+        in: formData
+        name: row_id
+        required: true
+        type: integer
+      - description: Attachment files
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Row updated with attachment references
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — missing ids or files
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "415":
+          description: Unsupported Media Type — upload blocked
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Attach files to a row
+      tags:
+      - Admin Table Column
+  /row/attachment/remove:
+    post:
+      consumes:
+      - application/json
+      description: Deletes the requested attachment references for a row and returns
+        the updated record metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Rows and attachments to remove
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RemoveAttachmentsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Row returned without attachments
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — attachment missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove attachments from a row
+      tags:
+      - Admin Table Column
+  /row/bulk-remove:
+    post:
+      consumes:
+      - application/json
+      description: Deletes multiple rows for the same model and returns the total
+        count along with a summary message.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Model ID and row IDs to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkDeleteRowsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deleted rows summary (data contains deleted_count/message)
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk delete rows
+      tags:
+      - Admin Table Column
+  /row/create:
+    post:
+      consumes:
+      - application/json
+      description: Inserts a new row stub for the specified model and returns the
+        created record metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Row creation payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateRowRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Record stub created
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — invalid data
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new row
+      tags:
+      - Admin Table Column
+  /row/data/insert:
+    post:
+      consumes:
+      - application/json
+      description: Sets the value for a specific column cell and returns the updated
+        row record.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Column and row data payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.InsertRowDataRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated record returned
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — invalid value
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Insert or update row cell
+      tags:
+      - Admin Table Column
+  /row/data/relation:
+    post:
+      consumes:
+      - application/json
+      description: Updates relationship columns to link rows together and returns
+        the updated row metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Link target/source definitions
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateRowDataLinksRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Row link updated
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — columns or rows missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update link data for rows
+      tags:
+      - Admin Table Column
+  /row/remove:
+    post:
+      consumes:
+      - application/json
+      description: Removes the row described in the payload from the model.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Model ID and row ID to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.DeleteRowDataRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Row removed
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — row missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a row
+      tags:
+      - Admin Table Column
+  /table/:
+    get:
+      consumes:
+      - application/json
+      description: Returns every table model defined in the tenant schema for discovery.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: All tables retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.TableResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all tables
+      tags:
+      - Admin Table Column
+  /table/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes the table metadata and related records for the specified
+        ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Table deleted
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — table missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a table
+      tags:
+      - Admin Table Column
+    get:
+      consumes:
+      - application/json
+      description: Retrieves the complete table metadata for the provided model ID,
+        including columns and views.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Table retrieved successfully
+          schema:
+            $ref: '#/definitions/dto.TableResponse'
+        "400":
+          description: Bad Request — invalid ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — table missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get table by ID
+      tags:
+      - Admin Table Column
+    patch:
+      consumes:
+      - application/json
+      description: Applies the provided table metadata updates (title, description,
+        meta) for the specified table ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateTableRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated table metadata
+          schema:
+            $ref: '#/definitions/dto.TableResponse'
+        "400":
+          description: Bad Request — invalid ID or payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — table missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a table
+      tags:
+      - Admin Table Column
+  /table/{id}/columns:
+    get:
+      consumes:
+      - application/json
+      description: Returns the columns belonging to the table with the provided ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Columns listed
+          schema:
+            items:
+              $ref: '#/definitions/dto.ColumnResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — table missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get columns for a specific table
+      tags:
+      - Admin Table Column
+  /table/{id}/records:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves every record stored under the specified model ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Records returned
+          schema:
+            $ref: '#/definitions/dto.RecordsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — table missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get all records for a table
+      tags:
+      - Admin Table Column
+  /table/{id}/views:
+    get:
+      consumes:
+      - application/json
+      description: Returns view definitions linked to the specific model ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Views returned
+          schema:
+            items:
+              $ref: '#/definitions/dto.ViewResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — table missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get views for a table
+      tags:
+      - Admin Table Column
+  /table/create:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new table (model) within the assigned base and workspace
+        and returns the metadata needed to render it.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Table creation payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateTableRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Returns table metadata with columns and views
+          schema:
+            $ref: '#/definitions/dto.TableResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — user lacks privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a table
+      tags:
+      - Admin Table Column
+  /table/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Imports table schema/data from an uploaded file and generates the
+        model along with default configuration.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: CSV/definition file
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Base ID to associate
+        in: formData
+        name: base_id
+        required: true
+        type: string
+      - description: Workspace ID
+        in: formData
+        name: workspace_id
+        required: true
+        type: string
+      - description: Optional name override
+        in: formData
+        name: title
+        type: string
+      - description: Description override
+        in: formData
+        name: description
+        type: string
+      - description: Numeric order index
+        in: formData
+        name: order_index
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Imported table returned
+          schema:
+            $ref: '#/definitions/dto.TableResponse'
+        "400":
+          description: Bad Request — missing file or required IDs
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — invalid file
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import a table via file
+      tags:
+      - Admin Table Column
+  /user/access-details:
+    get:
+      consumes:
+      - application/json
+      description: Returns expanded workspace/base access details for a user; restricted
+        to Admin roles and allows optional workspace filtering.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Target user ID
+        in: query
+        name: user_id
+        required: true
+        type: string
+      - description: Optional workspace filter
+        in: query
+        name: workspace_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Access details returned
+          schema:
+            $ref: '#/definitions/dto.UserAccessDetailsResponse'
+        "400":
+          description: Bad Request — missing user_id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — requires Admin role
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user access details
+      tags:
+      - Users
+  /user/access/update:
+    put:
+      consumes:
+      - application/json
+      description: Adjusts workspace or base memberships for the specified user and
+        returns success once changes are persisted.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Membership payload for updating access
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User access updated
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing or invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid bearer token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — cannot escalate role
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update user workspace access
+      tags:
+      - Users
+  /user/activate:
+    post:
+      consumes:
+      - application/json
+      description: Sets the user status to active and returns the refreshed profile.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID to activate
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ActivateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Activated user's profile
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — missing user_id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — user not found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Activate a disabled user
+      tags:
+      - Users
+  /user/assign:
+    post:
+      consumes:
+      - application/json
+      description: Links a user to a workspace using the membership definition provided
+        in the payload.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Membership payload for workspace assignment
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User assigned to workspace
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing or invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient role
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Grant workspace access
+      tags:
+      - Users
+  /user/change-password/{id}:
+    post:
+      consumes:
+      - application/json
+      description: Validates the old password and applies the new password for the
+        URL-specified user.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Old and new password pair
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateUserPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password updated
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing fields or invalid id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — cannot change another user's password
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update user password
+      tags:
+      - Users
+  /user/create:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Accepts multipart data to create a workspace member, including
+        optional membership JSON and profile picture.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Form payload describing the user and memberships
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AddUserRequest'
+      - description: Optional profile picture
+        in: formData
+        name: profile_pic
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User added successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing required fields
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid Bearer token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient permissions
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "409":
+          description: Conflict — user already exists
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation failed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Invite or onboard a new user
+      tags:
+      - Users
+  /user/deactivate:
+    post:
+      consumes:
+      - application/json
+      description: Marks the specified user as inactive and returns the updated profile.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID to deactivate
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.DeactivateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User deactivated successfully
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — invalid request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — user missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Deactivate a user account
+      tags:
+      - Users
+  /user/edit:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Applies partial updates, optional membership adjustments, and profile
+        picture replacements to the specified user.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Payload with user_id plus optional fields to patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.EditUserRequest'
+      - description: Replace the profile picture
+        in: formData
+        name: profile_pic
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User returned after update
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — missing user_id or invalid format
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid Bearer token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — cannot edit another tenant
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — user does not exist
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — validation error on fields
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update an existing user
+      tags:
+      - Users
+  /user/list:
+    get:
+      consumes:
+      - application/json
+      description: Returns every user in the tenant schema along with their role definitions.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Users retrieved successfully
+          schema:
+            items:
+              $ref: '#/definitions/dto.UserWithRole'
+            type: array
+        "401":
+          description: Unauthorized — invalid bearer token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient access to list users
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all users
+      tags:
+      - Users
+  /user/list-for-assign:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves only users marked as active so they can be assigned to
+        new workspaces or bases.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Assignable users returned
+          schema:
+            items:
+              $ref: '#/definitions/dto.UserWithRole'
+            type: array
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — needs higher privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List assignable users
+      tags:
+      - Users
+  /user/profile/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Returns the detailed user profile for the supplied ID.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User profile retrieved
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — invalid or missing ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — user missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user profile by ID
+      tags:
+      - Users
+    patch:
+      consumes:
+      - multipart/form-data
+      description: Applies form fields and optional avatar upload to update the user's
+        profile.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Avatar file to upload
+        in: formData
+        name: avatar
+        type: file
+      - description: Profile fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateUserProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated user profile
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — invalid field
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update user profile
+      tags:
+      - Users
+  /user/profile/{id}/avatar:
+    delete:
+      consumes:
+      - application/json
+      description: Clears the avatar for the user and returns the updated profile.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Avatar removed
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — invalid user id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — user missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove avatar
+      tags:
+      - Users
+    post:
+      consumes:
+      - multipart/form-data
+      description: Stores the provided avatar file and returns the updated user profile.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Avatar file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile returned with avatar URL
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request — missing file
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Upload avatar
+      tags:
+      - Users
+  /user/remove:
+    post:
+      consumes:
+      - application/json
+      description: Permanently deletes the user with the supplied ID from the tenant
+        schema.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RemoveUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User removed successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing user_id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — user already removed
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Fully remove a user
+      tags:
+      - Users
+  /user/roles-and-access/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Returns workspaces and bases with role assignments for the requested
+        user, optionally scoped by workspace/base id.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional workspace or base scope ID
+        in: query
+        name: scope_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Roles and access list
+          schema:
+            items:
+              $ref: '#/definitions/dto.UserRolesAccessResponse'
+            type: array
+        "400":
+          description: Bad Request — invalid user ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient access
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user roles and access
+      tags:
+      - Users
+  /user/workspaces:
+    get:
+      consumes:
+      - application/json
+      description: Returns every workspace and base combination the authenticated
+        user has membership in.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Workspaces user participates in
+          schema:
+            items:
+              $ref: '#/definitions/dto.UserWorkspaceResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List user workspaces
+      tags:
+      - Users
+  /view/:
+    get:
+      consumes:
+      - application/json
+      description: Returns every saved view definition available in the tenant schema.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Views retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.ViewResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all views
+      tags:
+      - Admin Table Column
+  /view/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the view definition and all associated filters/metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: View deleted
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid view id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — view missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a view
+      tags:
+      - Admin Table Column
+    get:
+      consumes:
+      - application/json
+      description: Retrieves view metadata for the provided view identifier.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: View retrieved
+          schema:
+            $ref: '#/definitions/dto.ViewResponse'
+        "400":
+          description: Bad Request — invalid id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — view missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get view by ID
+      tags:
+      - Admin Table Column
+    patch:
+      consumes:
+      - application/json
+      description: Updates the requested view configuration while treating missing
+        fields as no-ops.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: View ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ViewUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated view returned
+          schema:
+            $ref: '#/definitions/dto.ViewResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — view missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a view
+      tags:
+      - Admin Table Column
+  /view/create:
+    post:
+      consumes:
+      - application/json
+      description: Persists a new view configuration tied to a model and returns the
+        created view metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: View creation payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateViewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: View created
+          schema:
+            $ref: '#/definitions/dto.ViewResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a view
+      tags:
+      - Admin Table Column
+  /workspace/:
+    get:
+      consumes:
+      - application/json
+      description: Returns every workspace visible to the tenant including metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Workspaces retrieved successfully (data contains workspace
+            list)
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all workspaces
+      tags:
+      - Admin Workspace
+  /workspace/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes the workspace and its tables, returning success once cleanup
+        finishes.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Workspace deleted
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid workspace id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — not allowed to delete
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — workspace missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a workspace
+      tags:
+      - Admin Workspace
+    get:
+      consumes:
+      - application/json
+      description: Returns the workspace record that matches the provided ID with
+        all tenant metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Workspace retrieved successfully (data contains workspace fields)
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — not allowed to read this workspace
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — workspace missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get workspace by ID
+      tags:
+      - Admin Workspace
+    put:
+      consumes:
+      - application/json
+      description: Applies the supplied fields to the workspace record. Empty fields
+        are ignored.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.WorkspaceUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Workspace updated successfully (data contains updated workspace)
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — workspace missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update workspace metadata
+      tags:
+      - Admin Workspace
+  /workspace/{id}/bases:
+    get:
+      consumes:
+      - application/json
+      description: Returns every base the workspace owns, including access-level meta
+        for the requesting user.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bases retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.BaseResponse'
+            type: array
+        "401":
+          description: Unauthorized — invalid authentication
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — missing access level
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — workspace missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List bases for a workspace
+      tags:
+      - Admin Workspace
+  /workspace/{id}/bulk-add-members:
+    post:
+      consumes:
+      - application/json
+      description: Creates multiple workspace access records using the memberships
+        described in the request.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Target workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Array of member and membership definitions
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkAddMembersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bulk member addition results
+          schema:
+            $ref: '#/definitions/dto.BulkAddMembersResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — not allowed to bulk add
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk add members to workspace
+      tags:
+      - Admin Workspace
+  /workspace/{id}/members:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves every member assigned to the workspace along with their
+        role metadata.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Workspace members retrieved
+          schema:
+            items:
+              $ref: '#/definitions/dto.WorkspaceMemberResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient workspace access
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — workspace not found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List workspace members
+      tags:
+      - Admin
+  /workspace/{id}/members-with-roles:
+    get:
+      consumes:
+      - application/json
+      description: Returns workspace members annotated with their RBAC role summaries.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Members with role metadata
+          schema:
+            items:
+              $ref: '#/definitions/dto.UserWithRole'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List workspace members with roles
+      tags:
+      - Admin
+  /workspace/{id}/remove:
+    post:
+      consumes:
+      - application/json
+      description: Deletes the specified user from the workspace and optionally cleans
+        up linked access entries.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User to remove from workspace
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RemoveMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Member removed successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid workspace id or payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient role to remove member
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — member or workspace missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove a member from a workspace
+      tags:
+      - Admin
+  /workspace/{id}/tables:
+    get:
+      consumes:
+      - application/json
+      description: Returns the table definitions owned by the workspace so front-end
+        can render the schema.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tables listed
+          schema:
+            items:
+              $ref: '#/definitions/dto.TableResponse'
+            type: array
+        "401":
+          description: Unauthorized — invalid token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient access
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — workspace missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get tables scoped to a workspace
+      tags:
+      - Admin Workspace
+  /workspace/access/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes an access member entry by its ID, removing any inherited
+        workspace/base privileges.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Access member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Access entry removed
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — missing lane identifier
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid bearer token
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient permissions
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — access member already deleted
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete access member
+      tags:
+      - Admin
+  /workspace/create:
+    post:
+      consumes:
+      - application/json
+      description: Persists a new workspace entity for the tenant, storing the title
+        and metadata provided by the requester.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Workspace payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateWorkspaceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Workspace created
+          schema:
+            $ref: '#/definitions/dto.WorkspaceResponse'
+        "400":
+          description: Bad Request — missing title or workspace data
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized — invalid credentials
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden — insufficient privileges
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a workspace
+      tags:
+      - Admin Workspace
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter your Bearer token in the format: Bearer <token>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
+tags:
+- description: Authentication, login, and token lifecycle operations.
+  name: Auth
+- description: User profile, workspace access, and avatar management.
+  name: Users
+- description: Workspace, base, table, column, row, and asset management requiring
+    elevated privileges and RBAC validations.
+  name: Admin
+- description: Workspace-level CRUD, membership, and metadata operations.
+  name: Workspace
+- description: Base creation, image handling, membership, and visibility controls.
+  name: Base
+- description: Table/model creation plus row, column, and view workflows.
+  name: Table
+- description: Column lifecycle (add/update/delete/reorder) and attachment helpers.
+  name: Column
+- description: Asset/image uploads and related metadata endpoints.
+  name: Asset
+- description: Health checks for readiness, liveliness, and general status.
+  name: System

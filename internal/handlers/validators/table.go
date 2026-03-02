@@ -406,3 +406,49 @@ func getColumnIdValidationError(tag string) responseConst.ResponseCode {
 		return responseConst.TableError.ColumnIdInvalid
 	}
 }
+
+func UpdateAttachmentRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnIdRequired
+		default:
+			return responseConst.TableError.ColumnIdInvalid
+		}
+	case "RowId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.RowIdRequired
+		default:
+			return responseConst.TableError.RowIdInvalid
+		}
+	case "AssetId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.AssetIdRequired
+		default:
+			return responseConst.TableError.AssetIdInvalid
+		}
+	case "Content":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ContentRequired
+		default:
+			return responseConst.TableError.ContentInvalid
+		}
+
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+	return responseConst.Error.ValidationFailed
+}

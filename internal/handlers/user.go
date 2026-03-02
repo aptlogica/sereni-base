@@ -81,6 +81,21 @@ func (h *UserHandler) handleAvatarUpdate(c *gin.Context, schemaName, id string, 
 	return updatedProfile, nil
 }
 
+// @Summary      Get user profile by ID
+// @Description  Returns the detailed user profile for the supplied ID.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string          true  "User ID"
+// @Success      200  {object}  dto.UserResponse  "User profile retrieved"
+// @Failure      400  {object}  models.ErrorResponse  "Bad Request — invalid or missing ID"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — user missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/profile/{id} [get]
 func (h *UserHandler) GetUserProfileByID(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -104,6 +119,23 @@ func (h *UserHandler) GetUserProfileByID(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UserFetched, userProfile)
 }
 
+// @Summary      Update user profile
+// @Description  Applies form fields and optional avatar upload to update the user's profile.
+// @Tags         Users
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id     path      string  true   "User ID"
+// @Param        avatar formData  file    false  "Avatar file to upload"
+// @Param        request body      dto.UpdateUserProfileRequest  true  "Profile fields to update"
+// @Success      200    {object}  dto.UserResponse               "Updated user profile"
+// @Failure      400    {object}  models.ErrorResponse           "Bad Request — invalid payload"
+// @Failure      401    {object}  models.ErrorResponse           "Unauthorized"
+// @Failure      403    {object}  models.ErrorResponse           "Forbidden"
+// @Failure      422    {object}  models.ErrorResponse           "Unprocessable Entity — invalid field"
+// @Failure      500    {object}  models.ErrorResponse           "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/profile/{id} [patch]
 func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -139,6 +171,21 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
 }
 
+// @Summary      Upload avatar
+// @Description  Stores the provided avatar file and returns the updated user profile.
+// @Tags         Users
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id    path      string  true  "User ID"
+// @Param        file  formData  file    true  "Avatar file"
+// @Success      200   {object}  dto.UserResponse  "Profile returned with avatar URL"
+// @Failure      400   {object}  models.ErrorResponse  "Bad Request — missing file"
+// @Failure      401   {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403   {object}  models.ErrorResponse  "Forbidden"
+// @Failure      500   {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/profile/{id}/avatar [post]
 func (h *UserHandler) AddAvatar(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -164,6 +211,21 @@ func (h *UserHandler) AddAvatar(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.AvatarAdded, gin.H{"avatar_url": avatarURL})
 }
 
+// @Summary      Remove avatar
+// @Description  Clears the avatar for the user and returns the updated profile.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string          true  "User ID"
+// @Success      200  {object}  dto.UserResponse  "Avatar removed"
+// @Failure      400  {object}  models.ErrorResponse  "Bad Request — invalid user id"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — user missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/profile/{id}/avatar [delete]
 func (h *UserHandler) RemoveAvatar(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -183,6 +245,18 @@ func (h *UserHandler) RemoveAvatar(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.AvatarRemoved, avatarURL)
 }
 
+// @Summary      List user workspaces
+// @Description  Returns every workspace and base combination the authenticated user has membership in.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Success      200  {array}   dto.UserWorkspaceResponse  "Workspaces user participates in"
+// @Failure      401  {object}  models.ErrorResponse      "Unauthorized"
+// @Failure      403  {object}  models.ErrorResponse      "Forbidden"
+// @Failure      500  {object}  models.ErrorResponse      "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/workspaces [get]
 func (h *UserHandler) GetWorkspaces(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -204,6 +278,21 @@ func (h *UserHandler) GetWorkspaces(c *gin.Context) {
 	response.SendSuccess(c, responseConst.UserSuccess.WorkspaceFetched, workspaces)
 }
 
+// @Summary      Get user access details
+// @Description  Returns expanded workspace/base access details for a user; restricted to Admin roles and allows optional workspace filtering.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        user_id      query     string  true   "Target user ID"
+// @Param        workspace_id query     string  false  "Optional workspace filter"
+// @Success      200          {object}  dto.UserAccessDetailsResponse  "Access details returned"
+// @Failure      400          {object}  models.ErrorResponse           "Bad Request — missing user_id"
+// @Failure      401          {object}  models.ErrorResponse           "Unauthorized"
+// @Failure      403          {object}  models.ErrorResponse           "Forbidden — requires Admin role"
+// @Failure      500          {object}  models.ErrorResponse           "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/access-details [get]
 func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -240,6 +329,21 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 
 // GetUserRolesAndAccess retrieves user's roles and access information organized by workspace and base
 // Supports optional query parameter: scope_id to filter by specific scope (workspace or base)
+// @Summary      Get user roles and access
+// @Description  Returns workspaces and bases with role assignments for the requested user, optionally scoped by workspace/base id.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id       path      string  true   "User ID"
+// @Param        scope_id query     string  false  "Optional workspace or base scope ID"
+// @Success      200      {array}   dto.UserRolesAccessResponse  "Roles and access list"
+// @Failure      400      {object}  models.ErrorResponse        "Bad Request — invalid user ID"
+// @Failure      401      {object}  models.ErrorResponse        "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse        "Forbidden — insufficient access"
+// @Failure      500      {object}  models.ErrorResponse        "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /user/roles-and-access/{id} [get]
 func (h *UserHandler) GetUserRolesAndAccess(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)

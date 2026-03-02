@@ -35,6 +35,7 @@ import (
 type App struct {
 	config       *config.Config
 	server       *http.Server
+	router       *gin.Engine
 	authProvider auth.AuthProvider
 	dbService    *pkg.DatabaseService
 }
@@ -233,6 +234,7 @@ func New(cfg *config.Config) (*App, error) {
 	return &App{
 		config:       cfg,
 		server:       server,
+		router:       r,
 		authProvider: authProvider,
 		dbService:    dbService,
 	}, nil
@@ -273,4 +275,9 @@ func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, 
 	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
 		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)
 	}
+}
+
+// Router exposes the Gin engine so that callers can modify or augment routes.
+func (a *App) Router() *gin.Engine {
+	return a.router
 }

@@ -605,7 +605,7 @@ func TestDeleteColumn_Variants(t *testing.T) {
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "lk", UIDT: "lookup", Meta: map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID}}
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
-		mockColumn.On("DeleteColumn", mock.Anything, "schema", "cid").Return(nil)
+		mockColumn.On("DeleteColumn", mock.Anything, "schema", col.ID.String()).Return(nil)
 		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(modelID)}, nil)
 
 		lookupCol := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.New().String(), ColumnName: "src"}
@@ -797,6 +797,124 @@ func TestAttachmentsAndBulkDelete(t *testing.T) {
 
 		_, err = svc.RemoveAttachments(context.Background(), "schema", dto.RemoveAttachmentsRequest{ModelID: modelID, ColumnId: colID, RowId: 1, Attachments: []string{assetID}})
 		assert.NoError(t, err)
+	})
+
+	t.Run("update attachment with []interface{} payload", func(t *testing.T) {
+		stubTable := &StubTableService{}
+		stubBulk := &StubBulkService{}
+		mockModel := &MockModelService{}
+		mockColumn := &MockColumnService{}
+		mockView := &MockViewService{}
+		mockRel := &MockRelationshipService{}
+		mockAsset := &MockAssetManagementService{}
+
+		modelID := uuid.New().String()
+		colID := "col"
+		assetID := uuid.New()
+
+		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "attachments", UIDT: "attachment"}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID).Return(col, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl"}, nil)
+
+		mockAsset.On("UpdateAsset", mock.Anything, assetID.String(), mock.Anything, "schema").Return(tenant.Assets{
+			ID:    assetID,
+			Title: "updated-file",
+			Url:   "https://cdn.example/new",
+		}, nil)
+
+		stubTable.GetTableDataFn = func(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error) {
+			return []map[string]interface{}{
+				{
+					"id": 1,
+					"attachments": []interface{}{
+						map[string]interface{}{
+							"id":    assetID.String(),
+							"title": "old-file",
+							"url":   "https://cdn.example/old",
+						},
+						map[string]interface{}{
+							"id":    uuid.New().String(),
+							"title": "keep-file",
+							"url":   "https://cdn.example/keep",
+						},
+					},
+				},
+			}, nil
+		}
+		stubTable.UpdateRecordFn = func(tableName string, id interface{}, data map[string]interface{}) (map[string]interface{}, error) {
+			return map[string]interface{}{"id": id, "attachments": data["attachments"]}, nil
+		}
+
+		svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
+		updatedTitle := "updated-file"
+
+		resp, err := svc.UpdateAttachment(context.Background(), "schema", dto.UpdateAttachmentRequest{
+			ModelID:  modelID,
+			ColumnId: colID,
+			RowId:    1,
+			AssetId:  assetID.String(),
+			Content: dto.AssetUpdate{
+				Title: &updatedTitle,
+			},
+		})
+		assert.NoError(t, err)
+		attachments, ok := resp.Record["attachments"].([]map[string]interface{})
+		assert.True(t, ok)
+		assert.Len(t, attachments, 2)
+
+		var updated map[string]interface{}
+		for _, a := range attachments {
+			if id, ok := a["id"].(uuid.UUID); ok && id == assetID {
+				updated = a
+				break
+			}
+			if id, ok := a["id"].(string); ok && id == assetID.String() {
+				updated = a
+				break
+			}
+		}
+		assert.NotNil(t, updated)
+		assert.Equal(t, "updated-file", updated["title"])
+	})
+
+	t.Run("update attachment returns database error when row update fails", func(t *testing.T) {
+		stubTable := &StubTableService{}
+		stubBulk := &StubBulkService{}
+		mockModel := &MockModelService{}
+		mockColumn := &MockColumnService{}
+		mockView := &MockViewService{}
+		mockRel := &MockRelationshipService{}
+		mockAsset := &MockAssetManagementService{}
+
+		modelID := uuid.New().String()
+		colID := "col"
+		assetID := uuid.New()
+
+		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "attachments", UIDT: "attachment"}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID).Return(col, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl"}, nil)
+		mockAsset.On("UpdateAsset", mock.Anything, assetID.String(), mock.Anything, "schema").Return(tenant.Assets{ID: assetID, Title: "updated-file"}, nil)
+
+		stubTable.GetTableDataFn = func(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error) {
+			return []map[string]interface{}{
+				{"id": 1, "attachments": []map[string]interface{}{{"id": assetID.String(), "title": "old-file"}}},
+			}, nil
+		}
+		stubTable.UpdateRecordFn = func(tableName string, id interface{}, data map[string]interface{}) (map[string]interface{}, error) {
+			return nil, errors.New("update failed")
+		}
+
+		svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
+		updatedTitle := "updated-file"
+
+		_, err := svc.UpdateAttachment(context.Background(), "schema", dto.UpdateAttachmentRequest{
+			ModelID:  modelID,
+			ColumnId: colID,
+			RowId:    1,
+			AssetId:  assetID.String(),
+			Content:  dto.AssetUpdate{Title: &updatedTitle},
+		})
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
 	})
 
 	t.Run("bulk delete rows", func(t *testing.T) {
@@ -1127,6 +1245,7 @@ func TestDeleteColumn_NonLookup(t *testing.T) {
 	col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT"), OrderIndex: &order}
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", "cid").Return(nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(modelID)}, nil)
 	mockTable.On("GetByFunction", mock.Anything, "public.reorder_columns_after_delete", mock.Anything).Return([]map[string]interface{}{}, nil)
 	mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)

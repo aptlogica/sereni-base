@@ -35,13 +35,13 @@ func (m *MockAuthProvider) GenerateToken(ctx context.Context, user tenant.User) 
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
-func (m *MockAuthProvider) RefreshToken(ctx context.Context, token, userId, email, password string, roles []string) (auth.Tokens, error) {
-	args := m.Called(ctx, token, userId, email, password, roles)
+func (m *MockAuthProvider) RefreshToken(ctx context.Context, reqBody auth.AuthServiceRefreshRequest) (auth.Tokens, error) {
+	args := m.Called(ctx, reqBody)
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
-func (m *MockAuthProvider) Login(ctx context.Context, userId, email, password string, roles []string) (auth.Tokens, error) {
-	args := m.Called(ctx, userId, email, password, roles)
+func (m *MockAuthProvider) Login(ctx context.Context, reqBody auth.AuthServiceLoginRequest) (auth.Tokens, error) {
+	args := m.Called(ctx, reqBody)
 	return args.Get(0).(auth.Tokens), args.Error(1)
 }
 
@@ -666,9 +666,8 @@ func TestAuthMiddleware_ContextValues(t *testing.T) {
 	mockUserService := new(MockUserManagementService)
 	mockAuthProvider.On("ValidateToken", mock.Anything, "Bearer valid_token").
 		Return(auth.Claims{
-			UserId:   "user123",
-			TenantId: "tenant456",
-			Roles:    "admin,editor",
+			UserId: "user123",
+			Roles:  "admin,editor",
 		}, nil)
 	mockUserService.On("GetUserByID", mock.Anything, constant.MasterDatabase, "user123").
 		Return(tenant.User{

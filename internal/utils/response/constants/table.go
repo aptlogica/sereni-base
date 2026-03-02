@@ -58,6 +58,10 @@ var TableError = struct {
 	LimitInvalid                   ResponseCode
 	PageRequired                   ResponseCode
 	PageInvalid                    ResponseCode
+	AssetIdRequired                ResponseCode
+	AssetIdInvalid                 ResponseCode
+	ContentRequired                ResponseCode
+	ContentInvalid                 ResponseCode
 }{
 	BaseIDRequired:                 "TBL_1001",
 	BaseIDInvalid:                  "TBL_1002",
@@ -114,6 +118,10 @@ var TableError = struct {
 	LimitInvalid:                   "TBL_1053",
 	PageRequired:                   "TBL_1054",
 	PageInvalid:                    "TBL_1055",
+	AssetIdRequired:                "TBL_1056",
+	AssetIdInvalid:                 "TBL_1057",
+	ContentRequired:                "TBL_1058",
+	ContentInvalid:                 "TBL_1059",
 }
 
 var TableErrorCodes = map[ResponseCode]MetaResponse{
@@ -391,6 +399,26 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Invalid page number",
 		Description: "The provided page number is invalid or malformed",
+	},
+	TableError.AssetIdRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Asset ID is required",
+		Description: "The asset ID field is required",
+	},
+	TableError.AssetIdInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid asset ID",
+		Description: "The provided asset ID is invalid or malformed",
+	},
+	TableError.ContentRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Content is required",
+		Description: "The content field is required",
+	},
+	TableError.ContentInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid content",
+		Description: "The provided content is invalid or malformed",
 	},
 }
 
