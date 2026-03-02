@@ -213,6 +213,11 @@ func (m *MockTableManagementService) AddAttachment(ctx context.Context, schemaNa
 	return args.Get(0).(dto.RecordResponse), args.Error(1)
 }
 
+func (m *MockTableManagementService) UpdateAttachment(ctx context.Context, schemaName string, req dto.UpdateAttachmentRequest) (dto.RecordResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	return args.Get(0).(dto.RecordResponse), args.Error(1)
+}
+
 func (m *MockTableManagementService) BulkDeleteRows(ctx context.Context, schemaName string, req dto.BulkDeleteRowsRequest) (int, error) {
 	args := m.Called(ctx, schemaName, req)
 	return args.Int(0), args.Error(1)

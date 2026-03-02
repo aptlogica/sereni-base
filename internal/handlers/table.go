@@ -758,7 +758,21 @@ func (h *TableHandler) AddAttachment(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
 }
 
-
+// @Summary      Update attachment metadata
+// @Description  Updates attachment metadata (such as filename, description, etc.) for a given attachment reference in a row.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.UpdateAttachmentRequest  true  "Attachment update payload"
+// @Success      200      {object}  dto.RecordResponse           "Row updated with new attachment metadata"
+// @Failure      400      {object}  models.ErrorResponse         "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse         "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse         "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse         "Not Found — attachment missing"
+// @Failure      500      {object}  models.ErrorResponse         "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /row/attachment/update [post]
 func (h *TableHandler) UpdateAttachment(c *gin.Context) {
 	var req dto.UpdateAttachmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

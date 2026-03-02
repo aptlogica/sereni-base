@@ -125,6 +125,9 @@ func (m *MockTableManagementService) UpdateRawDataForLinks(ctx context.Context, 
 func (m *MockTableManagementService) AddAttachment(ctx context.Context, schemaName string, req dto.AddAttachmentRequest, files []*multipart.FileHeader) (dto.RecordResponse, error) {
 	return dto.RecordResponse{}, nil
 }
+func (m *MockTableManagementService) UpdateAttachment(ctx context.Context, schemaName string, req dto.UpdateAttachmentRequest) (dto.RecordResponse, error) {
+	return dto.RecordResponse{}, nil
+}
 func (m *MockTableManagementService) BulkDeleteRows(ctx context.Context, schemaName string, req dto.BulkDeleteRowsRequest) (int, error) {
 	return 0, nil
 }

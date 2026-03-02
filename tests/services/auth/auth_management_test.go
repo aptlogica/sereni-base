@@ -185,7 +185,7 @@ func TestAuthManagement_Login_EmailNotVerified(t *testing.T) {
 	userMgmt.GetUserByEmailFn = func(ctx context.Context, schema string, email string) (tenant.User, error) {
 		return user, nil
 	}
-	authProv.GenerateTokenFn = func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
+	authProv.LoginFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceLoginRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
@@ -215,7 +215,7 @@ func TestAuthManagement_Login_Verified(t *testing.T) {
 		return user, nil
 	}
 	// Mock JWT service login - should be called
-	authProv.GenerateTokenFn = func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
+	authProv.LoginFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceLoginRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
@@ -243,7 +243,7 @@ func TestAuthManagement_Login_WithJWTServiceSync(t *testing.T) {
 	}
 
 	loginCallCount := 0
-	authProv.GenerateTokenFn = func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
+	authProv.LoginFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceLoginRequest) (authProviderInterface.Tokens, error) {
 		loginCallCount++
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
@@ -252,7 +252,7 @@ func TestAuthManagement_Login_WithJWTServiceSync(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "a", resp.Token.AccessToken)
 	assert.Equal(t, "r", resp.Token.RefreshToken)
-	assert.Equal(t, 1, loginCallCount, "GenerateToken should be called once")
+	assert.Equal(t, 1, loginCallCount, "Login should be called once")
 }
 
 func TestAuthManagement_Login_InvalidPassword(t *testing.T) {
@@ -281,7 +281,7 @@ func TestAuthManagement_VerifyEmail_InvalidOTP(t *testing.T) {
 	ctx := context.Background()
 
 	user := tenant.User{ID: uuid.New(), Email: "user@example.com"}
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -303,7 +303,7 @@ func TestAuthManagement_VerifyEmail_Success(t *testing.T) {
 	ctx := context.Background()
 
 	user := tenant.User{ID: uuid.New(), Email: "user@example.com"}
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -320,7 +320,7 @@ func TestAuthManagement_VerifyEmail_Success(t *testing.T) {
 	otpSvc.VerifyFn = func(identifier, input string) bool {
 		return true
 	}
-	authProv.GenerateTokenFn = func(ctx context.Context, user tenant.User) (authProviderInterface.Tokens, error) {
+	authProv.LoginFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceLoginRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
@@ -334,7 +334,7 @@ func TestAuthManagement_ResendOTP(t *testing.T) {
 	ctx := context.Background()
 	user := tenant.User{ID: uuid.New(), Email: "user@example.com", EmailVerified: false}
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -363,7 +363,7 @@ func TestAuthManagement_ResendOTP_AlreadyVerified(t *testing.T) {
 	ctx := context.Background()
 	user := tenant.User{ID: uuid.New(), Email: "user@example.com", EmailVerified: true}
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -381,8 +381,8 @@ func TestAuthManagement_RefreshToken_ValidateToken(t *testing.T) {
 	service, _, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
-		if token == "bad" {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
+		if reqBody.RefreshToken == "bad" {
 			return authProviderInterface.Tokens{}, errors.New("bad")
 		}
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
@@ -1066,7 +1066,7 @@ func TestAuthManagement_RefreshTokenRequest(t *testing.T) {
 	service, _, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{AccessToken: "a", RefreshToken: "r"}, nil
 	}
 
@@ -1279,7 +1279,7 @@ func TestAuthManagement_RefreshToken_Empty(t *testing.T) {
 	service, _, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{}, nil
 	}
 	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "r"})
@@ -1291,7 +1291,7 @@ func TestAuthManagement_SendOtpViaEmail_CalledThroughResend(t *testing.T) {
 	ctx := context.Background()
 
 	user := tenant.User{ID: uuid.New(), Email: "user@example.com", EmailVerified: false}
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -1507,7 +1507,7 @@ func TestAuthManagement_VerifyEmail_UserLookupError(t *testing.T) {
 	service, userMgmt, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -1525,7 +1525,7 @@ func TestAuthManagement_ResendOTP_UserLookupError(t *testing.T) {
 	service, userMgmt, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{RefreshToken: "refresh"}, nil
 	}
 	authProv.ValidateTokenFn = func(ctx context.Context, tokenStr string) (authProviderInterface.Claims, error) {
@@ -2098,7 +2098,7 @@ func TestAuthManagement_RefreshToken_Error(t *testing.T) {
 	service, _, _, _, _, _, _, _, authProv, _ := setupAuthManagementService()
 	ctx := context.Background()
 
-	authProv.RefreshTokenFn = func(ctx context.Context, token, userId, email, password string, roles []string) (authProviderInterface.Tokens, error) {
+	authProv.RefreshTokenFn = func(ctx context.Context, reqBody authProviderInterface.AuthServiceRefreshRequest) (authProviderInterface.Tokens, error) {
 		return authProviderInterface.Tokens{}, errors.New("bad")
 	}
 	_, err := service.RefreshToken(ctx, dto.RefreshTokenRequest{RefreshToken: "bad"})
@@ -2155,3 +2155,4 @@ func TestAuthManagement_RemoveUserFromBase_EmailTemplateSet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "u@example.com", job.To)
 }
+

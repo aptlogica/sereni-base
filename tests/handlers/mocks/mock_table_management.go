@@ -413,6 +413,21 @@ func (mr *MockTableManagementServiceMockRecorder) RemoveAttachments(ctx, schemaN
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAttachments", reflect.TypeOf((*MockTableManagementService)(nil).RemoveAttachments), ctx, schemaName, req)
 }
 
+// UpdateAttachment mocks base method.
+func (m *MockTableManagementService) UpdateAttachment(ctx context.Context, schemaName string, req dto.UpdateAttachmentRequest) (dto.RecordResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAttachment", ctx, schemaName, req)
+	ret0, _ := ret[0].(dto.RecordResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateAttachment indicates an expected call of UpdateAttachment.
+func (mr *MockTableManagementServiceMockRecorder) UpdateAttachment(ctx, schemaName, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAttachment", reflect.TypeOf((*MockTableManagementService)(nil).UpdateAttachment), ctx, schemaName, req)
+}
+
 // ReorderColumn mocks base method.
 func (m *MockTableManagementService) ReorderColumn(ctx context.Context, schemaName string, req dto.ReorderColumnRequest) ([]dto.ColumnResponse, error) {
 	m.ctrl.T.Helper()
