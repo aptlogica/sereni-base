@@ -99,15 +99,6 @@ Press Enter to use recommended defaults at any prompt.
 | API Docs | http://localhost:8080/swagger/index.html | Swagger documentation |
 | MinIO | http://localhost:9001 | Object storage console |
 
-### Default Credentials
-
-```
-Email:    admin@example.com
-Password: Admin@123
-```
-
-Security note: Change the default credentials before deploying to production.
-
 ---
 
 ## Documentation

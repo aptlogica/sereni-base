@@ -155,8 +155,8 @@ Network Configuration
 
 Owner Account
   Name: Admin User
-  Email: admin@example.com
-  Password: Admin@123
+  Email: your-admin-email@example.com
+  Password: your-strong-password
 
 Email: Skip (N)
 Database: Create new instance (1)
