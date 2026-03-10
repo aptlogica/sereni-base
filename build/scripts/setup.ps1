@@ -20,6 +20,8 @@
 
 param(
     [switch]$AutoYes,  # For non-interactive setup with defaults
+    [switch]$SkipDocker,  # Skip Docker and Docker Compose checks
+    [switch]$Help,
     # SMTP Configuration
     [string]$SmtpHost = "",
     [string]$SmtpPort = "",
@@ -43,6 +45,21 @@ $ParameterValues = @{
 }
 
 $ErrorActionPreference = "Stop"
+
+if ($Help) {
+    Write-Host ""
+    Write-Host "SereniBase Interactive Setup"
+    Write-Host ""
+    Write-Host "Usage:"
+    Write-Host "  .\\setup.ps1                 # Interactive mode"
+    Write-Host "  .\\setup.ps1 -AutoYes         # Non-interactive with defaults"
+    Write-Host "  .\\setup.ps1 -SkipDocker      # Skip Docker prerequisite checks"
+    Write-Host "  .\\setup.ps1 -Help            # Show this help"
+    Write-Host ""
+    exit 0
+}
+
+$SkipDockerCheck = $SkipDocker -or ($env:SETUP_SKIP_DOCKER -eq "1") -or ($env:SETUP_SKIP_DOCKER -eq "true")
 
 # Trap Ctrl+C to exit immediately
 $script:cancelled = $false
@@ -125,22 +142,26 @@ Write-Host ""
 Write-Host "Checking prerequisites..."
 Write-Host ""
 
-try {
-    docker --version | Out-Null
-    Write-Host "[OK] Docker is installed" -ForegroundColor Green
-} catch {
-    Write-Host "[X] Docker is not installed. Please install Docker Desktop first." -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit 1
-}
+if ($SkipDockerCheck) {
+    Write-Host "[!] Skipping Docker and Docker Compose checks" -ForegroundColor Yellow
+} else {
+    try {
+        docker --version | Out-Null
+        Write-Host "[OK] Docker is installed" -ForegroundColor Green
+    } catch {
+        Write-Host "[X] Docker is not installed. Please install Docker Desktop first." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
 
-try {
-    docker compose version | Out-Null
-    Write-Host "[OK] Docker Compose is installed" -ForegroundColor Green
-} catch {
-    Write-Host "[X] Docker Compose is not installed." -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit 1
+    try {
+        docker compose version | Out-Null
+        Write-Host "[OK] Docker Compose is installed" -ForegroundColor Green
+    } catch {
+        Write-Host "[X] Docker Compose is not installed." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
 }
 
 try {

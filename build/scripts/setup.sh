@@ -30,6 +30,20 @@ cd "$PROJECT_ROOT"
 # ========================================================================
 SCRIPT_ARGS=""
 AUTO_YES=false
+SKIP_DOCKER_CHECK=false
+SHOW_HELP=false
+
+show_help() {
+    echo ""
+    echo "SereniBase Interactive Setup"
+    echo ""
+    echo "Usage:"
+    echo "  ./setup.sh                     # Interactive mode"
+    echo "  ./setup.sh --auto-yes           # Non-interactive with defaults"
+    echo "  ./setup.sh --skip-docker        # Skip Docker prerequisite checks"
+    echo "  ./setup.sh --help               # Show this help"
+    echo ""
+}
 
 # Helper function to store script argument (bash 3.2 compatible)
 set_script_arg() {
@@ -59,6 +73,14 @@ while [[ $# -gt 0 ]]; do
             AUTO_YES=true
             shift
             ;;
+        --skip-docker)
+            SKIP_DOCKER_CHECK=true
+            shift
+            ;;
+        --help|-h)
+            SHOW_HELP=true
+            shift
+            ;;
         --*=*)
             # Handle --key=value format
             key="${1#--}"
@@ -84,6 +106,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [ "$SHOW_HELP" = true ]; then
+    show_help
+    exit 0
+fi
 
 # Cleanup function to stop all processes on Ctrl+C
 cleanup() {
@@ -341,20 +368,24 @@ ensure_baseui_api_base_url() {
 check_prerequisites() {
     echo -e "\n${BLUE}Checking prerequisites...${NC}\n"
     
-    # Check Docker
-    if command -v docker &> /dev/null; then
-        print_step "Docker is installed: $(docker --version)"
+    if [ "$SKIP_DOCKER_CHECK" = true ]; then
+        print_warning "Skipping Docker and Docker Compose checks"
     else
-        print_error "Docker is not installed. Please install Docker first."
-        exit 1
-    fi
-    
-    # Check Docker Compose
-    if docker compose version &> /dev/null; then
-        print_step "Docker Compose is installed: $(docker compose version)"
-    else
-        print_error "Docker Compose is not installed. Please install Docker Compose first."
-        exit 1
+        # Check Docker
+        if command -v docker &> /dev/null; then
+            print_step "Docker is installed: $(docker --version)"
+        else
+            print_error "Docker is not installed. Please install Docker first."
+            exit 1
+        fi
+        
+        # Check Docker Compose
+        if docker compose version &> /dev/null; then
+            print_step "Docker Compose is installed: $(docker compose version)"
+        else
+            print_error "Docker Compose is not installed. Please install Docker Compose first."
+            exit 1
+        fi
     fi
     
     # Check Git
