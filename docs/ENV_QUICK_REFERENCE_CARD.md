@@ -76,8 +76,8 @@ TEMPORARY_USER_PASSWORD=random_temp_password_456
 |----------|------|---------|-------|
 | `OWNER_FIRST_NAME` | 🟢 | `Admin` | Admin first name |
 | `OWNER_LAST_NAME` | 🟢 | `User` | Admin last name |
-| `OWNER_EMAIL` | 🔴 | `admin@example.com` | **Must be valid email** |
-| `OWNER_PASSWORD` | 🔴 | `Admin@123` | **Change immediately!** |
+| `OWNER_EMAIL` | 🔴 | `your-admin-email@example.com` | **Must be valid email** |
+| `OWNER_PASSWORD` | 🔴 | `your-strong-password` | **Set a strong password** |
 | `TEMPORARY_USER_PASSWORD` | 🟡 | Random string | For new users |
 
 ---

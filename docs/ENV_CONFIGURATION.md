@@ -93,8 +93,8 @@ openssl rand -base64 32
 |----------|-------------|---------|----------|
 | `OWNER_FIRST_NAME` | Admin first name | `Admin` | No |
 | `OWNER_LAST_NAME` | Admin last name | `User` | No |
-| `OWNER_EMAIL` | Admin email | `admin@example.com` | ✅ Yes |
-| `OWNER_PASSWORD` | Admin password | `Admin@123` | ✅ Yes |
+| `OWNER_EMAIL` | Admin email | `your-admin-email@example.com` | ✅ Yes |
+| `OWNER_PASSWORD` | Admin password | `your-strong-password` | ✅ Yes |
 | `TEMPORARY_USER_PASSWORD` | Default password for new users | - | ✅ Yes |
 
 **⚠️ Security:** Change default passwords in production!

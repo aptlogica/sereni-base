@@ -167,8 +167,8 @@ Create the first administrator account.
 
 Admin First Name [Admin]: John
 Admin Last Name [User]: Doe
-Admin Email [admin@example.com]: john.doe@company.com
-Admin Password [Admin@123]: MySecurePassword123!
+Admin Email [your-admin-email@example.com]: john.doe@company.com
+Admin Password [your-strong-password]: MySecurePassword123!
 Confirm Password: MySecurePassword123!
 
 ... (continues with more prompts)
@@ -198,7 +198,7 @@ PUBLIC_HOST=localhost
 
 ### OWNER_EMAIL
 ```bash
-OWNER_EMAIL=admin@example.com
+OWNER_EMAIL=your-admin-email@example.com
 ```
 
 **Purpose:** First admin user's login email
@@ -210,7 +210,7 @@ OWNER_EMAIL=admin@example.com
 
 ### OWNER_PASSWORD
 ```bash
-OWNER_PASSWORD=Admin@123
+OWNER_PASSWORD=your-strong-password
 ```
 
 **Purpose:** First admin user's password
@@ -578,8 +578,8 @@ EMAIL_SMTP_PASSWORD=your_app_password
 EMAIL_FROM_EMAIL=your_email@gmail.com
 
 # Security
-OWNER_EMAIL=admin@example.com
-OWNER_PASSWORD=Admin@123
+OWNER_EMAIL=your-admin-email@example.com
+OWNER_PASSWORD=your-strong-password
 AUTH_JWT_SECRET=docker-dev-secret-key-min-32-characters
 
 # Redis

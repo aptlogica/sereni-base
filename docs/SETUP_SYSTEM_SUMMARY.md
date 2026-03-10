@@ -195,8 +195,8 @@ ASSET_MAX_SIZE=5242880
 
 # Prompts (just press Enter for defaults):
 IP Address or Domain [localhost]: [Enter]
-Admin Email [admin@example.com]: dev@test.com
-Admin Password [Admin@123]: MyPass123!
+Admin Email [your-admin-email@example.com]: dev@test.com
+Admin Password [your-strong-password]: MyPass123!
 Confirm Password: MyPass123!
 JWT Secret [change-this...]: test-jwt-secret-min-32-characters
 Use Docker PostgreSQL? [y]: [Enter]
