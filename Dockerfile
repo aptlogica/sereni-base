@@ -23,10 +23,8 @@ COPY . .
 
 # Build the application with optimizations
 # Note: Swagger docs in /docs are embedded in the binary at compile time
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
-    -a -installsuffix cgo \
-    -o main ./cmd/server/main.go
+# Single-line RUN avoids line-continuation parse issues on some Docker setups.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-w -s -extldflags "-static"' -a -installsuffix cgo -o main ./cmd/server/main.go
 
 # ==============================================================================
 # Production Stage
@@ -43,10 +41,7 @@ COPY --from=builder /app/main .
 COPY wait-for-postgres.sh .
 
 # Create assets directory and non-root user for security
-RUN chmod +x wait-for-postgres.sh && \
-    mkdir -p /app/assets && \
-    adduser -D -s /bin/sh serenibase && \
-    chown -R serenibase:serenibase /app
+RUN chmod +x wait-for-postgres.sh && mkdir -p /app/assets && adduser -D -s /bin/sh serenibase && chown -R serenibase:serenibase /app
 
 # Switch to non-root user
 USER serenibase
@@ -55,8 +50,7 @@ USER serenibase
 EXPOSE 8080
 
 # Health check endpoint
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/api/v1/health || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD curl -f http://localhost:8080/api/v1/health || exit 1
 
 # Run the application
 CMD ["./main"]
