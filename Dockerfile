@@ -23,10 +23,8 @@ COPY . .
 
 # Build the application with optimizations
 # Note: Swagger docs in /docs are embedded in the binary at compile time
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
-    -a -installsuffix cgo \
-    -o main ./cmd/server/main.go
+# Single-line RUN avoids line-continuation parse issues on some Docker setups.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-w -s -extldflags "-static"' -a -installsuffix cgo -o main ./cmd/server/main.go
 
 # ==============================================================================
 # Production Stage
