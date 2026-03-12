@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package dto
 
 import (
@@ -37,16 +42,15 @@ func (r *RelationInsertion) Map() map[string]interface{} {
 		"source_lookup_columns": r.SourceLookupColumns,
 		"target_lookup_columns": r.TargetLookupColumns,
 		"relation_type":         r.RelationType,
-		"created_time":            r.CreatedAt,
-		"last_modified_time":            r.UpdatedAt,
+		"created_time":          r.CreatedAt,
+		"last_modified_time":    r.UpdatedAt,
 	}
 }
-
 
 type RelationUpdate struct {
 	SourceLookupColumns interface{} `db:"source_lookup_columns" json:"source_lookup_columns,omitempty" mapstructure:"source_lookup_columns"`
 	TargetLookupColumns interface{} `db:"target_lookup_columns" json:"target_lookup_columns,omitempty" mapstructure:"target_lookup_columns"`
-	UpdatedAt time.Time `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
+	UpdatedAt           time.Time   `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
 }
 
 func (r *RelationUpdate) Map() map[string]interface{} {

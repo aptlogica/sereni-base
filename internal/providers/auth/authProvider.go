@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package auth
 
 import (
@@ -163,7 +168,7 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 
 func (a *AuthProviderService) RefreshToken(ctx context.Context, reqBody AuthServiceRefreshRequest) (Tokens, error) {
 	// Call auth-service /auth/refresh endpoint
-	
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return Tokens{}, fmt.Errorf(errMarshalRequest, err)

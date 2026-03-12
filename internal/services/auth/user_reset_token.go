@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package services
 
 import (
@@ -62,7 +67,7 @@ func (s *userResetTokenService) CreateUserResetToken(ctx context.Context, req dt
 			}
 		}
 	}
-		recordData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
+	recordData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create reset token record")
 		return tenant.UserResetToken{}, app_errors.LogDatabaseError(err, "failed to create reset token record")
@@ -100,11 +105,11 @@ func (s *userResetTokenService) GetUserResetToken(ctx context.Context, token str
 
 	tokenData := tokensData[0]
 
-	   var outToken tenant.UserResetToken
-	   if err := helpers.MapToStruct(tokenData, &outToken); err != nil {
-		   return tenant.UserResetToken{}, app_errors.ErrMapToStruct
-	   }
-	   return outToken, nil
+	var outToken tenant.UserResetToken
+	if err := helpers.MapToStruct(tokenData, &outToken); err != nil {
+		return tenant.UserResetToken{}, app_errors.ErrMapToStruct
+	}
+	return outToken, nil
 }
 
 func (s *userResetTokenService) DeleteTokensByUserId(ctx context.Context, userId string) error {

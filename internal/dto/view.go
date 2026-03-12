@@ -1,4 +1,9 @@
 // serenibase/internal/dto/view_dto.go
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package dto
 
 import (
@@ -59,7 +64,7 @@ func (v *ViewInsertion) Map() map[string]interface{} {
 		"created_time":       v.CreatedAt,
 		"last_modified_time": v.UpdatedAt,
 		"created_by":         v.CreatedBy,
-		"last_modified_by":         v.UpdatedBy,
+		"last_modified_by":   v.UpdatedBy,
 	}
 }
 

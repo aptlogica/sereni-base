@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package dto
 
 import (
@@ -27,30 +32,27 @@ type AssetInsertion struct {
 	Width        int       `db:"width" json:"width" mapstructure:"width" optional:"true" omitempty:"true"`
 	CreatedAt    time.Time `db:"created_time" json:"created_time" mapstructure:"created_time"`
 	UpdatedAt    time.Time `db:"last_modified_time" json:"last_modified_time" mapstructure:"last_modified_time"`
-
 }
 
 func (a AssetInsertion) Map() map[string]interface{} {
 	return map[string]interface{}{
-		"id":            a.ID,
-		"title":         a.Title,
-		"url":           a.Url,
-		"thumbnail_url": a.ThumbnailUrl,
-		"base_path":     a.BasePath,
-		"mime_type":     a.MimeType,
-		"size":          a.Size,
-		"height":        a.Height,
-		"width":         a.Width,
-		"created_time": a.CreatedAt,
+		"id":                 a.ID,
+		"title":              a.Title,
+		"url":                a.Url,
+		"thumbnail_url":      a.ThumbnailUrl,
+		"base_path":          a.BasePath,
+		"mime_type":          a.MimeType,
+		"size":               a.Size,
+		"height":             a.Height,
+		"width":              a.Width,
+		"created_time":       a.CreatedAt,
 		"last_modified_time": a.UpdatedAt,
-
 	}
 }
 
 type AssetUpdate struct {
 	Title     *string   `db:"title" json:"title,omitempty" mapstructure:"title"`
 	UpdatedAt time.Time `db:"last_modified_time" json:"last_modified_time,omitempty" mapstructure:"last_modified_time"`
-
 }
 
 func (a AssetUpdate) Map() map[string]interface{} {

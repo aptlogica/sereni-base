@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package dto
 
 import (
@@ -17,12 +22,12 @@ type RoleInsertion struct {
 
 func (r RoleInsertion) Map() map[string]interface{} {
 	return map[string]interface{}{
-		"id":          r.ID,
-		"name":        r.Name,
-		"description": r.Description,
-		"is_default":  r.IsDefault,
-		"created_time":  r.CreatedAt,
-		"last_modified_time":  r.UpdatedAt,
+		"id":                 r.ID,
+		"name":               r.Name,
+		"description":        r.Description,
+		"is_default":         r.IsDefault,
+		"created_time":       r.CreatedAt,
+		"last_modified_time": r.UpdatedAt,
 	}
 }
 
