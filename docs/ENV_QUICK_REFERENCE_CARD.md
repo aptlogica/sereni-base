@@ -180,17 +180,7 @@ TEMPORARY_USER_PASSWORD=random_temp_password_456
 
 ---
 
-## 🔄 Redis (Optional)
-
-| Variable | Type | Default | Notes |
-|----------|------|---------|-------|
-| `REDIS_ENABLED` | 🟢 | `true` | Enable Redis caching |
-| `REDIS_URL` | 🔵 | `redis://localhost:6379` | If enabled |
-| `REDIS_PASSWORD` | 🔵 | Empty | If Redis has auth |
-
----
-
-## 📊 Configuration Decision Tree
+##  Configuration Decision Tree
 
 ```
 Do you need to change this variable?

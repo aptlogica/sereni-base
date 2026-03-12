@@ -153,11 +153,6 @@ func Load() (*Config, error) {
 	viper.BindEnv("auth.jwt.refresh_token_expiry", "AUTH_JWT_REFRESH_TOKEN_EXPIRY")
 	viper.BindEnv("auth.jwt.issuer", "AUTH_JWT_ISSUER")
 
-	// Redis Config
-	viper.BindEnv("redis.enabled", "REDIS_ENABLED")
-	viper.BindEnv("redis.url", "REDIS_URL")
-	viper.BindEnv("redis.password", "REDIS_PASSWORD")
-
 	// Email Config
 	viper.BindEnv("email.url", "EMAIL_URL")
 

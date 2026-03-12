@@ -59,7 +59,7 @@ func RequestSizeLimit(maxSize int64) gin.HandlerFunc {
 // RateLimiter provides basic rate limiting
 func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
 	// This is a simple in-memory rate limiter
-	// For production, use Redis or similar
+	// For production, consider using external rate limiting solutions
 	clients := make(map[string][]int64)
 
 	return gin.HandlerFunc(func(c *gin.Context) {

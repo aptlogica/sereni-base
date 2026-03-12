@@ -64,7 +64,7 @@
 ### Why SereniBase?
 
 **Problem:** Most no-code database platforms are:
-- Cloud-only SaaS with monthly subscriptions and data lock-in
+- Cloud-only SaaS with vendor lock-in
 - Limited customization and extensibility
 - Expensive as data and users scale
 - Privacy concerns with sensitive business data
@@ -339,7 +339,6 @@
 - **Nginx**: Reverse proxy and load balancer
 - **MinIO**: S3-compatible object storage
 - **ClamAV**: Antivirus scanning
-- **Redis** (optional): Caching layer
 
 **Development Tools**
 - **Zerolog**: Structured logging
@@ -357,8 +356,8 @@
 | **Docker** | 20.10+ | [Install Docker](https://docs.docker.com/get-docker/) |
 | **Docker Compose** | 2.0+ | [Install Compose](https://docs.docker.com/compose/install/) |
 | **Git** | Latest | [Install Git](https://git-scm.com/downloads) |
-| **Make (optional)** | Latest | Windows: `choco install make` |
-| **SMTP Access** | Optional | Gmail, SendGrid, Mailgun, or custom SMTP |
+| **Make** | Latest | Windows: `choco install make` |
+| **SMTP Access** | - | Gmail, SendGrid, Mailgun, or custom SMTP |
 
 ### 5-Minute Setup
 
@@ -468,7 +467,6 @@ docker compose logs -f serenibase
 - Go 1.24+
 - PostgreSQL 15+
 - Node.js 18+ (for frontend)
-- Redis (optional, for caching)
 
 **Backend Setup:**
 
@@ -641,16 +639,6 @@ ANTIVIRUS_ENABLED=true                   # Enable/disable antivirus scanning
 ANTIVIRUS_ALLOWED_ORIGINS=http://localhost:8080,http://serenibase:8080
 
 # ------------------------------------------------------------------------------
-#                           REDIS CONFIGURATION (OPTIONAL)
-# ------------------------------------------------------------------------------
-
-REDIS_ENABLED=false                      # Enable Redis for caching
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
-
-# ------------------------------------------------------------------------------
 #                           CORS CONFIGURATION
 # ------------------------------------------------------------------------------
 
@@ -690,7 +678,6 @@ PUBLIC_HOST=staging.serenibase.com
 DATABASE_SSL_MODE=require
 LOG_LEVEL=info
 ANTIVIRUS_ENABLED=true
-REDIS_ENABLED=true
 ```
 
 **Production (.env.production):**
@@ -702,7 +689,6 @@ DATABASE_SSL_MODE=verify-full
 DATABASE_MAX_OPEN_CONNS=200
 LOG_LEVEL=warn
 ANTIVIRUS_ENABLED=true
-REDIS_ENABLED=true
 STORAGE_DRIVER=s3
 ```
 
@@ -1527,7 +1513,6 @@ services:
       - .env
     depends_on:
       - postgres
-      - redis
     networks:
       - serenibase-network
     deploy:
@@ -1554,15 +1539,6 @@ services:
           cpus: '4'
           memory: 8G
 
-  redis:
-    image: redis:7-alpine
-    restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - redis_data:/data
-    networks:
-      - serenibase-network
-
   nginx:
     image: nginx:alpine
     restart: always
@@ -1579,7 +1555,6 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
 
 networks:
   serenibase-network:
@@ -1679,7 +1654,6 @@ data:
   SERVER_ENV: "production"
   DATABASE_HOST: "postgres-service"
   DATABASE_PORT: "5432"
-  REDIS_HOST: "redis-service"
 ```
 
 **Secret:**
@@ -1699,7 +1673,7 @@ stringData:
 **AWS:**
 - **ECS/Fargate**: Container orchestration
 - **RDS PostgreSQL**: Managed database
-- **ElastiCache**: Managed Redis
+- **S3**: File storage
 - **S3**: File storage
 - **ALB**: Load balancer
 - **Route53**: DNS
@@ -1707,7 +1681,6 @@ stringData:
 **Google Cloud Platform:**
 - **Cloud Run**: Serverless containers
 - **Cloud SQL**: Managed PostgreSQL
-- **Memorystore**: Managed Redis
 - **Cloud Storage**: File storage
 - **Cloud Load Balancing**: Load balancer
 - **Cloud DNS**: DNS
@@ -1715,7 +1688,6 @@ stringData:
 **Azure:**
 - **Container Instances**: Container hosting
 - **Azure Database for PostgreSQL**: Managed database
-- **Azure Cache for Redis**: Managed Redis
 - **Blob Storage**: File storage
 - **Application Gateway**: Load balancer
 - **Azure DNS**: DNS
@@ -2413,14 +2385,7 @@ DATABASE_MAX_IDLE_CONNS=25       # Idle connections to maintain
 DATABASE_CONN_MAX_LIFETIME=1h    # Recycle connections
 ```
 
-**2. Enable Redis Caching:**
-```dotenv
-REDIS_ENABLED=true
-REDIS_HOST=redis
-REDIS_PORT=6379
-```
-
-**3. PostgreSQL Performance Tuning:**
+**2. Database Connection Pooling:**
 ```sql
 -- Analyze query performance
 EXPLAIN ANALYZE SELECT * FROM records WHERE table_id = 'tbl_123';
@@ -2582,7 +2547,7 @@ Similar to Airtable migration steps above.
 A: Yes! SereniBase is 100% self-hosted and open-source. Deploy on your own infrastructure with Docker.
 
 **Q: What's the difference between SereniBase and Airtable?**
-A: SereniBase is self-hosted and open-source, giving you complete control over your data and infrastructure. No subscription fees, no per-user costs, and unlimited customization.
+A: SereniBase is self-hosted and open-source, giving you complete control over your data and infrastructure. No per-user costs, unlimited customization, and full data ownership.
 
 **Q: Can I use SereniBase for production applications?**
 A: Yes! SereniBase is production-ready with RBAC, audit logging, comprehensive testing, and enterprise features.
