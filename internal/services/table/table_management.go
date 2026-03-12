@@ -2333,7 +2333,7 @@ func (s tableManagementService) unlinkIntArray(
 
 	newArr := make([]int64, 0, len(arrInt64))
 	for _, v := range arrInt64 {
-		if int(v) != value {
+		if v != int64(value) {
 			newArr = append(newArr, v)
 		}
 	}
