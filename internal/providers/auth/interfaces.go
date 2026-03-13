@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package auth
 
 import (
@@ -10,8 +15,8 @@ type Tokens struct {
 }
 
 type Claims struct {
-	UserId   string `json:"user_id"`
-	Roles    string `json:"roles"`
+	UserId string `json:"user_id"`
+	Roles  string `json:"roles"`
 }
 
 type AuthResult struct {

@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package interfaces
 
 import (
@@ -20,5 +25,5 @@ type Provider interface {
 	Ping(ctx context.Context) error
 
 	// ScanReader scans the provided content stream and returns the scan result
-	ScanReader(ctx context.Context,fileName string, r io.Reader) (ScanResult, error)
+	ScanReader(ctx context.Context, fileName string, r io.Reader) (ScanResult, error)
 }

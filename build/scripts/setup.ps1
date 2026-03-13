@@ -241,7 +241,7 @@ OWNER_FIRST_NAME=Admin
 OWNER_LAST_NAME=User
 OWNER_EMAIL=admin@example.com
 OWNER_PASSWORD=Admin@123
-TEMPORARY_USER_PASSWORD=FC4i;<S8q?~0
+TEMPORARY_USER_PASSWORD=CHANGE_THIS      # Default password for new users
 
 # ------------------------------------------------------------------------------
 #                           EMAIL CONFIGURATION

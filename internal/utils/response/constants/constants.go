@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package constants
 
 // app_errors "serenibase/internal/app-errors"
@@ -41,7 +46,6 @@ var ErrorCodes = MergeMaps(
 	RoleErrorCodes,
 	AssetErrorCodes,
 	TableErrorCodes,
-	SubscriptionPlanErrorCodes,
 	RBACErrorCodeDetails,
 )
 
@@ -55,7 +59,6 @@ var SuccessCodes = MergeMaps(
 	RoleSuccessCodes,
 	AssetSuccessCodes,
 	TableSuccessCodes,
-	SubscriptionPlanSuccessCodes,
 )
 
 // 	CoreErrorCodes,

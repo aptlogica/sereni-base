@@ -31,7 +31,6 @@ func TestAllErrorConstants(t *testing.T) {
 		// New refactoring errors
 		{"ErrInvalidDateOfBirth", appErrors.ErrInvalidDateOfBirth},
 		{"ErrRoleCreation", appErrors.ErrRoleCreation},
-		{"ErrSubscriptionPlanNotFound", appErrors.ErrSubscriptionPlanNotFound},
 		{"ErrRoleNotFound", appErrors.ErrRoleNotFound},
 		{"ErrUserDisableFailed", appErrors.ErrUserDisableFailed},
 		{"ErrInvalidWorkspaceMemberData", appErrors.ErrInvalidWorkspaceMemberData},
@@ -65,9 +64,6 @@ func TestAllErrorConstants(t *testing.T) {
 		// Role management errors
 		{"RoleAlreadyExists", appErrors.RoleAlreadyExists},
 		{"RoleNotFound", appErrors.RoleNotFound},
-
-		// Subscription plan errors
-		{"SubscriptionPlanAlreadyExists", appErrors.SubscriptionPlanAlreadyExists},
 	}
 
 	for _, tt := range tests {
@@ -445,8 +441,6 @@ func TestAllTenantErrors(t *testing.T) {
 	}{
 		{"TenantAlreadyExists", appErrors.TenantAlreadyExists},
 		{"TenantNotFound", appErrors.TenantNotFound},
-		{"TenantSubscriptionAlreadyExists", appErrors.TenantSubscriptionAlreadyExists},
-		{"TenantSubscriptionNotFound", appErrors.TenantSubscriptionNotFound},
 	}
 
 	for _, tt := range tenantErrors {

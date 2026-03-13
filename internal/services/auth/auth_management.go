@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package services
 
 import (
@@ -333,7 +338,7 @@ func (a *authManagementService) ResendOTP(ctx context.Context, req dto.ResendOTP
 func (a *authManagementService) RefreshToken(ctx context.Context, req dto.RefreshTokenRequest) (dto.TokenResponse, error) {
 
 	reqBody := authProviderInterface.AuthServiceRefreshRequest{
-		RefreshToken:  req.RefreshToken,
+		RefreshToken: req.RefreshToken,
 	}
 	tokens, err := a.authProviderService.RefreshToken(ctx, reqBody)
 	if err != nil {

@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package dto
 
 import (
@@ -33,21 +38,21 @@ type ModelDTO struct {
 }
 
 type ModelInsertion struct {
-	ID          string                 `json:"id" binding:"required"`
-	BaseID      string                 `json:"base_id" binding:"required"`
-	WorkspaceID string                 `json:"workspace_id" binding:"required"`
-	Title       string                 `json:"title" binding:"required"`
-	Description string                 `json:"description" binding:"omitempty"`
-	Alias       string                 `json:"alias" binding:"required"`
-	Type        string                 `json:"type" binding:"omitempty,oneof=table view junction"`
-	Meta        map[string]interface{} `json:"meta,omitempty"`
-	Schema      string                 `json:"schema,omitempty"`
-	Tags        string                 `json:"tags,omitempty"`
-	OrderIndex  float64                `json:"order_index,omitempty"`
-	CreatedBy   string                 `json:"created_by"`
-	UpdatedBy   string                 `json:"last_modified_by"`
-	CreatedTime   time.Time              `json:"created_time"`
-	LastModifiedTime   time.Time              `json:"last_modified_time"`
+	ID               string                 `json:"id" binding:"required"`
+	BaseID           string                 `json:"base_id" binding:"required"`
+	WorkspaceID      string                 `json:"workspace_id" binding:"required"`
+	Title            string                 `json:"title" binding:"required"`
+	Description      string                 `json:"description" binding:"omitempty"`
+	Alias            string                 `json:"alias" binding:"required"`
+	Type             string                 `json:"type" binding:"omitempty,oneof=table view junction"`
+	Meta             map[string]interface{} `json:"meta,omitempty"`
+	Schema           string                 `json:"schema,omitempty"`
+	Tags             string                 `json:"tags,omitempty"`
+	OrderIndex       float64                `json:"order_index,omitempty"`
+	CreatedBy        string                 `json:"created_by"`
+	UpdatedBy        string                 `json:"last_modified_by"`
+	CreatedTime      time.Time              `json:"created_time"`
+	LastModifiedTime time.Time              `json:"last_modified_time"`
 }
 
 // UpdateModelRequest DTO for updating an existing model
@@ -69,21 +74,21 @@ type UpdateModelRequest struct {
 
 func (r *ModelInsertion) Map() map[string]interface{} {
 	return map[string]interface{}{
-		"id":           r.ID,
-		"base_id":      r.BaseID,
-		"workspace_id": r.WorkspaceID,
-		"description":  r.Description,
-		"title":        r.Title,
-		"alias":        r.Alias,
-		"type":         r.Type,
-		"meta":         helpers.InterfaceToJSONString(r.Meta),
-		"schema":       r.Schema,
-		"tags":         r.Tags,
-		"order_index":  r.OrderIndex,
-		"created_by":   r.CreatedBy,
+		"id":                 r.ID,
+		"base_id":            r.BaseID,
+		"workspace_id":       r.WorkspaceID,
+		"description":        r.Description,
+		"title":              r.Title,
+		"alias":              r.Alias,
+		"type":               r.Type,
+		"meta":               helpers.InterfaceToJSONString(r.Meta),
+		"schema":             r.Schema,
+		"tags":               r.Tags,
+		"order_index":        r.OrderIndex,
+		"created_by":         r.CreatedBy,
 		"last_modified_by":   r.UpdatedBy,
-		"created_time":   r.CreatedTime,
-		"last_modified_time":   r.LastModifiedTime,
+		"created_time":       r.CreatedTime,
+		"last_modified_time": r.LastModifiedTime,
 	}
 }
 

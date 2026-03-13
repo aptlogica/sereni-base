@@ -27,9 +27,6 @@ Source: `internal/utils/response/constants`
 | `ROL_SUCCESS_4001` | 201 | Role created successfully | The role has been created successfully |
 | `ROL_SUCCESS_4002` | 200 | Role updated successfully | The role has been updated successfully |
 | `ROL_SUCCESS_4003` | 200 | Role deleted successfully | The role has been deleted successfully |
-| `SUB_SUCCESS_5001` | 201 | Subscription plan created successfully | The subscription plan has been created successfully |
-| `SUB_SUCCESS_5002` | 200 | Subscription plan updated successfully | The subscription plan has been updated successfully |
-| `SUB_SUCCESS_5003` | 200 | Subscription plan deleted successfully | The subscription plan has been deleted successfully |
 | `TBL_SUCCESS_5001` | 201 | Table created successfully | The table has been created successfully |
 | `TBL_SUCCESS_5002` | 200 | Table updated successfully | The table has been updated successfully |
 | `TBL_SUCCESS_5003` | 200 | Table deleted successfully | The table has been deleted successfully |
@@ -50,7 +47,6 @@ Source: `internal/utils/response/constants`
 | `TNT_SUCCESS_3001` | 201 | Tenant created successfully | The tenant has been created successfully |
 | `TNT_SUCCESS_3002` | 200 | Tenant updated successfully | The tenant has been updated successfully |
 | `TNT_SUCCESS_3003` | 200 | Tenant deleted successfully | The tenant has been deleted successfully |
-| `TNT_SUCCESS_3004` | 201 | Tenant subscription created successfully | The tenant subscription has been created successfully |
 | `TNT_SUCCESS_3005` | 201 | Tenant membership created successfully | The tenant membership has been created successfully |
 | `TNT_SUCCESS_3006` | 200 | Tenant fetched successfully | The tenant has been fetched successfully |
 | `USR_SUCCESS_2001` | 201 | User created successfully | The user has been created successfully |
@@ -134,8 +130,6 @@ Source: `internal/utils/response/constants`
 | `AUTH_VAL_1016` | 400 | Invalid request payload | User ID is invalid |
 | `AUTH_VAL_1017` | 400 | Invalid request payload | OTP is required |
 | `AUTH_VAL_1018` | 400 | Invalid request payload | OTP is invalid |
-| `AUTH_VAL_1019` | 400 | Invalid request payload | Subscription ID is required |
-| `AUTH_VAL_1020` | 400 | Invalid request payload | Subscription ID is invalid |
 | `AUTH_VAL_1021` | 400 | Invalid request payload | Role ID is required |
 | `AUTH_VAL_1022` | 400 | Invalid request payload | Role ID is invalid |
 | `AUTH_VAL_1023` | 400 | Invalid request payload | Header 'schema' is required |
@@ -218,7 +212,6 @@ Source: `internal/utils/response/constants`
 | `ERR_1013` | 400 | Folder invalid path | Folder invalid path |
 | `ERR_1014` | 400 | Invalid date of birth | Invalid date of birth |
 | `ERR_1015` | 500 | Role creation failed | Role creation failed |
-| `ERR_1016` | 404 | Subscription plan not found | Subscription plan not found |
 | `ERR_1017` | 404 | Role not found | Role not found |
 | `ERR_1018` | 500 | User disable failed | User disable failed |
 | `ERR_1019` | 500 | Invalid workspace member data | Invalid workspace member data |
@@ -271,11 +264,6 @@ Source: `internal/utils/response/constants`
 | `ROL_4005` | 500 | Role not deleted | The role could not be deleted due to an internal error |
 | `ROL_4006` | 400 | Role is required | A role must be provided in the request |
 | `ROL_4007` | 400 | Invalid role | The specified role is not valid |
-| `SUB_5001` | 404 | Subscription plan not found | The specified subscription plan could not be found |
-| `SUB_5002` | 409 | Subscription plan already exists | A subscription plan with the given information already exists |
-| `SUB_5003` | 500 | Subscription plan not created | The subscription plan could not be created due to an internal error |
-| `SUB_5004` | 500 | Subscription plan not updated | The subscription plan could not be updated due to an internal error |
-| `SUB_5005` | 500 | Subscription plan not deleted | The subscription plan could not be deleted due to an internal error |
 | `TBL_1001` | 400 | Base ID is required | The base_id field is required |
 | `TBL_1002` | 400 | Invalid Base ID | The provided base_id is invalid or malformed |
 | `TBL_1003` | 400 | Workspace ID is required | The workspace_id field is required |
@@ -336,9 +324,7 @@ Source: `internal/utils/response/constants`
 | `TNT_3003` | 500 | Tenant not created | The tenant could not be created due to an internal error |
 | `TNT_3004` | 500 | Tenant not updated | The tenant could not be updated due to an internal error |
 | `TNT_3005` | 500 | Tenant not deleted | The tenant could not be deleted due to an internal error |
-| `TNT_3006` | 500 | Tenant subscription not created | The tenant subscription could not be created due to an internal error |
 | `TNT_3007` | 500 | Tenant membership not created | The tenant membership could not be created due to an internal error |
-| `TNT_3008` | 404 | Tenant subscription not found | The specified tenant subscription could not be found |
 | `TNT_3009` | 404 | Tenant membership not found | The specified tenant membership could not be found |
 | `USR_2005` | 409 | User already exists | A user with the given information already exists |
 | `USR_2006` | 404 | User not found | The specified user could not be found |

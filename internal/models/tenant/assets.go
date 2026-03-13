@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package tenant
 
 import (
@@ -24,20 +29,19 @@ type Assets struct {
 
 func (a Assets) Map() map[string]interface{} {
 	return map[string]interface{}{
-		"id":            a.ID,
-		"title":         a.Title,
-		"url":           a.Url,
-		"thumbnail_url": a.ThumbnailUrl,
-		"base_path":     a.BasePath,
-		"mime_type":     a.MimeType,
-		"size":          a.Size,
-		"height":        a.Height,
-		"width":         a.Width,
-		"created_time":    a.CreatedAt,
-		"last_modified_time":    a.UpdatedAt,
+		"id":                 a.ID,
+		"title":              a.Title,
+		"url":                a.Url,
+		"thumbnail_url":      a.ThumbnailUrl,
+		"base_path":          a.BasePath,
+		"mime_type":          a.MimeType,
+		"size":               a.Size,
+		"height":             a.Height,
+		"width":              a.Width,
+		"created_time":       a.CreatedAt,
+		"last_modified_time": a.UpdatedAt,
 	}
 }
-
 
 func (Assets) TableName(prefix string) string {
 	return fmt.Sprintf("\"%s\".assets", prefix)

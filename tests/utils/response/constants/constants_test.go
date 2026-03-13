@@ -61,7 +61,6 @@ func TestErrorStruct(t *testing.T) {
 		{"FolderInvalidPath", constants.Error.FolderInvalidPath, "ERR_1013"},
 		{"InvalidDateOfBirth", constants.Error.InvalidDateOfBirth, "ERR_1014"},
 		{"RoleCreationError", constants.Error.RoleCreationError, "ERR_1015"},
-		{"SubscriptionPlanNotFound", constants.Error.SubscriptionPlanNotFound, "ERR_1016"},
 		{"RoleNotFound", constants.Error.RoleNotFound, "ERR_1017"},
 		{"UserDisableFailed", constants.Error.UserDisableFailed, "ERR_1018"},
 		{"InvalidWorkspaceMemberData", constants.Error.InvalidWorkspaceMemberData, "ERR_1019"},

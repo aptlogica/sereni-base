@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package app_errors
 
 import (
@@ -31,7 +36,6 @@ var (
 	// New errors for refactoring
 	ErrInvalidDateOfBirth         = errors.New("invalid date of birth format")
 	ErrRoleCreation               = errors.New("failed to create role")
-	ErrSubscriptionPlanNotFound   = errors.New("subscription plan not found")
 	ErrRoleNotFound               = errors.New("role not found")
 	ErrUserDisableFailed          = errors.New("failed to disable user")
 	ErrInvalidWorkspaceMemberData = errors.New("invalid workspace member data")
@@ -95,22 +99,10 @@ var (
 	RoleNotFound      = errors.New("role not found")
 )
 
-// subscription plan management
-var (
-	SubscriptionPlanAlreadyExists = errors.New("subscription plan already exists")
-	SubscriptionPlanNotFound      = errors.New("subscription plan not found")
-)
-
 // tenant management
 var (
 	TenantAlreadyExists = errors.New("tenant already exists")
 	TenantNotFound      = errors.New("tenant not found")
-)
-
-// tenant subscription management
-var (
-	TenantSubscriptionAlreadyExists = errors.New("tenant subscription already exists")
-	TenantSubscriptionNotFound      = errors.New("tenant subscription not found")
 )
 
 // auth management

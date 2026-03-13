@@ -581,10 +581,6 @@ EMAIL_FROM_EMAIL=your_email@gmail.com
 OWNER_EMAIL=your-admin-email@example.com
 OWNER_PASSWORD=your-strong-password
 AUTH_JWT_SECRET=docker-dev-secret-key-min-32-characters
-
-# Redis
-REDIS_ENABLED=true
-REDIS_URL=redis://redis:6379
 ```
 
 **Start Everything:**

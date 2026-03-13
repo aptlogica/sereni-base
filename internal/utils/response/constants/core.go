@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package constants
 
 import "net/http"
@@ -60,7 +65,6 @@ var Error = struct {
 	// New refactored codes
 	InvalidDateOfBirth         ResponseCode
 	RoleCreationError          ResponseCode
-	SubscriptionPlanNotFound   ResponseCode
 	RoleNotFound               ResponseCode
 	UserDisableFailed          ResponseCode
 	InvalidWorkspaceMemberData ResponseCode
@@ -113,7 +117,6 @@ var Error = struct {
 
 	InvalidDateOfBirth:         "ERR_1014",
 	RoleCreationError:          "ERR_1015",
-	SubscriptionPlanNotFound:   "ERR_1016",
 	RoleNotFound:               "ERR_1017",
 	UserDisableFailed:          "ERR_1018",
 	InvalidWorkspaceMemberData: "ERR_1019",
@@ -168,7 +171,6 @@ var CoreErrorCodes = map[ResponseCode]MetaResponse{
 
 	Error.InvalidDateOfBirth:         CreateMetaResponse(http.StatusBadRequest, "Invalid date of birth", "Invalid date of birth"),
 	Error.RoleCreationError:          CreateMetaResponse(http.StatusInternalServerError, "Role creation failed", "Role creation failed"),
-	Error.SubscriptionPlanNotFound:   CreateMetaResponse(http.StatusNotFound, "Subscription plan not found", "Subscription plan not found"),
 	Error.RoleNotFound:               CreateMetaResponse(http.StatusNotFound, "Role not found", "Role not found"),
 	Error.UserDisableFailed:          CreateMetaResponse(http.StatusInternalServerError, "User disable failed", "User disable failed"),
 	Error.InvalidWorkspaceMemberData: CreateMetaResponse(http.StatusInternalServerError, "Invalid workspace member data", "Invalid workspace member data"),

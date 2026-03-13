@@ -12,7 +12,6 @@ This document provides a comprehensive list of all success and error response co
 - [Tenant Management Codes](#tenant-management-codes)
 - [Role Management Codes](#role-management-codes)
 - [RBAC Management Codes](#rbac-management-codes)
-- [Subscription Plan Codes](#subscription-plan-codes)
 - [Core Error Codes](#core-error-codes)
 
 ---
@@ -56,8 +55,6 @@ This document provides a comprehensive list of all success and error response co
 | 400 | AUTH_VAL_1016 | Invalid request payload | User ID is invalid |
 | 400 | AUTH_VAL_1017 | Invalid request payload | OTP is required |
 | 400 | AUTH_VAL_1018 | Invalid request payload | OTP is invalid |
-| 400 | AUTH_VAL_1019 | Invalid request payload | Subscription ID is required |
-| 400 | AUTH_VAL_1020 | Invalid request payload | Subscription ID is invalid |
 | 400 | AUTH_VAL_1021 | Invalid request payload | Role ID is required |
 | 400 | AUTH_VAL_1022 | Invalid request payload | Role ID is invalid |
 | 400 | AUTH_VAL_1023 | Invalid request payload | Header 'schema' is required |
@@ -347,7 +344,6 @@ This document provides a comprehensive list of all success and error response co
 | 201 | TNT_SUCCESS_3001 | Tenant created successfully | The tenant has been created successfully |
 | 200 | TNT_SUCCESS_3002 | Tenant updated successfully | The tenant has been updated successfully |
 | 200 | TNT_SUCCESS_3003 | Tenant deleted successfully | The tenant has been deleted successfully |
-| 201 | TNT_SUCCESS_3004 | Tenant subscription created successfully | The tenant subscription has been created successfully |
 | 201 | TNT_SUCCESS_3005 | Tenant membership created successfully | The tenant membership has been created successfully |
 | 200 | TNT_SUCCESS_3006 | Tenant fetched successfully | The tenant has been fetched successfully |
 
@@ -360,9 +356,7 @@ This document provides a comprehensive list of all success and error response co
 | 500 | TNT_3003 | Tenant not created | The tenant could not be created due to an internal error |
 | 500 | TNT_3004 | Tenant not updated | The tenant could not be updated due to an internal error |
 | 500 | TNT_3005 | Tenant not deleted | The tenant could not be deleted due to an internal error |
-| 500 | TNT_3006 | Tenant subscription not created | The tenant subscription could not be created due to an internal error |
 | 500 | TNT_3007 | Tenant membership not created | The tenant membership could not be created due to an internal error |
-| 404 | TNT_3008 | Tenant subscription not found | The specified tenant subscription could not be found |
 | 404 | TNT_3009 | Tenant membership not found | The specified tenant membership could not be found |
 
 ---
@@ -441,28 +435,6 @@ This document provides a comprehensive list of all success and error response co
 
 ---
 
-## Subscription Plan Codes
-
-### Success Codes
-
-| HTTP Code | Code | UI Message | Dev Message (Description) |
-|-----------|------|------------|---------------------------|
-| 201 | SUB_SUCCESS_5001 | Subscription plan created successfully | The subscription plan has been created successfully |
-| 200 | SUB_SUCCESS_5002 | Subscription plan updated successfully | The subscription plan has been updated successfully |
-| 200 | SUB_SUCCESS_5003 | Subscription plan deleted successfully | The subscription plan has been deleted successfully |
-
-### Error Codes
-
-| HTTP Code | Code | UI Message | Dev Message (Description) |
-|-----------|------|------------|---------------------------|
-| 404 | SUB_5001 | Subscription plan not found | The specified subscription plan could not be found |
-| 409 | SUB_5002 | Subscription plan already exists | A subscription plan with the given information already exists |
-| 500 | SUB_5003 | Subscription plan not created | The subscription plan could not be created due to an internal error |
-| 500 | SUB_5004 | Subscription plan not updated | The subscription plan could not be updated due to an internal error |
-| 500 | SUB_5005 | Subscription plan not deleted | The subscription plan could not be deleted due to an internal error |
-
----
-
 ## Core Error Codes
 
 These are generic error codes that can be used across all modules.
@@ -514,7 +486,6 @@ These are generic error codes that can be used across all modules.
 | 400 | ERR_1013 | Folder invalid path | Folder invalid path |
 | 400 | ERR_1014 | Invalid date of birth | Invalid date of birth |
 | 500 | ERR_1015 | Role creation failed | Role creation failed |
-| 404 | ERR_1016 | Subscription plan not found | Subscription plan not found |
 | 404 | ERR_1017 | Role not found | Role not found |
 | 500 | ERR_1018 | User disable failed | User disable failed |
 | 500 | ERR_1019 | Invalid workspace member data | Invalid workspace member data |
@@ -572,7 +543,6 @@ All API responses follow a standardized format:
 - **ROL_**: Role management codes
 - **AST_**: Asset management codes
 - **TBL_**: Table management codes
-- **SUB_**: Subscription plan codes
 - **RBAC_**: Role-Based Access Control codes
 - **ERR_**: Core/Generic error codes
 

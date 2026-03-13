@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aptlogica Technologies Private Limited
+// SPDX-License-Identifier: MIT
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
 package constants
 
 import (
@@ -52,17 +57,9 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.RoleAlreadyExists, RBACError.RoleAlreadyExists},
 	{app_errors.RoleNotFound, RBACError.RoleNotFound},
 
-	// subscription plan management
-	{app_errors.SubscriptionPlanAlreadyExists, SubscriptionPlanError.PlanAlreadyExists},
-	{app_errors.SubscriptionPlanNotFound, SubscriptionPlanError.PlanNotFound},
-
 	// tenant management
 	{app_errors.TenantAlreadyExists, TenantError.TenantAlreadyExists},
 	{app_errors.TenantNotFound, TenantError.TenantNotFound},
-
-	// tenant subscription management
-	{app_errors.TenantSubscriptionAlreadyExists, TenantError.SubscriptionNotCreated},
-	{app_errors.TenantSubscriptionNotFound, TenantError.SubscriptionNotFound},
 
 	// auth management
 	{app_errors.InvalidOTP, AuthError.InvalidOTP},
@@ -124,7 +121,6 @@ var errorMappings = []ErrorMappingEntry{
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},
 	{app_errors.ErrRoleCreation, Error.RoleCreationError},
-	{app_errors.ErrSubscriptionPlanNotFound, Error.SubscriptionPlanNotFound},
 	{app_errors.ErrRoleNotFound, Error.RoleNotFound},
 	{app_errors.ErrUserDisableFailed, Error.UserDisableFailed},
 	{app_errors.ErrInvalidWorkspaceMemberData, Error.InvalidWorkspaceMemberData},

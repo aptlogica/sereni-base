@@ -119,7 +119,7 @@ REM Create a temporary file with all default environment variables
     echo OWNER_LAST_NAME=User
     echo OWNER_EMAIL=admin@example.com
     echo OWNER_PASSWORD=Admin@123
-    echo TEMPORARY_USER_PASSWORD=FC4i;^<S8q?~0
+    echo TEMPORARY_USER_PASSWORD=CHANGE_THIS
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
     echo # │                           📧 EMAIL CONFIGURATION                              │
