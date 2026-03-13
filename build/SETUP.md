@@ -2,9 +2,40 @@
 
 For a full beginner-friendly from-scratch guide, see `build/SETUP_COMPLETE_GUIDE.md`.
 
+---
+
+## Setup Modes Overview
+
+SereniBase offers **two deployment modes** to suit different use cases:
+
+| Mode | Compose File | Services Included | Best For |
+|------|--------------|-------------------|----------|
+| **Backend Only** | `docker-compose.yaml` | REST API + PostgreSQL | API development, testing, microservice integration |
+| **Full Application** | `docker-compose.all.yaml` | Complete stack (API + Auth + Email + Storage + UI + Antivirus) | Production, full-stack development, demos |
+
+### Backend Only Mode
+Deploys the core REST API with PostgreSQL database. Ideal for:
+- Backend/API development and testing
+- Integration with external authentication systems
+- Lightweight local development
+- CI/CD pipelines
+
+**Services**: `serenibase-rest`, `postgres`
+
+### Full Application Mode
+Deploys the complete application stack with all microservices. Ideal for:
+- Full-stack development
+- Production deployments
+- Feature demonstrations
+- End-to-end testing
+
+**Services**: `serenibase`, `postgres`, `jwt-provider`, `email-service`, `sereni-storage-provider`, `antivirus-service`, `minio`, `base-ui`, `clamav`
+
+---
+
 ## Prerequisites
 
-Before you begin, make sure you have the following installed:
+Before you begin, ensure you have the following installed:
 
 | Tool | Required | Installation |
 |------|----------|--------------|
@@ -23,24 +54,41 @@ git --version
 
 ---
 
-## Quick Start (One Click)
+## Quick Start
 
-### Option 1: Interactive Setup (Recommended)
+### Option 1: Full Application Setup (Recommended)
 
-Run the setup wizard which will prompt you for all required configuration:
+Run the interactive setup wizard to deploy the complete stack:
 
 ```bash
 make setup
 ```
 
-The wizard will ask you for:
-1. **Database Configuration**: Choose between default PostgreSQL or custom database
-2. **Authentication**: JWT secret (can be auto-generated)
-3. **Email Configuration**: SMTP credentials for notifications
-4. **Network**: Public host/domain
-5. **Admin Account**: Owner registration details
+The wizard will guide you through:
+1. **Database Configuration**: Default PostgreSQL or custom database credentials
+2. **Authentication**: JWT secret generation
+3. **Email Configuration**: SMTP settings for notifications
+4. **Storage Configuration**: Local, MinIO, or AWS S3
+5. **Network**: Public host/domain configuration
+6. **Admin Account**: Initial owner credentials
 
-### Option 2: Pre-configured Setup
+### Option 2: Backend Only Setup
+
+For API-only deployment without the full UI and supporting services:
+
+```bash
+# Start backend services only
+docker compose -f docker-compose.yaml up -d
+
+# Verify services are running
+docker compose -f docker-compose.yaml ps
+```
+
+**Access Points (Backend Only)**:
+- API: `http://localhost:8080`
+- Health Check: `http://localhost:8080/api/v1/health`
+
+### Option 3: Pre-configured Setup
 
 If you prefer to prepare your `.env` file first, create it with minimum required keys:
 
@@ -258,14 +306,56 @@ Default login credentials will be displayed at the end of setup.
 
 ## Useful Commands
 
+### Full Application Mode (`docker-compose.all.yaml`)
+
 | Command | Description |
 |---------|-------------|
-| `make setup` | Run full setup wizard |
+| `make setup` | Run full interactive setup wizard |
+| `make setup-y` | Run setup with default values (non-interactive) |
 | `make up` | Start all services |
-| `make down` | Stop all services |
+| `make down` | Stop all services (preserve data) |
+| `make down-all` | Stop all services and remove volumes |
 | `make logs` | View service logs |
 | `make restart` | Restart all services |
-| `make clean` | Remove all data and containers |
+| `make ps` | Show running services |
+| `make status` | Show detailed service status |
+| `make clean` | Remove containers (preserve data) |
+| `make clean-all` | Full cleanup (containers + volumes + images) |
+
+### Backend Only Mode (`docker-compose.yaml`)
+
+| Command | Description |
+|---------|-------------|
+| `docker compose up -d` | Start backend services |
+| `docker compose down` | Stop backend services |
+| `docker compose logs -f` | View backend logs |
+| `docker compose ps` | Show running backend services |
+| `docker compose down -v` | Stop and remove all data |
+
+---
+
+## Access URLs
+
+### Full Application Mode
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Frontend | `http://localhost:5050` | Web application UI |
+| Backend API | `http://localhost:8080` | REST API endpoint |
+| Health Check | `http://localhost:8080/api/v1/health` | API health status |
+| MinIO Console | `http://localhost:9001` | Object storage admin |
+| Auth Service | `http://localhost:8081` | JWT authentication |
+| Email Service | `http://localhost:8082` | Email notifications |
+| Storage Service | `http://localhost:8083` | File storage API |
+| Antivirus Service | `http://localhost:8084` | Malware scanning |
+
+### Backend Only Mode
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Backend API | `http://localhost:8080` | REST API endpoint |
+| Health Check | `http://localhost:8080/api/v1/health` | API health status |
+| PostgreSQL | `localhost:5432` | Database connection |
 
 ---
 
@@ -276,7 +366,7 @@ Default login credentials will be displayed at the end of setup.
 | Email | `admin@example.com` |
 | Password | `Admin@123` |
 
-Change these in production.
+> **Security Notice**: Change these credentials immediately in production environments.
 
 ---
 
@@ -305,7 +395,7 @@ lsof -i :8080                 # Linux/macOS
 
 ### Reset everything
 ```bash
-make clean
+make clean-all
 make setup
 ```
 
@@ -315,27 +405,33 @@ make setup
 
 ```
 sereni-base/
-├── .env                    # Environment configuration (created by setup)
-├── docker-compose.all.yaml # Docker services definition
-├── Makefile               # Make commands
+├── .env                      # Environment configuration (created by setup)
+├── docker-compose.yaml       # Backend only deployment
+├── docker-compose.all.yaml   # Full application deployment
+├── Makefile                  # Make commands
 ├── build/
 │   ├── config/
-│   │   └── .env.example   # Environment template
-│   └── scripts/
-│       ├── setup.bat      # Windows setup script
-│       ├── setup.sh       # Linux/macOS setup script
-│       └── ...
-└── services/              # Microservices (cloned by setup)
-    ├── auth-service/
-    ├── base-ui/
-    ├── email-service/
-    └── storage-service/
+│   │   └── .env.example      # Environment template
+│   ├── scripts/
+│   │   ├── setup.sh          # Interactive setup (Linux/macOS)
+│   │   ├── setup.ps1         # Interactive setup (Windows)
+│   │   ├── setup-y.sh        # Auto setup (Linux/macOS)
+│   │   └── setup-y.ps1       # Auto setup (Windows)
+│   ├── SETUP.md              # This guide
+│   └── SETUP_COMPLETE_GUIDE.md # Complete beginner guide
+└── services/                 # Microservices (cloned by setup)
+    ├── auth-service/         # JWT authentication
+    ├── base-ui/              # Frontend application
+    ├── email-service/        # Email/SMTP service
+    ├── storage-service/      # File storage service
+    └── antivirus-service/    # ClamAV integration
 ```
 
 ---
 
 ## Additional Documentation
 
-- ../docs/ENV_QUICK_REFERENCE_CARD.md
-- ../docs/ENVIRONMENT_SETUP_GUIDE.md
-- ../docs/API_RESPONSE_CODES.md
+- [Environment Quick Reference](../docs/ENV_QUICK_REFERENCE_CARD.md)
+- [Environment Setup Guide](../docs/ENVIRONMENT_SETUP_GUIDE.md)
+- [API Response Codes](../docs/API_RESPONSE_CODES.md)
+- [Interactive Setup Guide](../INTERACTIVE_SETUP_README.md)
