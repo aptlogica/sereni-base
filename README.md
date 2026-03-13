@@ -19,6 +19,19 @@
 - **Observability & Metrics**: Comprehensive monitoring, logging, and performance analytics
 - **Cloud-Native Architecture**: Container-ready with Kubernetes support
 
+## Services Architecture
+
+| Service | Description | Port |
+|---------|-------------|------|
+| **sereni-base** | Core REST API server | 8080 |
+| **PostgreSQL** | Primary database | 5432 |
+| **JWT Provider** | Authentication service | 8081 |
+| **Email Service** | SMTP email notifications | 8082 |
+| **Storage Provider** | File storage (MinIO/S3) | 8083 |
+| **Antivirus Service** | ClamAV malware scanning | 8084 |
+| **MinIO** | Object storage | 9000/9001 |
+| **Base UI** | Frontend application | 5050 |
+
 ## Architecture
 - Go 1.23+, idiomatic design
 - Modular, testable codebase
@@ -64,18 +77,14 @@ func main() {
 
 ### Docker Deployment
 
-```bash
-# Clone repository
-git clone https://github.com/aptlogica/sereni-base.git
-cd sereni-base
+SereniBase supports two deployment modes:
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your settings
+| Mode | Compose File | Description |
+|------|--------------|-------------|
+| **Backend Only** | `docker-compose.yaml` | Core REST API + PostgreSQL database |
+| **Full Application** | `docker-compose.all.yaml` | Complete stack with UI, Auth, Email, Storage, Antivirus |
 
-# Start with Docker Compose
-docker-compose up -d
-```
+> **Getting Started**: See the [Complete Setup Guide](build/SETUP_COMPLETE_GUIDE.md) for detailed installation instructions.
 
 ## Development
 
@@ -110,6 +119,15 @@ REDIS_URL=redis://localhost:6379
 
 ## Testing
 - Run `go test ./...` to execute unit tests
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Setup Guide](build/SETUP.md) | Quick reference setup guide |
+| [Complete Setup Guide](build/SETUP_COMPLETE_GUIDE.md) | Comprehensive beginner guide |
+| [Interactive Setup](INTERACTIVE_SETUP_README.md) | Setup wizard documentation |
+| [Environment Variables](docs/ENVIRONMENT_VARIABLES.md) | Configuration reference |
 
 ## Security
 See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
