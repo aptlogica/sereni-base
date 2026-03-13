@@ -1,4 +1,4 @@
-module serenibase
+module github.com/aptlogica/sereni-base
 
 go 1.24.0
 
