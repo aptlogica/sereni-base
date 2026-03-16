@@ -7,6 +7,7 @@ toolchain go1.24.4
 replace github.com/aptlogica/go-postgres-rest => ./go-postgres-rest
 
 require (
+	github.com/aptlogica/go-postgres-rest v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-playground/universal-translator v0.18.1
 	github.com/go-playground/validator v9.31.0+incompatible
@@ -20,7 +21,6 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.6
-	github.com/aptlogica/go-postgres-rest v0.0.0-00010101000000-000000000000
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.47.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
