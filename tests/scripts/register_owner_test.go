@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	"serenibase/internal/config"
-	"serenibase/internal/scripts"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/scripts"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

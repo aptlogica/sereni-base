@@ -3,7 +3,7 @@ package models_test
 import (
 	"testing"
 
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

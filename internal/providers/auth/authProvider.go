@@ -13,8 +13,8 @@ import (
 	"net/http"
 	"time"
 
-	appErrors "serenibase/internal/app-errors"
-	"serenibase/internal/config"
+	appErrors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/config"
 
 	"github.com/golang-jwt/jwt/v5"
 )

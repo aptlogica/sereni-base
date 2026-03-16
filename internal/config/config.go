@@ -35,6 +35,7 @@ type ServerConfig struct {
 	WriteTimeout int    `mapstructure:"write_timeout"`
 	Scheme       string `mapstructure:"scheme"` // "http" or "https"
 	Env          string `mapstructure:"env"`    // "dev" or "prod"
+	Version      string `mapstructure:"version"`
 }
 
 type DatabaseConfig struct {
@@ -133,6 +134,7 @@ func Load() (*Config, error) {
 	viper.BindEnv("server.write_timeout", "SERVER_WRITE_TIMEOUT")
 	viper.BindEnv("server.scheme", "SERVER_SCHEME")
 	viper.BindEnv("server.env", "SERVER_ENV")
+	viper.BindEnv("server.version", "SERVER_VERSION")
 
 	// Database Config
 	viper.BindEnv("database.host", "DATABASE_HOST")
@@ -195,6 +197,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("server.write_timeout", 30)
 	viper.SetDefault("server.scheme", "http")
 	viper.SetDefault("server.env", "dev")
+	viper.SetDefault("server.version", "dev")
 
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", "5432")

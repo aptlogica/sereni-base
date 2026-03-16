@@ -5,12 +5,12 @@ import (
 	"errors"
 	"testing"
 
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	"serenibase/internal/constant"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	services "serenibase/internal/services/rbac"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	"github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/rbac"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

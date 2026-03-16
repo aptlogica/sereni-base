@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"serenibase/internal/handlers"
-	responseConst "serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/handlers"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

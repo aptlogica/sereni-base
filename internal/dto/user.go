@@ -7,7 +7,7 @@ package dto
 
 import (
 	"mime/multipart"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"time"
 
 	"github.com/google/uuid"

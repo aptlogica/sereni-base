@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"serenibase/internal/config"
-	"serenibase/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

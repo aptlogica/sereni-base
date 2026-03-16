@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	services "serenibase/internal/services/core"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/core"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

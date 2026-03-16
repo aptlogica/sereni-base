@@ -1,7 +1,7 @@
 package tests
 
 import (
-	"serenibase/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/dto"
 	"testing"
 	"time"
 

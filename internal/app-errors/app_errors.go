@@ -8,7 +8,7 @@ package app_errors
 import (
 	"errors"
 
-	"serenibase/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
 )
 
 // var (

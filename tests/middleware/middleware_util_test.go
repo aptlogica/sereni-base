@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"serenibase/internal/constant"
-	"serenibase/internal/dto"
-	"serenibase/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"testing"
 
 	"github.com/gin-gonic/gin"

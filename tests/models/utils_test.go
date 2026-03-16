@@ -1,7 +1,7 @@
 package models_test
 
 import (
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"testing"
 )
 

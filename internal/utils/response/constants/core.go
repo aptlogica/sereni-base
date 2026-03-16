@@ -177,4 +177,12 @@ var CoreErrorCodes = map[ResponseCode]MetaResponse{
 	Error.UserContextNotFound:        CreateMetaResponse(http.StatusUnauthorized, "User context not found", "User context not found"),
 }
 
-var CoreSuccessCodes = map[ResponseCode]MetaResponse{}
+var CoreSuccess = struct {
+	HealthCheck ResponseCode
+}{
+	HealthCheck: "CORE_SUCCESS_1001",
+}
+
+var CoreSuccessCodes = map[ResponseCode]MetaResponse{
+	CoreSuccess.HealthCheck: CreateMetaResponse(http.StatusOK, "Service healthy", "Health check completed successfully"),
+}

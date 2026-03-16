@@ -14,7 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"serenibase/internal/providers/storage/interfaces"
+	"github.com/aptlogica/sereni-base/internal/providers/storage/interfaces"
 	"time"
 )
 

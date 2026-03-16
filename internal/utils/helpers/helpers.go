@@ -13,7 +13,7 @@ import (
 	"reflect"
 	"regexp"
 
-	// app_errors "serenibase/internal/app-errors"
+	// app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"strconv"
 	"strings"
 	"time"

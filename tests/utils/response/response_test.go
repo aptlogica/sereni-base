@@ -10,9 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	appErrors "serenibase/internal/app-errors"
-	"serenibase/internal/utils/response"
-	responseConstants "serenibase/internal/utils/response/constants"
+	appErrors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
 
 func TestCreatedResponse(t *testing.T) {

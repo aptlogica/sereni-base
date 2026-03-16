@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

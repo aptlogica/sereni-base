@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"time"
 
-	"serenibase/internal/providers/antivirus/interfaces"
+	"github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
 )
 
 // Config holds the configuration for the HTTP antivirus client

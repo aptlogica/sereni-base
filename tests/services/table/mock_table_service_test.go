@@ -3,8 +3,8 @@ package table_test
 import (
 	"context"
 
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 
 	"github.com/stretchr/testify/mock"
 )

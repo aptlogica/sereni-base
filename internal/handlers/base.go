@@ -7,9 +7,9 @@ package handlers
 
 import (
 	"mime/multipart"
-	"serenibase/internal/dto"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/response"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
 
 	"github.com/gin-gonic/gin"
 )

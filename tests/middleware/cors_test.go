@@ -3,8 +3,8 @@ package middleware_test
 import (
 	"net/http"
 	"net/http/httptest"
-	"serenibase/internal/config"
-	"serenibase/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"testing"
 
 	"github.com/gin-gonic/gin"

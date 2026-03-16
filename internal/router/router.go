@@ -6,8 +6,11 @@
 package router
 
 import (
-	"serenibase/internal/config"
-	"serenibase/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,6 +49,7 @@ func Setup(cfg *config.Config,
 
 	// Global middleware
 	r.Use(middlewareGroups.CORS())
+	r.Use(middleware.RequestID())
 	r.Use(middlewareGroups.RequestLogger())
 	r.Use(middlewareGroups.DatabaseQueryLogger())
 	r.Use(gin.Recovery())
@@ -58,10 +62,10 @@ func Setup(cfg *config.Config,
 
 	// Health check endpoint
 	api.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
+		response.SendSuccess(c, responseConstants.CoreSuccess.HealthCheck, gin.H{
 			"status":  "ok",
 			"message": "Serenibase is running",
-			"version": "1.0.0",
+			"version": cfg.Server.Version,
 			"features": []string{
 				"Dynamic table creation",
 				"Complex filtering",

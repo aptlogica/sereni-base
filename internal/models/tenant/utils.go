@@ -6,7 +6,7 @@
 package tenant
 
 import (
-	"go-postgres-rest/pkg/models"
+	"github.com/aptlogica/go-postgres-rest/pkg/models"
 )
 
 func StrPtr(s string) *string {

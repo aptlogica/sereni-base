@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"serenibase/internal/config"
+	"github.com/aptlogica/sereni-base/internal/config"
 	"sync"
 	"time"
 )

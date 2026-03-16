@@ -3,12 +3,12 @@ package table_test
 import (
 	"context"
 
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	"serenibase/internal/services/interfaces"
-	services "serenibase/internal/services/table"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	services "github.com/aptlogica/sereni-base/internal/services/table"
 
 	"github.com/stretchr/testify/mock"
 )

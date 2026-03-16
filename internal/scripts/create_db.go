@@ -8,10 +8,10 @@ package scripts
 import (
 	"context"
 	"fmt"
-	"go-postgres-rest/pkg"
-	"go-postgres-rest/pkg/models"
-	appConstant "serenibase/internal/constant"
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	"github.com/aptlogica/go-postgres-rest/pkg/models"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"strings"
 )
 

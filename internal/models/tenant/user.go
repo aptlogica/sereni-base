@@ -7,8 +7,8 @@ package tenant
 
 import (
 	"fmt"
-	"go-postgres-rest/pkg/models"
-	"serenibase/internal/constant"
+	"github.com/aptlogica/go-postgres-rest/pkg/models"
+	"github.com/aptlogica/sereni-base/internal/constant"
 	"time"
 
 	"github.com/google/uuid"

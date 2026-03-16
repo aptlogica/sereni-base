@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	appErrors "serenibase/internal/app-errors"
+	appErrors "github.com/aptlogica/sereni-base/internal/app-errors"
 )
 
 // TestAllErrorConstants verifies all error constants are defined and not nil

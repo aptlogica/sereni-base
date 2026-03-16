@@ -3,7 +3,7 @@ package rbac_test
 import (
 	"context"
 
-	dbModels "go-postgres-rest/pkg/models"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 )
 
 // StubTableService provides functional hooks for TableService behavior.

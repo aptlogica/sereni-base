@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	services "serenibase/internal/services/auth"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	services "github.com/aptlogica/sereni-base/internal/services/auth"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

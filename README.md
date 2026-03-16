@@ -25,7 +25,7 @@
 
 ## Overview
 
-**SereniBase** is an open-source alternative to Airtable, Notion databases, and NocoDB - a no-code platform that lets teams build custom databases, workflows, and applications without writing code. It provides a REST API backend that powers a React frontend, enabling users to create workspaces, design database schemas, and manage data through an intuitive spreadsheet-like interface.
+**SereniBase** is an open-source alternative to Airtable, Notion databases, and NocoDB - an open source airtable alternative and airtable alternative, a nocodb alternative and an airtable and nocodb alternative. It is a no-code platform and no-code database builder that lets teams build a no-code database, a database builder, and an open source database builder; a database management tool and self hosted database for teams; a no code platform, a no-code open source database & application builder, an opensource nocodb alternative, a self hosted backend platform, and a free open source database builder. It provides a REST API backend that powers a React frontend, enabling users to create workspaces, design database schemas, and manage data through an intuitive spreadsheet-like interface.
 
 ### Why SereniBase?
 
@@ -144,4 +144,3 @@ We welcome contributions! See our contribution guidelines for details.
 ## License
 
 MIT License. Copyright (c) 2026 Aptlogica Technologies.
-

@@ -5,7 +5,7 @@
 
 package constants
 
-// app_errors "serenibase/internal/app-errors"
+// app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 
 type ResponseCode string
 

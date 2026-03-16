@@ -12,12 +12,12 @@ import (
 	"fmt"
 	"math"
 	"mime/multipart"
-	"serenibase/internal/constant"
-	"serenibase/internal/dto"
-	antivirusProviderInterface "serenibase/internal/providers/antivirus/interfaces"
-	"serenibase/internal/providers/logger"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"strconv"
 	"strings"
 	"time"
@@ -365,73 +365,64 @@ func (s *importService) inferColumnTypes(headers []string, rows [][]string) []st
 }
 
 func (s *importService) inferType(rows [][]string, colIndex int) string {
-	isNumber := true
-	isDecimal := true
-	isBool := true
-	isDate := true
-	isEmail := true
-	isURL := true
-	isPhone := true
-	isJSON := true
+	flags := s.collectTypeFlags(rows, colIndex)
+	if !flags.hasData {
+		return "text"
+	}
+	return s.determineTypeFromFlags(flags)
+}
 
-	hasData := false
-	totalLength := 0
-	count := 0
+type typeFlags struct {
+	isNumber, isDecimal, isBool, isDate, isEmail, isURL, isPhone, isJSON bool
+	hasData                                                              bool
+	totalLength, count                                                   int
+}
 
+func (s *importService) collectTypeFlags(rows [][]string, colIndex int) typeFlags {
+	flags := typeFlags{
+		isNumber:  true,
+		isDecimal: true,
+		isBool:    true,
+		isDate:    true,
+		isEmail:   true,
+		isURL:     true,
+		isPhone:   true,
+		isJSON:    true,
+	}
 	for _, row := range rows {
 		if colIndex >= len(row) {
 			continue
 		}
-
 		val := row[colIndex]
 		if val == "" {
 			continue
 		}
-		hasData = true
-		totalLength += len(val)
-		count++
-
-		// Check Number (integer or decimal)
-		if isNumber || isDecimal {
-			isNumber, isDecimal = s.checkNumericTypes(val, isNumber, isDecimal)
+		flags.hasData = true
+		flags.totalLength += len(val)
+		flags.count++
+		if flags.isNumber || flags.isDecimal {
+			flags.isNumber, flags.isDecimal = s.checkNumericTypes(val, flags.isNumber, flags.isDecimal)
 		}
-
-		// Check Bool
-		if isBool {
-			isBool = s.checkBoolType(val)
+		if flags.isBool {
+			flags.isBool = s.checkBoolType(val)
 		}
-
-		// Check Date (Simple check)
-		if isDate {
-			isDate = s.checkDateType(val)
+		if flags.isDate {
+			flags.isDate = s.checkDateType(val)
 		}
-
-		// Check Email
-		if isEmail {
-			isEmail = s.checkEmailType(val)
+		if flags.isEmail {
+			flags.isEmail = s.checkEmailType(val)
 		}
-
-		// Check URL
-		if isURL {
-			isURL = s.checkURLType(val)
+		if flags.isURL {
+			flags.isURL = s.checkURLType(val)
 		}
-
-		// Check Phone
-		if isPhone {
-			isPhone = s.checkPhoneType(val)
+		if flags.isPhone {
+			flags.isPhone = s.checkPhoneType(val)
 		}
-
-		// Check JSON
-		if isJSON {
-			isJSON = s.checkJSONType(val)
+		if flags.isJSON {
+			flags.isJSON = s.checkJSONType(val)
 		}
 	}
-
-	if !hasData {
-		return "text"
-	}
-
-	return s.determineTypeFromFlags(isBool, isNumber, isDecimal, isDate, isEmail, isURL, isPhone, isJSON, totalLength, count)
+	return flags
 }
 
 func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {
@@ -486,33 +477,33 @@ func (s *importService) checkJSONType(val string) bool {
 	return json.Unmarshal([]byte(val), &js) == nil
 }
 
-func (s *importService) determineTypeFromFlags(isBool, isNumber, isDecimal, isDate, isEmail, isURL, isPhone, isJSON bool, totalLength, count int) string {
+func (s *importService) determineTypeFromFlags(flags typeFlags) string {
 	avgLength := 0
-	if count > 0 {
-		avgLength = totalLength / count
+	if flags.count > 0 {
+		avgLength = flags.totalLength / flags.count
 	}
-	if isBool {
+	if flags.isBool {
 		return "boolean"
 	}
-	if isNumber {
+	if flags.isNumber {
 		return "number"
 	}
-	if isDecimal {
+	if flags.isDecimal {
 		return "decimal"
 	}
-	if isDate {
+	if flags.isDate {
 		return "date"
 	}
-	if isEmail {
+	if flags.isEmail {
 		return "email"
 	}
-	if isURL {
+	if flags.isURL {
 		return "url"
 	}
-	if isPhone {
+	if flags.isPhone {
 		return "phoneNumber"
 	}
-	if isJSON {
+	if flags.isJSON {
 		return "json"
 	}
 	if avgLength > 255 {

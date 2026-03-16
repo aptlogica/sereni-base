@@ -14,18 +14,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	appErrors "serenibase/internal/app-errors"
-	"serenibase/internal/providers/logger"
-	responseConstants "serenibase/internal/utils/response/constants"
+	appErrors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
 
 // StandardResponse represents a standard API response format
 type StandardResponse struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   *ErrorInfo  `json:"error,omitempty"`
-	Meta    *MetaInfo   `json:"meta,omitempty"`
+	Success   bool        `json:"success"`
+	Message   string      `json:"message,omitempty"`
+	Data      interface{} `json:"data,omitempty"`
+	Error     *ErrorInfo  `json:"error,omitempty"`
+	Meta      *MetaInfo   `json:"meta,omitempty"`
+	RequestID string      `json:"request_id,omitempty"`
 }
 
 // ErrorInfo represents error information
@@ -43,9 +44,10 @@ type MetaInfo struct {
 
 func CreatedResponse(c *gin.Context, data interface{}, message ...string) {
 	response := StandardResponse{
-		Success: true,
-		Data:    data,
-		Message: defaultMessage(message, "Resource created successfully"),
+		Success:   true,
+		Data:      data,
+		Message:   defaultMessage(message, "Resource created successfully"),
+		RequestID: requestIDFromContext(c),
 	}
 
 	c.JSON(http.StatusCreated, response)
@@ -94,10 +96,11 @@ func SendSuccess(ctx *gin.Context, code responseConstants.ResponseCode, data int
 		message = "success"
 	}
 	response := StandardResponse{
-		Success: true,
-		Message: message,
-		Data:    data,
-		Meta:    &meta,
+		Success:   true,
+		Message:   message,
+		Data:      data,
+		Meta:      &meta,
+		RequestID: requestIDFromContext(ctx),
 	}
 	ctx.JSON(meta.HTTPStatus, response)
 }
@@ -115,7 +118,8 @@ func SendError(ctx *gin.Context, code responseConstants.ResponseCode) {
 			Code:    string(code),
 			Message: message,
 		},
-		Meta: &meta,
+		Meta:      &meta,
+		RequestID: requestIDFromContext(ctx),
 	}
 	ctx.JSON(meta.HTTPStatus, response)
 }
@@ -131,7 +135,8 @@ func SendErrorWithMessage(ctx *gin.Context, code responseConstants.ResponseCode,
 			Code:    string(code),
 			Message: message,
 		},
-		Meta: &meta,
+		Meta:      &meta,
+		RequestID: requestIDFromContext(ctx),
 	}
 	ctx.JSON(meta.HTTPStatus, response)
 }
@@ -153,7 +158,8 @@ func CheckAndSendError(ctx *gin.Context, err error) {
 				Message: responseConstants.ErrorCodes[code].Message,
 				Details: details,
 			},
-			Meta: &meta,
+			Meta:      &meta,
+			RequestID: requestIDFromContext(ctx),
 		})
 		return
 	}
@@ -174,7 +180,8 @@ func CheckAndSendError(ctx *gin.Context, err error) {
 				Message: apiErr.Message,
 				Details: fmt.Sprintf("%v", apiErr.Details),
 			},
-			Meta: &meta,
+			Meta:      &meta,
+			RequestID: requestIDFromContext(ctx),
 		})
 		return
 	}
@@ -201,6 +208,18 @@ func FormatValidationError(err error) []string {
 	}
 	// fallback for non-validation errors
 	return []string{err.Error()}
+}
+
+func requestIDFromContext(ctx *gin.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	requestIDVal, ok := ctx.Get("request_id")
+	if !ok {
+		return ""
+	}
+	requestID, _ := requestIDVal.(string)
+	return requestID
 }
 
 type SuccessMetaInfoSwager struct {

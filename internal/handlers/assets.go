@@ -6,14 +6,14 @@
 package handlers
 
 import (
-	"serenibase/internal/config"
-	"serenibase/internal/dto"
-	"serenibase/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"strings"
 
-	"serenibase/internal/handlers/validators"
-	"serenibase/internal/utils/response"
-	responseConst "serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/handlers/validators"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

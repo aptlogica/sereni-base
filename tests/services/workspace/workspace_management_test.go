@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	appConstant "serenibase/internal/constant"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	services "serenibase/internal/services/workspace"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/workspace"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

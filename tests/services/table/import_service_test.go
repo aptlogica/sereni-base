@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	antivirusInterfaces "serenibase/internal/providers/antivirus/interfaces"
-	services "serenibase/internal/services/table"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	antivirusInterfaces "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
+	services "github.com/aptlogica/sereni-base/internal/services/table"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

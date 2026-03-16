@@ -9,10 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"serenibase/internal/dto"
-	"serenibase/internal/handlers"
-	"serenibase/internal/models/tenant"
-	"serenibase/tests/handlers/mocks"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/tests/handlers/mocks"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -268,10 +268,6 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 			name: "successful refresh",
 			requestBody: dto.RefreshTokenRequest{
 				RefreshToken: "valid-refresh-token",
-				UserID:       "user-1",
-				Email:        "test@example.com",
-				Password:     "password123",
-				Roles:        []string{"admin"},
 			},
 			mockSetup: func(m *mocks.MockAuthManagementService) {
 				m.EXPECT().RefreshToken(gomock.Any(), gomock.Any()).Return(
@@ -284,10 +280,6 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 			name: "service error",
 			requestBody: dto.RefreshTokenRequest{
 				RefreshToken: "invalid-token",
-				UserID:       "user-1",
-				Email:        "test@example.com",
-				Password:     "password123",
-				Roles:        []string{"admin"},
 			},
 			mockSetup: func(m *mocks.MockAuthManagementService) {
 				m.EXPECT().RefreshToken(gomock.Any(), gomock.Any()).Return(

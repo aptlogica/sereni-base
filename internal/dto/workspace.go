@@ -9,7 +9,7 @@ package dto
 import (
 	"time"
 
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
 	"github.com/google/uuid"
 )

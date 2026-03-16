@@ -8,8 +8,8 @@ package interfaces
 import (
 	"context"
 	"mime/multipart"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 )
 
 type UserManagementService interface {

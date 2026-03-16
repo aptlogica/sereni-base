@@ -6,9 +6,9 @@
 package middleware
 
 import (
-	"serenibase/internal/utils/response"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
 
-	app_errors "serenibase/internal/app-errors"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 
 	"github.com/gin-gonic/gin"
 )

@@ -6,9 +6,9 @@
 package middleware
 
 import (
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/response"
-	responseConst "serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 	"strings"
 
 	"github.com/gin-gonic/gin"

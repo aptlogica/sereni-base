@@ -9,7 +9,7 @@ package dto
 import (
 	"encoding/json"
 	"fmt"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"time"
 
 	"github.com/google/uuid"

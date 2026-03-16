@@ -8,14 +8,14 @@ package services
 import (
 	"context"
 	"fmt"
-	"go-postgres-rest/pkg"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
-	app_errors "serenibase/internal/app-errors"
-	appConstant "serenibase/internal/constant"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 
 	"github.com/google/uuid"
 )

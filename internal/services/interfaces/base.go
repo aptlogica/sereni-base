@@ -7,8 +7,8 @@ package interfaces
 
 import (
 	"context"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 )
 
 type BaseService interface {

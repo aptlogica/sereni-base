@@ -6,10 +6,10 @@
 package services
 
 import (
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 )
 
 // GetSingleRecord fetches a single record and maps it to type T

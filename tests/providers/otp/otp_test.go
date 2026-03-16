@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"serenibase/internal/providers/otp"
+	"github.com/aptlogica/sereni-base/internal/providers/otp"
 
 	"github.com/stretchr/testify/assert"
 )

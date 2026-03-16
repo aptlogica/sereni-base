@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	services "serenibase/internal/services/table"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/table"
 
-	dbModels "go-postgres-rest/pkg/models"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

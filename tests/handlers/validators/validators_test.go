@@ -7,8 +7,8 @@ import (
 	ut "github.com/go-playground/universal-translator"
 	validator "github.com/go-playground/validator"
 
-	handlersValidators "serenibase/internal/handlers/validators"
-	responseConst "serenibase/internal/utils/response/constants"
+	handlersValidators "github.com/aptlogica/sereni-base/internal/handlers/validators"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
 
 type fakeFieldError struct {

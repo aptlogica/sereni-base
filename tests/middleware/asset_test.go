@@ -6,7 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"serenibase/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"testing"
 
 	"github.com/gin-gonic/gin"
