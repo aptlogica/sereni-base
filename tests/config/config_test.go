@@ -2,7 +2,7 @@ package tests
 
 import (
 	"os"
-	"serenibase/internal/config"
+	"github.com/aptlogica/sereni-base/internal/config"
 	"testing"
 )
 

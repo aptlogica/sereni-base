@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
 
 func TestUserErrorCodes(t *testing.T) {

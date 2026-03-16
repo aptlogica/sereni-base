@@ -19,7 +19,7 @@ import (
 	"github.com/rs/zerolog/pkgerrors"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"serenibase/internal/config"
+	"github.com/aptlogica/sereni-base/internal/config"
 )
 
 var (

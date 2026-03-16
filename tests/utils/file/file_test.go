@@ -3,7 +3,7 @@ package tests
 import (
 	"os"
 	"path/filepath"
-	"serenibase/internal/utils/file"
+	"github.com/aptlogica/sereni-base/internal/utils/file"
 	"testing"
 )
 

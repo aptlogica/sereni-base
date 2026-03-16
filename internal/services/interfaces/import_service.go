@@ -8,7 +8,7 @@ package interfaces
 import (
 	"context"
 	"mime/multipart"
-	"serenibase/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/dto"
 )
 
 type ImportService interface {

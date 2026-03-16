@@ -7,7 +7,7 @@ package tenant
 
 import (
 	"fmt"
-	"go-postgres-rest/pkg/models"
+	"github.com/aptlogica/go-postgres-rest/pkg/models"
 	"time"
 
 	"github.com/google/uuid"

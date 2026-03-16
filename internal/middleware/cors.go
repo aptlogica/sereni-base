@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"serenibase/internal/config"
+	"github.com/aptlogica/sereni-base/internal/config"
 
 	"github.com/gin-gonic/gin"
 )

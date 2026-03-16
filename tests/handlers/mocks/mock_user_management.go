@@ -13,8 +13,8 @@ import (
 	context "context"
 	multipart "mime/multipart"
 	reflect "reflect"
-	dto "serenibase/internal/dto"
-	tenant "serenibase/internal/models/tenant"
+	dto "github.com/aptlogica/sereni-base/internal/dto"
+	tenant "github.com/aptlogica/sereni-base/internal/models/tenant"
 
 	gomock "go.uber.org/mock/gomock"
 )

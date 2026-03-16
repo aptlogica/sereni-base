@@ -7,11 +7,11 @@ package scripts
 
 import (
 	"context"
-	"go-postgres-rest/pkg"
-	appConstant "serenibase/internal/constant"
-	"serenibase/internal/services"
-	core "serenibase/internal/services/core"
-	rbac "serenibase/internal/services/rbac"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/services"
+	core "github.com/aptlogica/sereni-base/internal/services/core"
+	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
 )
 
 func CreateDefaultRBAC(dbService *pkg.DatabaseService) error {

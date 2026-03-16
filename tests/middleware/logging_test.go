@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"serenibase/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

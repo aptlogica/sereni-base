@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	storageHttp "serenibase/internal/providers/storage/http"
-	"serenibase/internal/providers/storage/interfaces"
+	storageHttp "github.com/aptlogica/sereni-base/internal/providers/storage/http"
+	"github.com/aptlogica/sereni-base/internal/providers/storage/interfaces"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

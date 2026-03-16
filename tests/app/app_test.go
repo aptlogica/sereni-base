@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"go-postgres-rest/pkg"
-	"go-postgres-rest/pkg/config"
-	"go-postgres-rest/pkg/database"
-	"go-postgres-rest/pkg/database/interfaces"
-	"go-postgres-rest/pkg/models"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	"github.com/aptlogica/go-postgres-rest/pkg/config"
+	"github.com/aptlogica/go-postgres-rest/pkg/database"
+	"github.com/aptlogica/go-postgres-rest/pkg/database/interfaces"
+	"github.com/aptlogica/go-postgres-rest/pkg/models"
 
-	appPkg "serenibase/internal/app"
-	appConfig "serenibase/internal/config"
+	appPkg "github.com/aptlogica/sereni-base/internal/app"
+	appConfig "github.com/aptlogica/sereni-base/internal/config"
 )
 
 // ---- fakes for go-postgres-rest ----

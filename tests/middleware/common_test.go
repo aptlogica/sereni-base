@@ -3,8 +3,8 @@ package middleware_test
 import (
 	"net/http"
 	"net/http/httptest"
-	"serenibase/internal/constant"
-	"serenibase/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"strconv"
 	"strings"
 	"testing"

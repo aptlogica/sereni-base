@@ -4,8 +4,8 @@ import (
 	"context"
 	"mime/multipart"
 
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 
 	"github.com/google/uuid"
 )

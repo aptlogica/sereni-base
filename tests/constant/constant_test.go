@@ -1,7 +1,7 @@
 package tests
 
 import (
-	"serenibase/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/constant"
 	"testing"
 )
 

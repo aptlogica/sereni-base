@@ -6,8 +6,8 @@
 package constant
 
 import (
-	"serenibase/internal/dto"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 )
 
 const (

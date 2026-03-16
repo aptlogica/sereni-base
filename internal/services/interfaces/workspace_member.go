@@ -7,7 +7,7 @@ package interfaces
 
 import (
 	"context"
-	"serenibase/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 )
 
 type WorkspaceMemberService interface {

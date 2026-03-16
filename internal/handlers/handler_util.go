@@ -6,8 +6,8 @@
 package handlers
 
 import (
-	"serenibase/internal/utils/response"
-	"serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	"github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

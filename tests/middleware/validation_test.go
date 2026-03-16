@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"serenibase/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"strings"
 	"testing"
 

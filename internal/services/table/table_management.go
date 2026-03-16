@@ -8,17 +8,17 @@ package services
 import (
 	"context"
 	"fmt"
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"mime/multipart"
 	"regexp"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/constant"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	"serenibase/internal/providers/logger"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/helpers"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"strconv"
 	"strings"
 	"time"
@@ -242,6 +242,13 @@ func (s tableManagementService) CreateTableWithDefaultsImport(ctx context.Contex
 	}
 
 	modelResponse := s.convertModelToResponse(insertedModel)
+
+	// Add import metadata and log
+	importMeta := map[string]interface{}{
+		"imported_at":   time.Now().UTC(),
+		"import_source": "import_service",
+	}
+	fmt.Println("Table imported with metadata:", importMeta)
 
 	tableResponse := dto.TableResponse{
 		Model:   modelResponse,
@@ -1769,54 +1776,44 @@ func (s tableManagementService) DeleteColumnAndCleanUp(
 // DeleteUsedLookupColumn checks for linked columns in all models, then for each linked model,
 // checks for lookup columns referencing the deleted column, and deletes them using DeleteColumnAndCleanUp.
 func (s tableManagementService) DeleteUsedLookupColumn(ctx context.Context, schemaName string, columnData dto.ColumnResponse) error {
-	// 1. Get all columns for the modelId from columnData
 	columns, err := s.GetColumnsByModelID(ctx, schemaName, columnData.ModelID.String())
 	if err != nil {
 		return err
 	}
-
 	for _, col := range columns {
-		// 2. If column is a link type
 		if col.UIDT == "links" {
-			// 3. Get the linked model ID from meta (relation_id)
-			relation, ok := col.Meta["relation"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-			linkedModelID, ok := relation["with"].(string)
-			fmt.Println("linkedModelID: ", linkedModelID)
-			if !ok || linkedModelID == "" {
-				continue
-			}
-
-			// 5. Get all columns from the linked model
-			linkedColumns, err := s.GetColumnsByModelID(ctx, schemaName, linkedModelID)
-			if err != nil {
-				return err
-			}
-
-			for _, linkedCol := range linkedColumns {
-				// 6. If column is lookup and lookup_column_id matches deleted column
-				if linkedCol.UIDT == "lookup" {
-					lookupColumnID, ok := linkedCol.Meta["lookup_column_id"].(string)
-					if ok && lookupColumnID == columnData.ID.String() {
-						// 7. Delete this lookup column
-						fmt.Printf("column_id", linkedCol.ID.String())
-						err := s.DeleteUsedLookupColumnForRelation(ctx, schemaName, linkedCol)
-						if err != nil {
-							return err
-						}
-
-						err = s.reorderColumnsAfterDelete(ctx, schemaName, linkedCol.ModelID.String(), linkedCol)
-						if err != nil {
-							return err
-						}
-					}
-				}
-			}
+			s.handleLinkedColumnDeletion(ctx, schemaName, col, columnData)
 		}
 	}
 	return nil
+}
+
+func (s tableManagementService) handleLinkedColumnDeletion(ctx context.Context, schemaName string, col dto.ColumnResponse, columnData dto.ColumnResponse) {
+	relation, ok := col.Meta["relation"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	linkedModelID, ok := relation["with"].(string)
+	if !ok || linkedModelID == "" {
+		return
+	}
+	linkedColumns, err := s.GetColumnsByModelID(ctx, schemaName, linkedModelID)
+	if err != nil {
+		return
+	}
+	for _, linkedCol := range linkedColumns {
+		if linkedCol.UIDT == "lookup" {
+			lookupColumnID, ok := linkedCol.Meta["lookup_column_id"].(string)
+			if ok && lookupColumnID == columnData.ID.String() {
+				s.deleteLookupColumnAndReorder(ctx, schemaName, linkedCol)
+			}
+		}
+	}
+}
+
+func (s tableManagementService) deleteLookupColumnAndReorder(ctx context.Context, schemaName string, linkedCol dto.ColumnResponse) {
+	_ = s.DeleteUsedLookupColumnForRelation(ctx, schemaName, linkedCol)
+	_ = s.reorderColumnsAfterDelete(ctx, schemaName, linkedCol.ModelID.String(), linkedCol)
 }
 
 func (s tableManagementService) DeleteUsedLookupColumnForRelation(ctx context.Context, schemaName string, columnData dto.ColumnResponse) error {

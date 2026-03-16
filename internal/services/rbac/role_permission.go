@@ -7,16 +7,16 @@ package services
 
 import (
 	"context"
-	"go-postgres-rest/pkg"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	common "serenibase/internal/services/common"
-	core "serenibase/internal/services/core"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	common "github.com/aptlogica/sereni-base/internal/services/common"
+	core "github.com/aptlogica/sereni-base/internal/services/core"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
-	dbModels "go-postgres-rest/pkg/models"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 
 	"github.com/google/uuid"
 )

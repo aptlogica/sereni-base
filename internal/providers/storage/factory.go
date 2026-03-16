@@ -7,9 +7,9 @@ package storage
 
 import (
 	"fmt"
-	"serenibase/internal/config"
-	"serenibase/internal/providers/storage/http"
-	"serenibase/internal/providers/storage/interfaces"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/providers/storage/http"
+	"github.com/aptlogica/sereni-base/internal/providers/storage/interfaces"
 )
 
 func NewStorage(cfg *config.StorageConfig) (interfaces.StorageProvider, error) {

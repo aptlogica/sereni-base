@@ -8,7 +8,7 @@ package helpers
 import (
 	"time"
 
-	appConfig "serenibase/internal/config"
+	appConfig "github.com/aptlogica/sereni-base/internal/config"
 
 	"github.com/golang-jwt/jwt/v5"
 )

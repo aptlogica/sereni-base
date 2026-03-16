@@ -8,9 +8,9 @@ package antivirus
 import (
 	"fmt"
 
-	"serenibase/internal/config"
-	"serenibase/internal/providers/antivirus/http"
-	"serenibase/internal/providers/antivirus/interfaces"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/providers/antivirus/http"
+	"github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
 )
 
 // NewAntivirus constructs an antivirus provider based on configuration

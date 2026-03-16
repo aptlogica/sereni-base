@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"serenibase/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/dto"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

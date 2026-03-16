@@ -13,26 +13,26 @@ package app
 import (
 	"fmt"
 	"net/http"
-	"serenibase/internal/config"
-	"serenibase/internal/handlers"
-	"serenibase/internal/middleware"
-	"serenibase/internal/providers/logger"
-	"serenibase/internal/router"
-	"serenibase/internal/scripts"
-	"serenibase/internal/services"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/router"
+	"github.com/aptlogica/sereni-base/internal/scripts"
+	"github.com/aptlogica/sereni-base/internal/services"
 
-	"serenibase/internal/providers/antivirus"
-	"serenibase/internal/providers/auth"
-	"serenibase/internal/providers/email"
-	"serenibase/internal/providers/otp"
-	"serenibase/internal/providers/storage"
+	"github.com/aptlogica/sereni-base/internal/providers/antivirus"
+	"github.com/aptlogica/sereni-base/internal/providers/auth"
+	"github.com/aptlogica/sereni-base/internal/providers/email"
+	"github.com/aptlogica/sereni-base/internal/providers/otp"
+	"github.com/aptlogica/sereni-base/internal/providers/storage"
 
 	"time"
 
-	// _ "serenibase/docs"
+	// _ "github.com/aptlogica/sereni-base/docs"
 
-	"go-postgres-rest/pkg"
-	dbConfig "go-postgres-rest/pkg/config"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbConfig "github.com/aptlogica/go-postgres-rest/pkg/config"
 
 	"github.com/gin-gonic/gin"
 )

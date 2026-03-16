@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"serenibase/internal/config"
-	"serenibase/internal/handlers"
-	"serenibase/internal/router"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/router"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

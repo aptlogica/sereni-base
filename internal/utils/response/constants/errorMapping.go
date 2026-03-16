@@ -8,7 +8,7 @@ package constants
 import (
 	"errors"
 
-	app_errors "serenibase/internal/app-errors"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 )
 
 // ErrorMappingEntry defines a single mapping from a sentinel error to a response code.

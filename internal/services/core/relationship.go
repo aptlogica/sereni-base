@@ -8,13 +8,13 @@ package services
 import (
 	"context"
 	"fmt"
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 )
 
 type relationshipService struct {

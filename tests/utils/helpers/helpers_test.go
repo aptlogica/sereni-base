@@ -1,7 +1,7 @@
 package tests
 
 import (
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"testing"
 	"time"
 

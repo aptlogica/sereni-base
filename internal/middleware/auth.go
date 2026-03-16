@@ -7,11 +7,11 @@ package middleware
 
 import (
 	"fmt"
-	"serenibase/internal/constant"
-	"serenibase/internal/providers/auth"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/response"
-	responseConst "serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/providers/auth"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 )

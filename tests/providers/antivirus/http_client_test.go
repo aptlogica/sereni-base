@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	antivirusHttp "serenibase/internal/providers/antivirus/http"
+	antivirusHttp "github.com/aptlogica/sereni-base/internal/providers/antivirus/http"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

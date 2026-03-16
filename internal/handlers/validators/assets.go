@@ -6,7 +6,7 @@
 package validators
 
 import (
-	responseConst "serenibase/internal/utils/response/constants"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/go-playground/validator"
 )

@@ -16,15 +16,19 @@ package main
 
 import (
 	"log"
-	"serenibase/internal/app"
-	"serenibase/internal/config"
+	"github.com/aptlogica/sereni-base/internal/app"
+	"github.com/aptlogica/sereni-base/internal/config"
 )
+
+var version = "dev"
 
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
 	}
+
+	cfg.Server.Version = version
 
 	application, err := app.New(cfg)
 	config.AppConfig = cfg

@@ -7,10 +7,10 @@ package services
 
 import (
 	"context"
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/utils/helpers"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 )
 
 // GenericBaseService provides common CRUD operations for any model

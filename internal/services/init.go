@@ -7,16 +7,16 @@ package services
 
 // This file provides backward compatibility after restructuring services into subdirectories.
 // It re-exports all service constructors and types from subdirectories so existing code
-// that imports "serenibase/internal/services" continues to work without changes.
+// that imports "github.com/aptlogica/sereni-base/internal/services" continues to work without changes.
 
 import (
-	asset "serenibase/internal/services/asset"
-	auth "serenibase/internal/services/auth"
-	base "serenibase/internal/services/base"
-	core "serenibase/internal/services/core"
-	rbac "serenibase/internal/services/rbac"
-	table "serenibase/internal/services/table"
-	workspace "serenibase/internal/services/workspace"
+	asset "github.com/aptlogica/sereni-base/internal/services/asset"
+	auth "github.com/aptlogica/sereni-base/internal/services/auth"
+	base "github.com/aptlogica/sereni-base/internal/services/base"
+	core "github.com/aptlogica/sereni-base/internal/services/core"
+	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
+	table "github.com/aptlogica/sereni-base/internal/services/table"
+	workspace "github.com/aptlogica/sereni-base/internal/services/workspace"
 )
 
 // ============================================================================

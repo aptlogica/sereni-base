@@ -3,11 +3,11 @@ package auth_test
 import (
 	"context"
 	"mime/multipart"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	authProviderInterface "serenibase/internal/providers/auth"
-	emailProvider "serenibase/internal/providers/email"
-	"serenibase/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	authProviderInterface "github.com/aptlogica/sereni-base/internal/providers/auth"
+	emailProvider "github.com/aptlogica/sereni-base/internal/providers/email"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"time"
 
 	"github.com/google/uuid"

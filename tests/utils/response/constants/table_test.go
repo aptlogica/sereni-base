@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"serenibase/internal/utils/response/constants"
+	"github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
 
 func TestTableErrorCodes(t *testing.T) {

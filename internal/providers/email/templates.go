@@ -7,7 +7,7 @@ package email
 
 import (
 	"fmt"
-	"serenibase/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/constant"
 )
 
 // service implements EmailTemplateService.

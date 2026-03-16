@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/utils/response/constants"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
 
 // TestErrorStruct tests that the Error struct is properly defined with all fields

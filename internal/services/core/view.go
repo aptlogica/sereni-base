@@ -8,17 +8,17 @@ package services
 
 import (
 	"context"
-	"go-postgres-rest/pkg"
+	"github.com/aptlogica/go-postgres-rest/pkg"
 	"strings"
 	"time"
 
-	dbModels "go-postgres-rest/pkg/models"
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	"serenibase/internal/providers/logger"
-	"serenibase/internal/services/interfaces"
-	"serenibase/internal/utils/helpers"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 )
 
 type viewService struct {

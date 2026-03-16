@@ -7,16 +7,16 @@ package services
 
 import (
 	"context"
-	"go-postgres-rest/pkg"
-	dbModels "go-postgres-rest/pkg/models"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"time"
 
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	"serenibase/internal/utils/helpers"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
-	"serenibase/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 )
 
 type assetsService struct {

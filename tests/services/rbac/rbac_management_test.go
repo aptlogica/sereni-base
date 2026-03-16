@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"go-postgres-rest/pkg"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	services "serenibase/internal/services/rbac"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/rbac"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

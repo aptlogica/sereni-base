@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	app_errors "serenibase/internal/app-errors"
-	"serenibase/internal/models/tenant"
-	services "serenibase/internal/services/workspace"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/workspace"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

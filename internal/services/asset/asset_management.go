@@ -8,7 +8,7 @@ package services
 import (
 	"bytes"
 	"context"
-	"go-postgres-rest/pkg"
+	"github.com/aptlogica/go-postgres-rest/pkg"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
@@ -17,20 +17,22 @@ import (
 	"io"
 	"mime/multipart"
 	"path/filepath"
-	"serenibase/internal/dto"
-	"serenibase/internal/models/tenant"
-	antivirusProviderInterface "serenibase/internal/providers/antivirus/interfaces"
-	storageProviderInterface "serenibase/internal/providers/storage/interfaces"
-	"serenibase/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
+	storageProviderInterface "github.com/aptlogica/sereni-base/internal/providers/storage/interfaces"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 
 	"fmt"
-	app_errors "serenibase/internal/app-errors"
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"
 )
+
+const ContentTypeImageJPEG = "image/jpeg"
 
 type assetManagementService struct {
 	repo                   *pkg.DatabaseService
@@ -180,7 +182,7 @@ func (s *assetManagementService) getThumbnailUrl(
 	}
 
 	thumbFile := bytes.NewReader(thumbBytes)
-	thumbContentType := "image/jpeg"
+	thumbContentType := ContentTypeImageJPEG
 	thumbObjectName := filepath.Join(schema, "thumb_"+fileName)
 	thumbResp, thumbErr := s.storageProviderService.Upload(
 		context.Background(),

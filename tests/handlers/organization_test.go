@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"serenibase/internal/dto"
-	"serenibase/internal/handlers"
-	"serenibase/internal/models/tenant"
-	"serenibase/tests/handlers/mocks"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/tests/handlers/mocks"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

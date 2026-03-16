@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"serenibase/internal/config"
-	"serenibase/internal/providers/auth"
+	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/providers/auth"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
