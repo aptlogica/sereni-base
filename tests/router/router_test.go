@@ -103,6 +103,7 @@ func TestHealthEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
+	cfg.Server.Version = "1.0.0"
 	handlers := createMockHandlers()
 	middlewares := createMockMiddlewares()
 
@@ -117,12 +118,16 @@ func TestHealthEndpoint(t *testing.T) {
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
-	assert.Equal(t, "ok", response["status"])
-	assert.Equal(t, "Serenibase is running", response["message"])
-	assert.Equal(t, "1.0.0", response["version"])
+	assert.Equal(t, "Service healthy", response["message"])
+
+	data, ok := response["data"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "ok", data["status"])
+	assert.Equal(t, "Serenibase is running", data["message"])
+	assert.Equal(t, "1.0.0", data["version"])
 
 	// Verify features array
-	features, ok := response["features"].([]interface{})
+	features, ok := data["features"].([]interface{})
 	assert.True(t, ok)
 	assert.Equal(t, 7, len(features))
 	assert.Contains(t, features, "Dynamic table creation")

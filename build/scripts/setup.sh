@@ -1085,12 +1085,6 @@ clone_repositories() {
         bash "$SCRIPT_DIR/clone-services.sh"
         print_step "Cloned microservices"
     fi
-
-    if [ -f "build/scripts/clone-go-postgres-rest.sh" ]; then
-        echo "Cloning go-postgres-rest..."
-        bash "$SCRIPT_DIR/clone-go-postgres-rest.sh"
-        print_step "Cloned go-postgres-rest"
-    fi
 }
 
 start_services() {

@@ -7,15 +7,17 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"time"
+
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
-	"mime/multipart"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
-	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	authProviderInterface "github.com/aptlogica/sereni-base/internal/providers/auth"
@@ -681,7 +683,6 @@ func (a *authManagementService) sendInvitationEmail(user tenant.User, token stri
 
 // EditUser updates user details with support for profile, avatar, membership, and co-owner status changes
 func (a *authManagementService) EditUser(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) (dto.UserResponse, error) {
-	// Get existing user
 	_, err := a.userManagementService.GetUserByID(ctx, schema, userData.UserID)
 	if err != nil {
 		return dto.UserResponse{}, err
@@ -695,12 +696,19 @@ func (a *authManagementService) EditUser(ctx context.Context, schema string, use
 		return dto.UserResponse{}, err
 	}
 
-	if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userData.UserID)
+	if err != nil {
 		return dto.UserResponse{}, err
 	}
 
-	if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
-		return dto.UserResponse{}, err
+	if !isOwner {
+		if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
+			return dto.UserResponse{}, err
+		}
+
+		if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
+			return dto.UserResponse{}, err
+		}
 	}
 
 	return a.buildUpdatedUserResponse(ctx, schema, userData.UserID)
@@ -927,8 +935,12 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 
 func (a *authManagementService) DeactivateUser(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
 	// Check if user has Owner role - owners cannot be deactivated
-	if err := a.checkIfUserIsOwner(ctx, schema, userID); err != nil {
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
+	if err != nil {
 		return dto.UserResponse{}, err
+	}
+	if isOwner {
+		return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
 	}
 
 	updateFields := map[string]interface{}{
@@ -950,37 +962,51 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 	return userResponse, nil
 }
 
-func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) error {
-	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
-	if err != nil {
-		return nil
+func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) (bool, error) {
+	functionName := "get_user_role_by_id"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	args := map[string]interface{}{
+		"p_user_id": userID,
 	}
 
-	for _, member := range accessMembers {
-		if a.isUserOwner(ctx, schema, member.RoleID) {
-			return app_errors.OwnerCannotBeDeactivated
+	records, err := a.repo.TableService.GetByFunction(
+		ctx,
+		schemaFunctionName,
+		args,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	for _, record := range records {
+		if value, exists := record[functionName]; exists {
+			var roleData map[string]interface{}
+
+			// Handle both string (JSON) and map types
+			switch v := value.(type) {
+			case string:
+				// If it's a JSON string, unmarshal it
+				if err := json.Unmarshal([]byte(v), &roleData); err != nil {
+					continue
+				}
+			case map[string]interface{}:
+				// If it's already a map, use it directly
+				roleData = v
+			default:
+				continue
+			}
+
+			// Check if role_name is "owner"
+			if roleName, exists := roleData["role_name"].(string); exists {
+				if roleName == appConstant.RBACRoleNames.Owner {
+					return true, nil
+				}
+			}
 		}
 	}
-	return nil
-}
 
-// isUserOwner checks if the given role ID corresponds to an owner role
-func (a *authManagementService) isUserOwner(ctx context.Context, schema string, roleID string) bool {
-	if roleID == "" {
-		return false
-	}
-
-	roleUUID, parseErr := uuid.Parse(roleID)
-	if parseErr != nil {
-		return false
-	}
-
-	role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
-	if roleErr != nil {
-		return false
-	}
-
-	return role.Name == appConstant.RBACRoleNames.Owner
+	return false, nil
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
