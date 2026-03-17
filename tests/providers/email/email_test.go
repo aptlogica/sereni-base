@@ -482,9 +482,12 @@ func TestEmailTemplateServiceSpecialCharacters(t *testing.T) {
 // TestEmailServiceContextCancellation tests context cancellation scenarios
 func TestEmailServiceContextCancellation(t *testing.T) {
 	t.Parallel()
-	requestReceived := false
+	requestReceived := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestReceived = true
+		select {
+		case requestReceived <- struct{}{}:
+		default:
+		}
 		// Simulate slow response
 		time.Sleep(50 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -507,8 +510,10 @@ func TestEmailServiceContextCancellation(t *testing.T) {
 	}
 	service.Enqueue(job)
 
-	// Wait for processing
-	time.Sleep(50 * time.Millisecond)
-
-	assert.True(t, requestReceived)
+	select {
+	case <-requestReceived:
+		assert.True(t, true)
+	case <-time.After(250 * time.Millisecond):
+		assert.True(t, false)
+	}
 }

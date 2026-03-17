@@ -4,10 +4,8 @@ go 1.24.0
 
 toolchain go1.24.4
 
-replace github.com/aptlogica/go-postgres-rest => ./go-postgres-rest
-
 require (
-	github.com/aptlogica/go-postgres-rest v0.0.0-00010101000000-000000000000
+	github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-playground/universal-translator v0.18.1
 	github.com/go-playground/validator v9.31.0+incompatible

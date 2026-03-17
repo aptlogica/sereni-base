@@ -8,14 +8,15 @@ package services
 import (
 	"context"
 	"fmt"
+	"mime/multipart"
+	"time"
+
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
-	"mime/multipart"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
-	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	authProviderInterface "github.com/aptlogica/sereni-base/internal/providers/auth"
@@ -951,36 +952,34 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 }
 
 func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) error {
-	accessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userID)
-	if err != nil {
-		return nil
+	functionName := "get_user_role_by_id"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	args := map[string]interface{}{
+		"p_user_id": userID,
 	}
 
-	for _, member := range accessMembers {
-		if a.isUserOwner(ctx, schema, member.RoleID) {
-			return app_errors.OwnerCannotBeDeactivated
+	records, err := a.repo.TableService.GetByFunction(
+		ctx,
+		schemaFunctionName,
+		args,
+	)
+	if err != nil {
+		return nil // If we can't check, allow the operation
+	}
+
+	// Check if any of the user's roles is "owner"
+	for _, record := range records {
+		if rec, ok := record[functionName].(map[string]interface{}); ok {
+			if roleName, exists := rec["role_name"].(string); exists {
+				if roleName == appConstant.RBACRoleNames.Owner {
+					return app_errors.OwnerCannotBeDeactivated
+				}
+			}
 		}
 	}
+
 	return nil
-}
-
-// isUserOwner checks if the given role ID corresponds to an owner role
-func (a *authManagementService) isUserOwner(ctx context.Context, schema string, roleID string) bool {
-	if roleID == "" {
-		return false
-	}
-
-	roleUUID, parseErr := uuid.Parse(roleID)
-	if parseErr != nil {
-		return false
-	}
-
-	role, roleErr := a.rbacManagementService.GetRoleByID(ctx, schema, roleUUID)
-	if roleErr != nil {
-		return false
-	}
-
-	return role.Name == appConstant.RBACRoleNames.Owner
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {

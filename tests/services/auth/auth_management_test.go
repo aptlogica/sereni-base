@@ -626,7 +626,7 @@ func TestAuthManagement_EditUser_FullFlow(t *testing.T) {
 }
 
 func TestAuthManagement_RemoveUser_Activate_Deactivate(t *testing.T) {
-	service, userMgmt, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
 
@@ -642,12 +642,19 @@ func TestAuthManagement_RemoveUser_Activate_Deactivate(t *testing.T) {
 	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 		return nil, nil
 	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.NoAccess,
+			},
+		},
+	}, nil)
 	_, err = service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
 	assert.NoError(t, err)
 }
 
 func TestAuthManagement_DeactivateOwnerBlocked(t *testing.T) {
-	service, _, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
 	ownerRoleID := uuid.New()
@@ -658,6 +665,13 @@ func TestAuthManagement_DeactivateOwnerBlocked(t *testing.T) {
 	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
 		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.Owner}, nil
 	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
 
 	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
 	assert.ErrorIs(t, err, app_errors.OwnerCannotBeDeactivated)
@@ -1222,12 +1236,10 @@ func TestAuthManagement_GetUsersWithRole_AndGetActiveUsersForAssign_Error(t *tes
 }
 
 func TestAuthManagement_CheckIfUserIsOwner_ErrorIgnored(t *testing.T) {
-	service, _, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, _, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 
-	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-		return nil, errors.New("db")
-	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("db"))
 	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
 	assert.NoError(t, err)
 }
@@ -2155,4 +2167,3 @@ func TestAuthManagement_RemoveUserFromBase_EmailTemplateSet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "u@example.com", job.To)
 }
-

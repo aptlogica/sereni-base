@@ -997,12 +997,6 @@ if (Test-Path "build\scripts\clone-services.ps1") {
     Write-Host "[OK] Cloned microservices" -ForegroundColor Green
 }
 
-if (Test-Path "build\scripts\clone-go-postgres-rest.ps1") {
-    Write-Host "Cloning go-postgres-rest..."
-    & powershell -NoProfile -ExecutionPolicy Bypass -File "build\scripts\clone-go-postgres-rest.ps1"
-    Write-Host "[OK] Cloned go-postgres-rest" -ForegroundColor Green
-}
-
 # ========================================================================
 #                      STARTING SERVICES
 # ========================================================================

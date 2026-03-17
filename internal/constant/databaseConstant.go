@@ -46,7 +46,7 @@ var DefinedFunctions = []Function{
 			END;
 			$$;
 		`,
-	},
+},
 	{
 		FunctionName:   "convert_column_type",
 		FunctionParams: "schema_name TEXT, table_name TEXT, column_name TEXT, target_type TEXT, empty_before BOOLEAN",
@@ -452,4 +452,28 @@ var DefinedFunctions = []Function{
 		$$;
 	`,
 	},
+{
+	FunctionName:   "get_user_role_by_id",
+	FunctionParams: "p_user_id text",
+	FunctionSQL: `
+	RETURNS SETOF JSON
+	LANGUAGE plpgsql STABLE AS $$
+	DECLARE
+		v_user_id uuid;
+	BEGIN
+		v_user_id := p_user_id::uuid;
+		RETURN QUERY
+		SELECT 
+			JSON_BUILD_OBJECT(
+				'user_id', u.id,
+				'role_name', ar.name
+			)::json AS result
+		FROM public.users u
+		INNER JOIN public.access_members am ON am.user_id::uuid = u.id
+		INNER JOIN public.access_roles ar ON ar.id = am.role_id::uuid
+		WHERE u.id = v_user_id;
+	END;
+	$$;
+`,
+},
 }
