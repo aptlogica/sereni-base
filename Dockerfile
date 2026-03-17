@@ -13,10 +13,6 @@ WORKDIR /app
 # Copy dependency files for better layer caching
 COPY go.mod go.sum ./
 
-# Copy the local module required by 'replace' directive in go.mod
-# Ensure go-postgres-rest exists inside your build context
-COPY go-postgres-rest ./go-postgres-rest
-
 # Download dependencies
 RUN go mod download
 
