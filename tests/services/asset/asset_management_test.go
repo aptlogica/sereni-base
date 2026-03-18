@@ -251,7 +251,7 @@ func TestUpload_Success_SingleFile(t *testing.T) {
 	// Mock storage upload for thumbnail
 	mockStorage.On("Upload", ctx, mock.MatchedBy(func(name string) bool {
 		return strings.Contains(name, "thumb_")
-	}), mock.Anything, mock.Anything, "image/jpeg").Return(storageInterfaces.UploadResponse{
+	}), mock.Anything, mock.Anything, services.ContentTypeImageJPEG).Return(storageInterfaces.UploadResponse{
 		Url: "https://storage.example.com/thumb.jpg",
 	}, nil).Once() // Mock bulk insertion
 	mockAsset.On("AssetBulkInsertion", ctx, mock.MatchedBy(func(assets []dto.AssetInsertion) bool {

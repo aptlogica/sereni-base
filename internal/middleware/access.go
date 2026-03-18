@@ -6,12 +6,12 @@
 package middleware
 
 import (
-	"fmt"
+	"strings"
+
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,7 +30,6 @@ const (
 
 func ScopeHeaderMiddleware(scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		fmt.Println("ScopeHeaderMiddleware-------------------")
 		c.Request.Header.Set("Scope", scope)
 		c.Next()
 	}

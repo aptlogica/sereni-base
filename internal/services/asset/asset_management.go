@@ -8,15 +8,15 @@ package services
 import (
 	"bytes"
 	"context"
-	"github.com/aptlogica/go-postgres-rest/pkg"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
-	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"mime/multipart"
 	"path/filepath"
+
+	"github.com/aptlogica/go-postgres-rest/pkg"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
@@ -24,9 +24,10 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 
 	"fmt"
-	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"strings"
 	"time"
+
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"
@@ -93,7 +94,6 @@ func (s *assetManagementService) processAndUploadFile(fileHeader *multipart.File
 
 	filePath, err := s.uploadMainFile(objectName, file, fileHeader.Size, contentType, schema)
 	if err != nil {
-		fmt.Println(err)
 		return dto.AssetInsertion{}, app_errors.StorageUploadFailed
 	}
 
@@ -123,7 +123,6 @@ func (s *assetManagementService) uploadMainFile(objectName string, file io.Reade
 		size,
 		contentType,
 	)
-	fmt.Println("Uploaded file to storage err:", err, contentType)
 	if err != nil {
 		return "", err
 	}
@@ -152,7 +151,6 @@ func (s *assetManagementService) getThumbnailUrl(
 	// Open the image file
 	file, err := fileHeader.Open()
 	if err != nil {
-		fmt.Println("getThumbnailUrl(imaging): failed to open source file for thumbnail:", err)
 		return filePath
 	}
 	defer file.Close()
@@ -160,7 +158,6 @@ func (s *assetManagementService) getThumbnailUrl(
 	// Decode using standard library
 	srcImg, _, err := image.Decode(file)
 	if err != nil {
-		fmt.Println("getThumbnailUrl: decode failed:", err)
 		return filePath
 	}
 
@@ -171,13 +168,11 @@ func (s *assetManagementService) getThumbnailUrl(
 	var buf bytes.Buffer
 	err = jpeg.Encode(&buf, thumbImg, &jpeg.Options{Quality: 75})
 	if err != nil {
-		fmt.Println("getThumbnailUrl: encode failed:", err)
 		return filePath
 	}
 
 	thumbBytes := buf.Bytes()
 	if len(thumbBytes) == 0 {
-		fmt.Println("getThumbnailUrl(imaging): encode returned empty buffer")
 		return filePath
 	}
 
@@ -192,7 +187,6 @@ func (s *assetManagementService) getThumbnailUrl(
 		thumbContentType,
 	)
 	if thumbErr != nil {
-		fmt.Println("getThumbnailUrl(imaging): upload failed:", thumbErr)
 		return filePath
 	}
 
@@ -205,7 +199,6 @@ func (s *assetManagementService) scanFilesWithAntivirus(ctx context.Context, req
 		if s.antivirusProvider != nil {
 			file, err := fileHeader.Open()
 			if err != nil {
-				fmt.Println("antivirus scan: failed to open file:", err)
 				continue
 			}
 			scanResult, scanErr := s.antivirusProvider.ScanReader(ctx, fileHeader.Filename, file)

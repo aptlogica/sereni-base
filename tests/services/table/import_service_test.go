@@ -535,3 +535,148 @@ func TestImport_SuccessAndTypes(t *testing.T) {
 	assert.Equal(t, 2147483648.0, row["\"big_int_col\""])
 	assert.Equal(t, false, row["\"bool_false_col\""])
 }
+
+// TestImport_UpdateTypeFlags tests the updateTypeFlags helper method for type detection
+func TestImport_UpdateTypeFlags_NumericType(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Number\nA,123\nB,456\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+		Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		// Verify numeric column is detected
+		if columnData.Title == "Number" {
+			assert.Equal(t, "INTEGER", columnData.DT)
+		}
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
+		Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").
+		Return(resp, nil)
+
+	svc := services.NewImportService(mockTable, mockBase, nil)
+	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+}
+
+// TestImport_UpdateTypeFlags_BooleanType tests updateTypeFlags with boolean values
+func TestImport_UpdateTypeFlags_BooleanType(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,IsActive\nA,true\nB,false\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+		Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		// Verify boolean column is detected
+		if columnData.Title == "IsActive" {
+			assert.Equal(t, "BOOLEAN", columnData.DT)
+		}
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
+		Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").
+		Return(resp, nil)
+
+	svc := services.NewImportService(mockTable, mockBase, nil)
+	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+}
+
+// TestImport_UpdateTypeFlags_DateType tests updateTypeFlags with date values
+func TestImport_UpdateTypeFlags_DateType(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,CreatedDate\nA,2006-01-02\nB,2007-01-02\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+		Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		// Verify date column is detected
+		if columnData.Title == "CreatedDate" {
+			assert.Equal(t, "DATE", columnData.DT)
+		}
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
+		Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").
+		Return(resp, nil)
+
+	svc := services.NewImportService(mockTable, mockBase, nil)
+	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+}
+
+// TestImport_UpdateTypeFlags_MixedTypes tests updateTypeFlags with values that don't match any specific type
+func TestImport_UpdateTypeFlags_MixedTypes(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Mixed\nA,hello\nB,world\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+		Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		// Verify text column is detected for non-matching types
+		if columnData.Title == "Mixed" {
+			assert.Equal(t, "TEXT", columnData.DT)
+		}
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
+		Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").
+		Return(resp, nil)
+
+	svc := services.NewImportService(mockTable, mockBase, nil)
+	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+}
+
+// TestImport_UpdateTypeFlags_EmailType tests updateTypeFlags with email values
+func TestImport_UpdateTypeFlags_EmailType(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Email\nA,user@example.com\nB,admin@example.com\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+		Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		// Verify email column is detected
+		if columnData.Title == "Email" {
+			assert.Equal(t, "TEXT", columnData.DT)
+		}
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
+		Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").
+		Return(resp, nil)
+
+	svc := services.NewImportService(mockTable, mockBase, nil)
+	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+}

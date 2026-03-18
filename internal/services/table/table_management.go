@@ -951,7 +951,6 @@ func (s tableManagementService) removeLookupColumnInRelation(
 	relationID string,
 	lookupColumnName string,
 ) error {
-	fmt.Println("removeLookupColumnInRelation...")
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationID, schemaName)
 	if err != nil {
 		lg := logger.Get()

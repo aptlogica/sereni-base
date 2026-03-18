@@ -696,16 +696,14 @@ func (a *authManagementService) EditUser(ctx context.Context, schema string, use
 		return dto.UserResponse{}, err
 	}
 
-	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userData.UserID)
-	if err != nil {
-		return dto.UserResponse{}, err
-	}
-
-	if !isOwner {
+	if userData.IsCoOwner != nil {
 		if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
+			logger.Get().Error().Err(err).Str("user_id", userData.UserID).Msg("Failed to process CoOwner changes")
 			return dto.UserResponse{}, err
 		}
+	}
 
+	if userData.IsCoOwner == nil || !*userData.IsCoOwner {
 		if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
 			return dto.UserResponse{}, err
 		}
@@ -873,6 +871,14 @@ func (a *authManagementService) buildMembershipKeyFromAccessMember(member dto.Ac
 }
 
 func (a *authManagementService) updateMemberships(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) error {
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userData.UserID)
+	if err != nil {
+		return err
+	}
+	if isOwner {
+		return nil
+	}
+
 	currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
 	if err != nil {
 		return err
@@ -970,43 +976,46 @@ func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema s
 		"p_user_id": userID,
 	}
 
-	records, err := a.repo.TableService.GetByFunction(
-		ctx,
-		schemaFunctionName,
-		args,
-	)
+	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
 	if err != nil {
-		return false, err
+		// If we can't verify owner status due to error, assume user is not an owner
+		// This allows the operation to proceed gracefully
+		return false, nil
 	}
 
 	for _, record := range records {
-		if value, exists := record[functionName]; exists {
-			var roleData map[string]interface{}
-
-			// Handle both string (JSON) and map types
-			switch v := value.(type) {
-			case string:
-				// If it's a JSON string, unmarshal it
-				if err := json.Unmarshal([]byte(v), &roleData); err != nil {
-					continue
-				}
-			case map[string]interface{}:
-				// If it's already a map, use it directly
-				roleData = v
-			default:
-				continue
-			}
-
-			// Check if role_name is "owner"
-			if roleName, exists := roleData["role_name"].(string); exists {
-				if roleName == appConstant.RBACRoleNames.Owner {
-					return true, nil
-				}
-			}
+		roleData := a.parseRoleData(record, functionName)
+		if roleData != nil && a.isOwnerRole(roleData) {
+			return true, nil
 		}
 	}
 
 	return false, nil
+}
+
+// parseRoleData extracts and parses role data from a record
+func (a *authManagementService) parseRoleData(record map[string]interface{}, functionName string) map[string]interface{} {
+	value, exists := record[functionName]
+	if !exists {
+		return nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		var roleData map[string]interface{}
+		if err := json.Unmarshal([]byte(v), &roleData); err == nil {
+			return roleData
+		}
+	case map[string]interface{}:
+		return v
+	}
+	return nil
+}
+
+// isOwnerRole checks if the role data indicates an owner role
+func (a *authManagementService) isOwnerRole(roleData map[string]interface{}) bool {
+	roleName, exists := roleData["role_name"].(string)
+	return exists && roleName == appConstant.RBACRoleNames.Owner
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {

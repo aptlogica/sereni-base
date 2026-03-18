@@ -1080,7 +1080,6 @@ func (s *rbacManagementService) ProcessUserMemberships(
 	}
 
 	if len(memberships) == 0 {
-		fmt.Println("No memberships to process")
 		return summary, nil
 	}
 

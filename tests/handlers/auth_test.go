@@ -912,9 +912,66 @@ func TestAuthHandler_EditUser_Success(t *testing.T) {
 	_ = writer.WriteField("user_id", "u1")
 	_ = writer.WriteField("firstname", "Updated")
 	_ = writer.WriteField("lastname", "User")
+	_ = writer.WriteField("is_coowner", "true")
 	_ = writer.WriteField("membership", `[{"workspace_id":"w1","role":"Admin","bases":[{"base_id":"b1","role":"Editor"}]}]`)
 	part, _ := writer.CreateFormFile("profile_pic", "avatar.png")
 	_, _ = part.Write([]byte("fake"))
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/users/edit", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.EditUser(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_EditUser_CoOwnerCaseInsensitive(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	// Verify that EditUser is called with IsCoOwner set to true regardless of input case
+	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.Any(), "user123").Return(dto.UserResponse{}, nil).Times(4)
+	handler := handlers.NewAuthHandler(mockService)
+
+	testCases := []string{"true", "True", "TRUE", "1"}
+	for _, isCoOwnerVal := range testCases {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("user_id", "u1")
+		_ = writer.WriteField("is_coowner", isCoOwnerVal)
+		_ = writer.Close()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/users/edit", body)
+		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+		c.Set("schema", "test")
+		c.Set("user_id", "user123")
+
+		handler.EditUser(c)
+		assert.Equal(t, http.StatusOK, w.Code, "should accept is_coowner value: %s", isCoOwnerVal)
+	}
+}
+
+func TestAuthHandler_EditUser_CoOwnerFalse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.Any(), "user123").Return(dto.UserResponse{}, nil)
+	handler := handlers.NewAuthHandler(mockService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("user_id", "u1")
+	_ = writer.WriteField("is_coowner", "false")
 	_ = writer.Close()
 
 	w := httptest.NewRecorder()

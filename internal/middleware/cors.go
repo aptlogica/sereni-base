@@ -6,7 +6,6 @@
 package middleware
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -35,7 +34,6 @@ func CORS() gin.HandlerFunc {
 		}
 
 		if allowedOrigin != "" {
-			fmt.Println("allowedOrigin:", allowedOrigin)
 			c.Header("Access-Control-Allow-Origin", allowedOrigin)
 			c.Header("Access-Control-Allow-Headers", corsConfig.AllowedHeaders)
 			c.Header("Access-Control-Allow-Methods", corsConfig.AllowedMethods)

@@ -12,15 +12,16 @@ import (
 	"fmt"
 	"math"
 	"mime/multipart"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -193,7 +194,6 @@ func (s *importService) createTable(ctx context.Context, schemaName string, req 
 	lg.Info().Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Creating table with defaults")
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
-		fmt.Println("Error creating table:", err)
 		lg.Error().Stack().Err(err).Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Failed to create table with defaults")
 		return dto.TableResponse{}, err
 	}
@@ -271,7 +271,6 @@ func (s *importService) addColumns(ctx context.Context, schemaName string, req d
 		}
 		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
 		if err != nil {
-			fmt.Println("Error adding column:", err)
 			lg.Error().Stack().Err(err).Str("columnTitle", header).Str("columnType", colType).Msg("Failed to add column")
 			return nil, err
 		}
@@ -400,29 +399,34 @@ func (s *importService) collectTypeFlags(rows [][]string, colIndex int) typeFlag
 		flags.hasData = true
 		flags.totalLength += len(val)
 		flags.count++
-		if flags.isNumber || flags.isDecimal {
-			flags.isNumber, flags.isDecimal = s.checkNumericTypes(val, flags.isNumber, flags.isDecimal)
-		}
-		if flags.isBool {
-			flags.isBool = s.checkBoolType(val)
-		}
-		if flags.isDate {
-			flags.isDate = s.checkDateType(val)
-		}
-		if flags.isEmail {
-			flags.isEmail = s.checkEmailType(val)
-		}
-		if flags.isURL {
-			flags.isURL = s.checkURLType(val)
-		}
-		if flags.isPhone {
-			flags.isPhone = s.checkPhoneType(val)
-		}
-		if flags.isJSON {
-			flags.isJSON = s.checkJSONType(val)
-		}
+		s.updateTypeFlags(&flags, val)
 	}
 	return flags
+}
+
+// updateTypeFlags updates the type flags based on a single value
+func (s *importService) updateTypeFlags(flags *typeFlags, val string) {
+	if flags.isNumber || flags.isDecimal {
+		flags.isNumber, flags.isDecimal = s.checkNumericTypes(val, flags.isNumber, flags.isDecimal)
+	}
+	if flags.isBool {
+		flags.isBool = s.checkBoolType(val)
+	}
+	if flags.isDate {
+		flags.isDate = s.checkDateType(val)
+	}
+	if flags.isEmail {
+		flags.isEmail = s.checkEmailType(val)
+	}
+	if flags.isURL {
+		flags.isURL = s.checkURLType(val)
+	}
+	if flags.isPhone {
+		flags.isPhone = s.checkPhoneType(val)
+	}
+	if flags.isJSON {
+		flags.isJSON = s.checkJSONType(val)
+	}
 }
 
 func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {

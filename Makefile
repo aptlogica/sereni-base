@@ -4,7 +4,7 @@
 # All build scripts are located in: build/scripts/
 # Configuration templates are in:   build/config/
 
-.PHONY: setup setup-y help up down down-all restart logs clean clean-all ps status
+.PHONY: setup setup-y help up down down-all restart logs clean clean-all ps status test test-coverage
 
 # Detect OS
 ifeq ($(OS),Windows_NT)
@@ -35,6 +35,10 @@ help:
 	@echo ""
 	@echo "  Quick Start:"
 	@echo "    make setup              - Interactive setup wizard (recommended)"
+	@echo ""
+	@echo "  Testing:"
+	@echo "    make test               - Run all tests"
+	@echo "    make test-coverage      - Run tests with coverage report"
 	@echo ""
 	@echo "  Docker Management:"
 	@echo "    make up                 - Start all services"
@@ -74,6 +78,19 @@ else
 	@chmod +x $(SETUP_SCRIPT_Y)
 	@bash $(SETUP_SCRIPT_Y)
 endif
+
+# ============================================================================
+# Testing Commands
+# ============================================================================
+
+# Run all tests
+test:
+	go test ./...
+
+# Run tests with coverage report
+test-coverage: ## Run tests with coverage report
+	go test -v -race -coverprofile=coverage/coverage.out -covermode=atomic ./...
+	@echo "Coverage report generated at coverage/coverage.out"
 
 # ============================================================================
 # Docker Management Commands

@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -144,25 +146,21 @@ func (h *AuthHandler) ResendOTP(c *gin.Context) {
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req dto.RefreshTokenRequest
-	fmt.Println("RefreshToken")
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if ve, ok := err.(validator.ValidationErrors); ok {
 			response.SendError(c, validators.RefreshTokenRequestError(ve[0]))
 			return
 		}
-		fmt.Println("RefreshTokenRequestError: ", err)
 		response.CheckAndSendError(c, err)
 		return
 	}
 
 	refreshResp, err := h.authManagementService.RefreshToken(c.Request.Context(), req)
 	if err != nil {
-		fmt.Println("RefreshToken err: ", err)
 		response.CheckAndSendError(c, err)
 		return
 	}
-	fmt.Println("refreshResp: ", refreshResp)
 
 	response.SendSuccess(c, responseConst.AuthSuccess.RefreshToken, refreshResp)
 
@@ -475,7 +473,10 @@ func (h *AuthHandler) EditUser(c *gin.Context) {
 	// Get optional is_coowner from form
 	isCoOwnerStr := c.PostForm("is_coowner")
 	if isCoOwnerStr != "" {
-		isCoOwner := isCoOwnerStr == "true" || isCoOwnerStr == "1"
+		// Handle various boolean representations (case-insensitive, yes/no, true/false, 1/0)
+		isCoOwner := strings.ToLower(isCoOwnerStr) == "true" ||
+			strings.ToLower(isCoOwnerStr) == "yes" ||
+			isCoOwnerStr == "1"
 		req.IsCoOwner = &isCoOwner
 	}
 
@@ -483,7 +484,6 @@ func (h *AuthHandler) EditUser(c *gin.Context) {
 	fileHeader, err := c.FormFile("profile_pic")
 	if err == nil && fileHeader != nil {
 		req.ProfilePic = fileHeader
-		fmt.Println("File uploaded:", fileHeader.Filename, "Size:", fileHeader.Size)
 	}
 
 	// Parse membership JSON array from form field if provided
@@ -565,8 +565,6 @@ func (h *AuthHandler) RemoveUser(c *gin.Context) {
 func (h *AuthHandler) GetUsers(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
-
-	fmt.Println("schemaName: ", schemaName)
 
 	users, err := h.authManagementService.GetUsers(c.Request.Context(), schemaName)
 	if err != nil {
@@ -825,10 +823,8 @@ func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
 // @Router       /base/{id}/members [get]
 func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 	baseID := c.Param("id")
-	fmt.Println("baseID...", baseID)
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
-	fmt.Println("schemaName...", schemaName)
 	baseMembers, err := h.authManagementService.GetBaseMembers(c.Request.Context(), schemaName, baseID)
 	if err != nil {
 		response.CheckAndSendError(c, err)

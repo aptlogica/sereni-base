@@ -7,7 +7,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
@@ -272,8 +271,6 @@ func (h *UserHandler) GetWorkspaces(c *gin.Context) {
 	rolesVal, _ := c.Get("roles")
 	roles, _ := rolesVal.(string)
 
-	fmt.Println("userID: ", userId)
-
 	workspaces, err := h.userManagementService.GetWorkspaces(c.Request.Context(), schemaName, userId, roles)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -320,8 +317,6 @@ func (h *UserHandler) GetUserAccessDetails(c *gin.Context) {
 
 	// Get optional workspace_id from query parameter
 	workspaceId := c.Query("workspace_id")
-
-	fmt.Println("role-->", rolesVal)
 
 	accessDetails, err := h.userManagementService.GetUserAccessDetails(c.Request.Context(), schemaName, userId, roles, workspaceId)
 	if err != nil {

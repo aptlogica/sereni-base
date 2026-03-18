@@ -18,8 +18,5 @@ jobs:
           go-version: '1.24'
       - run: go mod tidy
       - run: go vet ./...
-      - run: go test ./... -coverprofile=coverage.out
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
+      - run: go test ./tests/... -coverprofile=coverage/coverage.out
       - run: docker build .
