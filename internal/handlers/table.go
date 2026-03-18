@@ -1080,7 +1080,6 @@ func (h *TableHandler) ImportTable(c *gin.Context) {
 
 	table, err := h.importService.Import(c, schemaName, req, file)
 	if err != nil {
-		fmt.Println("err===>>>", err)
 		response.CheckAndSendError(c, err)
 		return
 	}

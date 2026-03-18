@@ -6,7 +6,6 @@
 package middleware
 
 import (
-	"fmt"
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/providers/auth"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -26,8 +25,6 @@ func AuthMiddleware(authProviderService auth.AuthProvider, userManagementService
 			return
 		}
 		userClaims, err := authProviderService.ValidateToken(c.Request.Context(), authHeader)
-		fmt.Println("err ValidateToken:::::::", err)
-		fmt.Println("err userClaims:::::::", userClaims)
 		if err != nil {
 			response.CheckAndSendError(c, err)
 			c.Abort()
@@ -37,7 +34,6 @@ func AuthMiddleware(authProviderService auth.AuthProvider, userManagementService
 		// Check if user exists in database
 		user, err := userManagementService.GetUserByID(c.Request.Context(), constant.MasterDatabase, userClaims.UserId)
 		if err != nil {
-			fmt.Println("err GetUserByID:::::::", err)
 			response.SendError(c, responseConst.Error.UnauthorizedAccess)
 			c.Abort()
 			return
@@ -49,7 +45,6 @@ func AuthMiddleware(authProviderService auth.AuthProvider, userManagementService
 			c.Abort()
 			return
 		}
-		fmt.Println("userClaims.UserId: ", userClaims.UserId)
 
 		c.Set("user_id", userClaims.UserId)
 		c.Set("schema", constant.MasterDatabase)

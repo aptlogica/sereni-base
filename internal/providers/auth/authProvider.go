@@ -134,7 +134,6 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 	url := fmt.Sprintf("%s/auth/validate-token", a.AuthConfig.URL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		fmt.Println("err:::::::", err)
 		return Claims{}, fmt.Errorf(errCreateRequest, err)
 	}
 
@@ -142,14 +141,12 @@ func (a *AuthProviderService) ValidateToken(ctx context.Context, tokenStr string
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		fmt.Println("err:::::::", err)
 		return Claims{}, fmt.Errorf(errCallAuthService, err)
 	}
 	defer resp.Body.Close()
 
 	var validateResp authServiceValidateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&validateResp); err != nil {
-		fmt.Println("err validateResp:::::::", err)
 		return Claims{}, fmt.Errorf(errDecodeResponse, err)
 	}
 
@@ -214,8 +211,6 @@ func (a *AuthProviderService) Login(ctx context.Context, reqBody AuthServiceLogi
 	if err != nil {
 		return Tokens{}, fmt.Errorf(errMarshalRequest, err)
 	}
-
-	fmt.Println("jsonData: ", jsonData)
 
 	url := fmt.Sprintf("%s/auth/login", a.AuthConfig.URL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))

@@ -194,7 +194,6 @@ func (s *importService) createTable(ctx context.Context, schemaName string, req 
 	lg.Info().Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Creating table with defaults")
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
-		fmt.Println("Error creating table:", err)
 		lg.Error().Stack().Err(err).Str("tableName", req.Title).Str("schemaName", schemaName).Msg("Failed to create table with defaults")
 		return dto.TableResponse{}, err
 	}
@@ -272,7 +271,6 @@ func (s *importService) addColumns(ctx context.Context, schemaName string, req d
 		}
 		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
 		if err != nil {
-			fmt.Println("Error adding column:", err)
 			lg.Error().Stack().Err(err).Str("columnTitle", header).Str("columnType", colType).Msg("Failed to add column")
 			return nil, err
 		}

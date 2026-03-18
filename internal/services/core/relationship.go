@@ -7,7 +7,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
@@ -29,13 +28,11 @@ func (s *relationshipService) Create(ctx context.Context, req dto.RelationInsert
 	tableName := tenant.Relation{}.TableName(schemaName)
 	insertedRelationshipData, err := s.repo.TableService.CreateRecord(tableName, req.Map())
 	if err != nil {
-		fmt.Println("err", err)
 		return tenant.Relation{}, app_errors.LogDatabaseError(err, "failed to create relation")
 	}
 
 	var insertedRelationship tenant.Relation
 	if err := helpers.MapToStruct(insertedRelationshipData, &insertedRelationship); err != nil {
-		fmt.Println("err MapToStruct", err)
 		return tenant.Relation{}, app_errors.ErrMapToStruct
 	}
 	return insertedRelationship, nil
