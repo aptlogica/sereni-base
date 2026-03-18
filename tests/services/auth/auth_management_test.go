@@ -612,6 +612,13 @@ func TestAuthManagement_EditUser_FullFlow(t *testing.T) {
 	rbacSvc.ProcessUserMembershipsFn = func(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error) {
 		return nil, nil
 	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
 	tableSvc.On("DeleteRecord", mock.Anything, mock.Anything).Return(nil)
 
 	resp, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
