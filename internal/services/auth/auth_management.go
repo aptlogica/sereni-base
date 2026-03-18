@@ -696,12 +696,17 @@ func (a *authManagementService) EditUser(ctx context.Context, schema string, use
 		return dto.UserResponse{}, err
 	}
 
-	if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
-		return dto.UserResponse{}, err
+	if userData.IsCoOwner != nil {
+		if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
+			logger.Get().Error().Err(err).Str("user_id", userData.UserID).Msg("Failed to process CoOwner changes")
+			return dto.UserResponse{}, err
+		}
 	}
 
-	if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
-		return dto.UserResponse{}, err
+	if userData.IsCoOwner == nil || !*userData.IsCoOwner {
+		if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
+			return dto.UserResponse{}, err
+		}
 	}
 
 	return a.buildUpdatedUserResponse(ctx, schema, userData.UserID)

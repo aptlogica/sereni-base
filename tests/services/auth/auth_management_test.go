@@ -580,7 +580,7 @@ func TestAuthManagement_EditUser_FullFlow(t *testing.T) {
 	userID := uuid.New().String()
 
 	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
-		return tenant.User{ID: uuid.MustParse(userID)}, nil
+		return tenant.User{ID: uuid.MustParse(userID), Email: "u@example.com"}, nil
 	}
 	userMgmt.UpdateUserProfileFn = func(ctx context.Context, schema string, userID string, updateData dto.UpdateUserProfileRequest) (dto.UserResponse, error) {
 		return dto.UserResponse{ID: uuid.MustParse(userID)}, nil
@@ -590,9 +590,6 @@ func TestAuthManagement_EditUser_FullFlow(t *testing.T) {
 	}
 	userMgmt.AddAvatarFn = func(ctx context.Context, schema string, userID string, fileHeader *multipart.FileHeader) (dto.UserResponse, error) {
 		return dto.UserResponse{}, nil
-	}
-	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
-		return tenant.User{ID: uuid.MustParse(userID), Email: "u@example.com"}, nil
 	}
 	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 		roleID := uuid.New().String()
@@ -1913,7 +1910,7 @@ func TestAuthManagement_EditUser_UpdateAvatarError(t *testing.T) {
 }
 
 func TestAuthManagement_EditUser_CoOwnerPromote(t *testing.T) {
-	service, userMgmt, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
 
@@ -1929,12 +1926,80 @@ func TestAuthManagement_EditUser_CoOwnerPromote(t *testing.T) {
 	rbacSvc.AssignRoleToUserFn = func(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error) {
 		return nil, nil
 	}
+	// Memberships should NOT be called when promoting to coowner
+	rbacSvc.ProcessUserMembershipsFn = func(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error) {
+		t.Fatal("ProcessUserMemberships should not be called when promoting to CoOwner")
+		return nil, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 
 	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
 		UserID:    userID,
 		IsCoOwner: helpers.BoolPtr(true),
 	}, "admin")
 	assert.NoError(t, err)
+}
+
+func TestAuthManagement_EditUser_CoOwnerPromote_WithMemberships(t *testing.T) {
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	roleID := uuid.New()
+
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id)}, nil
+	}
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{
+			{ID: uuid.New(), RoleID: roleID.String(), ScopeType: "workspace", ScopeID: helpers.StringPtr("w1")},
+		}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, id uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: id, Name: "member"}, nil
+	}
+	rbacSvc.GetRoleByNameFn = func(ctx context.Context, schemaName string, name string) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: uuid.New(), Name: appConstant.RBACRoleNames.CoOwner}, nil
+	}
+	rbacSvc.AssignRoleToUserFn = func(ctx context.Context, schemaName string, req dto.AccessMemberDTO) (interface{}, error) {
+		return nil, nil
+	}
+	// Memberships should NOT be called when promoting to coowner, even if provided
+	rbacSvc.ProcessUserMembershipsFn = func(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error) {
+		t.Fatal("ProcessUserMemberships should not be called when promoting to CoOwner")
+		return nil, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+	tableSvc.On("DeleteRecord", mock.Anything, mock.Anything).Return(nil)
+
+	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
+		UserID:     userID,
+		IsCoOwner:  helpers.BoolPtr(true),
+		Membership: []dto.MembershipRequest{{WorkspaceID: "w1", Role: "editor"}},
+	}, "admin")
+	assert.NoError(t, err)
+}
+
+func TestAuthManagement_EditUser_CoOwnerPromote_Error(t *testing.T) {
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id)}, nil
+	}
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{}, nil
+	}
+	rbacSvc.GetRoleByNameFn = func(ctx context.Context, schemaName string, name string) (tenant.AccessRole, error) {
+		return tenant.AccessRole{}, errors.New("role not found")
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
+		UserID:    userID,
+		IsCoOwner: helpers.BoolPtr(true),
+	}, "admin")
+	assert.Error(t, err)
 }
 
 func TestAuthManagement_EditUser_CoOwnerDemote(t *testing.T) {
@@ -1948,7 +2013,7 @@ func TestAuthManagement_EditUser_CoOwnerDemote(t *testing.T) {
 	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 		roleID := uuid.New()
 		return []dto.AccessMemberDTO{
-			{ID: uuid.New(), RoleID: roleID.String(), ScopeType: "workspace", ScopeID: helpers.StringPtr("w1")},
+			{ID: uuid.New(), RoleID: roleID.String(), ScopeType: "system", ScopeID: nil},
 		}, nil
 	}
 	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
@@ -1958,6 +2023,7 @@ func TestAuthManagement_EditUser_CoOwnerDemote(t *testing.T) {
 		return nil, nil
 	}
 	tableSvc.On("DeleteRecord", mock.Anything, mock.Anything).Return(nil)
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 
 	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
 		UserID:     userID,
@@ -1965,6 +2031,60 @@ func TestAuthManagement_EditUser_CoOwnerDemote(t *testing.T) {
 		Membership: []dto.MembershipRequest{{WorkspaceID: "w1", Role: "viewer"}},
 	}, "admin")
 	assert.NoError(t, err)
+}
+
+func TestAuthManagement_EditUser_CoOwnerDemote_NoMemberships(t *testing.T) {
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id)}, nil
+	}
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		roleID := uuid.New()
+		return []dto.AccessMemberDTO{
+			{ID: uuid.New(), RoleID: roleID.String(), ScopeType: "system", ScopeID: nil},
+		}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.CoOwner}, nil
+	}
+	tableSvc.On("DeleteRecord", mock.Anything, mock.Anything).Return(nil)
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
+		UserID:    userID,
+		IsCoOwner: helpers.BoolPtr(false),
+		// No memberships provided - should still work
+	}, "admin")
+	assert.NoError(t, err)
+}
+
+func TestAuthManagement_EditUser_IsCoOwner_Nil_UpdateMemberships(t *testing.T) {
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	membershipCalled := false
+
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id)}, nil
+	}
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{}, nil
+	}
+	rbacSvc.ProcessUserMembershipsFn = func(ctx context.Context, schema string, userID string, assignedBy string, memberships []dto.MembershipRequest) (interface{}, error) {
+		membershipCalled = true
+		return nil, nil
+	}
+
+	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
+		UserID:     userID,
+		IsCoOwner:  nil, // Not changing coowner status
+		Membership: []dto.MembershipRequest{{WorkspaceID: "w1", Role: "viewer"}},
+	}, "admin")
+	assert.NoError(t, err)
+	assert.True(t, membershipCalled, "ProcessUserMemberships should be called when IsCoOwner is nil")
 }
 
 func TestAuthManagement_EditUser_UpdateMembershipsError(t *testing.T) {

@@ -18,7 +18,6 @@ build/
 out/
 *.exe
 *.test
-*.out
 *.tgz
 # Node
 node_modules/

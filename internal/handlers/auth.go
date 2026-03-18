@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -475,7 +477,10 @@ func (h *AuthHandler) EditUser(c *gin.Context) {
 	// Get optional is_coowner from form
 	isCoOwnerStr := c.PostForm("is_coowner")
 	if isCoOwnerStr != "" {
-		isCoOwner := isCoOwnerStr == "true" || isCoOwnerStr == "1"
+		// Handle various boolean representations (case-insensitive, yes/no, true/false, 1/0)
+		isCoOwner := strings.ToLower(isCoOwnerStr) == "true" ||
+			strings.ToLower(isCoOwnerStr) == "yes" ||
+			isCoOwnerStr == "1"
 		req.IsCoOwner = &isCoOwner
 	}
 
