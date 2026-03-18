@@ -696,19 +696,12 @@ func (a *authManagementService) EditUser(ctx context.Context, schema string, use
 		return dto.UserResponse{}, err
 	}
 
-	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userData.UserID)
-	if err != nil {
+	if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
 		return dto.UserResponse{}, err
 	}
 
-	if !isOwner {
-		if err := a.processCoOwnerChanges(ctx, schema, userData, reqBy); err != nil {
-			return dto.UserResponse{}, err
-		}
-
-		if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
-			return dto.UserResponse{}, err
-		}
+	if err := a.updateMemberships(ctx, schema, userData, reqBy); err != nil {
+		return dto.UserResponse{}, err
 	}
 
 	return a.buildUpdatedUserResponse(ctx, schema, userData.UserID)
@@ -873,6 +866,14 @@ func (a *authManagementService) buildMembershipKeyFromAccessMember(member dto.Ac
 }
 
 func (a *authManagementService) updateMemberships(ctx context.Context, schema string, userData dto.EditUserRequest, reqBy string) error {
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userData.UserID)
+	if err != nil {
+		return err
+	}
+	if isOwner {
+		return nil
+	}
+
 	currentAccessMembers, err := a.rbacManagementService.GetUserAccessMembers(ctx, schema, userData.UserID)
 	if err != nil {
 		return err
