@@ -2167,3 +2167,116 @@ func TestAuthManagement_RemoveUserFromBase_EmailTemplateSet(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "u@example.com", job.To)
 }
+
+// TestAuthManagement_ParseRoleData tests the parseRoleData helper method
+func TestAuthManagement_ParseRoleData_StringValue(t *testing.T) {
+	service, _, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	result, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+}
+
+// TestAuthManagement_ParseRoleData_MapValue tests parseRoleData when role data is a map
+func TestAuthManagement_ParseRoleData_MapValue(t *testing.T) {
+	service, _, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.NoAccess,
+			},
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	assert.NoError(t, err)
+}
+
+// TestAuthManagement_IsOwnerRole_MatchesOwner tests isOwnerRole when role is Owner
+func TestAuthManagement_IsOwnerRole_MatchesOwner(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		roleID := uuid.New()
+		return []dto.AccessMemberDTO{{RoleID: roleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.Owner}, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
+	assert.ErrorIs(t, err, app_errors.OwnerCannotBeDeactivated)
+}
+
+// TestAuthManagement_IsOwnerRole_DoesNotMatchOwner tests isOwnerRole when role is not Owner
+func TestAuthManagement_IsOwnerRole_DoesNotMatchOwner(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return nil, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
+	assert.NoError(t, err)
+}
+
+// TestAuthManagement_ParseRoleData_InvalidJSON tests parseRoleData with invalid data
+func TestAuthManagement_ParseRoleData_InvalidJSON(t *testing.T) {
+	service, _, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": "invalid",
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	assert.NoError(t, err)
+}
+
+// TestAuthManagement_IsOwnerRole_EmptyRoleName tests isOwnerRole with empty role name
+func TestAuthManagement_IsOwnerRole_EmptyRoleName(t *testing.T) {
+	service, _, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": "",
+			},
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	assert.NoError(t, err)
+}
