@@ -12,15 +12,16 @@ import (
 	"fmt"
 	"math"
 	"mime/multipart"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -400,29 +401,34 @@ func (s *importService) collectTypeFlags(rows [][]string, colIndex int) typeFlag
 		flags.hasData = true
 		flags.totalLength += len(val)
 		flags.count++
-		if flags.isNumber || flags.isDecimal {
-			flags.isNumber, flags.isDecimal = s.checkNumericTypes(val, flags.isNumber, flags.isDecimal)
-		}
-		if flags.isBool {
-			flags.isBool = s.checkBoolType(val)
-		}
-		if flags.isDate {
-			flags.isDate = s.checkDateType(val)
-		}
-		if flags.isEmail {
-			flags.isEmail = s.checkEmailType(val)
-		}
-		if flags.isURL {
-			flags.isURL = s.checkURLType(val)
-		}
-		if flags.isPhone {
-			flags.isPhone = s.checkPhoneType(val)
-		}
-		if flags.isJSON {
-			flags.isJSON = s.checkJSONType(val)
-		}
+		s.updateTypeFlags(&flags, val)
 	}
 	return flags
+}
+
+// updateTypeFlags updates the type flags based on a single value
+func (s *importService) updateTypeFlags(flags *typeFlags, val string) {
+	if flags.isNumber || flags.isDecimal {
+		flags.isNumber, flags.isDecimal = s.checkNumericTypes(val, flags.isNumber, flags.isDecimal)
+	}
+	if flags.isBool {
+		flags.isBool = s.checkBoolType(val)
+	}
+	if flags.isDate {
+		flags.isDate = s.checkDateType(val)
+	}
+	if flags.isEmail {
+		flags.isEmail = s.checkEmailType(val)
+	}
+	if flags.isURL {
+		flags.isURL = s.checkURLType(val)
+	}
+	if flags.isPhone {
+		flags.isPhone = s.checkPhoneType(val)
+	}
+	if flags.isJSON {
+		flags.isJSON = s.checkJSONType(val)
+	}
 }
 
 func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {

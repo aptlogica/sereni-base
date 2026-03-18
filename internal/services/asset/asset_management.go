@@ -8,15 +8,15 @@ package services
 import (
 	"bytes"
 	"context"
-	"github.com/aptlogica/go-postgres-rest/pkg"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
-	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"mime/multipart"
 	"path/filepath"
+
+	"github.com/aptlogica/go-postgres-rest/pkg"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
@@ -24,9 +24,10 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 
 	"fmt"
-	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"strings"
 	"time"
+
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"

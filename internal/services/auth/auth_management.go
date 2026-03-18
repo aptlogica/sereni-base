@@ -971,43 +971,44 @@ func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema s
 		"p_user_id": userID,
 	}
 
-	records, err := a.repo.TableService.GetByFunction(
-		ctx,
-		schemaFunctionName,
-		args,
-	)
+	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
 	if err != nil {
 		return false, err
 	}
 
 	for _, record := range records {
-		if value, exists := record[functionName]; exists {
-			var roleData map[string]interface{}
-
-			// Handle both string (JSON) and map types
-			switch v := value.(type) {
-			case string:
-				// If it's a JSON string, unmarshal it
-				if err := json.Unmarshal([]byte(v), &roleData); err != nil {
-					continue
-				}
-			case map[string]interface{}:
-				// If it's already a map, use it directly
-				roleData = v
-			default:
-				continue
-			}
-
-			// Check if role_name is "owner"
-			if roleName, exists := roleData["role_name"].(string); exists {
-				if roleName == appConstant.RBACRoleNames.Owner {
-					return true, nil
-				}
-			}
+		roleData := a.parseRoleData(record, functionName)
+		if roleData != nil && a.isOwnerRole(roleData) {
+			return true, nil
 		}
 	}
 
 	return false, nil
+}
+
+// parseRoleData extracts and parses role data from a record
+func (a *authManagementService) parseRoleData(record map[string]interface{}, functionName string) map[string]interface{} {
+	value, exists := record[functionName]
+	if !exists {
+		return nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		var roleData map[string]interface{}
+		if err := json.Unmarshal([]byte(v), &roleData); err == nil {
+			return roleData
+		}
+	case map[string]interface{}:
+		return v
+	}
+	return nil
+}
+
+// isOwnerRole checks if the role data indicates an owner role
+func (a *authManagementService) isOwnerRole(roleData map[string]interface{}) bool {
+	roleName, exists := roleData["role_name"].(string)
+	return exists && roleName == appConstant.RBACRoleNames.Owner
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
