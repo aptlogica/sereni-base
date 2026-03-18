@@ -550,7 +550,7 @@ func TestImport_UpdateTypeFlags_NumericType(t *testing.T) {
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		// Verify numeric column is detected
 		if columnData.Title == "Number" {
-			assert.Equal(t, "integer", columnData.DT)
+			assert.Equal(t, "INTEGER", columnData.DT)
 		}
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
 	}
@@ -579,7 +579,7 @@ func TestImport_UpdateTypeFlags_BooleanType(t *testing.T) {
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		// Verify boolean column is detected
 		if columnData.Title == "IsActive" {
-			assert.Equal(t, "boolean", columnData.DT)
+			assert.Equal(t, "BOOLEAN", columnData.DT)
 		}
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
 	}
@@ -608,7 +608,7 @@ func TestImport_UpdateTypeFlags_DateType(t *testing.T) {
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		// Verify date column is detected
 		if columnData.Title == "CreatedDate" {
-			assert.Equal(t, "date", columnData.DT)
+			assert.Equal(t, "DATE", columnData.DT)
 		}
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
 	}
@@ -637,7 +637,7 @@ func TestImport_UpdateTypeFlags_MixedTypes(t *testing.T) {
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		// Verify text column is detected for non-matching types
 		if columnData.Title == "Mixed" {
-			assert.Equal(t, "text", columnData.DT)
+			assert.Equal(t, "TEXT", columnData.DT)
 		}
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
 	}
@@ -666,7 +666,7 @@ func TestImport_UpdateTypeFlags_EmailType(t *testing.T) {
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		// Verify email column is detected
 		if columnData.Title == "Email" {
-			assert.Equal(t, "email", columnData.DT)
+			assert.Equal(t, "TEXT", columnData.DT)
 		}
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
 	}

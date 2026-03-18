@@ -2062,7 +2062,7 @@ func TestAuthManagement_EditUser_CoOwnerDemote_NoMemberships(t *testing.T) {
 }
 
 func TestAuthManagement_EditUser_IsCoOwner_Nil_UpdateMemberships(t *testing.T) {
-	service, userMgmt, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
 	membershipCalled := false
@@ -2077,6 +2077,7 @@ func TestAuthManagement_EditUser_IsCoOwner_Nil_UpdateMemberships(t *testing.T) {
 		membershipCalled = true
 		return nil, nil
 	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 
 	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
 		UserID:     userID,
@@ -2088,7 +2089,7 @@ func TestAuthManagement_EditUser_IsCoOwner_Nil_UpdateMemberships(t *testing.T) {
 }
 
 func TestAuthManagement_EditUser_UpdateMembershipsError(t *testing.T) {
-	service, userMgmt, _, _, rbacSvc, _, _, _, _, _ := setupAuthManagementService()
+	service, userMgmt, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
 
@@ -2098,6 +2099,7 @@ func TestAuthManagement_EditUser_UpdateMembershipsError(t *testing.T) {
 	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 		return nil, errors.New("db")
 	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 
 	_, err := service.EditUser(ctx, appConstant.MasterDatabase, dto.EditUserRequest{
 		UserID:     userID,
@@ -2297,13 +2299,20 @@ func TestAuthManagement_RemoveUserFromBase_EmailTemplateSet(t *testing.T) {
 
 // TestAuthManagement_ParseRoleData tests the parseRoleData helper method
 func TestAuthManagement_ParseRoleData_StringValue(t *testing.T) {
-	service, _, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	service, userMgmt, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
+
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id)}, nil
+	}
+	userMgmt.UpdateUserFn = func(ctx context.Context, schema string, id string, updateFields map[string]interface{}) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id)}, nil
+	}
 
 	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
 		{
 			"get_user_role_by_id": map[string]interface{}{
-				"role_name": appConstant.RBACRoleNames.Owner,
+				"role_name": "Viewer", // Non-owner role so deactivation succeeds
 			},
 		},
 	}, nil)

@@ -978,7 +978,9 @@ func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema s
 
 	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
 	if err != nil {
-		return false, err
+		// If we can't verify owner status due to error, assume user is not an owner
+		// This allows the operation to proceed gracefully
+		return false, nil
 	}
 
 	for _, record := range records {

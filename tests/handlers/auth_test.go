@@ -936,7 +936,7 @@ func TestAuthHandler_EditUser_CoOwnerCaseInsensitive(t *testing.T) {
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
 	// Verify that EditUser is called with IsCoOwner set to true regardless of input case
-	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.Any(), "user123").Return(dto.UserResponse{}, nil)
+	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.Any(), "user123").Return(dto.UserResponse{}, nil).Times(4)
 	handler := handlers.NewAuthHandler(mockService)
 
 	testCases := []string{"true", "True", "TRUE", "1"}
