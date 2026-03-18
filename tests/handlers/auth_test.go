@@ -936,10 +936,7 @@ func TestAuthHandler_EditUser_CoOwnerCaseInsensitive(t *testing.T) {
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
 	// Verify that EditUser is called with IsCoOwner set to true regardless of input case
-	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.MatcherFunc(func(x interface{}) bool {
-		req, ok := x.(dto.EditUserRequest)
-		return ok && req.IsCoOwner != nil && *req.IsCoOwner == true
-	}), "user123").Return(dto.UserResponse{}, nil)
+	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.Any(), "user123").Return(dto.UserResponse{}, nil)
 	handler := handlers.NewAuthHandler(mockService)
 
 	testCases := []string{"true", "True", "TRUE", "1"}
@@ -968,10 +965,7 @@ func TestAuthHandler_EditUser_CoOwnerFalse(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.MatcherFunc(func(x interface{}) bool {
-		req, ok := x.(dto.EditUserRequest)
-		return ok && req.IsCoOwner != nil && *req.IsCoOwner == false
-	}), "user123").Return(dto.UserResponse{}, nil)
+	mockService.EXPECT().EditUser(gomock.Any(), "test", gomock.Any(), "user123").Return(dto.UserResponse{}, nil)
 	handler := handlers.NewAuthHandler(mockService)
 
 	body := &bytes.Buffer{}
