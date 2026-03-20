@@ -89,8 +89,8 @@ test:
 
 # Run tests with coverage report
 test-coverage: ## Run tests with coverage report
-	go test -v -race -coverprofile=coverage/coverage.out -covermode=atomic ./...
-	@echo "Coverage report generated at coverage/coverage.out"
+	go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./tests/...
+	@echo "Coverage report generated at coverage.out"
 
 # ============================================================================
 # Docker Management Commands
