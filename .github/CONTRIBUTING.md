@@ -28,7 +28,7 @@ We use Go's built-in testing framework. Run tests with:
 ```bash
 make test
 # or
-go test ./...
+go test ./tests/...
 ```
 
 ## Code Coverage
@@ -38,7 +38,7 @@ Maintain or improve code coverage with your changes:
 ```bash
 make coverage
 # or
-go test -coverprofile=coverage.out ./...
+go test -coverprofile=coverage.out ./tests/...
 go tool cover -html=coverage.out
 ```
 

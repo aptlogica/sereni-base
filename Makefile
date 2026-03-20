@@ -85,11 +85,11 @@ endif
 
 # Run all tests
 test:
-	go test ./...
+	go test ./tests/...
 
 # Run tests with coverage report
 test-coverage: ## Run tests with coverage report
-	go test -v -race -coverprofile="coverage.out" -covermode=atomic -coverpkg="./internal/..." "./tests/..."
+	go test -v -race -coverprofile="coverage.out" -covermode=atomic -coverpkg=./internal/... ./tests/...
 	go tool cover -func="coverage.out"
 	@echo "Coverage report generated at coverage.out"
 
