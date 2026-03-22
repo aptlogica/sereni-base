@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -641,9 +642,9 @@ func TestHTTPAntivirusClientErrorResponses(t *testing.T) {
 
 // TestHTTPAntivirusClientConcurrentScans tests concurrent scanning
 func TestHTTPAntivirusClientConcurrentScans(t *testing.T) {
-	requestCount := 0
+	var requestCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		atomic.AddInt32(&requestCount, 1)
 		err := r.ParseMultipartForm(10 << 20)
 		require.NoError(t, err)
 
@@ -669,7 +670,11 @@ func TestHTTPAntivirusClientConcurrentScans(t *testing.T) {
 
 	// Launch multiple concurrent scans
 	numScans := 10
-	done := make(chan bool, numScans)
+	type scanResult struct {
+		err   error
+		clean bool
+	}
+	results := make(chan scanResult, numScans)
 
 	for i := 0; i < numScans; i++ {
 		go func(index int) {
@@ -677,18 +682,16 @@ func TestHTTPAntivirusClientConcurrentScans(t *testing.T) {
 			reader := strings.NewReader("content")
 			fileName := fmt.Sprintf("file%d.txt", index)
 			result, err := client.ScanReader(ctx, fileName, reader)
-
-			assert.NoError(t, err)
-			assert.True(t, result.Clean)
-
-			done <- true
+			results <- scanResult{err: err, clean: result.Clean}
 		}(i)
 	}
 
 	// Wait for all scans
 	for i := 0; i < numScans; i++ {
-		<-done
+		res := <-results
+		assert.NoError(t, res.err)
+		assert.True(t, res.clean)
 	}
 
-	assert.Equal(t, numScans, requestCount)
+	assert.Equal(t, int32(numScans), atomic.LoadInt32(&requestCount))
 }
