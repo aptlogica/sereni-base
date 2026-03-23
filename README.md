@@ -101,12 +101,9 @@ The setup wizard will:
 
 ### Default Login
 
-| Field | Value |
-|-------|-------|
-| Email | `admin@example.com` |
-| Password | `Admin@123` |
+Default credentials are configured via environment variables. See `.env.example` for setup.
 
-> **⚠️ Important:** Change the default password immediately after first login.
+> **⚠️ Security:** Never use default credentials in production. Always configure secure values via environment variables.
 
 ## Commands Reference
 
