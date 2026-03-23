@@ -20,31 +20,34 @@
     { "key": "auth_token", "value": "" },
     { "key": "email", "value": "owner@example.com" },
     { "key": "password", "value": "password123" },
+    { "key": "new_password", "value": "newPassword123" },
+    { "key": "old_password", "value": "password123" },
     { "key": "refresh_token", "value": "" },
     { "key": "otp", "value": "123456" },
     { "key": "token", "value": "" },
+    { "key": "reset_token", "value": "" },
     { "key": "id", "value": "1" },
+    { "key": "user_id", "value": "1" },
     { "key": "workspace_id", "value": "1" },
     { "key": "base_id", "value": "1" },
     { "key": "table_id", "value": "1" },
     { "key": "column_id", "value": "1" },
     { "key": "view_id", "value": "1" },
-    { "key": "asset_id", "value": "1" }
+    { "key": "asset_id", "value": "1" },
+    { "key": "row_id", "value": "1" },
+    { "key": "first_name", "value": "John" },
+    { "key": "last_name", "value": "Doe" },
+    { "key": "workspace_name", "value": "My Workspace" },
+    { "key": "base_name", "value": "My Base" },
+    { "key": "table_name", "value": "Tasks" },
+    { "key": "column_name", "value": "Title" },
+    { "key": "column_type", "value": "text" },
+    { "key": "view_name", "value": "Grid View" },
+    { "key": "access_level", "value": "editor" },
+    { "key": "organization_name", "value": "My Organization" },
+    { "key": "attachment_ids", "value": "[\"1\"]" }
   ],
   "item": [
-    {
-      "name": "Health",
-      "auth": { "type": "noauth" },
-      "item": [
-        {
-          "name": "GET /health",
-          "request": {
-            "method": "GET",
-            "url": { "raw": "{{baseUrl}}/api/v1/health", "host": ["{{baseUrl}}"], "path": ["api", "v1", "health"] }
-          }
-        }
-      ]
-    },
     {
       "name": "Auth (Public)",
       "auth": { "type": "noauth" },
@@ -72,7 +75,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{token}}\",\n  \"password\": \"newPassword123\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"reset_token\": \"{{reset_token}}\",\n  \"new_password\": \"{{new_password}}\"\n}" },
             "url": { "raw": "{{baseUrl}}/api/v1/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "reset-password"] }
           }
         },
@@ -134,17 +137,17 @@
       "name": "User",
       "item": [
         { "name": "GET /user/profile/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/user/profile/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "profile", "{{id}}"] } } },
-        { "name": "PATCH /user/profile/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/profile/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "profile", "{{id}}"] } } },
-        { "name": "POST /user/change-password/:id", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"old_password\": \"oldPassword\",\n  \"new_password\": \"newPassword\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/change-password/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "change-password", "{{id}}"] } } },
+        { "name": "PATCH /user/profile/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"+1234567890\",\n  \"bio\": \"User bio\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/profile/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "profile", "{{id}}"] } } },
+        { "name": "POST /user/change-password/:id", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"old_password\": \"{{old_password}}\",\n  \"new_password\": \"{{new_password}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/change-password/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "change-password", "{{id}}"] } } },
         { "name": "POST /user/profile/:id/avatar", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "avatar", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/user/profile/{{id}}/avatar", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "profile", "{{id}}", "avatar"] } } },
         { "name": "DELETE /user/profile/:id/avatar", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/user/profile/{{id}}/avatar", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "profile", "{{id}}", "avatar"] } } },
         { "name": "GET /user/workspaces", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/user/workspaces", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "workspaces"] } } },
         { "name": "GET /user/access-details", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/user/access-details", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "access-details"] } } },
         { "name": "GET /user/roles-and-access/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/user/roles-and-access/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "roles-and-access", "{{id}}"] } } },
-        { "name": "POST /user/assign", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{id}}\",\n  \"workspace_id\": \"{{workspace_id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/assign", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "assign"] } } },
-        { "name": "PUT /user/access/update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{id}}\",\n  \"access\": \"editor\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/access/update", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "access", "update"] } } },
-        { "name": "POST /user/create", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "email", "value": "newuser@example.com", "type": "text" }, { "key": "first_name", "value": "New", "type": "text" }, { "key": "last_name", "value": "User", "type": "text" }, { "key": "profile_picture", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/user/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "create"] } } },
-        { "name": "POST /user/edit", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "id", "value": "{{id}}", "type": "text" }, { "key": "first_name", "value": "Updated", "type": "text" }, { "key": "profile_picture", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/user/edit", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "edit"] } } },
+        { "name": "POST /user/assign", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"workspace_id\": \"{{workspace_id}}\",\n  \"access_level\": \"{{access_level}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/assign", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "assign"] } } },
+        { "name": "PUT /user/access/update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"access\": \"{{access_level}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/access/update", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "access", "update"] } } },
+        { "name": "POST /user/create", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "email", "value": "newuser@example.com", "type": "text" }, { "key": "first_name", "value": "{{first_name}}", "type": "text" }, { "key": "last_name", "value": "{{last_name}}", "type": "text" }, { "key": "password", "value": "{{password}}", "type": "text" }, { "key": "profile_picture", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/user/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "create"] } } },
+        { "name": "POST /user/edit", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "id", "value": "{{id}}", "type": "text" }, { "key": "first_name", "value": "Updated", "type": "text" }, { "key": "last_name", "value": "User", "type": "text" }, { "key": "email", "value": "updated@example.com", "type": "text" }, { "key": "profile_picture", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/user/edit", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "edit"] } } },
         { "name": "POST /user/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "remove"] } } },
         { "name": "POST /user/activate", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/activate", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "activate"] } } },
         { "name": "POST /user/deactivate", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/user/deactivate", "host": ["{{baseUrl}}"], "path": ["api", "v1", "user", "deactivate"] } } },
@@ -156,21 +159,21 @@
       "name": "Organization",
       "item": [
         { "name": "GET /organization", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/organization", "host": ["{{baseUrl}}"], "path": ["api", "v1", "organization"] } } },
-        { "name": "PUT /organization/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Organization\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/organization/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "organization", "{{id}}"] } } }
+        { "name": "PUT /organization/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{organization_name}}\",\n  \"description\": \"Organization description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/organization/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "organization", "{{id}}"] } } }
       ]
     },
     {
       "name": "Workspace",
       "item": [
-        { "name": "POST /workspace/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"My Workspace\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "create"] } } },
+        { "name": "POST /workspace/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{workspace_name}}\",\n  \"description\": \"Workspace description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "create"] } } },
         { "name": "GET /workspace/", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/workspace/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", ""] } } },
         { "name": "GET /workspace/:id/tables", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/tables", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "tables"] } } },
-        { "name": "PUT /workspace/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Workspace\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}"] } } },
+        { "name": "PUT /workspace/:id", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{workspace_name}}\",\n  \"description\": \"Updated workspace description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}"] } } },
         { "name": "DELETE /workspace/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}"] } } },
-        { "name": "POST /workspace/:id/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "remove"] } } },
+        { "name": "POST /workspace/:id/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{user_id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "remove"] } } },
         { "name": "GET /workspace/:id/members", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "members"] } } },
         { "name": "GET /workspace/:id/members-with-roles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/members-with-roles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "members-with-roles"] } } },
-        { "name": "POST /workspace/:id/bulk-add-members", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"members\": [\n    { \"user_id\": \"{{id}}\", \"access\": \"editor\" }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/bulk-add-members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "bulk-add-members"] } } },
+        { "name": "POST /workspace/:id/bulk-add-members", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"members\": [\n    { \"user_id\": \"{{user_id}}\", \"access\": \"{{access_level}}\" }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/bulk-add-members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "bulk-add-members"] } } },
         { "name": "DELETE /workspace/access/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/workspace/access/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "access", "{{id}}"] } } },
         { "name": "GET /workspace/:id/bases", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}/bases", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}", "bases"] } } },
         { "name": "GET /workspace/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/workspace/{{workspace_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "workspace", "{{workspace_id}}"] } } }
@@ -179,15 +182,15 @@
     {
       "name": "Base",
       "item": [
-        { "name": "POST /base/create", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "name", "value": "My Base", "type": "text" }, { "key": "workspace_id", "value": "{{workspace_id}}", "type": "text" }, { "key": "image", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/base/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "create"] } } },
-        { "name": "POST /base/:id/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "remove"] } } },
+        { "name": "POST /base/create", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "name", "value": "{{base_name}}", "type": "text" }, { "key": "workspace_id", "value": "{{workspace_id}}", "type": "text" }, { "key": "description", "value": "Base description", "type": "text" }, { "key": "image", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/base/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "create"] } } },
+        { "name": "POST /base/:id/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_id\": \"{{user_id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "remove"] } } },
         { "name": "GET /base/:id/members", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "members"] } } },
         { "name": "GET /base/:id/members-with-roles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/members-with-roles", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "members-with-roles"] } } },
-        { "name": "POST /base/:id/bulk-add-members", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"members\": [\n    { \"user_id\": \"{{id}}\", \"access\": \"editor\" }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/bulk-add-members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "bulk-add-members"] } } },
+        { "name": "POST /base/:id/bulk-add-members", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"members\": [\n    { \"user_id\": \"{{user_id}}\", \"access\": \"{{access_level}}\" }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/bulk-add-members", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "bulk-add-members"] } } },
         { "name": "DELETE /base/access/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/base/access/{{id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "access", "{{id}}"] } } },
         { "name": "POST /base/:id/image", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "image", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/image", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "image"] } } },
         { "name": "DELETE /base/:id/image", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/image", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "image"] } } },
-        { "name": "PUT /base/:id", "request": { "method": "PUT", "body": { "mode": "formdata", "formdata": [{ "key": "name", "value": "Updated Base", "type": "text" }, { "key": "image", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}"] } } },
+        { "name": "PUT /base/:id", "request": { "method": "PUT", "body": { "mode": "formdata", "formdata": [{ "key": "name", "value": "{{base_name}}", "type": "text" }, { "key": "description", "value": "Updated base description", "type": "text" }, { "key": "image", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}"] } } },
         { "name": "DELETE /base/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}"] } } },
         { "name": "GET /base/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}"] } } },
         { "name": "GET /base/:id/tables", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/base/{{base_id}}/tables", "host": ["{{baseUrl}}"], "path": ["api", "v1", "base", "{{base_id}}", "tables"] } } }
@@ -196,9 +199,9 @@
     {
       "name": "Table",
       "item": [
-        { "name": "POST /table/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Tasks\",\n  \"base_id\": \"{{base_id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/table/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "create"] } } },
-        { "name": "POST /table/import", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "table_name", "value": "Imported", "type": "text" }, { "key": "file", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/table/import", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "import"] } } },
-        { "name": "PATCH /table/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Table\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/table/{{table_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "{{table_id}}"] } } },
+        { "name": "POST /table/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{table_name}}\",\n  \"base_id\": \"{{base_id}}\",\n  \"description\": \"Table description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/table/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "create"] } } },
+        { "name": "POST /table/import", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "table_name", "value": "{{table_name}}", "type": "text" }, { "key": "base_id", "value": "{{base_id}}", "type": "text" }, { "key": "file", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/table/import", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "import"] } } },
+        { "name": "PATCH /table/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{table_name}}\",\n  \"description\": \"Updated table description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/table/{{table_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "{{table_id}}"] } } },
         { "name": "GET /table/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/table/{{table_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "{{table_id}}"] } } },
         { "name": "GET /table/", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/table/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", ""] } } },
         { "name": "GET /table/:id/columns", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/table/{{table_id}}/columns", "host": ["{{baseUrl}}"], "path": ["api", "v1", "table", "{{table_id}}", "columns"] } } },
@@ -210,10 +213,10 @@
     {
       "name": "Column",
       "item": [
-        { "name": "POST /column/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"name\": \"Title\",\n  \"type\": \"text\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/column/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "create"] } } },
+        { "name": "POST /column/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"name\": \"{{column_name}}\",\n  \"type\": \"{{column_type}}\",\n  \"required\": false,\n  \"unique\": false\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/column/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "create"] } } },
         { "name": "GET /column/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/column/{{column_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "{{column_id}}"] } } },
         { "name": "GET /column/", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/column/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", ""] } } },
-        { "name": "PATCH /column/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Title\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/column/{{column_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "{{column_id}}"] } } },
+        { "name": "PATCH /column/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{column_name}}\",\n  \"type\": \"{{column_type}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/column/{{column_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "{{column_id}}"] } } },
         { "name": "DELETE /column/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/column/{{column_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "{{column_id}}"] } } },
         { "name": "POST /column/reorder", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"column_ids\": [\"{{column_id}}\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/column/reorder", "host": ["{{baseUrl}}"], "path": ["api", "v1", "column", "reorder"] } } }
       ]
@@ -221,32 +224,32 @@
     {
       "name": "Row",
       "item": [
-        { "name": "POST /row/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"values\": {\n    \"title\": \"Task 1\"\n  }\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "create"] } } },
-        { "name": "POST /row/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"row_id\": \"1\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "remove"] } } },
-        { "name": "POST /row/bulk-remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"row_ids\": [\"1\", \"2\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/bulk-remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "bulk-remove"] } } },
-        { "name": "POST /row/data/insert", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"rows\": [\n    { \"title\": \"A\" }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/data/insert", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "data", "insert"] } } },
-        { "name": "POST /row/data/relation", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"data\": {}\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/data/relation", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "data", "relation"] } } },
-        { "name": "POST /row/attachment/add", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }, { "key": "row_id", "value": "1", "type": "text" }] }, "url": { "raw": "{{baseUrl}}/api/v1/row/attachment/add", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "attachment", "add"] } } },
-        { "name": "POST /row/attachment/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"row_id\": \"1\",\n  \"attachment_ids\": [\"1\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/attachment/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "attachment", "remove"] } } }
+        { "name": "POST /row/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"values\": {\n    \"title\": \"New Task\",\n    \"status\": \"pending\"\n  }\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "create"] } } },
+        { "name": "POST /row/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"row_id\": \"{{row_id}}\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "remove"] } } },
+        { "name": "POST /row/bulk-remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"row_ids\": [\"{{row_id}}\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/bulk-remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "bulk-remove"] } } },
+        { "name": "POST /row/data/insert", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"rows\": [\n    { \"title\": \"Task A\", \"status\": \"pending\" },\n    { \"title\": \"Task B\", \"status\": \"completed\" }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/data/insert", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "data", "insert"] } } },
+        { "name": "POST /row/data/relation", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"source_row_id\": \"{{row_id}}\",\n  \"target_row_id\": \"1\",\n  \"data\": {}\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/data/relation", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "data", "relation"] } } },
+        { "name": "POST /row/attachment/add", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }, { "key": "row_id", "value": "{{row_id}}", "type": "text" }] }, "url": { "raw": "{{baseUrl}}/api/v1/row/attachment/add", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "attachment", "add"] } } },
+        { "name": "POST /row/attachment/remove", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"row_id\": \"{{row_id}}\",\n  \"attachment_ids\": {{attachment_ids}}\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/row/attachment/remove", "host": ["{{baseUrl}}"], "path": ["api", "v1", "row", "attachment", "remove"] } } }
       ]
     },
     {
       "name": "View",
       "item": [
-        { "name": "POST /view/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"name\": \"Grid View\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/view/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", "create"] } } },
+        { "name": "POST /view/create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"table_id\": \"{{table_id}}\",\n  \"name\": \"{{view_name}}\",\n  \"type\": \"grid\",\n  \"filters\": [],\n  \"sort\": []\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/view/create", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", "create"] } } },
         { "name": "GET /view/:id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/view/{{view_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", "{{view_id}}"] } } },
         { "name": "GET /view/", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/view/", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", ""] } } },
-        { "name": "PATCH /view/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated View\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/view/{{view_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", "{{view_id}}"] } } },
+        { "name": "PATCH /view/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{view_name}}\",\n  \"filters\": [],\n  \"sort\": []\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/view/{{view_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", "{{view_id}}"] } } },
         { "name": "DELETE /view/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/view/{{view_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "view", "{{view_id}}"] } } }
       ]
     },
     {
       "name": "Asset",
       "item": [
-        { "name": "POST /asset/upload", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/asset/upload", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "upload"] } } },
-        { "name": "POST /asset/upload-image", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }, "url": { "raw": "{{baseUrl}}/api/v1/asset/upload-image", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "upload-image"] } } },
+        { "name": "POST /asset/upload", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }, { "key": "description", "value": "Asset description", "type": "text" }] }, "url": { "raw": "{{baseUrl}}/api/v1/asset/upload", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "upload"] } } },
+        { "name": "POST /asset/upload-image", "request": { "method": "POST", "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }, { "key": "alt_text", "value": "Image description", "type": "text" }] }, "url": { "raw": "{{baseUrl}}/api/v1/asset/upload-image", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "upload-image"] } } },
         { "name": "POST /asset/bulk", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"ids\": [\"{{asset_id}}\"]\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/asset/bulk", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "bulk"] } } },
-        { "name": "PATCH /asset/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"updated-file-name\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/asset/{{asset_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "{{asset_id}}"] } } },
+        { "name": "PATCH /asset/:id", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"updated-file-name.extension\",\n  \"description\": \"Updated asset description\"\n}" }, "url": { "raw": "{{baseUrl}}/api/v1/asset/{{asset_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "{{asset_id}}"] } } },
         { "name": "DELETE /asset/:id", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/v1/asset/{{asset_id}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "asset", "{{asset_id}}"] } } }
       ]
     }

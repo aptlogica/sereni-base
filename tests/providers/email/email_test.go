@@ -8,6 +8,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/providers/email"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -224,8 +225,10 @@ func TestNewService(t *testing.T) {
 func TestEmailServiceSendEmail(t *testing.T) {
 	t.Parallel()
 	t.Run("successful email send", func(t *testing.T) {
+		var requests int32
 		// Create a test server that simulates email service
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&requests, 1)
 			assert.Equal(t, http.MethodPost, r.Method)
 			assert.Equal(t, "/send", r.URL.Path)
 			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
@@ -266,13 +269,16 @@ func TestEmailServiceSendEmail(t *testing.T) {
 		}
 		service.Enqueue(job)
 
-		// Wait for processing
-		time.Sleep(50 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			return atomic.LoadInt32(&requests) == 1
+		}, 2*time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("email send with non-200 response", func(t *testing.T) {
+		var requests int32
 		// Create a test server that returns error
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&requests, 1)
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"error":"internal error"}`))
 		}))
@@ -294,19 +300,21 @@ func TestEmailServiceSendEmail(t *testing.T) {
 		}
 		service.Enqueue(job)
 
-		// Wait for processing
-		time.Sleep(50 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			return atomic.LoadInt32(&requests) == 1
+		}, 2*time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("email send with network error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		server.Close()
 		cfg := config.EmailConfig{
-			URL: "http://invalid-host-that-does-not-exist:9999",
+			URL: server.URL,
 		}
 		templateService := email.NewEmailTemplateService()
 		service := email.NewService(cfg, 10, templateService)
 
 		service.Start(1)
-		defer service.Stop()
 
 		job := email.EmailJob{
 			To:      testEmail,
@@ -315,8 +323,19 @@ func TestEmailServiceSendEmail(t *testing.T) {
 		}
 		service.Enqueue(job)
 
-		// Wait for processing
-		time.Sleep(50 * time.Millisecond)
+		done := make(chan struct{})
+		go func() {
+			service.Stop()
+			close(done)
+		}()
+		require.Eventually(t, func() bool {
+			select {
+			case <-done:
+				return true
+			default:
+				return false
+			}
+		}, 2*time.Second, 10*time.Millisecond)
 	})
 }
 
@@ -324,9 +343,9 @@ func TestEmailServiceSendEmail(t *testing.T) {
 func TestEmailServiceQueueManagement(t *testing.T) {
 	t.Parallel()
 	t.Run("queue multiple emails", func(t *testing.T) {
-		emailsSent := 0
+		var emailsSent int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			emailsSent++
+			atomic.AddInt32(&emailsSent, 1)
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer server.Close()
@@ -350,10 +369,9 @@ func TestEmailServiceQueueManagement(t *testing.T) {
 			service.Enqueue(job)
 		}
 
-		// Wait for processing
-		time.Sleep(100 * time.Millisecond)
-
-		assert.Equal(t, 5, emailsSent)
+		require.Eventually(t, func() bool {
+			return atomic.LoadInt32(&emailsSent) == 5
+		}, 2*time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("queue full handling", func(t *testing.T) {
@@ -378,8 +396,13 @@ func TestEmailServiceQueueManagement(t *testing.T) {
 // TestEmailServiceWorkerLifecycle tests worker start and stop
 func TestEmailServiceWorkerLifecycle(t *testing.T) {
 	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
 	cfg := config.EmailConfig{
-		URL: "http://localhost:8080",
+		URL: server.URL,
 	}
 	templateService := email.NewEmailTemplateService()
 	service := email.NewService(cfg, 10, templateService)
@@ -442,14 +465,12 @@ func TestEmailServiceMultipleWorkers(t *testing.T) {
 		service.Enqueue(job)
 	}
 
-	// Wait for processing
-	time.Sleep(150 * time.Millisecond)
-
-	mu.Lock()
-	count := len(processedEmails)
-	mu.Unlock()
-
-	assert.Equal(t, 10, count)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		count := len(processedEmails)
+		mu.Unlock()
+		return count == 10
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 // TestEmailTemplateServiceSpecialCharacters tests templates with special characters

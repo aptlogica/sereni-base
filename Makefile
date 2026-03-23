@@ -85,12 +85,21 @@ endif
 
 # Run all tests
 test:
-	go test ./...
+ifeq ($(OS),Windows_NT)
+	@set "GOCACHE=$(CURDIR)/.gocache" && go test ./tests/...
+else
+	GOCACHE=$(CURDIR)/.gocache go test ./tests/...
+endif
 
 # Run tests with coverage report
 test-coverage: ## Run tests with coverage report
-	go test -v -race -coverprofile=coverage/coverage.out -covermode=atomic ./...
-	@echo "Coverage report generated at coverage/coverage.out"
+ifeq ($(OS),Windows_NT)
+	@set "GOCACHE=$(CURDIR)/.gocache" && go test -v -race -coverprofile="coverage.out" -covermode=atomic -coverpkg=./internal/... ./tests/...
+else
+	GOCACHE=$(CURDIR)/.gocache go test -v -race -coverprofile="coverage.out" -covermode=atomic -coverpkg=./internal/... ./tests/...
+endif
+	go tool cover -func="coverage.out"
+	@echo "Coverage report generated at coverage.out"
 
 # ============================================================================
 # Docker Management Commands
