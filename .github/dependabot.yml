@@ -1,0 +1,47 @@
+version: 2
+
+updates:
+  # Go module dependencies
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "aptlogica/maintainers"
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      # Add any dependencies to ignore here if needed
+      # - dependency-name: "example-package"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "aptlogica/maintainers"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(actions)"
+      include: "scope"
+
+# Vulnerability alerting policy
+# - Dependabot will automatically create alerts for known vulnerabilities
+# - Critical/High severity: Immediate review required
+# - Medium severity: Review within 1 week
+# - Low severity: Review in monthly cycle
