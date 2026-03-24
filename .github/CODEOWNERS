@@ -1,0 +1,37 @@
+# SereniBase Code Owners
+# This file defines code ownership for branch protection and review routing
+
+# Default owners for all repository files
+* @aptlogica/sereni-base-maintainers
+
+# Core application
+/cmd/ @aptlogica/sereni-base-maintainers
+/internal/ @aptlogica/sereni-base-maintainers
+
+# Authentication and RBAC
+/internal/handlers/auth.go @aptlogica/sereni-base-maintainers
+/internal/handlers/user.go @aptlogica/sereni-base-maintainers
+/internal/middleware/auth.go @aptlogica/sereni-base-maintainers
+/internal/providers/ @aptlogica/sereni-base-maintainers
+
+# Tests
+/tests/ @aptlogica/sereni-base-maintainers
+
+# Documentation
+/docs/ @aptlogica/sereni-base-maintainers
+*.md @aptlogica/sereni-base-maintainers
+
+# Infrastructure and deployment
+/docker* @aptlogica/sereni-base-maintainers
+/Dockerfile @aptlogica/sereni-base-maintainers
+/build/ @aptlogica/sereni-base-maintainers
+Makefile @aptlogica/sereni-base-maintainers
+
+# CI/CD Configuration
+/.github/ @aptlogica/sereni-base-maintainers
+/Jenkinsfile @aptlogica/sereni-base-maintainers
+
+# Configuration files
+/sonar-project.properties @aptlogica/sereni-base-maintainers
+go.mod @aptlogica/sereni-base-maintainers
+go.sum @aptlogica/sereni-base-maintainers

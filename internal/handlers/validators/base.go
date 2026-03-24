@@ -8,7 +8,7 @@ package validators
 import (
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
-	"github.com/go-playground/validator"
+	"github.com/go-playground/validator/v10"
 )
 
 // WorkspaceCreationValidationError maps validation errors for dto.CreateWorkspaceRequest to response codes.

@@ -1,0 +1,46 @@
+{
+  "name": "SereniBase Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/go:1-1.24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    }
+  },
+  "forwardPorts": [8080, 5432, 9000, 9001],
+  "postCreateCommand": "go mod download && go install github.com/swaggo/swag/cmd/swag@latest",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens",
+        "esbenp.prettier-vscode",
+        "redhat.vscode-yaml",
+        "bradlc.vscode-tailwindcss",
+        "formulahendry.auto-rename-tag",
+        "streetsidesoftware.code-spell-checker"
+      ],
+      "settings": {
+        "go.useLanguageServer": true,
+        "go.lintTool": "golangci-lint",
+        "go.lintFlags": ["--fast"],
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "golang.go",
+        "[go]": {
+          "editor.defaultFormatter": "golang.go"
+        }
+      }
+    }
+  },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "CGO_ENABLED": "0"
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder}/.env,target=/workspaces/sereni-base/.env,type=bind,consistency=cached"
+  ],
+  "runArgs": ["--network=host"]
+}

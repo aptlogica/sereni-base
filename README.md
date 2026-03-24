@@ -19,9 +19,10 @@
   </a>
   <img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
+  <img src="https://img.shields.io/badge/Status-Beta-orange.svg?style=flat-square" alt="Beta">
 </p>
 
-> **Build and manage databases visually, no code required.** SereniBase is a production-ready, open-source platform for creating and managing business data with a spreadsheet-like interface. Self-host on your own infrastructure with full data control.
+> **Build and manage databases visually, no code required.** SereniBase is an open-source platform in active beta development for creating and managing business data with a spreadsheet-like interface. Self-host on your own infrastructure with full data control.
 
 ## Overview
 
@@ -101,12 +102,9 @@ The setup wizard will:
 
 ### Default Login
 
-| Field | Value |
-|-------|-------|
-| Email | `admin@example.com` |
-| Password | `Admin@123` |
+Default credentials are configured via environment variables. See `.env.example` for setup.
 
-> **⚠️ Important:** Change the default password immediately after first login.
+> **⚠️ Security:** Never use default credentials in production. Always configure secure values via environment variables.
 
 ## Commands Reference
 

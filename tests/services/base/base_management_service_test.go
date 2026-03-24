@@ -168,6 +168,7 @@ func (m *MockTableManagementService) UpdateView(ctx context.Context, schemaName 
 	return args.Get(0).(dto.ViewResponse), args.Error(1)
 }
 
+// DeleteView removes a view from a table
 func (m *MockTableManagementService) DeleteView(ctx context.Context, schemaName string, id string) error {
 	args := m.Called(ctx, schemaName, id)
 	return args.Error(0)
@@ -271,6 +272,7 @@ func (m *MockModelService) GetModelByWorkspaceID(ctx context.Context, schemaName
 	return args.Get(0).([]tenant.Model), args.Error(1)
 }
 
+// DeleteModel removes a single model
 func (m *MockModelService) DeleteModel(ctx context.Context, schemaName string, id string) error {
 	args := m.Called(ctx, schemaName, id)
 	return args.Error(0)
@@ -333,7 +335,7 @@ func TestNewBaseManagementService(t *testing.T) {
 	assert.NotNil(t, service)
 }
 
-func TestBaseManagementService_CreateBase(t *testing.T) {
+func TestBaseManagementServiceCreateBase(t *testing.T) {
 	t.Run("success with default table", func(t *testing.T) {
 		_, _, mockBase, mockTableManagement, _, _, service := setupBaseManagementService()
 
@@ -384,7 +386,7 @@ func TestBaseManagementService_CreateBase(t *testing.T) {
 	})
 }
 
-func TestBaseManagementService_CreateBaseWithoutTable(t *testing.T) {
+func TestBaseManagementServiceCreateBaseWithoutTable(t *testing.T) {
 	t.Run("success without default table", func(t *testing.T) {
 		_, _, mockBase, _, _, _, service := setupBaseManagementService()
 
@@ -504,7 +506,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 	})
 }
 
-func TestGetBaseByID_Proxy(t *testing.T) {
+func TestGetBaseByIDProxy(t *testing.T) {
 	_, _, mockBase, _, _, _, service := setupBaseManagementService()
 
 	base := tenant.Base{ID: uuid.New(), Title: "Base"}
@@ -547,7 +549,7 @@ func TestGetAllBasesWithAccess(t *testing.T) {
 	})
 }
 
-func TestUpdateBase_ProxyAndDefaultUser(t *testing.T) {
+func TestUpdateBaseProxyAndDefaultUser(t *testing.T) {
 	_, _, mockBase, _, _, _, service := setupBaseManagementService()
 
 	base := tenant.Base{ID: uuid.New(), Title: "Base"}
@@ -562,7 +564,17 @@ func TestUpdateBase_ProxyAndDefaultUser(t *testing.T) {
 	mockBase.AssertExpectations(t)
 }
 
-func TestDeleteBase_Proxy(t *testing.T) {
+func TestUpdateBaseError(t *testing.T) {
+	_, _, mockBase, _, _, _, service := setupBaseManagementService()
+
+	mockBase.On("UpdateBase", mock.Anything, "schema", "id", mock.Anything).Return(tenant.Base{}, errors.New("db error"))
+
+	_, err := service.UpdateBase(context.Background(), "schema", "id", dto.BaseUpdate{}, "user", nil, "")
+
+	assert.Error(t, err)
+}
+
+func TestDeleteBaseProxy(t *testing.T) {
 	_, _, mockBase, _, _, _, service := setupBaseManagementService()
 
 	mockBase.On("DeleteBase", mock.Anything, "schema", "id").Return(nil)
@@ -598,7 +610,7 @@ func TestGetTablesByBaseId(t *testing.T) {
 	})
 }
 
-func TestGetBasesByWorkspace_Proxy(t *testing.T) {
+func TestGetBasesByWorkspaceProxy(t *testing.T) {
 	_, _, mockBase, _, _, _, service := setupBaseManagementService()
 
 	bases := []tenant.Base{{ID: uuid.New(), Title: "Base"}}
@@ -751,6 +763,33 @@ func TestRemoveBaseImage(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "", result.Image)
 	})
+}
+
+func TestUpdateBaseWithFileHeader(t *testing.T) {
+	_, _, mockBase, _, _, mockAsset, service := setupBaseManagementService()
+
+	updated := tenant.Base{ID: uuid.New(), Image: "http://img"}
+	mockBase.On("UpdateBase", mock.Anything, "schema", "base", mock.Anything).Return(updated, nil)
+	mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, nil)
+	mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://img"}}, nil)
+
+	result, err := service.UpdateBase(context.Background(), "schema", "base", dto.BaseUpdate{}, "user", &multipart.FileHeader{Filename: "image.png"}, "")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "http://img", result.Image)
+}
+
+func TestUpdateBaseRemoveImage(t *testing.T) {
+	_, _, mockBase, _, _, _, service := setupBaseManagementService()
+
+	updated := tenant.Base{ID: uuid.New(), Image: ""}
+	mockBase.On("UpdateBase", mock.Anything, "schema", "base", mock.Anything).Return(updated, nil)
+	mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, nil)
+
+	result, err := service.UpdateBase(context.Background(), "schema", "base", dto.BaseUpdate{}, "user", nil, "true")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "", result.Image)
 }
 
 func TestRemoveUserFromBase(t *testing.T) {

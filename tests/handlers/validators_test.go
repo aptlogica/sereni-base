@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	ut "github.com/go-playground/universal-translator"
-	validator "github.com/go-playground/validator"
+	validator "github.com/go-playground/validator/v10"
 
 	handlersValidators "github.com/aptlogica/sereni-base/internal/handlers/validators"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"

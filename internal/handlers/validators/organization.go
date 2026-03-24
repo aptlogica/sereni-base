@@ -8,7 +8,7 @@ package validators
 import (
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
-	"github.com/go-playground/validator"
+	"github.com/go-playground/validator/v10"
 )
 
 // OrganizationCreationValidationError maps validation errors for dto.CreateOrganizationRequest to response codes.
