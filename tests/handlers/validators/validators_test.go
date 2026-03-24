@@ -588,3 +588,21 @@ func TestWorkspaceValidators(t *testing.T) {
 		runValidationCases(t, cases)
 	})
 }
+
+func TestUpdateAttachmentValidators(t *testing.T) {
+	cases := []validationCase{
+		{name: "UpdateAttachmentModelIDRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "UpdateAttachmentModelIDInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "UpdateAttachmentColumnIdRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ColumnId", tag: "required", want: responseConst.TableError.ColumnIdRequired},
+		{name: "UpdateAttachmentColumnIdInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ColumnId", tag: "uuid", want: responseConst.TableError.ColumnIdInvalid},
+		{name: "UpdateAttachmentRowIdRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "RowId", tag: "required", want: responseConst.TableError.RowIdRequired},
+		{name: "UpdateAttachmentRowIdInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "RowId", tag: "uuid", want: responseConst.TableError.RowIdInvalid},
+		{name: "UpdateAttachmentAssetIdRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "AssetId", tag: "required", want: responseConst.TableError.AssetIdRequired},
+		{name: "UpdateAttachmentAssetIdInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "AssetId", tag: "uuid", want: responseConst.TableError.AssetIdInvalid},
+		{name: "UpdateAttachmentContentRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "Content", tag: "required", want: responseConst.TableError.ContentRequired},
+		{name: "UpdateAttachmentContentInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "Content", tag: "json", want: responseConst.TableError.ContentInvalid},
+		{name: "UpdateAttachmentUnknown", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+	}
+
+	runValidationCases(t, cases)
+}

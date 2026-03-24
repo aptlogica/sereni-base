@@ -562,6 +562,16 @@ func TestUpdateBase_ProxyAndDefaultUser(t *testing.T) {
 	mockBase.AssertExpectations(t)
 }
 
+func TestUpdateBase_Error(t *testing.T) {
+	_, _, mockBase, _, _, _, service := setupBaseManagementService()
+
+	mockBase.On("UpdateBase", mock.Anything, "schema", "id", mock.Anything).Return(tenant.Base{}, errors.New("db error"))
+
+	_, err := service.UpdateBase(context.Background(), "schema", "id", dto.BaseUpdate{}, "user", nil, "")
+
+	assert.Error(t, err)
+}
+
 func TestDeleteBase_Proxy(t *testing.T) {
 	_, _, mockBase, _, _, _, service := setupBaseManagementService()
 
