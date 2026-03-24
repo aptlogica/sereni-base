@@ -1,4 +1,4 @@
-package tests
+package constant_test
 
 import (
 	"github.com/aptlogica/sereni-base/internal/constant"

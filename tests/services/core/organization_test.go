@@ -44,7 +44,7 @@ func TestCreateOrganization(t *testing.T) {
 		db, _ := setupMockDB()
 		svc := services.NewOrganizationService(db)
 
-		bad := map[string]interface{}{"bad": func() {}}
+		bad := map[string]interface{}{"bad": func() {} /* intentionally empty for testing invalid metadata */}
 		_, err := svc.CreateOrganization(context.Background(), "schema", dto.CreateOrganizationRequest{
 			Name:  "Org",
 			Email: "org@example.com",

@@ -23,7 +23,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/config"
 )
 
-var version = "dev"
+var version = "0.1.0-beta"
 
 // validateSecrets checks that critical secrets are not using insecure default values
 func validateSecrets(cfg *config.Config) error {

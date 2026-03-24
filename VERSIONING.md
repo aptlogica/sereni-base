@@ -2,6 +2,10 @@
 
 This project follows [Semantic Versioning 2.0.0](https://semver.org/).
 
+## Current Version
+
+**v0.1.0-beta** - Active development phase. APIs and features are subject to change.
+
 ## Version Format
 
 ```
