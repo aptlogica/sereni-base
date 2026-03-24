@@ -19,9 +19,6 @@ updates:
       include: "scope"
     allow:
       - dependency-type: "all"
-    ignore:
-      # Add any dependencies to ignore here if needed
-      # - dependency-name: "example-package"
 
   # GitHub Actions dependencies
   - package-ecosystem: "github-actions"
