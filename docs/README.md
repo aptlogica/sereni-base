@@ -17,6 +17,7 @@ This index helps you find the right documentation for your needs.
 | **Understand defaults vs overrides** | [Environment Setup Guide](./ENVIRONMENT_SETUP_GUIDE.md) | 15 min |
 | **Look up specific variable** | [Environment Variables](./ENVIRONMENT_VARIABLES.md) | Reference |
 | **Check API error codes** | [API Response Codes](./API_RESPONSE_CODES.md) | Reference |
+| **Run and write tests** | [Testing Guide](./TESTING_GUIDE.md) | 10 min |
 | **Production deployment** | [Environment Setup Guide](./ENVIRONMENT_SETUP_GUIDE.md#scenario-3-production-deployment) | 30 min |
 
 ---
@@ -56,12 +57,20 @@ docs/
 │      • Usage examples
 │      • When to change
 │
-└── 📕 API_RESPONSE_CODES.md
-    └─ Complete API reference
-       • All HTTP status codes
-       • Error codes
-       • UI messages
-       • Developer messages
+├── 📕 API_RESPONSE_CODES.md
+│   └─ Complete API reference
+│      • All HTTP status codes
+│      • Error codes
+│      • UI messages
+│      • Developer messages
+│
+└── 🧪 TESTING_GUIDE.md
+    └─ Comprehensive testing documentation
+       • Unit tests, integration tests, E2E tests
+       • Running tests locally and in CI/CD
+       • Writing tests (templates, best practices)
+       • Coverage reporting and goals
+       • Troubleshooting test issues
 ```
 
 ---
@@ -118,6 +127,25 @@ docs/
    - Error monitoring
    - Alert configuration
    - Troubleshooting
+
+### Path 4: Contributor (Development & Testing)
+
+1. **Setup Development:** [Interactive Setup README](../INTERACTIVE_SETUP_README.md)
+   - Clone repository
+   - Configure environment
+   - Run application locally
+
+2. **Learn Testing:** [Testing Guide](./TESTING_GUIDE.md)
+   - Run unit tests
+   - Run integration tests
+   - Write new tests
+   - Understand coverage
+
+3. **Contribute:** [CONTRIBUTING.md](../CONTRIBUTING.md)
+   - Fork and create branch
+   - Make changes with tests
+   - Ensure all tests pass
+   - Submit pull request
 
 ---
 

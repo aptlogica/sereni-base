@@ -38,6 +38,8 @@ help:
 	@echo ""
 	@echo "  Testing:"
 	@echo "    make test               - Run all tests"
+	@echo "    make test-unit          - Run unit tests only"
+	@echo "    make test-integration   - Run integration tests (requires services running)"
 	@echo "    make test-coverage      - Run tests with coverage report"
 	@echo ""
 	@echo "  Docker Management:"
@@ -100,6 +102,24 @@ else
 endif
 	go tool cover -func="coverage.out"
 	@echo "Coverage report generated at coverage.out"
+
+# Run unit tests only (excludes integration tests)
+test-unit: ## Run unit tests only
+ifeq ($(OS),Windows_NT)
+	@go test -v -race -short ./tests/...
+else
+	go test -v -race -short ./tests/...
+endif
+
+# Run integration tests (requires services running)
+test-integration: ## Run integration tests (requires Docker services)
+	@echo "Running integration tests..."
+	@echo "Ensure PostgreSQL and other services are running: make up"
+ifeq ($(OS),Windows_NT)
+	@go test -v -tags=integration -timeout=10m ./tests/integration_test.go
+else
+	go test -v -tags=integration -timeout=10m ./tests/integration_test.go
+endif
 
 # ============================================================================
 # Docker Management Commands
