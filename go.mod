@@ -1,8 +1,6 @@
 module github.com/aptlogica/sereni-base
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.25.0
 
 require (
 	github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd
@@ -72,7 +70,7 @@ require (
 	golang.org/x/arch v0.23.0 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
