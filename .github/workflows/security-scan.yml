@@ -28,8 +28,6 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      # gosec scanner removed per request
-
       - name: Check for vulnerable Go modules
         run: |
           go install github.com/golang/vuln/cmd/govulncheck@latest
@@ -67,15 +65,4 @@ jobs:
           go list -json -m all | nancy sleuth --loud
         continue-on-error: true
 
-  # Note: Snyk integration can be added here if Snyk account is available
-  # snyk-scan:
-  #   name: Snyk Security Scan
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Run Snyk to check for vulnerabilities
-  #       uses: snyk/actions/golang@master
-  #       with:
-  #         args: --severity-threshold=high
-  #       env:
-  #         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
