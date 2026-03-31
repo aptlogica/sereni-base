@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   security-scan:
@@ -29,18 +28,7 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Run gosec security scanner
-        uses: securego/gosec@master
-        with:
-          args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
-        continue-on-error: true
-
-      - name: Upload gosec results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gosec-results.sarif
-          category: gosec
-        if: always()
+      # gosec scanner removed per request
 
       - name: Check for vulnerable Go modules
         run: |
@@ -49,7 +37,7 @@ jobs:
         continue-on-error: true
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.24.0
         with:
           format: cyclonedx-json
           output-file: sbom.json

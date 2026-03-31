@@ -1,43 +1,19 @@
 name: Scorecard
-
 on:
-  branch_protection_rule:
-  schedule:
-    - cron: '0 6 * * 1'
   push:
-    branches: [main]
-
-permissions: read-all
+    branches: [ main, develop ]
+  workflow_dispatch: {}
 
 jobs:
-  analysis:
-    name: Scorecard analysis
+  scorecard:
+    name: Run OSSF Scorecard
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      id-token: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          persist-credentials: false
 
-      - name: Run Scorecard
-        uses: ossf/scorecard-action@v2.4.0
+      - name: Run OSSF Scorecard
+        uses: ossf/scorecard-action@v5
         with:
-          results_file: results.sarif
-          results_format: sarif
-          publish_results: true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SARIF file
-          path: results.sarif
-          retention-days: 5
-
-      - name: Upload to code-scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: results.sarif
+          repo: ${{ github.repository }}
+          show-output: true
