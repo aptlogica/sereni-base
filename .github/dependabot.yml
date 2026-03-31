@@ -42,3 +42,8 @@ updates:
 # - Critical/High severity: Immediate review required
 # - Medium severity: Review within 1 week
 # - Low severity: Review in monthly cycle
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: daily
