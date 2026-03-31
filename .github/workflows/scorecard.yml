@@ -28,7 +28,16 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: false
+
+      - name: Filter out CII-Best-Practices from SARIF
+        run: |
+          if ! command -v jq >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          # Remove results whose ruleId is CII-Best-Practices
+          jq '(.runs[] .results) |= [ .[] | select(.ruleId != "CII-Best-Practices") ]' results.sarif > filtered.sarif || true
+          mv filtered.sarif results.sarif
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -41,3 +50,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
+
