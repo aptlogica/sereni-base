@@ -1,0 +1,19 @@
+name: Scorecard
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch: {}
+
+jobs:
+  scorecard:
+    name: Run OSSF Scorecard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run OSSF Scorecard
+        uses: ossf/scorecard-action@v5
+        with:
+          repo: ${{ github.repository }}
+          show-output: true
