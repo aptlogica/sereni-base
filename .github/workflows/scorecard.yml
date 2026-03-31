@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: '0 6 * * 1'
   push:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
   contents: read
