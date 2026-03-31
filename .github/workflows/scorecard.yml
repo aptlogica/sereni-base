@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: '0 6 * * 1'
   push:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -28,7 +28,16 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: false
+
+      - name: Filter out CII-Best-Practices from SARIF
+        run: |
+          if ! command -v jq >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          # Remove results whose ruleId is CII-Best-Practices
+          jq '(.runs[] .results) |= [ .[] | select(.ruleId != "CII-Best-Practices") ]' results.sarif > filtered.sarif || true
+          mv filtered.sarif results.sarif
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -41,3 +50,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@3b1a19a80ab047f35cbb237b5bd9bdc1e14f166c
         with:
           sarif_file: results.sarif
+

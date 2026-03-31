@@ -27,8 +27,6 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      # gosec scanner removed per request
-
       - name: Check for vulnerable Go modules
         env:
           GOVULNCHECK_VERSION: v0.1.0
