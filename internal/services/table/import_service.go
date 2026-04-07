@@ -545,11 +545,29 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 		}
 		return false
 	case "date":
-		// Return string for date, as DB usually handles it or expects string
-		return val
+		// Convert date string to PostgreSQL-compatible format (YYYY-MM-DD)
+		return s.convertDateToISO(val)
 	case "email", "url", "phoneNumber", "json":
 		// These are stored as text
 		return val
+	}
+	return val
+}
+
+// convertDateToISO converts date strings from various formats to ISO format (YYYY-MM-DD)
+func (s *importService) convertDateToISO(val string) string {
+	formats := []string{
+		"2006-01-02", // Already ISO format
+		"02-01-2006", // DD-MM-YYYY
+		"2006/01/02", // YYYY/MM/DD
+		"02/01/2006", // DD/MM/YYYY
+	}
+
+	for _, format := range formats {
+		if parsedTime, err := time.Parse(format, val); err == nil {
+			// Convert to ISO format (YYYY-MM-DD)
+			return parsedTime.Format("2006-01-02")
+		}
 	}
 	return val
 }
