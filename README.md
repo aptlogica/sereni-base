@@ -1,4 +1,4 @@
-﻿# SereniBase - Open-Source No-Code Database Platform
+﻿# SereniBase - Open-Source. More Than a Spreadsheet. More Than a Database. Where Data Becomes Software. No Coding required.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
@@ -26,7 +26,8 @@
 
 ## Overview
 
-**SereniBase** is an open-source alternative to Airtable, Notion databases, and NocoDB - an open source airtable alternative and airtable alternative, a nocodb alternative and an airtable and nocodb alternative. It is a no-code platform and no-code database builder that lets teams build a no-code database, a database builder, and an open source database builder; a database management tool and self hosted database for teams; a no code platform, a no-code open source database & application builder, an opensource nocodb alternative, a self hosted backend platform, and a free open source database builder. It provides a REST API backend that powers a React frontend, enabling users to create workspaces, design database schemas, and manage data through an intuitive spreadsheet-like interface.
+**SereniBase** is an open-source, self-hosted Airtable and NOCODB alternative that helps you create tables, relationships, views, and workflows through an intuitive interface.
+As a flexible database management tool with REST API support, it enables teams to build internal tools, manage structured data, and automate workflows — without writing code. Sereni Base offers one of the most quickest and user-friendly ways to build and manage databases online.
 
 ### Why SereniBase?
 

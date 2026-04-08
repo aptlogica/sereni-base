@@ -1,7 +1,7 @@
 # ==============================================================================
 # Build Stage
 # ==============================================================================
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24.4-alpine@sha256:e5c2e59960f8636d02f77029c8f0a7a6b882f87fee8d2e4a9ce6c9ff112ed735 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -extldflags \
 # ==============================================================================
 # Production Stage
 # ==============================================================================
-FROM alpine:3.20
+FROM alpine:3.20.6@sha256:de4fe7064d8f98419ea6b49190df1abbf43450c1702eeb864fe9ced453c1cc5f
 
 # Install runtime dependencies including PostgreSQL client
 RUN apk --no-cache add ca-certificates tzdata curl postgresql-client
