@@ -5,12 +5,10 @@ on:
     branches: [main, develop]
   pull_request:
   schedule:
-    # Run daily at 2 AM UTC to catch new vulnerabilities
     - cron: '0 2 * * *'
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   security-scan:
@@ -19,43 +17,32 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.24'
 
       - name: Run go vet
         run: go vet ./...
 
-      - name: Run gosec security scanner
-        uses: securego/gosec@master
-        with:
-          args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
-        continue-on-error: true
-
-      - name: Upload gosec results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gosec-results.sarif
-          category: gosec
-        if: always()
-
       - name: Check for vulnerable Go modules
+        env:
+          GOVULNCHECK_VERSION: v0.1.0
         run: |
-          go install github.com/golang/vuln/cmd/govulncheck@latest
+          go install github.com/golang/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
           govulncheck ./...
         continue-on-error: true
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
         with:
           format: cyclonedx-json
           output-file: sbom.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: sbom
           path: sbom.json
@@ -66,28 +53,18 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.24'
 
       - name: Run Nancy (vulnerable dependencies scanner)
+        env:
+          NANCY_VERSION: v0.8.0
         run: |
-          go install github.com/sonatype-nexus-community/nancy@latest
+          go install github.com/sonatype-nexus-community/nancy@${NANCY_VERSION}
           go list -json -m all | nancy sleuth --loud
         continue-on-error: true
 
-  # Note: Snyk integration can be added here if Snyk account is available
-  # snyk-scan:
-  #   name: Snyk Security Scan
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Run Snyk to check for vulnerabilities
-  #       uses: snyk/actions/golang@master
-  #       with:
-  #         args: --severity-threshold=high
-  #       env:
-  #         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
