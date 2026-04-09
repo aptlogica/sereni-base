@@ -50,6 +50,9 @@ jobs:
           
       - name: OSSF Scorecard action
         uses: ossf/scorecard-action@v2.4.3
+        with:
+          results_file: scorecard-results.json
+          results_format: json
 
   dependency-vulnerabilities:
     name: Dependency Vulnerability Check
