@@ -1,10 +1,18 @@
 ﻿# SereniBase - Open-Source. More Than a Spreadsheet. More Than a Database. Where Data Becomes Software. No Coding required.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.26.2+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+</p>
+<p align="center">
+  <img src="https://github.com/aptlogica/sereni-base/actions/workflows/ci.yml/badge.svg" alt="Github Actions">
+  
+  <img src="https://github.com/aptlogica/sereni-base/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
+  <a href="https://www.bestpractices.dev/projects/12425"><img src="https://www.bestpractices.dev/projects/12425/badge"></a>
+  <img src="https://img.shields.io/badge/go%20report-A+-brightgreen.svg?style=flat" alt="Go Report">
+  <a href="https://app.fossa.com/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base?ref=badge_shield&issueType=security" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base.svg?type=shield&issueType=security"/></a>
 </p>
 
 <p align="center">
@@ -21,6 +29,7 @@
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
   <img src="https://img.shields.io/badge/Status-Beta-orange.svg?style=flat-square" alt="Beta">
 </p>
+
 
 > **Build and manage databases visually, no code required.** SereniBase is an open-source platform in active beta development for creating and managing business data with a spreadsheet-like interface. Self-host on your own infrastructure with full data control.
 
