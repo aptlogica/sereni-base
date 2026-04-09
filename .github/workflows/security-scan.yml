@@ -31,7 +31,7 @@ jobs:
         env:
           GOVULNCHECK_VERSION: v0.1.0
         run: |
-          go install github.com/golang/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
           govulncheck ./...
         continue-on-error: true
 
