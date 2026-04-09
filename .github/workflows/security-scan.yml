@@ -31,10 +31,8 @@ jobs:
         run: go vet ./...
 
       - name: Check for vulnerable Go modules
-        env:
-          GOVULNCHECK_VERSION: v0.1.0
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
         continue-on-error: true
 
