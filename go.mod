@@ -1,8 +1,6 @@
 module github.com/aptlogica/sereni-base
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.26.2
 
 require (
 	github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd
