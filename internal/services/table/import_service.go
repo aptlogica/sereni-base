@@ -26,6 +26,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	isoDateFormat = "2006-01-02"
+)
+
 type importService struct {
 	tableService          interfaces.TableManagementService
 	baseManagementService interfaces.BaseManagementService
@@ -449,7 +453,7 @@ func (s *importService) checkBoolType(val string) bool {
 }
 
 func (s *importService) checkDateType(val string) bool {
-	formats := []string{"2006-01-02", "02-01-2006", "2006/01/02", "02/01/2006"}
+	formats := []string{isoDateFormat, "02-01-2006", "2006/01/02", "02/01/2006"}
 	for _, f := range formats {
 		if _, err := time.Parse(f, val); err == nil {
 			return true
@@ -545,11 +549,29 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 		}
 		return false
 	case "date":
-		// Return string for date, as DB usually handles it or expects string
-		return val
+		// Convert date string to PostgreSQL-compatible format (YYYY-MM-DD)
+		return s.convertDateToISO(val)
 	case "email", "url", "phoneNumber", "json":
 		// These are stored as text
 		return val
+	}
+	return val
+}
+
+// convertDateToISO converts date strings from various formats to ISO format (YYYY-MM-DD)
+func (s *importService) convertDateToISO(val string) string {
+	formats := []string{
+		isoDateFormat, // Already ISO format
+		"02-01-2006",  // DD-MM-YYYY
+		"2006/01/02",  // YYYY/MM/DD
+		"02/01/2006",  // DD/MM/YYYY
+	}
+
+	for _, format := range formats {
+		if parsedTime, err := time.Parse(format, val); err == nil {
+			// Convert to ISO format (YYYY-MM-DD)
+			return parsedTime.Format(isoDateFormat)
+		}
 	}
 	return val
 }
