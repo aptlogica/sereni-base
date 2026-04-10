@@ -23,3 +23,9 @@ out/
 node_modules/
 # Go
 vendor/
+# FOSSA
+.fossa/
+.fossa.lock
+sbom/
+sbom.json
+sbom.xml
