@@ -7,9 +7,7 @@ on:
       - develop
       - master
       - 'release/**'
-permissions:
-    contents: read
-    pull-requests: write
+  pull_request:
     
 jobs:
   sonar:
