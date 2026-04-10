@@ -46,9 +46,7 @@ jobs:
         with:
           name: sbom
           path: sbom.json
-          
-      - name: OSSF Scorecard action
-        uses: ossf/scorecard-action@v2.4.3
+
 
   dependency-vulnerabilities:
     name: Dependency Vulnerability Check
