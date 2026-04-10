@@ -1,0 +1,58 @@
+name: DAST - OWASP ZAP
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  zap-scan:
+    name: ZAP Baseline Scan (SereniBase API)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 🔹 Checkout repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 🔹 Start full microservices stack
+      - name: Start SereniBase stack
+        run: |
+          docker compose -f docker-compose.yaml up -d
+
+      # 🔹 Wait for services to be ready (critical for microservices)
+      - name: Wait for API readiness
+        run: |
+          echo "Waiting for SereniBase API..."
+          for i in {1..20}; do
+            if curl -f http://localhost:8080/api/v1/health; then
+              echo "API is ready ✅"
+              break
+            fi
+            echo "Still starting..."
+            sleep 5
+          done
+
+      # 🔹 Run ZAP scan ONLY on public attack surface
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: "http://localhost:8080"
+          fail_action: false
+          cmd_options: "-a"
+
+      # 🔹 Upload report for debugging / analysis
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: report_html.html
+
+      # 🔹 Cleanup (good practice)
+      - name: Stop services
+        if: always()
+        run: docker compose down
