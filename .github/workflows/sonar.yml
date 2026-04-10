@@ -7,11 +7,13 @@ on:
       - develop
       - master
       - 'release/**'
-  pull_request:
-
+permissions:
+    contents: read
+    pull-requests: write
+    
 jobs:
   sonar:
-    name: SonarCloud Scan
+    name: Sonar Scan
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Run tests with coverage (same as Jenkins)
+      - name: Run tests with coverage
         run: |
           go test -v -race \
             -coverprofile=coverage.out \
@@ -40,9 +42,11 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-      - name: Sonar Quality Gate (IMPORTANT)
+      - name: Sonar Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
