@@ -1,69 +1,35 @@
 version: 2
 analyze:
   modules:
-    - name: sereni-base
+    - name: github.com/aptlogica/sereni-base
       type: go-module
       target: ./
       path: ./
       options:
-        allow-unlicensed: true
         vendor: true
-ignore:
-  - github.com/modern-go/concurrent
-  - github.com/modern-go/reflect2
-  - github.com/nfnt/resize
-  - github.com/swaggo/swag
-  - golang.org/x/arch
-  - gopkg.in/yaml.v2
-  - gopkg.in/yaml.v3
-  - github.com/bytedance/gopkg
-  - github.com/bytedance/sonic
-  - github.com/cloudwego/base64x
-  - github.com/davecgh/go-spew
-  - github.com/fsnotify/fsnotify
-  - github.com/gabriel-vasile/mimetype
-  - github.com/gin-contrib/sse
-  - github.com/gin-gonic/gin
-  - github.com/goccy/go-json
-  - github.com/goccy/go-yaml
-  - github.com/golang-jwt/jwt
-  - github.com/go-playground/universal-translator
-  - github.com/go-playground/validator
-  - github.com/google/uuid
-  - github.com/jinzhu/copier
-  - github.com/joho/godotenv
-  - github.com/josharian/intern
-  - github.com/json-iterator/go
-  - github.com/klauspost/cpuid
-  - github.com/KyleBanks/depth
-  - github.com/leodido/go-urn
-  - github.com/lib/pq
-  - github.com/mailru/easyjson
-  - github.com/mattn/go-colorable
-  - github.com/mattn/go-isatty
-  - github.com/pelletier/go-toml
-  - github.com/pmezard/go-difflib
-  - github.com/quic-go/qpack
-  - github.com/quic-go/quic-go
-  - github.com/rogpeppe/go-internal
-  - github.com/rs/zerolog
-  - github.com/sagikazarmark/locafero
-  - github.com/spf13/afero
-  - github.com/spf13/cast
-  - github.com/spf13/pflag
-  - github.com/spf13/viper
-  - github.com/stretchr/objx
-  - github.com/stretchr/testify
-  - github.com/subosito/gotenv
-  - github.com/twitchyliquid64/golang-asm
-  - github.com/ugorji/go
-  - golang.org/x/crypto
-  - golang.org/x/mod
-  - golang.org/x/net
-  - golang.org/x/sync
-  - golang.org/x/sys
-  - golang.org/x/text
-  - golang.org/x/tools
-  - google.golang.org/protobuf
-  - go.uber.org/mock
-  - go.yaml.in/yaml/v3
+      ignore:
+        - github.com/modern-go/concurrent
+        - github.com/modern-go/reflect2
+        - github.com/nfnt/resize
+        - github.com/swaggo/swag
+        - golang.org/x/arch
+        - gopkg.in/yaml.v2
+        - gopkg.in/yaml.v3
+        - github.com/bytedance/gopkg
+        - github.com/bytedance/sonic
+        - github.com/cloudwego/base64x
+        - github.com/davecgh/go-spew
+        - github.com/fsnotify/fsnotify
+        - github.com/go-openapi/jsonpointer
+        - github.com/go-openapi/jsonreference
+        - github.com/go-openapi/spec
+        - github.com/go-openapi/swag
+        - github.com/lib/pq
+        - github.com/pkg/errors
+        - github.com/spf13/afero
+        - github.com/spf13/pflag
+        - github.com/spf13/viper
+        - github.com/twitchyliquid64/golang-asm
+        - golang.org/x/net
+        - go.uber.org/mock
+        - go.yaml.in/yaml/v3
