@@ -21,10 +21,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Trivy
-        uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
-        with:
-          version: v0.68.2
-          cache: true
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.69.3
+          trivy --version
 
       - name: Run Trivy scan
         run: |
@@ -40,19 +39,24 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
+
   trivy-image:
     name: Trivy Image Scan
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Build Docker Image
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
         run: docker build -t serenibase:latest .
 
-      - name: Setup Trivy
-        uses: aquasecurity/setup-trivy@v0.2.0
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.69.3
+          trivy --version
 
-      - name: Scan Docker Image
+      - name: Scan Docker image
         run: |
           trivy image \
             --severity HIGH,CRITICAL \
