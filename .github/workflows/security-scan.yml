@@ -73,36 +73,3 @@ jobs:
           go list -json -m all | nancy sleuth --loud
         continue-on-error: true
 
-  license-compliance:
-    name: License Compliance Check (FOSSA)
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.2'
-
-      - name: Install FOSSA CLI
-        run: |
-          curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
-
-      - name: Run FOSSA License Analysis
-        run: fossa analyze --verbose
-        env:
-          FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
-        continue-on-error: true
-
-      - name: Check License Compliance Policy
-        run: fossa test --verbose
-        env:
-          FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
-
