@@ -1,0 +1,48 @@
+name: Sonar Scan
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - master
+      - 'release/**'
+  pull_request:
+
+jobs:
+  sonar:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests with coverage (same as Jenkins)
+        run: |
+          go test -v -race \
+            -coverprofile=coverage.out \
+            -covermode=atomic \
+            -coverpkg=./internal/... \
+            ./tests/...
+
+      - name: Sonar Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Sonar Quality Gate (IMPORTANT)
+        uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+        timeout-minutes: 10
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
