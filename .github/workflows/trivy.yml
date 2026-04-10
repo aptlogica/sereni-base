@@ -1,9 +1,9 @@
 name: Trivy Security Scan
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
+  push:
     branches: [main, develop]
   schedule:
     - cron: "0 2 * * 1"
@@ -14,19 +14,19 @@ permissions:
 
 jobs:
   trivy-scan:
-    name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Trivy
-        uses: aquasecurity/setup-trivy@v0.2.0
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
         with:
-          version: latest
+          version: v0.68.2
+          cache: true
 
-      - name: Run Trivy Scan
+      - name: Run Trivy scan
         run: |
           trivy fs \
             --scanners vuln,misconfig,secret \
@@ -36,7 +36,7 @@ jobs:
             --output trivy-results.sarif \
             .
 
-      - name: Upload SARIF to GitHub Security
+      - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
