@@ -36,27 +36,24 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          go test -v -race ./... \
+          go test -v ./... \
             -coverprofile=coverage.out \
             -covermode=atomic \
             -coverpkg=./...
 
-      # Debug coverage (keep initially)
-      - name: Debug coverage
+      - name: Show coverage summary
         run: |
-          echo "Checking coverage file..."
-          ls -lh coverage.out
-          head -n 10 coverage.out
-
-      # Sonar scan
-      - name: Sonar Scan
-        uses: SonarSource/sonarqube-scan-action@v6
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      # Quality gate
-      - name: Sonar Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
-        timeout-minutes: 10
-        env:
+          go tool cover -func=coverage.out
+      
+            # Sonar scan
+            - name: Sonar Scan
+              uses: SonarSource/sonarqube-scan-action@v6
+              env:
+                SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+            # Quality gate
+            - name: Sonar Quality Gate
+              uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+              timeout-minutes: 10
+              env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
