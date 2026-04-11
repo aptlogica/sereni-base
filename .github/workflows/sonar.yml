@@ -8,43 +8,55 @@ on:
       - master
       - 'release/**'
   pull_request:
-    
+
+permissions:
+  contents: read
+
 jobs:
   sonar:
     name: Sonar Scan
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Go setup
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.2'
+          go-version: '1.22'
 
+      # Dependencies
       - name: Install dependencies
         run: go mod download
 
       - name: Run tests with coverage
         run: |
-          go test -v -race \
+          go test -v -race ./... \
             -coverprofile=coverage.out \
             -covermode=atomic \
-            -coverpkg=./internal/... \
-            ./tests/...
+            -coverpkg=./...
 
+      # Debug coverage (keep initially)
+      - name: Debug coverage
+        run: |
+          echo "Checking coverage file..."
+          ls -lh coverage.out
+          head -n 10 coverage.out
+
+      # Sonar scan
       - name: Sonar Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
+      # Quality gate
       - name: Sonar Quality Gate
         uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
         timeout-minutes: 10
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
