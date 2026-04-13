@@ -22,14 +22,14 @@ An open-source, self-hosted alternative to Airtable, Notion databases, and NocoD
 </p>
 
 <p align="center">
-  <a href="https://sonar.aptlogica.com/dashboard?id=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b">
-    <img src="https://sonar.aptlogica.com/api/project_badges/measure?project=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b&metric=alert_status&token=sqb_f3e90f5e2b4263ed304f449df73cd8b1f6d6d7cb" alt="Quality Gate">
+  <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=alert_status" alt="Quality Gate">
   </a>
-  <a href="https://sonar.aptlogica.com/dashboard?id=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b">
-    <img src="https://sonar.aptlogica.com/api/project_badges/measure?project=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b&metric=coverage&token=sqb_f3e90f5e2b4263ed304f449df73cd8b1f6d6d7cb" alt="Coverage">
+  <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=coverage" alt="Coverage">
   </a>
-  <a href="https://sonar.aptlogica.com/dashboard?id=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b">
-    <img src="https://sonar.aptlogica.com/api/project_badges/measure?project=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b&metric=software_quality_security_rating&token=sqb_f3e90f5e2b4263ed304f449df73cd8b1f6d6d7cb" alt="Security">
+  <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=security_rating" alt="Security">
   </a>
   <img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
