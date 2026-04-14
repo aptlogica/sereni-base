@@ -15,10 +15,11 @@ An open-source, self-hosted alternative to Airtable, Notion databases, and NocoD
 <p align="center">
   <img src="https://github.com/aptlogica/sereni-base/actions/workflows/ci.yml/badge.svg" alt="Github Actions">
   
-  <img src="https://github.com/aptlogica/sereni-base/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
+  <img src="https://github.com/aptlogica/sereni-base/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL">
   <a href="https://www.bestpractices.dev/projects/12425"><img src="https://www.bestpractices.dev/projects/12425/badge"></a>
   <img src="https://img.shields.io/badge/go%20report-A+-brightgreen.svg?style=flat" alt="Go Report">
   <a href="https://app.fossa.com/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base?ref=badge_shield&issueType=security" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base.svg?type=shield&issueType=security"/></a>
+  <a href="https://app.fossa.com/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base?ref=badge_shield&issueType=license" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base.svg?type=shield&issueType=license"/></a>
 </p>
 
 <p align="center">
