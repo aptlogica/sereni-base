@@ -24,14 +24,15 @@ jobs:
         with:
           go-version: '1.26.2'
 
+      - name: Tidy modules
+        run: go mod tidy
+
       - name: Run go vet
         run: go vet ./...
 
       - name: Check for vulnerable Go modules
-        env:
-          GOVULNCHECK_VERSION: v0.1.0
         run: |
-          go install github.com/golang/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
         continue-on-error: true
 
@@ -42,7 +43,7 @@ jobs:
           output-file: sbom.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: sbom
           path: sbom.json
@@ -60,6 +61,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Run Nancy (vulnerable dependencies scanner)
         env:
