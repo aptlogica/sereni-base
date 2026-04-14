@@ -46,7 +46,7 @@ var DefinedFunctions = []Function{
 			END;
 			$$;
 		`,
-},
+	},
 	{
 		FunctionName:   "convert_column_type",
 		FunctionParams: "schema_name TEXT, table_name TEXT, column_name TEXT, target_type TEXT, empty_before BOOLEAN",
@@ -117,6 +117,7 @@ var DefinedFunctions = []Function{
 				relation_sql TEXT := '';
 				cols TEXT;
 				result JSON;
+				is_array BOOLEAN;
 			BEGIN
 				-- Loop through each relation object in relation_data array
 				FOR rel IN SELECT * FROM unnest(relation_data)
@@ -127,18 +128,36 @@ var DefinedFunctions = []Function{
 					relation           := rel->>'relation';
 					target_columns     := ARRAY(SELECT json_array_elements_text(rel->'target_columns'));
 
-					-- Build columns for this relation
+					-- Detect if the source column is an array type
+					SELECT (data_type = 'ARRAY') INTO is_array
+					FROM information_schema.columns
+					WHERE table_schema = schema_name
+					  AND table_name = source_table_name
+					  AND column_name = source_column_name
+					LIMIT 1;
+
+					-- Build columns for this relation (handle scalar vs array source columns)
 					cols := array_to_string(
 						ARRAY(
 							SELECT CASE
 								WHEN relation IN ('has-many','many-to-many') THEN
-									format(
-										'(SELECT COALESCE(JSON_AGG(t.%I), ''[]''::JSON)
-										  FROM %I.%I t
-										  WHERE t.%I = ANY(s.%I)) AS %I',
-										c, schema_name, target_table_name, target_column_name, source_column_name,
-										target_table_name || '_' || c
-									)
+									CASE WHEN is_array THEN
+										format(
+											'(SELECT COALESCE(JSON_AGG(t.%I), ''[]''::JSON)
+											  FROM %I.%I t
+											  WHERE t.%I = ANY(s.%I)) AS %I',
+											c, schema_name, target_table_name, target_column_name, source_column_name,
+											target_table_name || '_' || c
+										)
+									ELSE
+										format(
+											'(SELECT COALESCE(JSON_AGG(t.%I), ''[]''::JSON)
+											  FROM %I.%I t
+											  WHERE t.%I = s.%I) AS %I',
+											c, schema_name, target_table_name, target_column_name, source_column_name,
+											target_table_name || '_' || c
+										)
+									END
 								ELSE
 									format(
 										'(SELECT t.%I FROM %I.%I t WHERE t.%I = s.%I LIMIT 1) AS %I',
@@ -452,10 +471,10 @@ var DefinedFunctions = []Function{
 		$$;
 	`,
 	},
-{
-	FunctionName:   "get_user_role_by_id",
-	FunctionParams: "p_user_id text",
-	FunctionSQL: `
+	{
+		FunctionName:   "get_user_role_by_id",
+		FunctionParams: "p_user_id text",
+		FunctionSQL: `
 	RETURNS SETOF JSON
 	LANGUAGE plpgsql STABLE AS $$
 	DECLARE
@@ -475,5 +494,5 @@ var DefinedFunctions = []Function{
 	END;
 	$$;
 `,
-},
+	},
 }
