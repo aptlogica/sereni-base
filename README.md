@@ -1,52 +1,89 @@
-﻿# SereniBase - Open-Source. More Than a Spreadsheet. More Than a Database. Where Data Becomes Software. No Coding required.
+﻿# SereniBase
+
+### Where Data Becomes Software
+
+An open-source, self-hosted alternative to Airtable, Notion databases, and NocoDB — built to create apps, workflows, and APIs on top of your data.
+
+---
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.26.2+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
 </p>
+<p align="center">
+  <img src="https://github.com/aptlogica/sereni-base/actions/workflows/ci.yml/badge.svg" alt="Github Actions">
+  
+  <img src="https://github.com/aptlogica/sereni-base/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
+  <a href="https://www.bestpractices.dev/projects/12425"><img src="https://www.bestpractices.dev/projects/12425/badge"></a>
+  <img src="https://img.shields.io/badge/go%20report-A+-brightgreen.svg?style=flat" alt="Go Report">
+  <a href="https://app.fossa.com/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base?ref=badge_shield&issueType=security" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base.svg?type=shield&issueType=security"/></a>
+</p>
 
 <p align="center">
-  <a href="https://sonar.aptlogica.com/dashboard?id=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b">
-    <img src="https://sonar.aptlogica.com/api/project_badges/measure?project=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b&metric=alert_status&token=sqb_f3e90f5e2b4263ed304f449df73cd8b1f6d6d7cb" alt="Quality Gate">
+  <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=alert_status" alt="Quality Gate">
   </a>
-  <a href="https://sonar.aptlogica.com/dashboard?id=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b">
-    <img src="https://sonar.aptlogica.com/api/project_badges/measure?project=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b&metric=coverage&token=sqb_f3e90f5e2b4263ed304f449df73cd8b1f6d6d7cb" alt="Coverage">
+  <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=coverage" alt="Coverage">
   </a>
-  <a href="https://sonar.aptlogica.com/dashboard?id=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b">
-    <img src="https://sonar.aptlogica.com/api/project_badges/measure?project=aptlogica_sereni-base_58d1e56c-7e79-4847-b5b2-68b244b3b65b&metric=software_quality_security_rating&token=sqb_f3e90f5e2b4263ed304f449df73cd8b1f6d6d7cb" alt="Security">
+  <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=security_rating" alt="Security">
   </a>
   <img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
   <img src="https://img.shields.io/badge/Status-Beta-orange.svg?style=flat-square" alt="Beta">
 </p>
 
-> **Build and manage databases visually, no code required.** SereniBase is an open-source platform in active beta development for creating and managing business data with a spreadsheet-like interface. Self-host on your own infrastructure with full data control.
 
-## Overview
+---
 
-**SereniBase** is an open-source, self-hosted Airtable and NOCODB alternative that helps you create tables, relationships, views, and workflows through an intuitive interface.
-As a flexible database management tool with REST API support, it enables teams to build internal tools, manage structured data, and automate workflows — without writing code. Sereni Base offers one of the most quickest and user-friendly ways to build and manage databases online.
+⭐ **If this project helps you, please consider giving it a star!**  
+👉 https://github.com/aptlogica/sereni-base
 
-### Why SereniBase?
+---
 
-| Problem | Solution |
-|---------|----------|
-| Cloud-only SaaS with vendor lock-in | ✅ **100% Self-Hosted** - Deploy on your infrastructure |
-| Limited customization and extensibility | ✅ **Open Source** - MIT licensed, fork and customize |
-| Expensive as data and users scale | ✅ **Zero Per-User Costs** - Pay only for infrastructure |
-| Privacy concerns with sensitive data | ✅ **Complete Data Control** - Your data never leaves your servers |
+## 🚀 What is SereniBase?
 
-## Key Features
+SereniBase is a **production-ready, open-source platform** for building data-driven systems.
 
-- **No-Code Database Management**: Create tables, define columns, add relationships through visual interface
-- **Multi-Tenant Architecture**: Workspaces provide complete isolation for organizations and teams
-- **Dynamic Schema**: Add/remove tables and columns at runtime without database migrations
-- **RESTful API**: Complete REST API with Swagger/OpenAPI documentation
-- **Microservices Architecture**: Modular services for authentication, email, storage, and antivirus
-- **Production-Ready**: RBAC, audit logging, connection pooling, health checks, and testing
+Think:
 
+👉 Airtable + NocoDB  
+👉 But **modular, extensible, API-first, and self-hosted**
+
+It allows teams to:
+- Build internal tools  
+- Manage structured data  
+- Create workflows  
+- Extend backend systems  
+
+---
+
+## 🔥 Why SereniBase?
+
+Most no-code tools work… until they don’t.
+
+| Problem | SereniBase Solution |
+|--------|-------------------|
+| Vendor lock-in | ✅ Self-hosted |
+| Limited extensibility | ✅ Open-source & modular |
+| Expensive scaling | ✅ Infrastructure-based cost |
+| Privacy concerns | ✅ Full data ownership |
+
+---
+
+## ⚡ Key Features
+
+- 🗄️ No-Code + Developer Friendly  
+- 🔌 REST API (OpenAPI/Swagger)  
+- 🧩 Microservices Architecture  
+- 🏢 Multi-Tenant Workspaces  
+- ⚡ Dynamic Schema (no migrations)  
+- 🔐 Enterprise Security (RBAC, audit logs)  
+
+---
 ## Services Architecture
 
 | Service | Description | Port |

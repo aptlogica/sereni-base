@@ -1,6 +1,6 @@
 module github.com/aptlogica/sereni-base
 
-go 1.25.0
+go 1.26.2
 
 require (
 	github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd
@@ -26,7 +26,7 @@ require github.com/pkg/errors v0.9.1 // indirect
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/PuerkitoBio/purell v1.2.1 // indirect
-	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
