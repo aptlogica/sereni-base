@@ -14,24 +14,21 @@ An open-source, self-hosted alternative to Airtable, Notion databases, and NocoD
 </p>
 <p align="center">
   <img src="https://github.com/aptlogica/sereni-base/actions/workflows/ci.yml/badge.svg" alt="Github Actions">
-  
   <img src="https://github.com/aptlogica/sereni-base/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL">
   <a href="https://www.bestpractices.dev/projects/12425"><img src="https://www.bestpractices.dev/projects/12425/badge"></a>
   <img src="https://img.shields.io/badge/go%20report-A+-brightgreen.svg?style=flat" alt="Go Report">
   <a href="https://app.fossa.com/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base?ref=badge_shield&issueType=security" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base.svg?type=shield&issueType=security"/></a>
   <a href="https://app.fossa.com/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base?ref=badge_shield&issueType=license" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2Faptlogica%2Fsereni-base.svg?type=shield&issueType=license"/></a>
-</p>
-
-<p align="center">
   <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
-    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=alert_status" alt="Quality Gate">
-  </a>
+    <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=alert_status" alt="Quality Gate"></a>
   <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
     <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=coverage" alt="Coverage">
   </a>
   <a href="https://sonarcloud.io/summary/new_code?id=aptlogica_sereni-base">
     <img src="https://sonarcloud.io/api/project_badges/measure?project=aptlogica_sereni-base&metric=security_rating" alt="Security">
   </a>
+</p>
+<p align="center">
   <img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
   <img src="https://img.shields.io/badge/Status-Beta-orange.svg?style=flat-square" alt="Beta">
@@ -74,6 +71,14 @@ Most no-code tools work… until they don’t.
 | Privacy concerns | ✅ Full data ownership |
 
 ---
+
+
+## 🚀 Live Demo
+
+
+<a href="https://demo.serenibase.com/login"><img src="https://img.shields.io/badge/Demo-Live%20Demo-blue?style=for-the-badge" alt="Live Demo"></a> 
+
+**Try the live demo:** [https://demo.serenibase.com/login](https://demo.serenibase.com/login)<br>_See SereniBase in action with all features enabled._ 
 
 ## ⚡ Key Features
 
