@@ -3,7 +3,7 @@ module github.com/aptlogica/sereni-base
 go 1.26.2
 
 require (
-	github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd
+	github.com/aptlogica/go-postgres-rest v1.0.0-alpha
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/universal-translator v0.18.1
 	github.com/go-playground/validator/v10 v10.30.1

@@ -2,8 +2,8 @@ github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
 github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578/go.mod h1:uGdkoq3SwY9Y+13GIhn11/XLaGBb4BfwItxLd5jeuXE=
-github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd h1:MWGmPXeqN6BYxYbLRfuxiXJs7czm2VNZShRNbbVRbF0=
-github.com/aptlogica/go-postgres-rest v0.0.0-20260316135812-5724dc614bfd/go.mod h1:naKWx5pmadCX9TOm5FcBu74ABb6ZGW4DBwPN92h6ZxY=
+github.com/aptlogica/go-postgres-rest v1.0.0-alpha h1:VXnp0qMz9fnt75IFPgv5xNqaMIQNvX6t7LOV0hNewGc=
+github.com/aptlogica/go-postgres-rest v1.0.0-alpha/go.mod h1:naKWx5pmadCX9TOm5FcBu74ABb6ZGW4DBwPN92h6ZxY=
 github.com/bytedance/gopkg v0.1.4 h1:oZnQwnX82KAIWb7033bEwtxvTqXcYMxDBaQxo5JJHWM=
 github.com/bytedance/gopkg v0.1.4/go.mod h1:v1zWfPm21Fb+OsyXN2VAHdL6TBb2L88anLQgdyje6R4=
 github.com/bytedance/sonic v1.15.0 h1:/PXeWFaR5ElNcVE84U0dOHjiMHQOwNIx3K4ymzh/uSE=
