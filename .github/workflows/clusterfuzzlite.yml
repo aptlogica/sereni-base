@@ -1,0 +1,32 @@
+# ClusterFuzzLite GitHub Actions Workflow for Go Fuzzing
+
+This workflow runs Go fuzz tests on every push and pull request to main branches. It helps detect vulnerabilities and bugs by feeding random data to your code.
+
+## References
+- [ClusterFuzzLite documentation](https://google.github.io/clusterfuzzlite/)
+- [Go fuzzing documentation](https://go.dev/doc/fuzz/)
+
+---
+
+name: ClusterFuzzLite
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - master
+      - 'release/**'
+  pull_request:
+
+jobs:
+  fuzzing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+      - name: Run Go fuzz tests
+        run: go test -fuzz=Fuzz -fuzztime=30s ./...

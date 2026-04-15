@@ -112,6 +112,17 @@ fix(api): handle nil pointer in user handler
 docs(readme): update installation instructions
 ```
 
+
+## Code Review Policy
+
+**All pull requests must be reviewed and approved by at least one other human contributor before merging.**
+
+This is a mandatory security and quality requirement. Automated or bot reviews do not count as approval. Administrators and code owners are also required to follow this policy. If your contribution cannot be reviewed due to a lack of available reviewers, please request assistance from the project maintainers or open an issue to recruit more collaborators.
+
+To enforce this policy, branch protection rules should be enabled in the repository settings (see [GitHub documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/required-reviews)).
+
+---
+
 ## Pull Request Process
 
 1. **Update your fork** with the latest upstream changes:

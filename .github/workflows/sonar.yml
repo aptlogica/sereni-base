@@ -1,4 +1,8 @@
+
 name: Sonar Scan
+
+permissions:
+  contents: read
 
 on:
   push:
