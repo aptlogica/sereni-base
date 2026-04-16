@@ -10,7 +10,12 @@ An open-source, self-hosted alternative to Airtable, Notion databases, and NocoD
   <img src="https://img.shields.io/badge/Go-1.26.2+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <a href="https://gin-gonic.com/"><img src="https://img.shields.io/badge/Gin-Framework-008ECF?style=for-the-badge&logo=gin&logoColor=white" alt="Gin"></a>
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/MinIO-Storage-EF2D5E?style=for-the-badge&logo=minio&logoColor=white" alt="MinIO">
+  <img src="https://img.shields.io/badge/ClamAV-Antivirus-3776AB?style=for-the-badge&logo=clamav&logoColor=white" alt="ClamAV">
+  <a href="https://swagger.io/"><img src="https://img.shields.io/badge/Swagger-Documented-85EA2D?style=for-the-badge&logo=swagger&logoColor=black" alt="Swagger"></a>
+  
 </p>
 <p align="center">
   <img src="https://github.com/aptlogica/sereni-base/actions/workflows/ci.yml/badge.svg" alt="Github Actions">
