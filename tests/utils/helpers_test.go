@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Licensed under the Apache License, Version 2.0
 package utils_test
 
 import (

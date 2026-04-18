@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -8,11 +8,14 @@
 // @description     GoPostgREST is a RESTful API for PostgreSQL.
 // @host            localhost:8080
 // @BasePath        /api/v1
+// @license.name    Apache 2.0
+// @license.url     https://www.apache.org/licenses/LICENSE-2.0
 package app
 
 import (
 	"fmt"
 	"net/http"
+
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"

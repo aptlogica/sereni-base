@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -7,9 +7,10 @@ package tenant
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/constant"
-	"time"
 
 	"github.com/google/uuid"
 )

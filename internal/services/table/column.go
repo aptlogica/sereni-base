@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -8,9 +8,10 @@ package services
 import (
 	"context"
 	"fmt"
-	"github.com/aptlogica/go-postgres-rest/pkg"
 	"strings"
 	"time"
+
+	"github.com/aptlogica/go-postgres-rest/pkg"
 
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"

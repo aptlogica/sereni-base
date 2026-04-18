@@ -1229,8 +1229,8 @@ info:
     Serenibase is a workspace management platform that layers guardrails on PostgreSQL tables and permissions.
     It centralizes workspace/base/table creation, membership, and asset/connectivity workflows along with RBAC controls.
   license:
-    name: MIT
-    url: https://opensource.org/licenses/MIT
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
   termsOfService: http://swagger.io/terms/
   title: Serenibase API
   version: "1.0"

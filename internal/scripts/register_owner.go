@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
+
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
@@ -19,7 +21,6 @@ import (
 	core "github.com/aptlogica/sereni-base/internal/services/core"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
-	"time"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 

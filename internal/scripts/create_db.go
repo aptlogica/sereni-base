@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -8,11 +8,12 @@ package scripts
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	"github.com/aptlogica/go-postgres-rest/pkg/models"
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
-	"strings"
 )
 
 // contains checks if a string contains a substring (case-insensitive)

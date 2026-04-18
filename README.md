@@ -34,7 +34,7 @@ An open-source, self-hosted alternative to Airtable, Notion databases, and NocoD
   </a>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
   <img src="https://img.shields.io/badge/Status-Beta-orange.svg?style=flat-square" alt="Beta">
 </p>
@@ -190,4 +190,4 @@ We welcome contributions! See our contribution guidelines for details.
 
 ## License
 
-MIT License. Copyright (c) 2026 Aptlogica Technologies.
+Licensed under the Apache License, Version 2.0. Copyright (c) 2026 Aptlogica Technologies Private Limited.
