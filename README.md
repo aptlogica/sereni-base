@@ -190,4 +190,4 @@ We welcome contributions! See our contribution guidelines for details.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. Copyright (c) 2026 Aptlogica Technologies Private Limited.
+Licensed under the Apache License, Version 2.0. Copyright 2026-2030 Aptlogica Technologies Pvt Ltd.
