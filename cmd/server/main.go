@@ -1,8 +1,8 @@
 /*
 
-Copyright (c) 2026 Aptlogica Technologies Private Limited
+Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
 This file is part of software developed by Aptlogica Technologies Private Limited.
-Licensed under the MIT License. See the LICENSE file in the project root
+Licensed under the Apache License, Version 2.0. See the LICENSE file in the project root
 for full license information.
 Websites:
 https://www.aptlogica.com

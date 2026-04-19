@@ -1,5 +1,5 @@
-// Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -8,18 +8,20 @@ package services
 import (
 	"context"
 	"fmt"
-	"github.com/aptlogica/go-postgres-rest/pkg"
-	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"mime/multipart"
 	"path/filepath"
+
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
+
+	"strings"
+	"time"
 
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
-	"strings"
-	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	authProviderInterface "github.com/aptlogica/sereni-base/internal/providers/auth"

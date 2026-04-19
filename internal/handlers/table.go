@@ -1,5 +1,5 @@
-// Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
+// Licensed under the Apache License, Version 2.0
 // Websites: https://www.aptlogica.com | https://www.serenibase.com
 // Support: support@aptlogica.com | support@serenibase.com
 
@@ -7,12 +7,13 @@ package handlers
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

@@ -185,7 +185,7 @@ services:
       - serenibase-network
 
   clamav:
-    image: clamav/clamav:latest
+    image: clamav/clamav:1.4
     container_name: clamav
     restart: unless-stopped
     env_file:
@@ -193,6 +193,7 @@ services:
     ports:
       - "${ANTIVIRUS_CLAMAV_PORT:-3310}:3310"
     volumes:
+      - clamav-db:/var/lib/clamav  # Persistent virus signature database (500MB+)
       - ./data:/data:cached
     environment:
       - CLAMD_STARTUP_TIMEOUT=180
@@ -214,6 +215,12 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  clamav-db:
+    driver: local
+    driver_opts:
+      type: local
+      o: bind
+      device: ${CLAMAV_DB_PATH:-./.clamav-db}
 
 networks:
   serenibase-network:

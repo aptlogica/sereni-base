@@ -1,5 +1,5 @@
-// Copyright (c) 2026 Aptlogica Technologies Private Limited
-// SPDX-License-Identifier: MIT
+// Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
+// Licensed under the Apache License, Version 2.0
 
 package tests
 
@@ -10,17 +10,17 @@ import (
 /* ============================================================================
    INTEGRATION TESTS - COMPREHENSIVE SUITE
    ============================================================================
-   
+
    These integration tests verify critical workflows and cross-system interactions.
    Run with: go test -v -race -tags=integration ./tests/...
-   
+
    Test Levels:
    - Service Integration: Cross-service communication verification
    - Database Integration: Transaction integrity, data isolation
    - API Integration: End-to-end API workflows
    - Multi-tenancy: Workspace/organization isolation
    - Security: RBAC, permission enforcement
-   
+
    ============================================================================ */
 
 // TestUserWorkflowIntegration verifies complete user lifecycle
