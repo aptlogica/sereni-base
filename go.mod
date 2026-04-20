@@ -6,7 +6,7 @@ require (
 	github.com/aptlogica/go-postgres-rest v1.0.0-alpha
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/universal-translator v0.18.1
-	github.com/go-playground/validator/v10 v10.30.1
+	github.com/go-playground/validator/v10 v10.30.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jinzhu/copier v0.4.0
