@@ -1,8 +1,14 @@
 ﻿# SereniBase
 
-### Where Data Becomes Software
 
-An open-source, self-hosted alternative to Airtable, Notion databases, and NocoDB — built to create apps, workflows, and APIs on top of your data.
+### Open-Source Self-Hosted Backend Platform — PostgreSQL + Auto REST APIs + JWT + Storage + ClamAV
+
+A production-ready, self-hosted backend platform built on PostgreSQL. Every table you create automatically
+generates a documented REST API. JWT authentication, S3/MinIO file storage with ClamAV malware scanning, and
+SMTP email delivery run as independent microservices — deploy together with a single `docker-compose up`, or
+standalone as needed. Licensed under the Apache License 2.0. Full data sovereignty.
+
+
 
 ---
 
@@ -74,6 +80,9 @@ Most no-code tools work… until they don’t.
 | Limited extensibility | ✅ Open-source & modular |
 | Expensive scaling | ✅ Infrastructure-based cost |
 | Privacy concerns | ✅ Full data ownership |
+| No built-in file security | ✅ ClamAV antivirus scans every upload before storage |
+| Separate email service needed | ✅ SMTP microservice with Redis queue and retry — included |
+| Assembling disconnected tools | ✅ Database + API + Auth + Storage + Email + Security — one stack |
 
 ---
 
@@ -84,6 +93,14 @@ Most no-code tools work… until they don’t.
 <a href="https://demo.serenibase.com/login"><img src="https://img.shields.io/badge/Demo-Live%20Demo-blue?style=for-the-badge" alt="Live Demo"></a> 
 
 **Try the live demo:** [https://demo.serenibase.com/login](https://demo.serenibase.com/login)<br>_See SereniBase in action with all features enabled._ 
+
+### Default login credentials
+
+| Field | Value |
+|-------|-------|
+| Email | admin@example.com |
+| Password | Admin@123 |
+| Live Demo (no install) | https://demo.serenibase.com |
 
 ## ⚡ Key Features
 
@@ -187,6 +204,20 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 ## Contributing
 
 We welcome contributions! See our contribution guidelines for details.
+
+## Ecosystem
+
+SereniBase is the core of a full backend platform. All modules are open-source and can be used independently or together:
+
+| Module | Purpose | License |
+|--------|---------|---------|
+| `sereni-jwt-provider` | JWT auth microservice | Apache 2.0 |
+| `sereni-storage-provider` | S3/MinIO/local storage | Apache 2.0 |
+| `sereni-email-smtp` | SMTP email + Redis queue | Apache 2.0 |
+| `sereni-antivirus-clamav` | ClamAV file scanning | Apache 2.0 |
+| `go-postgres-rest` | PostgreSQL REST API lib | Apache 2.0 |
+| `base-sdk` | TypeScript SDK | Apache 2.0 |
+| `base-ui` | React frontend | MIT |
 
 ## License
 
