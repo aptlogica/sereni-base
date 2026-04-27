@@ -47,26 +47,42 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 
 
 ---
+## 🚀 Live Demo
+
+![SereniBase Demo](https://clientarea.aptlogica.com/sereni-base/sereni-base-demo.gif)
+
+
+<a href="https://demo.serenibase.com/login"><img src="https://img.shields.io/badge/Demo-Live%20Demo-blue?style=for-the-badge" alt="Live Demo"></a> 
+
+**Try the live demo:** [https://demo.serenibase.com/login](https://demo.serenibase.com/login)<br>_See SereniBase in action with all features enabled._ 
+
+### Default login credentials
+
+| Field | Value |
+|-------|-------|
+| Email | admin@example.com |
+| Password | Admin@123 |
+| Live Demo (no install) | https://demo.serenibase.com |
 
 ⭐ **If this project helps you, please consider giving it a star!**  
 👉 https://github.com/aptlogica/sereni-base
 
 ---
 
-## 🚀 What is SereniBase?
+## 🚀 What is [SereniBase](https://www.aptlogica.com/sereni-base/)?
 
-SereniBase is a **production-ready, open-source platform** for building data-driven systems.
+A backend operating system. Not another tool.
 
-Think:
+Instead of stitching together separate services, developers get a unified backend where database, APIs, auth, storage, email, and security are already designed to work together.
 
-👉 Airtable + NocoDB  
-👉 But **modular, extensible, API-first, and self-hosted**
+- Create a table → get a REST API. Instantly. No code.
+- JWT auth, S3 storage, SMTP email, ClamAV scanning — all running as microservices.
+- Integrate seamlessly with your existing systems via REST API or TypeScript SDK.
+- Visual UI for teams + TypeScript SDK for developers.
+- Self-hosted or cloud-ready. Full data sovereignty. Zero vendor lock-in.
 
-It allows teams to:
-- Build internal tools  
-- Manage structured data  
-- Create workflows  
-- Extend backend systems  
+![SereniBase Demo](https://clientarea.aptlogica.com/sereni-base/exploreAPI.jpg)
+![SereniBase Demo](https://clientarea.aptlogica.com/sereni-base/APIcurl.jpg)
 
 ---
 
@@ -86,21 +102,6 @@ Most no-code tools work… until they don’t.
 
 ---
 
-
-## 🚀 Live Demo
-
-
-<a href="https://demo.serenibase.com/login"><img src="https://img.shields.io/badge/Demo-Live%20Demo-blue?style=for-the-badge" alt="Live Demo"></a> 
-
-**Try the live demo:** [https://demo.serenibase.com/login](https://demo.serenibase.com/login)<br>_See SereniBase in action with all features enabled._ 
-
-### Default login credentials
-
-| Field | Value |
-|-------|-------|
-| Email | admin@example.com |
-| Password | Admin@123 |
-| Live Demo (no install) | https://demo.serenibase.com |
 
 ## ⚡ Key Features
 
@@ -211,13 +212,13 @@ SereniBase is the core of a full backend platform. All modules are open-source a
 
 | Module | Purpose | License |
 |--------|---------|---------|
-| `sereni-jwt-provider` | JWT auth microservice | Apache 2.0 |
-| `sereni-storage-provider` | S3/MinIO/local storage | Apache 2.0 |
-| `sereni-email-smtp` | SMTP email + Redis queue | Apache 2.0 |
-| `sereni-antivirus-clamav` | ClamAV file scanning | Apache 2.0 |
-| `go-postgres-rest` | PostgreSQL REST API lib | Apache 2.0 |
-| `base-sdk` | TypeScript SDK | Apache 2.0 |
-| `base-ui` | React frontend | MIT |
+| [sereni-jwt-provider](https://github.com/aptlogica/sereni-jwt-provider) | JWT auth microservice | Apache 2.0 |
+| [sereni-storage-provider](https://github.com/aptlogica/sereni-storage-provider) | S3/MinIO/local storage | Apache 2.0 |
+| [sereni-email-smtp](https://github.com/aptlogica/sereni-email-smtp) | SMTP email + Redis queue | Apache 2.0 |
+| [sereni-antivirus-clamav](https://github.com/aptlogica/sereni-antivirus-clamav) | ClamAV file scanning | Apache 2.0 |
+| [go-postgres-rest](https://github.com/aptlogica/go-postgres-rest) | PostgreSQL REST API lib | Apache 2.0 |
+| [base-sdk](https://github.com/aptlogica/base-sdk) | TypeScript SDK | Apache 2.0 |
+| [base-ui](https://github.com/aptlogica/base-ui) | React frontend | MIT |
 
 ## License
 
