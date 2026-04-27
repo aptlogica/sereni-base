@@ -49,7 +49,7 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 ---
 ## 🚀 Live Demo
 
-![SereniBase Demo](https://clientarea.aptlogica.com/sereni-base/sereni-base-demo.gif)
+![SereniBase Demo](https://assets.aptlogica.com/sereni-base-demo.gif)
 
 
 <a href="https://demo.serenibase.com/login"><img src="https://img.shields.io/badge/Demo-Live%20Demo-blue?style=for-the-badge" alt="Live Demo"></a> 
@@ -81,8 +81,8 @@ Instead of stitching together separate services, developers get a unified backen
 - Visual UI for teams + TypeScript SDK for developers.
 - Self-hosted or cloud-ready. Full data sovereignty. Zero vendor lock-in.
 
-![SereniBase Demo](https://clientarea.aptlogica.com/sereni-base/exploreAPI.jpg)
-![SereniBase Demo](https://clientarea.aptlogica.com/sereni-base/APIcurl.jpg)
+![SereniBase Demo](https://assets.aptlogica.com/exploreAPI.jpg)
+![SereniBase Demo](https://assets.aptlogica.com/APIcurl.jpg)
 
 ---
 
