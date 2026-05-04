@@ -193,7 +193,7 @@ services:
     ports:
       - "${ANTIVIRUS_CLAMAV_PORT:-3310}:3310"
     volumes:
-      - clamav-db:/var/lib/clamav  # Persistent virus signature database (500MB+)
+      - ./clamav-db:/var/lib/clamav  # Persistent virus signature database (500MB+)
       - ./data:/data:cached
     environment:
       - CLAMD_STARTUP_TIMEOUT=180
