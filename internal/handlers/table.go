@@ -1124,3 +1124,84 @@ func (h *TableHandler) BulkDeleteRows(c *gin.Context) {
 		"message":       fmt.Sprintf("Successfully deleted %d rows", deletedCount),
 	})
 }
+
+// @Summary      Bulk update columns
+// @Description  Updates multiple columns with the provided metadata and returns success status.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.BulkUpdateColumnsRequest  true  "Model ID and array of column updates"
+// @Success      200      {object}  models.SuccessResponse      "Bulk update completed successfully"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/bulk-update [post]
+func (h *TableHandler) BulkUpdateColumns(c *gin.Context) {
+	var req dto.BulkUpdateColumnsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.BulkUpdateColumnsRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.tableManagementService.BulkUpdateColumns(c, schemaName, req.ModelID, req.ColumnID, req.Updates)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnUpdated, gin.H{
+		"message": "Columns updated successfully",
+		"count":   len(req.Updates),
+	})
+}
+
+// @Summary      Reset column values
+// @Description  Sets all values in a specified column to NULL across all rows.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.ResetColumnValuesRequest  true  "Model ID and column ID to reset"
+// @Success      200      {object}  models.SuccessResponse        "Column values reset successfully"
+// @Failure      400      {object}  models.ErrorResponse         "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse         "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse         "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse         "Not Found — column missing"
+// @Failure      500      {object}  models.ErrorResponse         "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/reset [post]
+func (h *TableHandler) ResetColumnValues(c *gin.Context) {
+	var req dto.ResetColumnValuesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ResetColumnValuesRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.tableManagementService.ResetColumnValues(c, schemaName, req.ModelID, req.ColumnId)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnUpdated, gin.H{
+		"message":  "Column values reset to NULL successfully",
+		"columnId": req.ColumnId,
+	})
+}

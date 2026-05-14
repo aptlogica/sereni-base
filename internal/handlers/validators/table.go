@@ -456,3 +456,58 @@ func UpdateAttachmentRequestValidationError(e validator.FieldError) responseCons
 		return responseConst.Error.ValidationFailed
 	}
 }
+
+func BulkUpdateColumnsRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnIdRequired
+		default:
+			return responseConst.TableError.ColumnIdInvalid
+		}
+	case "Updates":
+		switch tag {
+		case "required":
+			return responseConst.TableError.UpdatesRequired
+		case "min":
+			return responseConst.TableError.UpdatesRequired
+		default:
+			return responseConst.TableError.UpdatesInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func ResetColumnValuesRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnIdRequired
+		default:
+			return responseConst.TableError.ColumnIdInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}

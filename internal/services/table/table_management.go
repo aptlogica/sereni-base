@@ -3207,3 +3207,36 @@ func (s tableManagementService) mergeAttachmentValues(existing interface{}, asse
 	}
 	return attachmentValue
 }
+
+func (s tableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	fetchedModel, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return err
+	}
+
+	// Get column details to extract the actual column name from the database
+	fetchedColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, columnID) // Validate column exists before reset
+	if err != nil {
+		return err
+	}
+
+	return s.columnsService.BulkUpdate(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName, updates)
+}
+
+func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	fetchedModel, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return err
+	}
+
+	fetchedColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, columnID) // Validate column exists before reset
+	if err != nil {
+		return err
+	}
+
+	return s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName)
+}

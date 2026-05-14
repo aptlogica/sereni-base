@@ -67,6 +67,8 @@ var TableError = struct {
 	AssetIdInvalid                 ResponseCode
 	ContentRequired                ResponseCode
 	ContentInvalid                 ResponseCode
+	UpdatesRequired                ResponseCode
+	UpdatesInvalid                 ResponseCode
 }{
 	BaseIDRequired:                 "TBL_1001",
 	BaseIDInvalid:                  "TBL_1002",
@@ -127,6 +129,8 @@ var TableError = struct {
 	AssetIdInvalid:                 "TBL_1057",
 	ContentRequired:                "TBL_1058",
 	ContentInvalid:                 "TBL_1059",
+	UpdatesRequired:                "TBL_1060",
+	UpdatesInvalid:                 "TBL_1061",
 }
 
 var TableErrorCodes = map[ResponseCode]MetaResponse{

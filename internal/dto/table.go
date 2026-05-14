@@ -125,3 +125,19 @@ type PaginationRequest struct {
 	PageSize   int    `json:"page_size" binding:"required" example:"30"`
 	PageNumber int    `json:"page_number" binding:"required" example:"1"`
 }
+
+type UpdateColumnsRequest struct {
+	Id    interface{} `json:"id" binding:"required" example:"row-id-123"`
+	Value interface{} `json:"value" binding:"required" example:"New Value"`
+}
+
+type BulkUpdateColumnsRequest struct {
+	ModelID  string                 `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnID string                 `json:"column_id" binding:"required" example:"col-123"`
+	Updates  []UpdateColumnsRequest `json:"updates" binding:"required,min=1"`
+}
+
+type ResetColumnValuesRequest struct {
+	ModelID  string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnId string `json:"column_id" binding:"required" example:"col-123"`
+}
