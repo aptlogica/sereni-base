@@ -647,6 +647,120 @@ func (h *TableHandler) CreateRow(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.RecordCreated, record)
 }
 
+// @Summary      Bulk insert rows
+// @Description  Creates multiple rows and inserts all provided column values for each row in a single API call.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.BulkInsertRowsRequest  true  "Model ID and rows where each row is a direct column-value map"
+// @Success      201      {object}  models.SuccessResponse     "Rows inserted successfully"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      422      {object}  models.ErrorResponse       "Unprocessable Entity — invalid value"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /row/bulk-insert [post]
+func (h *TableHandler) BulkInsertRows(c *gin.Context) {
+	var req dto.BulkInsertRowsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.BulkInsertRowsRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	if req.CreatedBy == "" {
+		req.CreatedBy = userId
+	}
+	if req.UpdatedBy == "" {
+		req.UpdatedBy = userId
+	}
+
+	rows := make([]dto.RecordResponse, 0, len(req.Rows))
+	for _, row := range req.Rows {
+		createdRow, err := h.tableManagementService.CreateRow(c, schemaName, dto.CreateRowRequest{
+			ModelID:   req.ModelID,
+			CreatedBy: req.CreatedBy,
+		})
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+
+		rowID, err := extractRowID(createdRow.Record)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+
+		updatedRow := createdRow
+		for columnID, rawValue := range row {
+			var valuePtr *interface{}
+			if rawValue != nil {
+				value := rawValue
+				valuePtr = &value
+			}
+
+			updatedRow, err = h.tableManagementService.InsertRowData(c, schemaName, dto.InsertRowDataRequest{
+				ModelID:   req.ModelID,
+				ColumnId:  columnID,
+				RowId:     rowID,
+				Value:     valuePtr,
+				UpdatedBy: req.UpdatedBy,
+			})
+			if err != nil {
+				response.CheckAndSendError(c, err)
+				return
+			}
+		}
+
+		rows = append(rows, updatedRow)
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, gin.H{
+		"inserted_count": len(rows),
+		"rows":           rows,
+	})
+}
+
+func extractRowID(record map[string]interface{}) (int, error) {
+	id, ok := record["id"]
+	if !ok {
+		return 0, fmt.Errorf("created row id is missing")
+	}
+
+	switch v := id.(type) {
+	case int:
+		return v, nil
+	case int32:
+		return int(v), nil
+	case int64:
+		return int(v), nil
+	case float32:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case string:
+		rowID, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, err
+		}
+		return rowID, nil
+	default:
+		return 0, fmt.Errorf("created row id has unsupported type: %T", id)
+	}
+}
+
 // @Summary      Update link data for rows
 // @Description  Updates relationship columns to link rows together and returns the updated row metadata.
 // @Tags         Admin Table Column
