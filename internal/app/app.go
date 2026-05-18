@@ -197,7 +197,7 @@ func New(cfg *config.Config) (*App, error) {
 	organizationService := services.NewOrganizationService(dbService)
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(authService)
+	authHandler := handlers.NewAuthHandler(authService, workspaceManagementService, baseManagementService)
 	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService, authService)
 	baseHandler := handlers.NewBaseHandler(baseManagementService)
 	assetHandler := handlers.NewAssetsHandler(assetManagementService)

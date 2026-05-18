@@ -6,9 +6,13 @@
 package validators
 
 import (
+	"strings"
+
+	"github.com/aptlogica/sereni-base/internal/dto"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
 
 func CreateTableValidationErrors(e validator.FieldError) responseConst.ResponseCode {
@@ -173,6 +177,62 @@ func CreateViewValidationError(e validator.FieldError) responseConst.ResponseCod
 	default:
 		return responseConst.Error.ValidationFailed
 	}
+}
+
+// ValidateCreateViewMeta enforces meta requirements for selected view types.
+func ValidateCreateViewMeta(req dto.CreateViewRequest) (responseConst.ResponseCode, bool) {
+	if req.Meta == nil {
+		return responseConst.TableError.MetaRequired, true
+	}
+
+	viewType := strings.ToLower(strings.TrimSpace(req.Type))
+	type metaFieldRule struct {
+		key         string
+		requiredErr responseConst.ResponseCode
+		invalidErr  responseConst.ResponseCode
+	}
+
+	requiredMetaByType := map[string][]metaFieldRule{
+		"gallery": {
+			{key: "attachment_field_id", requiredErr: responseConst.TableError.ViewAttachmentFieldIDRequired, invalidErr: responseConst.TableError.ViewAttachmentFieldIDInvalid},
+		},
+		"kanban": {
+			{key: "view_target_field", requiredErr: responseConst.TableError.ViewTargetFieldRequired, invalidErr: responseConst.TableError.ViewTargetFieldInvalid},
+		},
+		"calendar": {
+			{key: "date_field_id", requiredErr: responseConst.TableError.ViewDateFieldIDRequired, invalidErr: responseConst.TableError.ViewDateFieldIDInvalid},
+		},
+		"calender": {
+			{key: "date_field_id", requiredErr: responseConst.TableError.ViewDateFieldIDRequired, invalidErr: responseConst.TableError.ViewDateFieldIDInvalid},
+		},
+		"ganttchart": {
+			{key: "start_date_field_id", requiredErr: responseConst.TableError.ViewStartDateFieldIDRequired, invalidErr: responseConst.TableError.ViewStartDateFieldIDInvalid},
+			{key: "end_date_field_id", requiredErr: responseConst.TableError.ViewEndDateFieldIDRequired, invalidErr: responseConst.TableError.ViewEndDateFieldIDInvalid},
+		},
+	}
+
+	requiredMetaKeys, shouldValidate := requiredMetaByType[viewType]
+	if !shouldValidate {
+		return "", false
+	}
+
+	for _, rule := range requiredMetaKeys {
+		value, exists := (*req.Meta)[rule.key]
+		if !exists {
+			return rule.requiredErr, true
+		}
+
+		valueStr, ok := value.(string)
+		if !ok || strings.TrimSpace(valueStr) == "" {
+			return rule.invalidErr, true
+		}
+
+		if _, err := uuid.Parse(valueStr); err != nil {
+			return rule.invalidErr, true
+		}
+	}
+
+	return "", false
 }
 
 func CreateRowRequestValidationError(e validator.FieldError) responseConst.ResponseCode {

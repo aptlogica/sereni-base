@@ -8,6 +8,7 @@ package handlers
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
@@ -56,6 +57,12 @@ func (h *TableHandler) CreateTable(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.TableError.TitleRequired)
 		return
 	}
 
@@ -111,6 +118,15 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.CheckAndSendError(c, err)
 		return
+	}
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		req.Title = &title
 	}
 
 	schemaNameVal, _ := c.Get("schema")
@@ -348,6 +364,11 @@ func (h *TableHandler) CreateView(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	if errCode, ok := validators.ValidateCreateViewMeta(req); ok {
+		response.SendError(c, errCode)
 		return
 	}
 

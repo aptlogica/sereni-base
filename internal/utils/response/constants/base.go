@@ -92,13 +92,15 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 }
 
 var BaseSuccess = struct {
-	BaseCreated ResponseCode
-	BaseUpdated ResponseCode
-	BaseDeleted ResponseCode
+	BaseCreated  ResponseCode
+	BaseUpdated  ResponseCode
+	BaseDeleted  ResponseCode
+	BasesFetched ResponseCode
 }{
-	BaseCreated: "BAS_SUCCESS_6001",
-	BaseUpdated: "BAS_SUCCESS_6002",
-	BaseDeleted: "BAS_SUCCESS_6003",
+	BaseCreated:  "BAS_SUCCESS_6001",
+	BaseUpdated:  "BAS_SUCCESS_6002",
+	BaseDeleted:  "BAS_SUCCESS_6003",
+	BasesFetched: "BAS_SUCCESS_6004",
 }
 
 var BaseSuccessCodes = map[ResponseCode]MetaResponse{
@@ -116,5 +118,10 @@ var BaseSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Base deleted successfully",
 		Description: "The Base has been deleted successfully",
+	},
+	BaseSuccess.BasesFetched: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Bases retrieved successfully",
+		Description: "The bases have been retrieved successfully",
 	},
 }

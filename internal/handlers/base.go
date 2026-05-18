@@ -7,10 +7,12 @@ package handlers
 
 import (
 	"mime/multipart"
+	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,8 +47,15 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 	description := c.PostForm("description")
 	workspaceID := c.PostForm("workspace_id")
 
-	if title == "" || workspaceID == "" {
-		response.SendError(c, "title and workspace_id are required")
+	title = strings.TrimSpace(title)
+	if title == "" {
+		response.SendError(c, responseConst.BaseError.NameRequired)
+		return
+	}
+
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
 		return
 	}
 

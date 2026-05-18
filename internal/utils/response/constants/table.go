@@ -53,6 +53,16 @@ var TableError = struct {
 	InvalidColumnMetaForLinkType   ResponseCode
 	MetaRequired                   ResponseCode
 	MetaInvalid                    ResponseCode
+	ViewAttachmentFieldIDRequired  ResponseCode
+	ViewAttachmentFieldIDInvalid   ResponseCode
+	ViewTargetFieldRequired        ResponseCode
+	ViewTargetFieldInvalid         ResponseCode
+	ViewDateFieldIDRequired        ResponseCode
+	ViewDateFieldIDInvalid         ResponseCode
+	ViewStartDateFieldIDRequired   ResponseCode
+	ViewStartDateFieldIDInvalid    ResponseCode
+	ViewEndDateFieldIDRequired     ResponseCode
+	ViewEndDateFieldIDInvalid      ResponseCode
 	RowNotFound                    ResponseCode
 	ActionRequired                 ResponseCode
 	ActionInvalid                  ResponseCode
@@ -112,6 +122,16 @@ var TableError = struct {
 	RowIdInvalid:                   "TBL_1042",
 	MetaRequired:                   "TBL_1043",
 	MetaInvalid:                    "TBL_1044",
+	ViewAttachmentFieldIDRequired:  "TBL_1060",
+	ViewAttachmentFieldIDInvalid:   "TBL_1061",
+	ViewTargetFieldRequired:        "TBL_1062",
+	ViewTargetFieldInvalid:         "TBL_1063",
+	ViewDateFieldIDRequired:        "TBL_1064",
+	ViewDateFieldIDInvalid:         "TBL_1065",
+	ViewStartDateFieldIDRequired:   "TBL_1066",
+	ViewStartDateFieldIDInvalid:    "TBL_1067",
+	ViewEndDateFieldIDRequired:     "TBL_1068",
+	ViewEndDateFieldIDInvalid:      "TBL_1069",
 	RowNotFound:                    "TBL_1045",
 	ActionRequired:                 "TBL_1046",
 	ActionInvalid:                  "TBL_1047",
@@ -354,6 +374,56 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Invalid meta",
 		Description: "The provided meta value is invalid or malformed",
+	},
+	TableError.ViewAttachmentFieldIDRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "attachment_field_id is required",
+		Description: "The meta.attachment_field_id field is required for gallery view",
+	},
+	TableError.ViewAttachmentFieldIDInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid attachment_field_id",
+		Description: "The meta.attachment_field_id field must be a valid UUID",
+	},
+	TableError.ViewTargetFieldRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "view_target_field is required",
+		Description: "The meta.view_target_field field is required for kanban view",
+	},
+	TableError.ViewTargetFieldInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid view_target_field",
+		Description: "The meta.view_target_field field must be a valid UUID",
+	},
+	TableError.ViewDateFieldIDRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "date_field_id is required",
+		Description: "The meta.date_field_id field is required for calendar view",
+	},
+	TableError.ViewDateFieldIDInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid date_field_id",
+		Description: "The meta.date_field_id field must be a valid UUID",
+	},
+	TableError.ViewStartDateFieldIDRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "start_date_field_id is required",
+		Description: "The meta.start_date_field_id field is required for ganttchart view",
+	},
+	TableError.ViewStartDateFieldIDInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid start_date_field_id",
+		Description: "The meta.start_date_field_id field must be a valid UUID",
+	},
+	TableError.ViewEndDateFieldIDRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "end_date_field_id is required",
+		Description: "The meta.end_date_field_id field is required for ganttchart view",
+	},
+	TableError.ViewEndDateFieldIDInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid end_date_field_id",
+		Description: "The meta.end_date_field_id field must be a valid UUID",
 	},
 	TableError.RowNotFound: {
 		HTTPStatus:  http.StatusNotFound,

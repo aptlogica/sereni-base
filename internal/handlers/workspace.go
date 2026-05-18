@@ -6,10 +6,13 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -25,6 +28,14 @@ func NewWorkspaceHandler(workspaceManagementService interfaces.WorkspaceManageme
 		workspaceManagementService: workspaceManagementService,
 		authManagementService:      authManagementService,
 	}
+}
+
+// isWorkspaceNotFound checks if error is a workspace not found error
+func isWorkspaceNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "workspace not found")
 }
 
 // @Summary      Create a workspace
@@ -49,6 +60,12 @@ func (h *WorkspaceHandler) CreateWorkspace(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.WorkspaceError.NameRequired)
 		return
 	}
 
@@ -151,6 +168,15 @@ func (h *WorkspaceHandler) UpdateWorkspace(c *gin.Context) {
 		return
 	}
 
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.WorkspaceError.NameRequired)
+			return
+		}
+		req.Title = &title
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
@@ -203,6 +229,7 @@ func (h *WorkspaceHandler) DeleteWorkspace(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path      string            true  "Workspace ID"
 // @Success      200  {array}   dto.TableResponse  "Tables listed"
+// @Failure      400  {object}  models.ErrorResponse  "Bad Request — invalid workspace ID"
 // @Failure      401  {object}  models.ErrorResponse  "Unauthorized — invalid token"
 // @Failure      403  {object}  models.ErrorResponse  "Forbidden — insufficient access"
 // @Failure      404  {object}  models.ErrorResponse  "Not Found — workspace missing"
@@ -212,16 +239,35 @@ func (h *WorkspaceHandler) DeleteWorkspace(c *gin.Context) {
 func (h *WorkspaceHandler) GetTablesByWorkspaceId(c *gin.Context) {
 	workspaceID := c.Param("id") // expects route like /workspaces/:id/tables
 
+	// Validate workspace ID is not empty
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
+		return
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
+	// Validate workspace exists before fetching tables
+	_, err := h.workspaceManagementService.GetByID(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		// Return 404 if workspace not found
+		if isWorkspaceNotFound(err) {
+			response.SendError(c, responseConst.WorkspaceError.ErrNotFound)
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// Get all tables for the workspace
 	tables, err := h.workspaceManagementService.GetTablesByWorkspaceId(c.Request.Context(), schemaName, workspaceID)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
 
-	response.SendSuccess(c, "Tables retrieved successfully", tables)
+	response.SendSuccess(c, responseConst.TableSuccess.TableFetched, tables)
 }
 
 // @Summary      List bases for a workspace
@@ -232,6 +278,7 @@ func (h *WorkspaceHandler) GetTablesByWorkspaceId(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path      string            true  "Workspace ID"
 // @Success      200  {array}   dto.BaseResponse   "Bases retrieved"
+// @Failure      400  {object}  models.ErrorResponse  "Bad Request — invalid workspace ID"
 // @Failure      401  {object}  models.ErrorResponse  "Unauthorized — invalid authentication"
 // @Failure      403  {object}  models.ErrorResponse  "Forbidden — missing access level"
 // @Failure      404  {object}  models.ErrorResponse  "Not Found — workspace missing"
@@ -240,6 +287,12 @@ func (h *WorkspaceHandler) GetTablesByWorkspaceId(c *gin.Context) {
 // @Router       /workspace/{id}/bases [get]
 func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 	workspaceID := c.Param("id") // expects route like /workspaces/:id/bases
+
+	// Validate workspace ID is not empty
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
+		return
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -250,16 +303,26 @@ func (h *WorkspaceHandler) GetBasesByWorkspaceId(c *gin.Context) {
 	userIDVal, _ := c.Get("user_id")
 	userID, _ := userIDVal.(string)
 
-	var bases interface{}
-	var err error
+	// Validate workspace exists before fetching bases
+	_, err := h.workspaceManagementService.GetByID(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		// Return 404 if workspace not found
+		if isWorkspaceNotFound(err) {
+			response.SendError(c, responseConst.WorkspaceError.ErrNotFound)
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
 
-	bases, err = h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID, roles, userID)
+	// Get all bases for the workspace
+	bases, err := h.workspaceManagementService.GetAllBasesByWorkspaceId(c.Request.Context(), schemaName, workspaceID, roles, userID)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
 
-	response.SendSuccess(c, "Bases retrieved successfully", bases)
+	response.SendSuccess(c, responseConst.BaseSuccess.BasesFetched, bases)
 }
 
 // BulkAddMembers adds multiple members to workspace with their memberships

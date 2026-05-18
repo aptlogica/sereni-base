@@ -19,14 +19,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
 
 type AuthHandler struct {
-	authManagementService interfaces.AuthManagementService
+	authManagementService      interfaces.AuthManagementService
+	workspaceManagementService interfaces.WorkspaceManagementService
+	baseManagementService      interfaces.BaseManagementService
 }
 
-func NewAuthHandler(authManagementService interfaces.AuthManagementService) *AuthHandler {
-	return &AuthHandler{authManagementService: authManagementService}
+func NewAuthHandler(authManagementService interfaces.AuthManagementService, workspaceManagementService interfaces.WorkspaceManagementService, baseManagementService interfaces.BaseManagementService) *AuthHandler {
+	return &AuthHandler{
+		authManagementService:      authManagementService,
+		workspaceManagementService: workspaceManagementService,
+		baseManagementService:      baseManagementService,
+	}
 }
 
 // @Summary      Authenticate with email and password
@@ -421,13 +428,13 @@ func (h *AuthHandler) AddUser(c *gin.Context) {
 	userIdVal, _ := c.Get("user_id")
 	reqBy, _ := userIdVal.(string)
 
-	_, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req, reqBy)
+	user, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserAdded, nil)
+	response.SendSuccess(c, responseConst.UserSuccess.UserAdded, user)
 }
 
 // @Summary      Update an existing user
@@ -786,6 +793,7 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Workspace ID"
 // @Success      200  {array} dto.WorkspaceMemberResponse  "Workspace members retrieved"
+// @Failure      400  {object} models.ErrorResponse        "Bad Request — invalid workspace ID"
 // @Failure      401  {object} models.ErrorResponse        "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse        "Forbidden — insufficient workspace access"
 // @Failure      404  {object} models.ErrorResponse        "Not Found — workspace not found"
@@ -795,8 +803,25 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
 	workspaceID := c.Param("id")
 
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
+		return
+	}
+
+	if _, err := uuid.Parse(workspaceID); err != nil {
+		response.SendError(c, responseConst.WorkspaceError.IdInvalid)
+		return
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	// Verify workspace exists in database
+	_, err := h.workspaceManagementService.GetByID(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		response.SendError(c, responseConst.WorkspaceError.ErrNotFound)
+		return
+	}
 
 	members, err := h.authManagementService.GetWorkspaceMembers(c.Request.Context(), schemaName, workspaceID)
 	if err != nil {
@@ -815,6 +840,7 @@ func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Base ID"
 // @Success      200  {array}  dto.WorkspaceMemberResponse  "Base members retrieved"
+// @Failure      400  {object} models.ErrorResponse         "Bad Request — invalid base ID"
 // @Failure      401  {object} models.ErrorResponse         "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse         "Forbidden — insufficient base access"
 // @Failure      404  {object} models.ErrorResponse         "Not Found — base missing"
@@ -823,8 +849,27 @@ func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
 // @Router       /base/{id}/members [get]
 func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 	baseID := c.Param("id")
+
+	if baseID == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	if _, err := uuid.Parse(baseID); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	// Verify base exists in database
+	_, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, baseID)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
 	baseMembers, err := h.authManagementService.GetBaseMembers(c.Request.Context(), schemaName, baseID)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -843,6 +888,7 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Workspace ID"
 // @Success      200  {array}  dto.UserWithRole  "Members with role metadata"
+// @Failure      400  {object} models.ErrorResponse  "Bad Request — invalid workspace ID"
 // @Failure      401  {object} models.ErrorResponse  "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse  "Forbidden"
 // @Failure      404  {object} models.ErrorResponse  "Not Found"
@@ -851,8 +897,26 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 // @Router       /workspace/{id}/members-with-roles [get]
 func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
 	workspaceID := c.Param("id")
+
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
+		return
+	}
+
+	if _, err := uuid.Parse(workspaceID); err != nil {
+		response.SendError(c, responseConst.WorkspaceError.IdInvalid)
+		return
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	// Verify workspace exists in database
+	_, err := h.workspaceManagementService.GetByID(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		response.SendError(c, responseConst.WorkspaceError.ErrNotFound)
+		return
+	}
 
 	members, err := h.authManagementService.GetWorkspaceMembersWithRole(c.Request.Context(), schemaName, workspaceID)
 	if err != nil {
@@ -872,6 +936,7 @@ func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Base ID"
 // @Success      200  {array}  dto.UserWithRole  "Members with RBAC role data"
+// @Failure      400  {object} models.ErrorResponse  "Bad Request — invalid base ID"
 // @Failure      401  {object} models.ErrorResponse  "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse  "Forbidden"
 // @Failure      404  {object} models.ErrorResponse  "Not Found"
@@ -880,8 +945,26 @@ func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
 // @Router       /base/{id}/members-with-roles [get]
 func (h *AuthHandler) GetBaseMembersWithRole(c *gin.Context) {
 	baseID := c.Param("id")
+
+	if baseID == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	if _, err := uuid.Parse(baseID); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	// Verify base exists in database
+	_, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, baseID)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
 
 	members, err := h.authManagementService.GetBaseMembersWithRole(c.Request.Context(), schemaName, baseID)
 	if err != nil {
@@ -972,7 +1055,7 @@ func (h *AuthHandler) ActivateUser(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+	response.SendSuccess(c, responseConst.UserSuccess.UserActivated, updatedProfile)
 }
 
 // @Summary      Deactivate a user account
@@ -1010,7 +1093,7 @@ func (h *AuthHandler) DeactivateUser(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+	response.SendSuccess(c, responseConst.UserSuccess.UserDeactivated, updatedProfile)
 }
 
 // @Summary      Delete access member
