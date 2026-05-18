@@ -733,6 +733,67 @@ func (h *TableHandler) BulkInsertRows(c *gin.Context) {
 	})
 }
 
+// @Summary      Update a row
+// @Description  Partially patches a single row by applying provided column values in one API call.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.UpdateRowRequest  true  "Model ID, row ID, and direct column-value map"
+// @Success      200      {object}  dto.RecordResponse    "Updated row returned"
+// @Failure      400      {object}  models.ErrorResponse  "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse  "Forbidden"
+// @Failure      422      {object}  models.ErrorResponse  "Unprocessable Entity — invalid value"
+// @Failure      500      {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /row/update [patch]
+func (h *TableHandler) UpdateRow(c *gin.Context) {
+	var req dto.UpdateRowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.UpdateRowRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	if req.UpdatedBy == "" {
+		req.UpdatedBy = userId
+	}
+
+	updatedRow := dto.RecordResponse{}
+	for columnID, rawValue := range req.Values {
+		var valuePtr *interface{}
+		if rawValue != nil {
+			value := rawValue
+			valuePtr = &value
+		}
+
+		record, err := h.tableManagementService.InsertRowData(c, schemaName, dto.InsertRowDataRequest{
+			ModelID:   req.ModelID,
+			ColumnId:  columnID,
+			RowId:     req.RowId,
+			Value:     valuePtr,
+			UpdatedBy: req.UpdatedBy,
+		})
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		updatedRow = record
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, updatedRow)
+}
+
 func extractRowID(record map[string]interface{}) (int, error) {
 	id, ok := record["id"]
 	if !ok {

@@ -87,6 +87,13 @@ type BulkInsertRowsRequest struct {
 	UpdatedBy string                   `json:"last_modified_by,omitempty"`
 }
 
+type UpdateRowRequest struct {
+	ModelID   string                 `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	RowId     int                    `json:"row_id" binding:"required" example:"1"`
+	Values    map[string]interface{} `json:"values" binding:"required"`
+	UpdatedBy string                 `json:"last_modified_by,omitempty"`
+}
+
 type DeleteRowDataRequest struct {
 	ModelID string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
 	RowId   int    `json:"row_id" binding:"required" example:"1"`

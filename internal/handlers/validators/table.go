@@ -253,6 +253,36 @@ func BulkInsertRowsRequestValidationError(e validator.FieldError) responseConst.
 	}
 }
 
+func UpdateRowRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "RowId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.RowIdRequired
+		default:
+			return responseConst.TableError.RowIdInvalid
+		}
+	case "Values":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
 func DeleteRowDataRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()
