@@ -228,31 +228,6 @@ func InsertRowDataRequestValidationError(e validator.FieldError) responseConst.R
 	}
 }
 
-func BulkInsertRowsRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
-	field := e.Field()
-	tag := e.Tag()
-	switch field {
-	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
-	case "Rows":
-		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		case "min":
-			return responseConst.TableError.RowIdRequired
-		default:
-			return responseConst.TableError.RowIdInvalid
-		}
-	default:
-		return responseConst.Error.ValidationFailed
-	}
-}
-
 func UpdateRowRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()

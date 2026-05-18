@@ -2720,6 +2720,83 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 	return response, nil
 }
 
+func (s tableManagementService) CreateRowsWithValues(
+	ctx context.Context,
+	schemaName string,
+	modelID string,
+	rowsInput []map[string]interface{},
+	createdBy string,
+	updatedBy string,
+) ([]dto.RecordResponse, error) {
+	rows := make([]dto.RecordResponse, 0, len(rowsInput))
+	for _, row := range rowsInput {
+		createdRow, err := s.CreateRow(ctx, schemaName, dto.CreateRowRequest{
+			ModelID:   modelID,
+			CreatedBy: createdBy,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		rowID, err := extractCreatedRowID(createdRow.Record)
+		if err != nil {
+			return nil, err
+		}
+
+		updatedRow := createdRow
+		for columnID, rawValue := range row {
+			var valuePtr *interface{}
+			if rawValue != nil {
+				value := rawValue
+				valuePtr = &value
+			}
+
+			updatedRow, err = s.InsertRowData(ctx, schemaName, dto.InsertRowDataRequest{
+				ModelID:   modelID,
+				ColumnId:  columnID,
+				RowId:     rowID,
+				Value:     valuePtr,
+				UpdatedBy: updatedBy,
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		rows = append(rows, updatedRow)
+	}
+
+	return rows, nil
+}
+
+func extractCreatedRowID(record map[string]interface{}) (int, error) {
+	id, ok := record["id"]
+	if !ok {
+		return 0, fmt.Errorf("created row id is missing")
+	}
+
+	switch v := id.(type) {
+	case int:
+		return v, nil
+	case int32:
+		return int(v), nil
+	case int64:
+		return int(v), nil
+	case float32:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case string:
+		rowID, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, err
+		}
+		return rowID, nil
+	default:
+		return 0, fmt.Errorf("created row id has unsupported type: %T", id)
+	}
+}
+
 func (s tableManagementService) handleDeleteRowForLinks(ctx context.Context, sourceModel tenant.Model, rowData map[string]interface{}, schemaName string, req dto.DeleteRowDataRequest) error {
 	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())
 	if err != nil {
