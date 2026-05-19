@@ -8,6 +8,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"image"
 	"mime/multipart"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,12 @@ func (s baseManagementService) CreateBaseWithImage(ctx context.Context, req dto.
 		}
 		if !allowedExtensions[ext] {
 			return insertedBase, nil // Return base without image if extension not allowed
+		}
+
+		// Validate image dimensions (max 800x400px)
+		err = s.validateImageDimensions(fileHeader)
+		if err != nil {
+			return tenant.Base{}, err
 		}
 
 		uploadReq := dto.UploadAssetRequest{
@@ -230,6 +237,28 @@ func (s baseManagementService) GetBasesByWorkspace(ctx context.Context, schemaNa
 	return s.baseService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
 }
 
+// validateImageDimensions checks if the image dimensions are exactly 800x400px
+func (s baseManagementService) validateImageDimensions(fileHeader *multipart.FileHeader) error {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return app_errors.StorageFileOpenFailed
+	}
+	defer file.Close()
+
+	cfg, _, err := image.DecodeConfig(file)
+	if err != nil {
+		// If we can't decode image config, skip validation (let upload handle the error)
+		return nil
+	}
+
+	// Validate dimensions: max 800x400
+	if cfg.Width > 800 || cfg.Height > 400 {
+		return app_errors.InvalidImageDimensions
+	}
+
+	return nil
+}
+
 func (s baseManagementService) AddBaseImage(ctx context.Context, schema string, baseID string, fileHeader *multipart.FileHeader, userId string) (tenant.Base, error) {
 	// Delete existing image if any
 	err := s.deleteBaseImageIfExists(ctx, schema, baseID)
@@ -250,6 +279,12 @@ func (s baseManagementService) AddBaseImage(ctx context.Context, schema string, 
 	}
 	if !allowedExtensions[ext] {
 		return tenant.Base{}, app_errors.InvalidPayload
+	}
+
+	// Validate image dimensions (max 800x400px)
+	err = s.validateImageDimensions(fileHeader)
+	if err != nil {
+		return tenant.Base{}, err
 	}
 
 	uploadReq := dto.UploadAssetRequest{

@@ -6,10 +6,12 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -24,6 +26,13 @@ import (
 type TableHandler struct {
 	tableManagementService interfaces.TableManagementService
 	importService          interfaces.ImportService
+}
+
+func isTableNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, app_errors.TableNotFound) || strings.Contains(strings.ToLower(err.Error()), "table not found")
 }
 
 func NewTableHandler(tableManagementService interfaces.TableManagementService, importService interfaces.ImportService) *TableHandler {
@@ -244,6 +253,15 @@ func (h *TableHandler) AddColumn(c *gin.Context) {
 
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
+
+	if _, err := h.tableManagementService.GetTableByID(c, req.ModelID.String(), schemaName); err != nil {
+		if isTableNotFound(err) {
+			response.SendError(c, responseConst.TableError.TableNotFound)
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId

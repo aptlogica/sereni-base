@@ -78,6 +78,8 @@ func Setup(cfg *config.Config,
 		})
 	})
 
+	api.GET("/health/live", handlerGroups.Auth.HealthLive)
+
 	// Public Auth Routes
 	setupAuthRoutes(api, handlerGroups)
 

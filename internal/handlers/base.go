@@ -15,6 +15,7 @@ import (
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type BaseHandler struct {
@@ -25,17 +26,32 @@ func NewBaseHandler(baseManagementService interfaces.BaseManagementService) *Bas
 	return &BaseHandler{baseManagementService: baseManagementService}
 }
 
+func validateBaseID(c *gin.Context, id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		response.SendError(c, responseConst.BaseError.IdRequired)
+		return false
+	}
+
+	if _, err := uuid.Parse(id); err != nil {
+		response.SendError(c, responseConst.BaseError.IdInvalid)
+		return false
+	}
+
+	return true
+}
+
 // @Summary      Create a new base
-// @Description  Persists a base associated with a workspace and optional description, returning the stored base data.
+// @Description  Persists a base associated with a workspace and optional description, returning the stored base data. Optional image dimensions must not exceed 800x400 pixels.
 // @Tags         Admin Base
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        request     body      dto.CreateBaseRequest  true   "Base payload"
 // @Param        workspace_id formData string                true   "Workspace ID ownership"
-// @Param        image       formData  file                false  "Optional base image"
+// @Param        image       formData  file                false  "Optional base image (max 800x400 pixels)"
 // @Success      201         {object}  dto.BaseResponse     "Base created"
-// @Failure      400         {object}  models.ErrorResponse  "Bad Request — missing title or workspace"
+// @Failure      400         {object}  models.ErrorResponse  "Bad Request — missing title, workspace, or invalid image dimensions"
 // @Failure      401         {object}  models.ErrorResponse  "Unauthorized"
 // @Failure      403         {object}  models.ErrorResponse  "Forbidden — not allowed to create base"
 // @Failure      500         {object}  models.ErrorResponse  "Internal Server Error"
@@ -101,6 +117,9 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 // @Router       /base/{id} [get]
 func (h *BaseHandler) GetBaseByID(c *gin.Context) {
 	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -155,17 +174,17 @@ func (h *BaseHandler) parseUpdateBaseForm(c *gin.Context) (dto.BaseUpdate, *mult
 }
 
 // @Summary      Update base metadata
-// @Description  Applies the form fields and optional uploaded image to update a base record.
+// @Description  Applies the form fields and optional uploaded image to update a base record. Image dimensions must not exceed 800x400 pixels.
 // @Tags         Admin Base
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id           path      string          true  "Base ID"
 // @Param        request      body      dto.BaseUpdate   true  "Fields to update"
-// @Param        image        formData  file            false "New base image"
+// @Param        image        formData  file            false "New base image (max 800x400 pixels)"
 // @Param        remove_image formData  string          false "Pass true to drop the existing image"
 // @Success      200          {object}  dto.BaseResponse  "Updated base data"
-// @Failure      400          {object}  models.ErrorResponse  "Bad Request — invalid payload"
+// @Failure      400          {object}  models.ErrorResponse  "Bad Request — invalid payload or invalid image dimensions"
 // @Failure      401          {object}  models.ErrorResponse  "Unauthorized — invalid token"
 // @Failure      403          {object}  models.ErrorResponse  "Forbidden — insufficient privileges"
 // @Failure      404          {object}  models.ErrorResponse  "Not Found — base missing"
@@ -174,11 +193,20 @@ func (h *BaseHandler) parseUpdateBaseForm(c *gin.Context) (dto.BaseUpdate, *mult
 // @Router       /base/{id} [put]
 func (h *BaseHandler) UpdateBase(c *gin.Context) {
 	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
+	}
 
 	req, fileHeader, removeImage := h.parseUpdateBaseForm(c)
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	// Ensure we return a proper 404 when the base does not exist.
+	if _, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, id); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
@@ -211,6 +239,9 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 // @Router       /base/{id} [delete]
 func (h *BaseHandler) DeleteBase(c *gin.Context) {
 	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -239,9 +270,18 @@ func (h *BaseHandler) DeleteBase(c *gin.Context) {
 // @Router       /base/{id}/tables [get]
 func (h *BaseHandler) GetTablesByBaseId(c *gin.Context) {
 	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	// Ensure missing base returns a 404 as documented.
+	if _, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, id); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	tables, err := h.baseManagementService.GetTablesByBaseId(c.Request.Context(), schemaName, id)
 	if err != nil {
@@ -253,15 +293,15 @@ func (h *BaseHandler) GetTablesByBaseId(c *gin.Context) {
 }
 
 // @Summary      Upload a base image
-// @Description  Attaches an image file to the base metadata and returns the updated base record.
+// @Description  Attaches an image file to the base metadata and returns the updated base record. Image dimensions must not exceed 800x400 pixels.
 // @Tags         Admin Base
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id    path      string  true  "Base ID"
-// @Param        image formData  file    true  "Image to upload"
+// @Param        image formData  file    true  "Image to upload (max 800x400 pixels)"
 // @Success      200   {object}  dto.BaseResponse  "Image stored and base returned"
-// @Failure      400   {object}  models.ErrorResponse  "Bad Request — invalid id or missing image"
+// @Failure      400   {object}  models.ErrorResponse  "Bad Request — invalid id, missing image, or invalid dimensions"
 // @Failure      401   {object}  models.ErrorResponse  "Unauthorized"
 // @Failure      403   {object}  models.ErrorResponse  "Forbidden — no permission to edit base image"
 // @Failure      404   {object}  models.ErrorResponse  "Not Found — base missing"
@@ -270,14 +310,13 @@ func (h *BaseHandler) GetTablesByBaseId(c *gin.Context) {
 // @Router       /base/{id}/image [post]
 func (h *BaseHandler) AddBaseImage(c *gin.Context) {
 	id := c.Param("id")
-	if id == "" {
-		response.SendError(c, "invalid base id")
+	if !validateBaseID(c, id) {
 		return
 	}
 
 	file, err := c.FormFile("image")
 	if err != nil {
-		response.SendError(c, "invalid image file")
+		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
 	}
 
@@ -313,8 +352,7 @@ func (h *BaseHandler) AddBaseImage(c *gin.Context) {
 // @Router       /base/{id}/image [delete]
 func (h *BaseHandler) RemoveBaseImage(c *gin.Context) {
 	id := c.Param("id")
-	if id == "" {
-		response.SendError(c, "invalid base id")
+	if !validateBaseID(c, id) {
 		return
 	}
 

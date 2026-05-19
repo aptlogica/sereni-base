@@ -259,7 +259,10 @@ func (h *AuthHandler) Health(c *gin.Context) {
 // @Success      200      {object}  models.SuccessResponse  "Process is alive"
 // @Router       /health/live [get]
 func (h *AuthHandler) HealthLive(c *gin.Context) {
-	c.Status(http.StatusOK)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Service is live",
+	})
 }
 
 // @Summary      Readiness probe
