@@ -854,12 +854,12 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 	baseID := c.Param("id")
 
 	if baseID == "" {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.BaseError.IdRequired)
 		return
 	}
 
 	if _, err := uuid.Parse(baseID); err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.BaseError.IdInvalid)
 		return
 	}
 
@@ -869,7 +869,7 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 	// Verify base exists in database
 	_, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, baseID)
 	if err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.BaseError.ErrNotFound)
 		return
 	}
 
@@ -950,12 +950,12 @@ func (h *AuthHandler) GetBaseMembersWithRole(c *gin.Context) {
 	baseID := c.Param("id")
 
 	if baseID == "" {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.BaseError.IdRequired)
 		return
 	}
 
 	if _, err := uuid.Parse(baseID); err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.BaseError.IdInvalid)
 		return
 	}
 
@@ -965,7 +965,7 @@ func (h *AuthHandler) GetBaseMembersWithRole(c *gin.Context) {
 	// Verify base exists in database
 	_, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, baseID)
 	if err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.BaseError.ErrNotFound)
 		return
 	}
 

@@ -76,12 +76,12 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 	},
 	BaseError.IdRequired: {
 		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Workspace ID is required",
-		Description: "The workspace ID field is required and was not provided",
+		Message:     "Base ID is required",
+		Description: "The Base ID field is required and was not provided",
 	},
 	BaseError.IdInvalid: {
 		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Workspace ID is invalid",
+		Message:     "Base ID is invalid",
 		Description: "The workspace ID provided is invalid",
 	},
 	BaseError.BaseNotFound: {
