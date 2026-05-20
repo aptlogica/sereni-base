@@ -6,7 +6,9 @@ import (
 
 	ut "github.com/go-playground/universal-translator"
 	validator "github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 
+	"github.com/aptlogica/sereni-base/internal/dto"
 	handlersValidators "github.com/aptlogica/sereni-base/internal/handlers/validators"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
@@ -337,10 +339,15 @@ func TestAuthValidationErrors(t *testing.T) {
 	t.Run("Membership", func(t *testing.T) {
 		cases := []validationCase{
 			{name: "CreateMemberWorkspaceRequired", fn: handlersValidators.CreateMemberRequestError, field: "WorkspaceID", tag: "required", want: responseConst.WorkspaceError.IdRequired},
+			{name: "CreateMemberWorkspaceInvalid", fn: handlersValidators.CreateMemberRequestError, field: "WorkspaceID", tag: "uuid", want: responseConst.WorkspaceError.IdInvalid},
+			{name: "CreateMemberUserRequired", fn: handlersValidators.CreateMemberRequestError, field: "UserID", tag: "required", want: responseConst.UserError.UserIDRequired},
 			{name: "CreateMemberUserInvalid", fn: handlersValidators.CreateMemberRequestError, field: "UserID", tag: "uuid", want: responseConst.UserError.UserIDInvalid},
 			{name: "CreateMemberAccessLevelRequired", fn: handlersValidators.CreateMemberRequestError, field: "AccessLevel", tag: "required", want: responseConst.RoleError.RoleRequired},
+			{name: "CreateMemberAccessLevelInvalid", fn: handlersValidators.CreateMemberRequestError, field: "AccessLevel", tag: "regex", want: responseConst.RoleError.RoleInvalid},
+			{name: "CreateMemberBasesRequired", fn: handlersValidators.CreateMemberRequestError, field: "BasesIds", tag: "required", want: responseConst.BaseError.IdRequired},
 			{name: "CreateMemberBasesInvalid", fn: handlersValidators.CreateMemberRequestError, field: "BasesIds", tag: "uuid", want: responseConst.BaseError.IdInvalid},
-			{name: "RemoveMemberWorkspaceInvalid", fn: handlersValidators.RemoveMemberRequestError, field: "WorkspaceID", tag: "uuid", want: responseConst.WorkspaceError.IdInvalid},
+			{name: "CreateMemberUnknown", fn: handlersValidators.CreateMemberRequestError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+			{name: "RemoveMemberBaseInvalid", fn: handlersValidators.RemoveMemberRequestError, field: "BaseID", tag: "uuid", want: responseConst.BaseError.IdInvalid},
 			{name: "RemoveMemberUserRequired", fn: handlersValidators.RemoveMemberRequestError, field: "UserID", tag: "required", want: responseConst.UserError.UserIDRequired},
 			{name: "AddMultipleWorkspaceRequired", fn: handlersValidators.AddMultipleMembersRequestError, field: "WorkspaceID", tag: "required", want: responseConst.WorkspaceError.IdRequired},
 			{name: "AddMultipleUserIDsMin", fn: handlersValidators.AddMultipleMembersRequestError, field: "UserIDs", tag: "min", want: responseConst.Error.ValidationFailed},
@@ -361,6 +368,38 @@ func TestAuthValidationErrors(t *testing.T) {
 		}
 
 		runValidationCases(t, cases)
+	})
+
+	t.Run("ValidateCreateViewMeta", func(t *testing.T) {
+		uuidStr := uuid.New().String()
+		badUUID := "bad-uuid"
+
+		cases := []struct {
+			name string
+			req  dto.CreateViewRequest
+			want responseConst.ResponseCode
+			hit  bool
+		}{
+			{name: "MetaNil", req: dto.CreateViewRequest{Type: "gallery", Meta: nil}, want: responseConst.TableError.MetaRequired, hit: true},
+			{name: "GalleryRequiredMissing", req: dto.CreateViewRequest{Type: "gallery", Meta: &map[string]interface{}{}}, want: responseConst.TableError.ViewAttachmentFieldIDRequired, hit: true},
+			{name: "GalleryInvalidType", req: dto.CreateViewRequest{Type: "gallery", Meta: &map[string]interface{}{"attachment_field_id": 1}}, want: responseConst.TableError.ViewAttachmentFieldIDInvalid, hit: true},
+			{name: "CalendarInvalidUUID", req: dto.CreateViewRequest{Type: "calendar", Meta: &map[string]interface{}{"date_field_id": badUUID}}, want: responseConst.TableError.ViewDateFieldIDInvalid, hit: true},
+			{name: "CalenderAliasValid", req: dto.CreateViewRequest{Type: "calender", Meta: &map[string]interface{}{"date_field_id": uuidStr}}, want: "", hit: false},
+			{name: "KanbanRequiredMissing", req: dto.CreateViewRequest{Type: "kanban", Meta: &map[string]interface{}{}}, want: responseConst.TableError.ViewTargetFieldRequired, hit: true},
+			{name: "GanttStartMissing", req: dto.CreateViewRequest{Type: "ganttchart", Meta: &map[string]interface{}{}}, want: responseConst.TableError.ViewStartDateFieldIDRequired, hit: true},
+			{name: "GanttEndMissing", req: dto.CreateViewRequest{Type: "ganttchart", Meta: &map[string]interface{}{"start_date_field_id": uuidStr}}, want: responseConst.TableError.ViewEndDateFieldIDRequired, hit: true},
+			{name: "UnknownTypeSkipped", req: dto.CreateViewRequest{Type: "grid", Meta: &map[string]interface{}{}}, want: "", hit: false},
+		}
+
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				got, ok := handlersValidators.ValidateCreateViewMeta(tc.req)
+				if got != tc.want || ok != tc.hit {
+					t.Fatalf("%s: got (%s, %v) want (%s, %v)", tc.name, got, ok, tc.want, tc.hit)
+				}
+			})
+		}
 	})
 }
 

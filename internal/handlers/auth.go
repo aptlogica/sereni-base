@@ -28,7 +28,22 @@ type AuthHandler struct {
 	baseManagementService      interfaces.BaseManagementService
 }
 
-func NewAuthHandler(authManagementService interfaces.AuthManagementService, workspaceManagementService interfaces.WorkspaceManagementService, baseManagementService interfaces.BaseManagementService) *AuthHandler {
+func NewAuthHandler(authManagementService interfaces.AuthManagementService, optionalServices ...interface{}) *AuthHandler {
+	var workspaceManagementService interfaces.WorkspaceManagementService
+	var baseManagementService interfaces.BaseManagementService
+
+	if len(optionalServices) > 0 {
+		if svc, ok := optionalServices[0].(interfaces.WorkspaceManagementService); ok {
+			workspaceManagementService = svc
+		}
+	}
+
+	if len(optionalServices) > 1 {
+		if svc, ok := optionalServices[1].(interfaces.BaseManagementService); ok {
+			baseManagementService = svc
+		}
+	}
+
 	return &AuthHandler{
 		authManagementService:      authManagementService,
 		workspaceManagementService: workspaceManagementService,

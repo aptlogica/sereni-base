@@ -1,9 +1,13 @@
 package base_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/png"
 	"mime/multipart"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -19,6 +23,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func createPNGFileHeader(t *testing.T, filename string) *multipart.FileHeader {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("image", filename)
+	assert.NoError(t, err)
+
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	err = png.Encode(part, img)
+	assert.NoError(t, err)
+
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	err = req.ParseMultipartForm(1024 * 1024)
+	assert.NoError(t, err)
+
+	files := req.MultipartForm.File["image"]
+	if assert.NotEmpty(t, files) {
+		return files[0]
+	}
+
+	return nil
+}
 
 // MockBaseService is a mock implementation of BaseService interface
 type MockBaseService struct {
@@ -461,7 +494,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
 		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return(nil, errors.New("upload failed"))
 
-		fh := &multipart.FileHeader{Filename: "image.png"}
+		fh := createPNGFileHeader(t, "image.png")
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.Error(t, err)
@@ -479,7 +512,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
 			Return(tenant.Base{}, errors.New("update fail"))
 
-		fh := &multipart.FileHeader{Filename: "image.png"}
+		fh := createPNGFileHeader(t, "image.png")
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.NoError(t, err)
@@ -498,7 +531,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
 			Return(updated, nil)
 
-		fh := &multipart.FileHeader{Filename: "image.png"}
+		fh := createPNGFileHeader(t, "image.png")
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.NoError(t, err)
@@ -629,7 +662,7 @@ func TestAddBaseImage(t *testing.T) {
 
 		mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, errors.New("fail"))
 
-		_, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		_, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.Error(t, err)
 	})
@@ -641,7 +674,7 @@ func TestAddBaseImage(t *testing.T) {
 		mockAsset.On("GetAssetByURL", mock.Anything, "schema", "http://old").Return(tenant.Assets{Url: "http://old", ID: uuid.New()}, nil)
 		mockAsset.On("DeleteAsset", mock.Anything, mock.Anything, "schema").Return(errors.New("delete failed"))
 
-		_, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		_, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.Error(t, err)
 	})
@@ -672,7 +705,7 @@ func TestAddBaseImage(t *testing.T) {
 		mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, nil)
 		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return(nil, errors.New("upload failed"))
 
-		_, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		_, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.Error(t, err)
 	})
@@ -709,7 +742,7 @@ func TestAddBaseImage(t *testing.T) {
 		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://img"}}, nil)
 		mockBase.On("UpdateBase", mock.Anything, "schema", "base", mock.Anything).Return(updated, nil)
 
-		result, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		result, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.NoError(t, err)
 		assert.Equal(t, "http://img", result.Image)
@@ -773,7 +806,7 @@ func TestUpdateBaseWithFileHeader(t *testing.T) {
 	mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, nil)
 	mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://img"}}, nil)
 
-	result, err := service.UpdateBase(context.Background(), "schema", "base", dto.BaseUpdate{}, "user", &multipart.FileHeader{Filename: "image.png"}, "")
+	result, err := service.UpdateBase(context.Background(), "schema", "base", dto.BaseUpdate{}, "user", createPNGFileHeader(t, "image.png"), "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, "http://img", result.Image)
