@@ -13,6 +13,8 @@ import (
 	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 const (
@@ -56,6 +58,9 @@ func Setup(cfg *config.Config,
 	r.MaxMultipartMemory = 100 << 20 // 100MB
 
 	r.Static("/assets", "./assets")
+
+	// Swagger UI (serves at /swagger/index.html)
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// API routes
 	api := r.Group("/api/v1")

@@ -1,4 +1,3 @@
-basePath: /api/v1
 definitions:
   dto.ActivateUserRequest:
     properties:
@@ -34,6 +33,21 @@ definitions:
         type: boolean
     type: object
   dto.AddUserRequest:
+    properties:
+      email:
+        type: string
+      firstname:
+        type: string
+      is_coowner:
+        type: boolean
+      lastname:
+        type: string
+      membership:
+        items:
+          $ref: '#/definitions/dto.MembershipRequest'
+        type: array
+    required:
+    - email
     type: object
   dto.AssetUpdate:
     properties:
@@ -264,6 +278,8 @@ definitions:
     type: object
   dto.ColumnUpdate:
     properties:
+      column_name:
+        type: string
       deleted:
         type: boolean
       description:
@@ -397,6 +413,12 @@ definitions:
         type: string
       type:
         type: string
+    required:
+    - base_id
+    - meta
+    - model_id
+    - title
+    - type
     type: object
   dto.CreateWorkspaceRequest:
     properties:
@@ -427,6 +449,21 @@ definitions:
     - row_id
     type: object
   dto.EditUserRequest:
+    properties:
+      firstname:
+        type: string
+      is_coowner:
+        type: boolean
+      lastname:
+        type: string
+      membership:
+        items:
+          $ref: '#/definitions/dto.MembershipRequest'
+        type: array
+      user_id:
+        type: string
+    required:
+    - user_id
     type: object
   dto.ForgotPasswordRequest:
     properties:
@@ -476,7 +513,7 @@ definitions:
       token:
         allOf:
         - $ref: '#/definitions/dto.TokenResponse'
-        description: Tenant    *TenantResponse    `json:"tenant,omitempty" format:"object"`
+        description: Tenant    *TenantResponse    `json:"tenant," format:"object"`
         format: object
       user:
         allOf:
@@ -717,6 +754,29 @@ definitions:
       valid:
         type: boolean
     type: object
+  dto.UpdateAttachmentRequest:
+    properties:
+      asset_id:
+        example: asset-456
+        type: string
+      column_id:
+        example: col-123
+        type: string
+      content:
+        $ref: '#/definitions/dto.AssetUpdate'
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      row_id:
+        example: 1
+        type: integer
+    required:
+    - asset_id
+    - column_id
+    - content
+    - model_id
+    - row_id
+    type: object
   dto.UpdateOrganizationRequest:
     properties:
       address:
@@ -806,6 +866,26 @@ definitions:
     - old_password
     type: object
   dto.UpdateUserProfileRequest:
+    properties:
+      activity_data:
+        additionalProperties: true
+        type: object
+      country:
+        type: string
+      display_name:
+        type: string
+      dob:
+        type: string
+      first_name:
+        type: string
+      last_modified_time:
+        type: string
+      last_name:
+        type: string
+      locale:
+        type: string
+      timezone:
+        type: string
     type: object
   dto.UserAccessDetailsResponse:
     properties:
@@ -896,9 +976,9 @@ definitions:
         type: string
       avatar:
         type: string
-      created_time:
+      country:
         type: string
-      deleted_at:
+      created_time:
         type: string
       display_name:
         type: string
@@ -906,17 +986,10 @@ definitions:
         type: string
       email_verified:
         type: boolean
-      external_id:
-        type: string
-      failed_login_attempts:
-        description: Security
-        type: integer
       first_name:
         type: string
       id:
         type: string
-      is_deleted:
-        type: boolean
       last_active_at:
         type: string
       last_login_at:
@@ -927,13 +1000,8 @@ definitions:
         type: string
       locale:
         type: string
-      locked_until:
-        type: string
-      mfa_enabled:
-        type: boolean
-      mfa_secret:
-        type: string
       password_changed_at:
+        description: Security
         type: string
       phone:
         type: string
@@ -1220,20 +1288,8 @@ definitions:
         example: true
         type: boolean
     type: object
-host: localhost:8080
 info:
-  contact:
-    email: support@serenibase.com
-    name: API Support Team
-  description: |-
-    Serenibase is a workspace management platform that layers guardrails on PostgreSQL tables and permissions.
-    It centralizes workspace/base/table creation, membership, and asset/connectivity workflows along with RBAC controls.
-  license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0
-  termsOfService: http://swagger.io/terms/
-  title: Serenibase API
-  version: "1.0"
+  contact: {}
 paths:
   /asset/{id}:
     delete:
@@ -1945,7 +2001,7 @@ paths:
       consumes:
       - multipart/form-data
       description: Applies the form fields and optional uploaded image to update a
-        base record.
+        base record. Image dimensions must not exceed 800x400 pixels.
       parameters:
       - description: Optional client-generated request trace ID
         in: header
@@ -1962,7 +2018,7 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/dto.BaseUpdate'
-      - description: New base image
+      - description: New base image (max 800x400 pixels)
         in: formData
         name: image
         type: file
@@ -1978,7 +2034,7 @@ paths:
           schema:
             $ref: '#/definitions/dto.BaseResponse'
         "400":
-          description: Bad Request — invalid payload
+          description: Bad Request — invalid payload or invalid image dimensions
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "401":
@@ -2104,7 +2160,7 @@ paths:
       consumes:
       - multipart/form-data
       description: Attaches an image file to the base metadata and returns the updated
-        base record.
+        base record. Image dimensions must not exceed 800x400 pixels.
       parameters:
       - description: Optional client-generated request trace ID
         in: header
@@ -2115,7 +2171,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Image to upload
+      - description: Image to upload (max 800x400 pixels)
         in: formData
         name: image
         required: true
@@ -2128,7 +2184,7 @@ paths:
           schema:
             $ref: '#/definitions/dto.BaseResponse'
         "400":
-          description: Bad Request — invalid id or missing image
+          description: Bad Request — invalid id, missing image, or invalid dimensions
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "401":
@@ -2176,6 +2232,10 @@ paths:
             items:
               $ref: '#/definitions/dto.WorkspaceMemberResponse'
             type: array
+        "400":
+          description: Bad Request — invalid base ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -2222,6 +2282,10 @@ paths:
             items:
               $ref: '#/definitions/dto.UserWithRole'
             type: array
+        "400":
+          description: Bad Request — invalid base ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -2347,7 +2411,8 @@ paths:
       consumes:
       - multipart/form-data
       description: Persists a base associated with a workspace and optional description,
-        returning the stored base data.
+        returning the stored base data. Optional image dimensions must not exceed
+        800x400 pixels.
       parameters:
       - description: Optional client-generated request trace ID
         in: header
@@ -2364,7 +2429,7 @@ paths:
         name: workspace_id
         required: true
         type: string
-      - description: Optional base image
+      - description: Optional base image (max 800x400 pixels)
         in: formData
         name: image
         type: file
@@ -2376,7 +2441,7 @@ paths:
           schema:
             $ref: '#/definitions/dto.BaseResponse'
         "400":
-          description: Bad Request — missing title or workspace
+          description: Bad Request — missing title, workspace, or invalid image dimensions
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "401":
@@ -3118,6 +3183,55 @@ paths:
       summary: Remove attachments from a row
       tags:
       - Admin Table Column
+  /row/attachment/update:
+    post:
+      consumes:
+      - application/json
+      description: Updates attachment metadata (such as filename, description, etc.)
+        for a given attachment reference in a row.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Attachment update payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateAttachmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Row updated with new attachment metadata
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — attachment missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update attachment metadata
+      tags:
+      - Admin Table Column
   /row/bulk-remove:
     post:
       consumes:
@@ -3393,7 +3507,7 @@ paths:
       - BearerAuth: []
       summary: List all tables
       tags:
-      - Admin Table Column
+      - Admin Table Column Row
   /table/{id}:
     delete:
       consumes:
@@ -3488,7 +3602,7 @@ paths:
       - BearerAuth: []
       summary: Get table by ID
       tags:
-      - Admin Table Column
+      - Admin Table Column Row
     patch:
       consumes:
       - application/json
@@ -3541,7 +3655,7 @@ paths:
       - BearerAuth: []
       summary: Update a table
       tags:
-      - Admin Table Column
+      - Admin Table Column Row
   /table/{id}/columns:
     get:
       consumes:
@@ -3723,7 +3837,7 @@ paths:
       - BearerAuth: []
       summary: Create a table
       tags:
-      - Admin Table Column
+      - Admin Table Column Row
   /table/import:
     post:
       consumes:
@@ -5038,6 +5152,10 @@ paths:
             items:
               $ref: '#/definitions/dto.BaseResponse'
             type: array
+        "400":
+          description: Bad Request — invalid workspace ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
         "401":
           description: Unauthorized — invalid authentication
           schema:
@@ -5134,6 +5252,10 @@ paths:
             items:
               $ref: '#/definitions/dto.WorkspaceMemberResponse'
             type: array
+        "400":
+          description: Bad Request — invalid workspace ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -5179,6 +5301,10 @@ paths:
             items:
               $ref: '#/definitions/dto.UserWithRole'
             type: array
+        "400":
+          description: Bad Request — invalid workspace ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -5279,6 +5405,10 @@ paths:
             items:
               $ref: '#/definitions/dto.TableResponse'
             type: array
+        "400":
+          description: Bad Request — invalid workspace ID
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
         "401":
           description: Unauthorized — invalid token
           schema:
@@ -5393,33 +5523,4 @@ paths:
       summary: Create a workspace
       tags:
       - Admin Workspace
-schemes:
-- http
-- https
-securityDefinitions:
-  BearerAuth:
-    description: 'Enter your Bearer token in the format: Bearer <token>'
-    in: header
-    name: Authorization
-    type: apiKey
 swagger: "2.0"
-tags:
-- description: Authentication, login, and token lifecycle operations.
-  name: Auth
-- description: User profile, workspace access, and avatar management.
-  name: Users
-- description: Workspace, base, table, column, row, and asset management requiring
-    elevated privileges and RBAC validations.
-  name: Admin
-- description: Workspace-level CRUD, membership, and metadata operations.
-  name: Workspace
-- description: Base creation, image handling, membership, and visibility controls.
-  name: Base
-- description: Table/model creation plus row, column, and view workflows.
-  name: Table
-- description: Column lifecycle (add/update/delete/reorder) and attachment helpers.
-  name: Column
-- description: Asset/image uploads and related metadata endpoints.
-  name: Asset
-- description: Health checks for readiness, liveliness, and general status.
-  name: System
