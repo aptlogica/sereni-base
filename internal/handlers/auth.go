@@ -29,6 +29,30 @@ type AuthHandler struct {
 	baseManagementService      interfaces.BaseManagementService
 }
 
+func bindJSONWithValidation(
+	c *gin.Context,
+	req interface{},
+	onValidationError func(validator.FieldError),
+	onBindError func(error),
+) bool {
+	if err := c.ShouldBindJSON(req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok && len(ve) > 0 {
+			onValidationError(ve[0])
+			return false
+		}
+
+		if onBindError != nil {
+			onBindError(err)
+		} else {
+			response.CheckAndSendError(c, err)
+		}
+
+		return false
+	}
+
+	return true
+}
+
 func NewAuthHandler(authManagementService interfaces.AuthManagementService, optionalServices ...interface{}) *AuthHandler {
 	var workspaceManagementService interfaces.WorkspaceManagementService
 	var baseManagementService interfaces.BaseManagementService
@@ -68,12 +92,9 @@ func NewAuthHandler(authManagementService interfaces.AuthManagementService, opti
 func (h *AuthHandler) LoginUser(c *gin.Context) {
 	var req dto.LoginRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.LoginValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.LoginValidationError(fe))
+	}, nil) {
 		return
 	}
 
@@ -102,12 +123,9 @@ func (h *AuthHandler) LoginUser(c *gin.Context) {
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req dto.VerifyEmailRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.VerifyEmailRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.VerifyEmailRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -136,12 +154,9 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 func (h *AuthHandler) ResendOTP(c *gin.Context) {
 	var req dto.ResendOTPRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.VerifyResendOtpRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.VerifyResendOtpRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -170,12 +185,9 @@ func (h *AuthHandler) ResendOTP(c *gin.Context) {
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req dto.RefreshTokenRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RefreshTokenRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RefreshTokenRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -204,12 +216,9 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var req dto.ForgotPasswordRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ForgotPasswordRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ForgotPasswordRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -238,12 +247,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var req dto.ResetPasswordRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ResetPasswordRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ResetPasswordRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -308,12 +314,9 @@ func (h *AuthHandler) HealthReady(c *gin.Context) {
 func (h *AuthHandler) ValidateToken(c *gin.Context) {
 	var req dto.TokenValidationRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ValidateTokenRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ValidateTokenRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -342,12 +345,9 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	var req dto.TokenValidationRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ValidateTokenRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ValidateTokenRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -374,12 +374,9 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	var req dto.LogoutRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.LogoutRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.LogoutRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -555,12 +552,9 @@ func (h *AuthHandler) EditUser(c *gin.Context) {
 // @Router       /user/remove [post]
 func (h *AuthHandler) RemoveUser(c *gin.Context) {
 	var req dto.RemoveUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RemoveUserRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RemoveUserRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -644,12 +638,9 @@ func (h *AuthHandler) GetActiveUsersForAssign(c *gin.Context) {
 func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 	var req dto.CreateMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.CreateMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.CreateMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -686,12 +677,9 @@ func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 func (h *AuthHandler) UpdateUserAccess(c *gin.Context) {
 	var req dto.CreateMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.CreateMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.CreateMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -731,12 +719,9 @@ func (h *AuthHandler) UpdateUserAccess(c *gin.Context) {
 func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 	var req dto.RemoveMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RemoveMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RemoveMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -777,12 +762,9 @@ func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 	var req dto.RemoveMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RemoveMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RemoveMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -1018,12 +1000,9 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	}
 
 	var updatePayload dto.UpdateUserPasswordRequest
-	if err := c.ShouldBindJSON(&updatePayload); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.UpdateUserPasswordValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &updatePayload, func(fe validator.FieldError) {
+		response.SendError(c, validators.UpdateUserPasswordValidationError(fe))
+	}, nil) {
 		return
 	}
 
@@ -1056,12 +1035,11 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 // @Router       /user/activate [post]
 func (h *AuthHandler) ActivateUser(c *gin.Context) {
 	var req dto.ActivateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ActivateUserRequestError(ve[0]))
-			return
-		}
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ActivateUserRequestError(fe))
+	}, func(_ error) {
 		response.SendError(c, responseConst.Error.InvalidPayload)
+	}) {
 		return
 	}
 
@@ -1094,12 +1072,11 @@ func (h *AuthHandler) ActivateUser(c *gin.Context) {
 // @Router       /user/deactivate [post]
 func (h *AuthHandler) DeactivateUser(c *gin.Context) {
 	var req dto.DeactivateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.DeactivateUserRequestError(ve[0]))
-			return
-		}
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.DeactivateUserRequestError(fe))
+	}, func(_ error) {
 		response.SendError(c, responseConst.Error.InvalidPayload)
+	}) {
 		return
 	}
 
