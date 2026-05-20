@@ -6,10 +6,22 @@
 package validators
 
 import (
+	"unicode/utf8"
+
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/go-playground/validator/v10"
 )
+
+const maxNameOrTitleLength = 50
+
+// ValidateMaxNameOrTitleLength ensures names/titles do not exceed 50 characters.
+func ValidateMaxNameOrTitleLength(value string, tooLongErr responseConst.ResponseCode) (responseConst.ResponseCode, bool) {
+	if utf8.RuneCountInString(value) > maxNameOrTitleLength {
+		return tooLongErr, true
+	}
+	return "", false
+}
 
 // WorkspaceCreationValidationError maps validation errors for dto.CreateWorkspaceRequest to response codes.
 func BaseCreationValidationError(e validator.FieldError) responseConst.ResponseCode {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
@@ -66,6 +67,10 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		response.SendError(c, responseConst.BaseError.NameRequired)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.BaseError.NameTooLong); ok {
+		response.SendError(c, errCode)
 		return
 	}
 

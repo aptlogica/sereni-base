@@ -14,6 +14,7 @@ var BaseError = struct {
 	BaseNotUpdated     ResponseCode
 	BaseNotDeleted     ResponseCode
 	NameRequired       ResponseCode
+	NameTooLong        ResponseCode
 	NameInvalid        ResponseCode
 	DescriptionInvalid ResponseCode
 	IdRequired         ResponseCode
@@ -26,6 +27,7 @@ var BaseError = struct {
 	BaseNotUpdated:     "BAS_6004",
 	BaseNotDeleted:     "BAS_6005",
 	NameRequired:       "BAS_6006",
+	NameTooLong:        "BAS_6012",
 	NameInvalid:        "BAS_6007",
 	DescriptionInvalid: "BAS_6008",
 	IdRequired:         "BAS_6009",
@@ -63,6 +65,11 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Base name is required",
 		Description: "The Base name field is required and was not provided",
+	},
+	BaseError.NameTooLong: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Base name must be 50 characters or fewer. Please shorten the name and try again",
+		Description: "The base name exceeds the allowed limit of 50 characters. Use a shorter base name with 50 characters or fewer",
 	},
 	BaseError.NameInvalid: {
 		HTTPStatus:  http.StatusBadRequest,

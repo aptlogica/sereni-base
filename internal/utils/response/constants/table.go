@@ -13,6 +13,8 @@ var TableError = struct {
 	WorkspaceIDRequired            ResponseCode
 	WorkspaceIDInvalid             ResponseCode
 	TitleRequired                  ResponseCode
+	TitleTooLong                   ResponseCode
+	ViewTitleTooLong               ResponseCode
 	TitleInvalid                   ResponseCode
 	DescriptionRequired            ResponseCode
 	DescriptionInvalid             ResponseCode
@@ -83,6 +85,8 @@ var TableError = struct {
 	WorkspaceIDRequired:            "TBL_1003",
 	WorkspaceIDInvalid:             "TBL_1004",
 	TitleRequired:                  "TBL_1005",
+	TitleTooLong:                   "TBL_1070",
+	ViewTitleTooLong:               "TBL_1071",
 	TitleInvalid:                   "TBL_1006",
 	DescriptionRequired:            "TBL_1007",
 	DescriptionInvalid:             "TBL_1008",
@@ -174,6 +178,16 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Title is required",
 		Description: "The title field is required",
+	},
+	TableError.TitleTooLong: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Title must be 50 characters or fewer. Please shorten the title and try again",
+		Description: "The title exceeds the allowed limit of 50 characters. Use a shorter title with 50 characters or fewer",
+	},
+	TableError.ViewTitleTooLong: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "View title must be 50 characters or fewer. Please shorten the title and try again",
+		Description: "The view title exceeds the allowed limit of 50 characters. Use a shorter view title with 50 characters or fewer",
 	},
 	TableError.TitleInvalid: {
 		HTTPStatus:  http.StatusBadRequest,

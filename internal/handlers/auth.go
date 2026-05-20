@@ -785,7 +785,7 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromWorkspace, nil)
+	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromBase, nil)
 }
 
 // @Summary      List workspace members

@@ -69,6 +69,11 @@ func (h *WorkspaceHandler) CreateWorkspace(c *gin.Context) {
 		return
 	}
 
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.WorkspaceError.NameTooLong); ok {
+		response.SendError(c, errCode)
+		return
+	}
+
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 

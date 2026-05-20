@@ -74,6 +74,10 @@ func (h *TableHandler) CreateTable(c *gin.Context) {
 		response.SendError(c, responseConst.TableError.TitleRequired)
 		return
 	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.ViewTitleTooLong); ok {
+		response.SendError(c, errCode)
+		return
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -382,6 +386,16 @@ func (h *TableHandler) CreateView(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.TableError.TitleRequired)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.TitleTooLong); ok {
+		response.SendError(c, errCode)
 		return
 	}
 
