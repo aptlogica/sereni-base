@@ -5,6 +5,31 @@
 
 package dto
 
+type ImportSettings struct {
+	RemoveDuplicateRecords bool `json:"remove_duplicate_records"`
+	TrimSpaces             bool `json:"trim_extra_spaces"`
+	RemoveEmptyRows        bool `json:"remove_empty_rows"`
+}
+
+type ColumnConfig struct {
+	// Column identification
+	ColumnName string `json:"column_name" mapstructure:"column_name"` // CSV column header / Database column name
+	Title      string `json:"title" mapstructure:"title"`             // Display column name for the table
+
+	// Data type information
+	UIDT string `json:"uidt" mapstructure:"uidt"` // UI data type (text, number, email, date, etc.)
+
+	// Optional metadata for the column (arbitrary JSON)
+	Meta map[string]interface{} `json:"meta,omitempty" mapstructure:"meta"`
+}
+
+type ImportConfig struct {
+	Settings ImportSettings `json:"settings"`
+	Columns  []ColumnConfig `json:"columns"`
+	// PrimaryColumn allows specifying which column should be treated as the primary/title column
+	PrimaryColumn *ColumnConfig `json:"primary_column,omitempty" mapstructure:"primary_column"`
+}
+
 type ImportTableRequest struct {
 	BaseID      string `form:"base_id" json:"base_id" binding:"required"`
 	WorkspaceID string `form:"workspace_id" json:"workspace_id" binding:"required"`
@@ -14,5 +39,27 @@ type ImportTableRequest struct {
 }
 
 type ImportTableResponse struct {
-	TableResponse
+	ImportStats *ImportStatistics `json:"import_stats,omitempty"`
+	TableModelViewResponse
+}
+
+type ImportStatistics struct {
+	TotalRows            int    `json:"total_rows"`
+	TotalColumns         int    `json:"total_columns"`
+	ErrorRows            int    `json:"error_rows"`
+	EmptyRows            int    `json:"empty_rows"`
+	DuplicateRows        int    `json:"duplicate_rows"`
+	EmptyRowsSkipped     int    `json:"empty_rows_skipped"`
+	DuplicatesRemoved    int    `json:"duplicates_removed"`
+	ErrorRowsFileContent string `json:"error_rows_file_content,omitempty"`
+}
+
+type ImportWithConfigRequest struct {
+	BaseID      string       `form:"base_id" json:"base_id" binding:"required"`
+	WorkspaceID string       `form:"workspace_id" json:"workspace_id" binding:"required"`
+	Title       string       `form:"title" json:"title"`
+	Description string       `form:"description" json:"description"`
+	OrderIndex  float64      `form:"order_index" json:"order_index"`
+	Config      ImportConfig `form:"config" json:"config"`
+	CreatedBy   string       `form:"created_by" json:"created_by,omitempty"`
 }

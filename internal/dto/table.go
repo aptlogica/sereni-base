@@ -25,6 +25,11 @@ type TableResponse struct {
 	Records []map[string]interface{} `json:"records" mapstructure:"records"`
 }
 
+type TableModelViewResponse struct {
+	Model ModelResponse  `json:"model" mapstructure:"model"`
+	Views []ViewResponse `json:"views" mapstructure:"views"`
+}
+
 type TablePageResponse struct {
 	Columns []ColumnResponse         `json:"columns" mapstructure:"columns"`
 	Records []map[string]interface{} `json:"records" mapstructure:"records"`
