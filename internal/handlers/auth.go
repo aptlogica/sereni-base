@@ -13,20 +13,109 @@ import (
 
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
+	_ "github.com/aptlogica/sereni-base/internal/models"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
 
 type AuthHandler struct {
-	authManagementService interfaces.AuthManagementService
+	authManagementService      interfaces.AuthManagementService
+	workspaceManagementService interfaces.WorkspaceManagementService
+	baseManagementService      interfaces.BaseManagementService
 }
 
-func NewAuthHandler(authManagementService interfaces.AuthManagementService) *AuthHandler {
-	return &AuthHandler{authManagementService: authManagementService}
+func bindJSONWithValidation(
+	c *gin.Context,
+	req interface{},
+	onValidationError func(validator.FieldError),
+	onBindError func(error),
+) bool {
+	if err := c.ShouldBindJSON(req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok && len(ve) > 0 {
+			onValidationError(ve[0])
+			return false
+		}
+
+		if onBindError != nil {
+			onBindError(err)
+		} else {
+			response.CheckAndSendError(c, err)
+		}
+
+		return false
+	}
+
+	return true
+}
+
+func NewAuthHandler(authManagementService interfaces.AuthManagementService, optionalServices ...interface{}) *AuthHandler {
+	var workspaceManagementService interfaces.WorkspaceManagementService
+	var baseManagementService interfaces.BaseManagementService
+
+	if len(optionalServices) > 0 {
+		if svc, ok := optionalServices[0].(interfaces.WorkspaceManagementService); ok {
+			workspaceManagementService = svc
+		}
+	}
+
+	if len(optionalServices) > 1 {
+		if svc, ok := optionalServices[1].(interfaces.BaseManagementService); ok {
+			baseManagementService = svc
+		}
+	}
+
+	return &AuthHandler{
+		authManagementService:      authManagementService,
+		workspaceManagementService: workspaceManagementService,
+		baseManagementService:      baseManagementService,
+	}
+}
+
+// helper to extract schema from context
+func getSchema(c *gin.Context) string {
+	// safe retrieval — if not present returns empty string
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+	return schemaName
+}
+
+// helper to extract user id (reqBy) from context
+func getReqBy(c *gin.Context) string {
+	userIdVal, _ := c.Get("user_id")
+	reqBy, _ := userIdVal.(string)
+	return reqBy
+}
+
+// parse membership form field (if present) and return parsed membership slice
+func parseMembershipForm(c *gin.Context) ([]dto.MembershipRequest, error) {
+	membershipStr := c.PostForm("membership")
+	if membershipStr == "" || membershipStr == "[]" {
+		return nil, nil
+	}
+	var membership []dto.MembershipRequest
+	if err := json.Unmarshal([]byte(membershipStr), &membership); err != nil {
+		return nil, fmt.Errorf("invalid membership format: %v", err)
+	}
+	return membership, nil
+}
+
+// validate a path param as UUID and send standardized errors if invalid
+func getParamUUIDWithErrors(c *gin.Context, paramName string, requiredErr, invalidErr responseConst.ResponseCode) (string, bool) {
+	val := c.Param(paramName)
+	if val == "" {
+		response.SendError(c, requiredErr)
+		return "", false
+	}
+	if _, err := uuid.Parse(val); err != nil {
+		response.SendError(c, invalidErr)
+		return "", false
+	}
+	return val, true
 }
 
 // @Summary      Authenticate with email and password
@@ -45,12 +134,9 @@ func NewAuthHandler(authManagementService interfaces.AuthManagementService) *Aut
 func (h *AuthHandler) LoginUser(c *gin.Context) {
 	var req dto.LoginRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.LoginValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.LoginValidationError(fe))
+	}, nil) {
 		return
 	}
 
@@ -79,12 +165,9 @@ func (h *AuthHandler) LoginUser(c *gin.Context) {
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req dto.VerifyEmailRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.VerifyEmailRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.VerifyEmailRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -113,12 +196,9 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 func (h *AuthHandler) ResendOTP(c *gin.Context) {
 	var req dto.ResendOTPRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.VerifyResendOtpRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.VerifyResendOtpRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -147,12 +227,9 @@ func (h *AuthHandler) ResendOTP(c *gin.Context) {
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req dto.RefreshTokenRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RefreshTokenRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RefreshTokenRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -181,12 +258,9 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var req dto.ForgotPasswordRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ForgotPasswordRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ForgotPasswordRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -215,12 +289,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var req dto.ResetPasswordRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ResetPasswordRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ResetPasswordRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -252,7 +323,10 @@ func (h *AuthHandler) Health(c *gin.Context) {
 // @Success      200      {object}  models.SuccessResponse  "Process is alive"
 // @Router       /health/live [get]
 func (h *AuthHandler) HealthLive(c *gin.Context) {
-	c.Status(http.StatusOK)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Service is live",
+	})
 }
 
 // @Summary      Readiness probe
@@ -282,12 +356,9 @@ func (h *AuthHandler) HealthReady(c *gin.Context) {
 func (h *AuthHandler) ValidateToken(c *gin.Context) {
 	var req dto.TokenValidationRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ValidateTokenRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ValidateTokenRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -316,12 +387,9 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	var req dto.TokenValidationRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ValidateTokenRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ValidateTokenRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -348,12 +416,9 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 // @Router       /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	var req dto.LogoutRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.LogoutRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.LogoutRequestError(fe))
+	}, nil) {
 		return
 	}
 
@@ -404,30 +469,23 @@ func (h *AuthHandler) AddUser(c *gin.Context) {
 		fmt.Println("File uploaded:", req.ProfilePic.Filename, "Size:", req.ProfilePic.Size)
 	}
 
-	// Parse membership JSON array from form field
-	membershipStr := c.PostForm("membership")
-	if membershipStr != "" && membershipStr != "[]" {
-		var membership []dto.MembershipRequest
-		if err := json.Unmarshal([]byte(membershipStr), &membership); err != nil {
-			response.CheckAndSendError(c, fmt.Errorf("invalid membership format: %v", err))
-			return
-		}
+	if membership, err := parseMembershipForm(c); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	} else if membership != nil {
 		req.Membership = membership
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
-
-	_, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req, reqBy)
+	user, err := h.authManagementService.AddUser(c.Request.Context(), schemaName, req, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserAdded, nil)
+	response.SendSuccess(c, responseConst.UserSuccess.UserAdded, user)
 }
 
 // @Summary      Update an existing user
@@ -487,21 +545,15 @@ func (h *AuthHandler) EditUser(c *gin.Context) {
 	}
 
 	// Parse membership JSON array from form field if provided
-	membershipStr := c.PostForm("membership")
-	if membershipStr != "" && membershipStr != "[]" {
-		var membership []dto.MembershipRequest
-		if err := json.Unmarshal([]byte(membershipStr), &membership); err != nil {
-			response.CheckAndSendError(c, fmt.Errorf("invalid membership format: %v", err))
-			return
-		}
+	if membership, err := parseMembershipForm(c); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	} else if membership != nil {
 		req.Membership = membership
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
 	updatedUser, err := h.authManagementService.EditUser(c.Request.Context(), schemaName, req, reqBy)
 	if err != nil {
@@ -529,17 +581,13 @@ func (h *AuthHandler) EditUser(c *gin.Context) {
 // @Router       /user/remove [post]
 func (h *AuthHandler) RemoveUser(c *gin.Context) {
 	var req dto.RemoveUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RemoveUserRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RemoveUserRequestError(fe))
+	}, nil) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
 
 	err := h.authManagementService.DeleteUserCompletely(c.Request.Context(), schemaName, req.UserID)
 	if err != nil {
@@ -563,8 +611,7 @@ func (h *AuthHandler) RemoveUser(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /user/list [get]
 func (h *AuthHandler) GetUsers(c *gin.Context) {
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
 
 	users, err := h.authManagementService.GetUsers(c.Request.Context(), schemaName)
 	if err != nil {
@@ -588,8 +635,7 @@ func (h *AuthHandler) GetUsers(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /user/list-for-assign [get]
 func (h *AuthHandler) GetActiveUsersForAssign(c *gin.Context) {
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
 
 	users, err := h.authManagementService.GetActiveUsersForAssign(c.Request.Context(), schemaName)
 	if err != nil {
@@ -618,20 +664,14 @@ func (h *AuthHandler) GetActiveUsersForAssign(c *gin.Context) {
 func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 	var req dto.CreateMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.CreateMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.CreateMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
 	// NOTE: You should implement this method on your authManagementService!
 	err := h.authManagementService.AssignUserToWorkspace(c.Request.Context(), schemaName, req, reqBy)
@@ -660,20 +700,14 @@ func (h *AuthHandler) AssignUserToWorkspace(c *gin.Context) {
 func (h *AuthHandler) UpdateUserAccess(c *gin.Context) {
 	var req dto.CreateMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.CreateMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.CreateMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
 	// NOTE: UpdateUserAccess uses the same service method as AssignUserToWorkspace
 	// It will detect if user already has access and update accordingly
@@ -705,23 +739,17 @@ func (h *AuthHandler) UpdateUserAccess(c *gin.Context) {
 func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 	var req dto.RemoveMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RemoveMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RemoveMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
 	// Get workspaceID from URL parameter "id"
 	workspaceID := c.Param("id")
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
 	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, workspaceID, req.UserID, reqBy)
 	if err != nil {
@@ -751,23 +779,17 @@ func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 	var req dto.RemoveMemberRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.RemoveMemberRequestError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.RemoveMemberRequestError(fe))
+	}, nil) {
 		return
 	}
 
 	// Get baseID from URL parameter "id"
 	baseID := c.Param("id")
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
 	err := h.authManagementService.RemoveUserFromBase(c.Request.Context(), schemaName, baseID, req.UserID, reqBy)
 	if err != nil {
@@ -775,7 +797,7 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromWorkspace, nil)
+	response.SendSuccess(c, responseConst.UserSuccess.UserRemovedFromBase, nil)
 }
 
 // @Summary      List workspace members
@@ -786,6 +808,7 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Workspace ID"
 // @Success      200  {array} dto.WorkspaceMemberResponse  "Workspace members retrieved"
+// @Failure      400  {object} models.ErrorResponse        "Bad Request — invalid workspace ID"
 // @Failure      401  {object} models.ErrorResponse        "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse        "Forbidden — insufficient workspace access"
 // @Failure      404  {object} models.ErrorResponse        "Not Found — workspace not found"
@@ -793,10 +816,18 @@ func (h *AuthHandler) RemoveUserFromBase(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /workspace/{id}/members [get]
 func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
-	workspaceID := c.Param("id")
+	workspaceID, ok := getParamUUIDWithErrors(c, "id", responseConst.WorkspaceError.IdRequired, responseConst.WorkspaceError.IdInvalid)
+	if !ok {
+		return
+	}
+	schemaName := getSchema(c)
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	// Verify workspace exists in database
+	_, err := h.workspaceManagementService.GetByID(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		response.SendError(c, responseConst.WorkspaceError.ErrNotFound)
+		return
+	}
 
 	members, err := h.authManagementService.GetWorkspaceMembers(c.Request.Context(), schemaName, workspaceID)
 	if err != nil {
@@ -815,6 +846,7 @@ func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Base ID"
 // @Success      200  {array}  dto.WorkspaceMemberResponse  "Base members retrieved"
+// @Failure      400  {object} models.ErrorResponse         "Bad Request — invalid base ID"
 // @Failure      401  {object} models.ErrorResponse         "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse         "Forbidden — insufficient base access"
 // @Failure      404  {object} models.ErrorResponse         "Not Found — base missing"
@@ -822,9 +854,19 @@ func (h *AuthHandler) GetWorkspaceMembers(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /base/{id}/members [get]
 func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
-	baseID := c.Param("id")
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	baseID, ok := getParamUUIDWithErrors(c, "id", responseConst.BaseError.IdRequired, responseConst.BaseError.IdInvalid)
+	if !ok {
+		return
+	}
+	schemaName := getSchema(c)
+
+	// Verify base exists in database
+	_, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, baseID)
+	if err != nil {
+		response.SendError(c, responseConst.BaseError.ErrNotFound)
+		return
+	}
+
 	baseMembers, err := h.authManagementService.GetBaseMembers(c.Request.Context(), schemaName, baseID)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -843,6 +885,7 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Workspace ID"
 // @Success      200  {array}  dto.UserWithRole  "Members with role metadata"
+// @Failure      400  {object} models.ErrorResponse  "Bad Request — invalid workspace ID"
 // @Failure      401  {object} models.ErrorResponse  "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse  "Forbidden"
 // @Failure      404  {object} models.ErrorResponse  "Not Found"
@@ -850,9 +893,18 @@ func (h *AuthHandler) GetBaseMembers(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /workspace/{id}/members-with-roles [get]
 func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
-	workspaceID := c.Param("id")
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	workspaceID, ok := getParamUUIDWithErrors(c, "id", responseConst.WorkspaceError.IdRequired, responseConst.WorkspaceError.IdInvalid)
+	if !ok {
+		return
+	}
+	schemaName := getSchema(c)
+
+	// Verify workspace exists in database
+	_, err := h.workspaceManagementService.GetByID(c.Request.Context(), schemaName, workspaceID)
+	if err != nil {
+		response.SendError(c, responseConst.WorkspaceError.ErrNotFound)
+		return
+	}
 
 	members, err := h.authManagementService.GetWorkspaceMembersWithRole(c.Request.Context(), schemaName, workspaceID)
 	if err != nil {
@@ -872,6 +924,7 @@ func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        id   path   string  true  "Base ID"
 // @Success      200  {array}  dto.UserWithRole  "Members with RBAC role data"
+// @Failure      400  {object} models.ErrorResponse  "Bad Request — invalid base ID"
 // @Failure      401  {object} models.ErrorResponse  "Unauthorized"
 // @Failure      403  {object} models.ErrorResponse  "Forbidden"
 // @Failure      404  {object} models.ErrorResponse  "Not Found"
@@ -879,9 +932,18 @@ func (h *AuthHandler) GetWorkspaceMembersWithRole(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /base/{id}/members-with-roles [get]
 func (h *AuthHandler) GetBaseMembersWithRole(c *gin.Context) {
-	baseID := c.Param("id")
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	baseID, ok := getParamUUIDWithErrors(c, "id", responseConst.BaseError.IdRequired, responseConst.BaseError.IdInvalid)
+	if !ok {
+		return
+	}
+	schemaName := getSchema(c)
+
+	// Verify base exists in database
+	_, err := h.baseManagementService.GetBaseByID(c.Request.Context(), schemaName, baseID)
+	if err != nil {
+		response.SendError(c, responseConst.BaseError.ErrNotFound)
+		return
+	}
 
 	members, err := h.authManagementService.GetBaseMembersWithRole(c.Request.Context(), schemaName, baseID)
 	if err != nil {
@@ -916,17 +978,13 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	}
 
 	var updatePayload dto.UpdateUserPasswordRequest
-	if err := c.ShouldBindJSON(&updatePayload); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.UpdateUserPasswordValidationError(ve[0]))
-			return
-		}
-		response.CheckAndSendError(c, err)
+	if !bindJSONWithValidation(c, &updatePayload, func(fe validator.FieldError) {
+		response.SendError(c, validators.UpdateUserPasswordValidationError(fe))
+	}, nil) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
 
 	err := h.authManagementService.UpdatePassword(c.Request.Context(), schemaName, id, updatePayload)
 	if err != nil {
@@ -954,17 +1012,15 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 // @Router       /user/activate [post]
 func (h *AuthHandler) ActivateUser(c *gin.Context) {
 	var req dto.ActivateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.ActivateUserRequestError(ve[0]))
-			return
-		}
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.ActivateUserRequestError(fe))
+	}, func(_ error) {
 		response.SendError(c, responseConst.Error.InvalidPayload)
+	}) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
 
 	updatedProfile, err := h.authManagementService.ActivateUser(c.Request.Context(), schemaName, req.UserID)
 	if err != nil {
@@ -972,7 +1028,7 @@ func (h *AuthHandler) ActivateUser(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+	response.SendSuccess(c, responseConst.UserSuccess.UserActivated, updatedProfile)
 }
 
 // @Summary      Deactivate a user account
@@ -992,17 +1048,15 @@ func (h *AuthHandler) ActivateUser(c *gin.Context) {
 // @Router       /user/deactivate [post]
 func (h *AuthHandler) DeactivateUser(c *gin.Context) {
 	var req dto.DeactivateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			response.SendError(c, validators.DeactivateUserRequestError(ve[0]))
-			return
-		}
+	if !bindJSONWithValidation(c, &req, func(fe validator.FieldError) {
+		response.SendError(c, validators.DeactivateUserRequestError(fe))
+	}, func(_ error) {
 		response.SendError(c, responseConst.Error.InvalidPayload)
+	}) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
+	schemaName := getSchema(c)
 
 	updatedProfile, err := h.authManagementService.DeactivateUser(c.Request.Context(), schemaName, req.UserID)
 	if err != nil {
@@ -1010,7 +1064,7 @@ func (h *AuthHandler) DeactivateUser(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.UserSuccess.UserUpdated, updatedProfile)
+	response.SendSuccess(c, responseConst.UserSuccess.UserDeactivated, updatedProfile)
 }
 
 // @Summary      Delete access member
@@ -1037,11 +1091,8 @@ func (h *AuthHandler) RemoveAccessMemberByID(c *gin.Context) {
 		return
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
-	userIdVal, _ := c.Get("user_id")
-	reqBy, _ := userIdVal.(string)
+	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
 	err := h.authManagementService.RemoveAccessMemberByID(c.Request.Context(), schemaName, accessMemberID, reqBy)
 	if err != nil {

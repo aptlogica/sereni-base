@@ -9,15 +9,7 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support Team",
-            "email": "support@serenibase.com"
-        },
-        "license": {
-            "name": "Apache 2.0",
-            "url": "https://www.apache.org/licenses/LICENSE-2.0"
-        },
+        "contact": {},
         "version": "{{.Version}}"
     },
     "host": "{{.Host}}",
@@ -950,7 +942,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Persists a base associated with a workspace and optional description, returning the stored base data.",
+                "description": "Persists a base associated with a workspace and optional description, returning the stored base data. Optional image dimensions must not exceed 800x400 pixels.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -986,7 +978,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "Optional base image",
+                        "description": "Optional base image (max 800x400 pixels)",
                         "name": "image",
                         "in": "formData"
                     }
@@ -999,7 +991,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request — missing title or workspace",
+                        "description": "Bad Request — missing title, workspace, or invalid image dimensions",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1103,7 +1095,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Applies the form fields and optional uploaded image to update a base record.",
+                "description": "Applies the form fields and optional uploaded image to update a base record. Image dimensions must not exceed 800x400 pixels.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1139,7 +1131,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "New base image",
+                        "description": "New base image (max 800x400 pixels)",
                         "name": "image",
                         "in": "formData"
                     },
@@ -1158,7 +1150,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request — invalid payload",
+                        "description": "Bad Request — invalid payload or invalid image dimensions",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1344,7 +1336,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Attaches an image file to the base metadata and returns the updated base record.",
+                "description": "Attaches an image file to the base metadata and returns the updated base record. Image dimensions must not exceed 800x400 pixels.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1371,7 +1363,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "Image to upload",
+                        "description": "Image to upload (max 800x400 pixels)",
                         "name": "image",
                         "in": "formData",
                         "required": true
@@ -1385,7 +1377,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request — invalid id or missing image",
+                        "description": "Bad Request — invalid id, missing image, or invalid dimensions",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1531,6 +1523,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request — invalid base ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
@@ -1599,6 +1597,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.UserWithRole"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid base ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -2888,6 +2892,81 @@ const docTemplate = `{
                 }
             }
         },
+        "/row/attachment/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates attachment metadata (such as filename, description, etc.) for a given attachment reference in a row.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin Table Column"
+                ],
+                "summary": "Update attachment metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-generated request trace ID",
+                        "name": "X-Request-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Attachment update payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateAttachmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Row updated with new attachment metadata",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RecordResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid payload",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found — attachment missing",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/row/bulk-remove": {
             "post": {
                 "security": [
@@ -3272,7 +3351,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "List all tables",
                 "parameters": [
@@ -3329,7 +3408,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "Create a table",
                 "parameters": [
@@ -3509,7 +3588,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "Get table by ID",
                 "parameters": [
@@ -3651,7 +3730,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "Update a table",
                 "parameters": [
@@ -5981,6 +6060,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized — invalid authentication",
                         "schema": {
@@ -6127,6 +6212,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
@@ -6195,6 +6286,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.UserWithRole"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -6347,6 +6444,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.TableResponse"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -6771,6 +6874,9 @@ const docTemplate = `{
         "dto.ColumnUpdate": {
             "type": "object",
             "properties": {
+                "column_name": {
+                    "type": "string"
+                },
                 "deleted": {
                     "type": "boolean"
                 },
@@ -6940,6 +7046,13 @@ const docTemplate = `{
         },
         "dto.CreateViewRequest": {
             "type": "object",
+            "required": [
+                "base_id",
+                "meta",
+                "model_id",
+                "title",
+                "type"
+            ],
             "properties": {
                 "base_id": {
                     "type": "string"
@@ -7080,7 +7193,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "token": {
-                    "description": "Tenant    *TenantResponse    ` + "`" + `json:\"tenant,omitempty\" format:\"object\"` + "`" + `",
+                    "description": "Tenant    *TenantResponse    ` + "`" + `json:\"tenant,\" format:\"object\"` + "`" + `",
                     "format": "object",
                     "allOf": [
                         {
@@ -7441,6 +7554,9 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateAttachmentRequest": {
+            "type": "object"
+        },
         "dto.UpdateOrganizationRequest": {
             "type": "object",
             "properties": {
@@ -7702,10 +7818,10 @@ const docTemplate = `{
                 "avatar": {
                     "type": "string"
                 },
-                "created_time": {
+                "country": {
                     "type": "string"
                 },
-                "deleted_at": {
+                "created_time": {
                     "type": "string"
                 },
                 "display_name": {
@@ -7717,21 +7833,11 @@ const docTemplate = `{
                 "email_verified": {
                     "type": "boolean"
                 },
-                "external_id": {
-                    "type": "string"
-                },
-                "failed_login_attempts": {
-                    "description": "Security",
-                    "type": "integer"
-                },
                 "first_name": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
-                },
-                "is_deleted": {
-                    "type": "boolean"
                 },
                 "last_active_at": {
                     "type": "string"
@@ -7748,16 +7854,8 @@ const docTemplate = `{
                 "locale": {
                     "type": "string"
                 },
-                "locked_until": {
-                    "type": "string"
-                },
-                "mfa_enabled": {
-                    "type": "boolean"
-                },
-                "mfa_secret": {
-                    "type": "string"
-                },
                 "password_changed_at": {
+                    "description": "Security",
                     "type": "string"
                 },
                 "phone": {
@@ -8185,60 +8283,22 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Enter your Bearer token in the format: Bearer \u003ctoken\u003e",
+            "description": "Bearer token for authentication",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
         }
-    },
-    "tags": [
-        {
-            "description": "Authentication, login, and token lifecycle operations.",
-            "name": "Auth"
-        },
-        {
-            "description": "User profile, workspace access, and avatar management.",
-            "name": "Users"
-        },
-        {
-            "description": "Workspace, base, table, column, row, and asset management requiring elevated privileges and RBAC validations.",
-            "name": "Admin"
-        },
-        {
-            "description": "Workspace-level CRUD, membership, and metadata operations.",
-            "name": "Workspace"
-        },
-        {
-            "description": "Base creation, image handling, membership, and visibility controls.",
-            "name": "Base"
-        },
-        {
-            "description": "Table/model creation plus row, column, and view workflows.",
-            "name": "Table"
-        },
-        {
-            "description": "Column lifecycle (add/update/delete/reorder) and attachment helpers.",
-            "name": "Column"
-        },
-        {
-            "description": "Asset/image uploads and related metadata endpoints.",
-            "name": "Asset"
-        },
-        {
-            "description": "Health checks for readiness, liveliness, and general status.",
-            "name": "System"
-        }
-    ]
+    }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
-	Host:             "localhost:8080",
-	BasePath:         "/api/v1",
-	Schemes:          []string{"http", "https"},
-	Title:            "Serenibase API",
-	Description:      "Serenibase is a workspace management platform that layers guardrails on PostgreSQL tables and permissions.\nIt centralizes workspace/base/table creation, membership, and asset/connectivity workflows along with RBAC controls.",
+	Version:          "",
+	Host:             "",
+	BasePath:         "",
+	Schemes:          []string{},
+	Title:            "",
+	Description:      "",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

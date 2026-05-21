@@ -14,6 +14,7 @@ var BaseError = struct {
 	BaseNotUpdated     ResponseCode
 	BaseNotDeleted     ResponseCode
 	NameRequired       ResponseCode
+	NameTooLong        ResponseCode
 	NameInvalid        ResponseCode
 	DescriptionInvalid ResponseCode
 	IdRequired         ResponseCode
@@ -26,6 +27,7 @@ var BaseError = struct {
 	BaseNotUpdated:     "BAS_6004",
 	BaseNotDeleted:     "BAS_6005",
 	NameRequired:       "BAS_6006",
+	NameTooLong:        "BAS_6012",
 	NameInvalid:        "BAS_6007",
 	DescriptionInvalid: "BAS_6008",
 	IdRequired:         "BAS_6009",
@@ -64,6 +66,11 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Base name is required",
 		Description: "The Base name field is required and was not provided",
 	},
+	BaseError.NameTooLong: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Base name must be 50 characters or fewer. Please shorten the name and try again",
+		Description: "The base name exceeds the allowed limit of 50 characters. Use a shorter base name with 50 characters or fewer",
+	},
 	BaseError.NameInvalid: {
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Base name is invalid",
@@ -76,12 +83,12 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 	},
 	BaseError.IdRequired: {
 		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Workspace ID is required",
-		Description: "The workspace ID field is required and was not provided",
+		Message:     "Base ID is required",
+		Description: "The Base ID field is required and was not provided",
 	},
 	BaseError.IdInvalid: {
 		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Workspace ID is invalid",
+		Message:     "Base ID is invalid",
 		Description: "The workspace ID provided is invalid",
 	},
 	BaseError.BaseNotFound: {
@@ -92,13 +99,15 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 }
 
 var BaseSuccess = struct {
-	BaseCreated ResponseCode
-	BaseUpdated ResponseCode
-	BaseDeleted ResponseCode
+	BaseCreated  ResponseCode
+	BaseUpdated  ResponseCode
+	BaseDeleted  ResponseCode
+	BasesFetched ResponseCode
 }{
-	BaseCreated: "BAS_SUCCESS_6001",
-	BaseUpdated: "BAS_SUCCESS_6002",
-	BaseDeleted: "BAS_SUCCESS_6003",
+	BaseCreated:  "BAS_SUCCESS_6001",
+	BaseUpdated:  "BAS_SUCCESS_6002",
+	BaseDeleted:  "BAS_SUCCESS_6003",
+	BasesFetched: "BAS_SUCCESS_6004",
 }
 
 var BaseSuccessCodes = map[ResponseCode]MetaResponse{
@@ -116,5 +125,10 @@ var BaseSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Base deleted successfully",
 		Description: "The Base has been deleted successfully",
+	},
+	BaseSuccess.BasesFetched: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Bases retrieved successfully",
+		Description: "The bases have been retrieved successfully",
 	},
 }

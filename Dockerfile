@@ -9,6 +9,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 ARG VERSION=dev
 
+# Force module mode so builds are not affected by any stale vendor directory.
+ENV GOFLAGS=-mod=mod
+
 WORKDIR /app
 
 # Copy dependency files for better layer caching
@@ -19,6 +22,9 @@ RUN go mod download
 
 # Copy the rest of application source code (including docs)
 COPY . .
+
+# Ensure module graph is in sync with imports on fresh machines/clean Docker caches.
+RUN go mod tidy && go mod download
 
 # Build the application with optimizations
 # Note: Swagger docs in /docs are embedded in the binary at compile time
@@ -37,6 +43,7 @@ WORKDIR /app
 
 # Copy binary and required files from builder
 COPY --from=builder /app/main .
+COPY --from=builder /app/docs ./docs
 COPY wait-for-postgres.sh .
 
 # Create assets directory and non-root user for security

@@ -6,6 +6,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"
@@ -13,6 +15,8 @@ import (
 	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 const (
@@ -57,6 +61,15 @@ func Setup(cfg *config.Config,
 
 	r.Static("/assets", "./assets")
 
+	// Swagger UI (serves at /swagger/index.html)
+	r.GET("/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
+	})
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(
+		swaggerFiles.Handler,
+		ginSwagger.URL("/swagger/doc.json"),
+	))
+
 	// API routes
 	api := r.Group("/api/v1")
 
@@ -77,6 +90,8 @@ func Setup(cfg *config.Config,
 			},
 		})
 	})
+
+	api.GET("/health/live", handlerGroups.Auth.HealthLive)
 
 	// Public Auth Routes
 	setupAuthRoutes(api, handlerGroups)

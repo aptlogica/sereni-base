@@ -340,12 +340,12 @@ func RemoveMemberRequestError(e validator.FieldError) responseConst.ResponseCode
 	tag := e.Tag()
 
 	switch field {
-	case "WorkspaceID":
+	case "BaseID":
 		switch tag {
 		case "required":
-			return responseConst.WorkspaceError.IdRequired
+			return responseConst.BaseError.IdRequired
 		default:
-			return responseConst.WorkspaceError.IdInvalid
+			return responseConst.BaseError.IdInvalid
 		}
 	case "UserID":
 		switch tag {

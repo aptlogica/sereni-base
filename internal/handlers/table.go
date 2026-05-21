@@ -6,15 +6,19 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
+	_ "github.com/aptlogica/sereni-base/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -23,6 +27,13 @@ import (
 type TableHandler struct {
 	tableManagementService interfaces.TableManagementService
 	importService          interfaces.ImportService
+}
+
+func isTableNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, app_errors.TableNotFound) || strings.Contains(strings.ToLower(err.Error()), "table not found")
 }
 
 func NewTableHandler(tableManagementService interfaces.TableManagementService, importService interfaces.ImportService) *TableHandler {
@@ -56,6 +67,16 @@ func (h *TableHandler) CreateTable(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.TableError.TitleRequired)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.ViewTitleTooLong); ok {
+		response.SendError(c, errCode)
 		return
 	}
 
@@ -111,6 +132,15 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.CheckAndSendError(c, err)
 		return
+	}
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		req.Title = &title
 	}
 
 	schemaNameVal, _ := c.Get("schema")
@@ -228,6 +258,15 @@ func (h *TableHandler) AddColumn(c *gin.Context) {
 
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
+
+	if _, err := h.tableManagementService.GetTableByID(c, req.ModelID.String(), schemaName); err != nil {
+		if isTableNotFound(err) {
+			response.SendError(c, responseConst.TableError.TableNotFound)
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
@@ -348,6 +387,21 @@ func (h *TableHandler) CreateView(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.TableError.TitleRequired)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.TitleTooLong); ok {
+		response.SendError(c, errCode)
+		return
+	}
+
+	if errCode, ok := validators.ValidateCreateViewMeta(req); ok {
+		response.SendError(c, errCode)
 		return
 	}
 
