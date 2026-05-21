@@ -37,6 +37,7 @@ WORKDIR /app
 
 # Copy binary and required files from builder
 COPY --from=builder /app/main .
+COPY --from=builder /app/docs ./docs
 COPY wait-for-postgres.sh .
 
 # Create assets directory and non-root user for security
