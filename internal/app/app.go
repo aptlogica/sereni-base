@@ -32,7 +32,7 @@ import (
 
 	"time"
 
-	// _ "github.com/aptlogica/sereni-base/docs"
+	_ "github.com/aptlogica/sereni-base/docs"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbConfig "github.com/aptlogica/go-postgres-rest/pkg/config"
