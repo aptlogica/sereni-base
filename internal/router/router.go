@@ -6,6 +6,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"
@@ -60,7 +62,13 @@ func Setup(cfg *config.Config,
 	r.Static("/assets", "./assets")
 
 	// Swagger UI (serves at /swagger/index.html)
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
+	})
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(
+		swaggerFiles.Handler,
+		ginSwagger.URL("/swagger/doc.json"),
+	))
 
 	// API routes
 	api := r.Group("/api/v1")

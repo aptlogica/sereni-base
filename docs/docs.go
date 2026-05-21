@@ -6532,30 +6532,7 @@ const docTemplate = `{
             }
         },
         "dto.AddUserRequest": {
-            "type": "object",
-            "required": [
-                "email"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "firstname": {
-                    "type": "string"
-                },
-                "is_coowner": {
-                    "type": "boolean"
-                },
-                "lastname": {
-                    "type": "string"
-                },
-                "membership": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.MembershipRequest"
-                    }
-                }
-            }
+            "type": "object"
         },
         "dto.AssetUpdate": {
             "type": "object",
@@ -7147,30 +7124,7 @@ const docTemplate = `{
             }
         },
         "dto.EditUserRequest": {
-            "type": "object",
-            "required": [
-                "user_id"
-            ],
-            "properties": {
-                "firstname": {
-                    "type": "string"
-                },
-                "is_coowner": {
-                    "type": "boolean"
-                },
-                "lastname": {
-                    "type": "string"
-                },
-                "membership": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.MembershipRequest"
-                    }
-                },
-                "user_id": {
-                    "type": "string"
-                }
-            }
+            "type": "object"
         },
         "dto.ForgotPasswordRequest": {
             "type": "object",
@@ -7601,35 +7555,7 @@ const docTemplate = `{
             }
         },
         "dto.UpdateAttachmentRequest": {
-            "type": "object",
-            "required": [
-                "asset_id",
-                "column_id",
-                "content",
-                "model_id",
-                "row_id"
-            ],
-            "properties": {
-                "asset_id": {
-                    "type": "string",
-                    "example": "asset-456"
-                },
-                "column_id": {
-                    "type": "string",
-                    "example": "col-123"
-                },
-                "content": {
-                    "$ref": "#/definitions/dto.AssetUpdate"
-                },
-                "model_id": {
-                    "type": "string",
-                    "example": "123e4567-e89b-12d3-a456-426614174000"
-                },
-                "row_id": {
-                    "type": "integer",
-                    "example": 1
-                }
-            }
+            "type": "object"
         },
         "dto.UpdateOrganizationRequest": {
             "type": "object",
@@ -7758,37 +7684,7 @@ const docTemplate = `{
             }
         },
         "dto.UpdateUserProfileRequest": {
-            "type": "object",
-            "properties": {
-                "activity_data": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "country": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "dob": {
-                    "type": "string"
-                },
-                "first_name": {
-                    "type": "string"
-                },
-                "last_modified_time": {
-                    "type": "string"
-                },
-                "last_name": {
-                    "type": "string"
-                },
-                "locale": {
-                    "type": "string"
-                },
-                "timezone": {
-                    "type": "string"
-                }
-            }
+            "type": "object"
         },
         "dto.UserAccessDetailsResponse": {
             "type": "object",
@@ -8383,6 +8279,14 @@ const docTemplate = `{
                     "example": true
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Bearer token for authentication",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`

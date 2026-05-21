@@ -33,21 +33,6 @@ definitions:
         type: boolean
     type: object
   dto.AddUserRequest:
-    properties:
-      email:
-        type: string
-      firstname:
-        type: string
-      is_coowner:
-        type: boolean
-      lastname:
-        type: string
-      membership:
-        items:
-          $ref: '#/definitions/dto.MembershipRequest'
-        type: array
-    required:
-    - email
     type: object
   dto.AssetUpdate:
     properties:
@@ -449,21 +434,6 @@ definitions:
     - row_id
     type: object
   dto.EditUserRequest:
-    properties:
-      firstname:
-        type: string
-      is_coowner:
-        type: boolean
-      lastname:
-        type: string
-      membership:
-        items:
-          $ref: '#/definitions/dto.MembershipRequest'
-        type: array
-      user_id:
-        type: string
-    required:
-    - user_id
     type: object
   dto.ForgotPasswordRequest:
     properties:
@@ -755,27 +725,6 @@ definitions:
         type: boolean
     type: object
   dto.UpdateAttachmentRequest:
-    properties:
-      asset_id:
-        example: asset-456
-        type: string
-      column_id:
-        example: col-123
-        type: string
-      content:
-        $ref: '#/definitions/dto.AssetUpdate'
-      model_id:
-        example: 123e4567-e89b-12d3-a456-426614174000
-        type: string
-      row_id:
-        example: 1
-        type: integer
-    required:
-    - asset_id
-    - column_id
-    - content
-    - model_id
-    - row_id
     type: object
   dto.UpdateOrganizationRequest:
     properties:
@@ -866,26 +815,6 @@ definitions:
     - old_password
     type: object
   dto.UpdateUserProfileRequest:
-    properties:
-      activity_data:
-        additionalProperties: true
-        type: object
-      country:
-        type: string
-      display_name:
-        type: string
-      dob:
-        type: string
-      first_name:
-        type: string
-      last_modified_time:
-        type: string
-      last_name:
-        type: string
-      locale:
-        type: string
-      timezone:
-        type: string
     type: object
   dto.UserAccessDetailsResponse:
     properties:
@@ -5523,4 +5452,10 @@ paths:
       summary: Create a workspace
       tags:
       - Admin Workspace
+securityDefinitions:
+  BearerAuth:
+    description: Bearer token for authentication
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"
