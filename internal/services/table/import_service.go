@@ -29,7 +29,11 @@ import (
 )
 
 const (
-	isoDateFormat = "2006-01-02"
+	isoDateFormat             = "2006-01-02"
+	errWorkspaceIDRequiredMsg = "workspace_id is required when base_id is not provided"
+	descAutoCreatedBase       = "Auto-created base for table import"
+	errFailedCreateBase       = "Failed to create base for import"
+	colNameFmt                = "\"%s\""
 )
 
 type importService struct {
@@ -61,63 +65,12 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 		}
 		createdBase = true
 	}
-	headers, dataRows, err := s.parseCSV(file, lg)
+	headers, dataRows, stats, uniqueTableTitle, err := s.prepareImportData(ctx, schemaName, req, file, tableTitle, lg)
 	if err != nil {
 		return dto.ImportTableResponse{}, err
 	}
 
-	// Initialize statistics
-	stats := &dto.ImportStatistics{}
-
-	// Validate column config
-	if err := s.validateColumnConfig(req.Config.Columns, req.Config.PrimaryColumn, headers, lg); err != nil {
-		return dto.ImportTableResponse{}, err
-	}
-
-	// Step 1: Apply TrimSpaces setting (if enabled)
-	if req.Config.Settings.TrimSpaces {
-		dataRows = s.cleanData(dataRows, req.Config.Settings)
-		lg.Info().Bool("trimSpaces", true).Msg("Trim spaces applied")
-	} else {
-		lg.Info().Bool("trimSpaces", false).Msg("Trim spaces skipped")
-	}
-
-	// Step 2: Count and optionally remove empty rows (after trimming for accurate detection)
-	emptyRowCount := s.countEmptyRows(dataRows)
-	stats.EmptyRows = emptyRowCount
-	if req.Config.Settings.RemoveEmptyRows {
-		dataRows = s.removeEmptyRows(dataRows)
-		stats.EmptyRowsSkipped = emptyRowCount
-		lg.Info().Bool("removeEmptyRows", true).Int("emptyRowsDetected", emptyRowCount).Int("emptyRowsRemoved", emptyRowCount).Msg("Empty rows removed")
-	} else {
-		stats.EmptyRowsSkipped = 0
-		lg.Info().Bool("removeEmptyRows", false).Int("emptyRowsDetected", emptyRowCount).Msg("Empty rows detected but not removed")
-	}
-
-	// Step 3: Count and optionally remove duplicates
-	duplicateRowCount := s.countDuplicateRecords(dataRows)
-	stats.DuplicateRows = duplicateRowCount
-	if req.Config.Settings.RemoveDuplicateRecords {
-		dataRows = s.removeDuplicateRecords(dataRows)
-		stats.DuplicatesRemoved = duplicateRowCount
-		lg.Info().Bool("removeDuplicates", true).Int("duplicatesDetected", duplicateRowCount).Int("duplicatesRemoved", duplicateRowCount).Int("recordsAfterDedup", len(dataRows)).Msg("Duplicate records removed")
-	} else {
-		stats.DuplicatesRemoved = 0
-		lg.Info().Bool("removeDuplicates", false).Int("duplicatesDetected", duplicateRowCount).Msg("Duplicate records detected but not removed")
-	}
-
-	// Always log and save cleaned data to JSON file (regardless of settings)
-	s.logCleanedDataWithSettings(headers, dataRows, stats, req.Config.Settings, lg)
-
-	// Check for duplicate table names and get unique name if needed
-	uniqueTableTitle := tableTitle
-	uniqueTableTitle, err = s.getUniqueTableName(ctx, schemaName, req.BaseID, tableTitle, lg)
-	if err != nil {
-		lg.Error().Stack().Err(err).Str("tableName", tableTitle).Msg("Failed to check for duplicate table names")
-		// Continue with original name if check fails
-	}
-
-	// Create table
+	// Create table (and obtain cleanup function)
 	createTableReq := dto.CreateTableRequest{
 		BaseID:      req.BaseID,
 		WorkspaceID: req.WorkspaceID,
@@ -127,40 +80,36 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 		CreatedBy:   req.CreatedBy,
 	}
 
-	tableResp, err := s.createTable(ctx, schemaName, createTableReq, lg, uniqueTableTitle)
+	tableResp, cleanup, err := s.createTableForImport(ctx, schemaName, createTableReq, lg, createdBase, req.BaseID)
 	if err != nil {
-		if createdBase {
-			if delErr := s.baseManagementService.DeleteBase(ctx, schemaName, req.BaseID); delErr != nil {
-				lg.Error().Stack().Err(delErr).Str("baseID", req.BaseID).Msg("Failed to cleanup auto-created base after table creation failure")
-			}
-		}
 		return dto.ImportTableResponse{}, err
 	}
 
-	createdTable := true
-
-	cleanup := func() {
-		if createdTable {
-			if delErr := s.tableService.DeleteTable(ctx, schemaName, tableResp.Model.ID.String()); delErr != nil {
-				lg.Error().Stack().Err(delErr).Str("tableID", tableResp.Model.ID.String()).Msg("Failed to cleanup created table after import error")
-			}
-		}
-		if createdBase {
-			if delErr := s.baseManagementService.DeleteBase(ctx, schemaName, req.BaseID); delErr != nil {
-				lg.Error().Stack().Err(delErr).Str("baseID", req.BaseID).Msg("Failed to cleanup auto-created base after import error")
-			}
-		}
-	}
-
 	// Add columns with config
-	columnMap, err := s.addColumnsWithConfig(ctx, schemaName, createTableReq, headers, req.Config.Columns, req.Config.PrimaryColumn, tableResp, lg)
+	columnMap, err := s.addColumnsWithConfig(dto.AddColumnsWithConfigParams{
+		Ctx:           ctx,
+		SchemaName:    schemaName,
+		Req:           createTableReq,
+		Headers:       headers,
+		ColumnConfigs: req.Config.Columns,
+		Primary:       req.Config.PrimaryColumn,
+		TableResp:     tableResp,
+	}, lg)
 	if err != nil {
 		cleanup()
 		return dto.ImportTableResponse{}, err
 	}
 
 	// Build records using config column types with error tracking
-	newRecords, errorRows, errorMessages := s.buildRecordsWithConfigAndErrors(dataRows, req.Config.Columns, req.Config.PrimaryColumn, columnMap, createTableReq, headers, req.Config.Settings, lg)
+	newRecords, errorRows, errorMessages := s.buildRecordsWithConfigAndErrors(dto.BuildRecordsWithConfigAndErrorsParams{
+		DataRows:      dataRows,
+		ColumnConfigs: req.Config.Columns,
+		Primary:       req.Config.PrimaryColumn,
+		ColumnMap:     columnMap,
+		Req:           createTableReq,
+		Headers:       headers,
+		Settings:      req.Config.Settings,
+	}, lg)
 	lg.Info().Int("recordsCreated", len(newRecords)).Int("errorRows", len(errorRows)).Msg("Records prepared for insertion with config and error tracking")
 
 	// Always identify empty and duplicate rows for logging (regardless of settings)
@@ -180,53 +129,70 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	stats.ErrorRows = len(errorRows)
 	stats.ErrorRowsFileContent = errorRowsFileContent
 
-	// if err := s.insertBatches(ctx, schemaName, tableResp, newRecords, lg); err != nil {
-	// 	cleanup()
-	// 	return dto.ImportTableResponse{}, err
-	// }
+	return s.finalizeImport(finalizeImportOptions{
+		Ctx:           ctx,
+		SchemaName:    schemaName,
+		TableResp:     tableResp,
+		NewRecords:    newRecords,
+		Headers:       headers,
+		Stats:         stats,
+		ErrorRows:     errorRows,
+		ErrorMessages: errorMessages,
+		LG:            lg,
+	})
+}
+
+// finalizeImport handles batch insertion, aggregates DB errors into statistics and
+// refreshes the table before returning a final response. It mirrors the original
+// inline logic to preserve behavior exactly.
+// finalizeImportOptions packages arguments for finalizeImport helper
+type finalizeImportOptions struct {
+	Ctx           context.Context
+	SchemaName    string
+	TableResp     dto.TableResponse
+	NewRecords    []map[string]interface{}
+	Headers       []string
+	Stats         *dto.ImportStatistics
+	ErrorRows     [][]string
+	ErrorMessages []string
+	LG            *zerolog.Logger
+}
+
+// finalizeImport handles batch insertion, aggregates DB errors into statistics and
+// refreshes the table before returning a final response. It mirrors the original
+// inline logic to preserve behavior exactly.
+func (s *importService) finalizeImport(opts finalizeImportOptions) (dto.ImportTableResponse, error) {
 	// Insert batches with database error handling - skip failed rows and continue
-	dbErrorRows, dbErrorMessages := s.insertBatchesWithErrorHandling(ctx, schemaName, tableResp, newRecords, headers, lg)
+	dbErrorRows, dbErrorMessages := s.insertBatchesWithErrorHandling(opts.Ctx, opts.SchemaName, opts.TableResp, opts.NewRecords, opts.Headers, opts.LG)
 
 	// Add database errors to statistics and error rows
 	if len(dbErrorRows) > 0 {
-		stats.ErrorRows += len(dbErrorRows)
+		opts.Stats.ErrorRows += len(dbErrorRows)
 
 		// Append database errors to error report
-		if stats.ErrorRowsFileContent != "" {
-			stats.ErrorRowsFileContent += "\n\n" +
+		if opts.Stats.ErrorRowsFileContent != "" {
+			opts.Stats.ErrorRowsFileContent += "\n\n" +
 				strings.Repeat("=", 100) + "\n" +
 				"DATABASE ERRORS (Failed to insert into database)\n" +
 				strings.Repeat("=", 100) + "\n\n"
 		}
 
 		for _, dbErrMsg := range dbErrorMessages {
-			stats.ErrorRowsFileContent += dbErrMsg + "\n\n"
+			opts.Stats.ErrorRowsFileContent += dbErrMsg + "\n\n"
 		}
 
-		lg.Warn().Int("dbErrorRowCount", len(dbErrorRows)).Msg("Some rows failed due to database errors - import continued with remaining rows")
+		opts.LG.Warn().Int("dbErrorRowCount", len(dbErrorRows)).Msg("Some rows failed due to database errors - import continued with remaining rows")
 	}
 
-	finalTableResp, err := s.refreshTable(ctx, schemaName, tableResp, lg)
+	finalTableResp, err := s.refreshTable(opts.Ctx, opts.SchemaName, opts.TableResp, opts.LG)
 	if err != nil {
-		return dto.ImportTableResponse{ImportStats: stats, TableModelViewResponse: dto.TableModelViewResponse{
-			Model: tableResp.Model,
-			Views: tableResp.Views,
+		return dto.ImportTableResponse{ImportStats: opts.Stats, TableModelViewResponse: dto.TableModelViewResponse{
+			Model: opts.TableResp.Model,
+			Views: opts.TableResp.Views,
 		}}, nil
 	}
 
-	// Log final statistics
-	// lg.Info().
-	// 	Int("totalRows", stats.TotalRows).
-	// 	Int("totalColumns", stats.TotalColumns).
-	// 	Int("errorRows", stats.ErrorRows).
-	// 	Int("emptyRows", stats.EmptyRows).
-	// 	Int("duplicateRows", stats.DuplicateRows).
-	// 	Int("emptyRowsSkipped", stats.EmptyRowsSkipped).
-	// 	Int("duplicatesRemoved", stats.DuplicatesRemoved).
-	// 	Str("errorRowsFileContent", stats.ErrorRowsFileContent).
-	// 	Msg("Import completed with statistics")
-
-	return dto.ImportTableResponse{ImportStats: stats, TableModelViewResponse: dto.TableModelViewResponse{
+	return dto.ImportTableResponse{ImportStats: opts.Stats, TableModelViewResponse: dto.TableModelViewResponse{
 		Model: finalTableResp.Model,
 		Views: finalTableResp.Views,
 	}}, nil
@@ -260,8 +226,8 @@ func (s *importService) ensureBase(ctx context.Context, schemaName string, req *
 	}
 
 	if req.WorkspaceID == "" {
-		lg.Error().Msg("workspace_id is required when base_id is not provided")
-		return fmt.Errorf("workspace_id is required when base_id is not provided")
+		lg.Error().Msg(errWorkspaceIDRequiredMsg)
+		return fmt.Errorf("%s", errWorkspaceIDRequiredMsg)
 	}
 
 	baseName := tableTitle + "_base"
@@ -269,14 +235,14 @@ func (s *importService) ensureBase(ctx context.Context, schemaName string, req *
 
 	createBaseReq := dto.CreateBaseRequest{
 		Title:       baseName,
-		Description: helpers.StringPtr("Auto-created base for table import"),
+		Description: helpers.StringPtr(descAutoCreatedBase),
 		WorkspaceID: req.WorkspaceID,
 		CreatedBy:   req.CreatedBy,
 	}
 
 	newBase, err := s.baseManagementService.CreateBaseWithoutTable(ctx, createBaseReq, schemaName, req.CreatedBy)
 	if err != nil {
-		lg.Error().Stack().Err(err).Str("baseName", baseName).Msg("Failed to create base for import")
+		lg.Error().Stack().Err(err).Str("baseName", baseName).Msg(errFailedCreateBase)
 		return fmt.Errorf("failed to create base: %w", err)
 	}
 
@@ -329,122 +295,43 @@ func (s *importService) createTable(ctx context.Context, schemaName string, req 
 	return tableResp, nil
 }
 
-func (s *importService) updateTitleColumn(ctx context.Context, schemaName string, lg *zerolog.Logger, titleColumnName string, columnType string, tableResp *dto.TableResponse) error {
-	if titleColumnName == "" {
-		return nil
+// createTableForImport wraps table creation and returns a cleanup function that will
+// remove created resources in case of later failures. It mirrors original behavior
+// to ensure semantics remain identical.
+func (s *importService) createTableForImport(ctx context.Context, schemaName string, createTableReq dto.CreateTableRequest, lg *zerolog.Logger, createdBase bool, baseID string) (dto.TableResponse, func(), error) {
+	tableResp, err := s.createTable(ctx, schemaName, createTableReq, lg, createTableReq.Title)
+	if err != nil {
+		s.cleanupBaseIfNeeded(ctx, schemaName, baseID, createdBase, lg)
+		return dto.TableResponse{}, nil, err
 	}
 
-	titleColumnID := ""
-	for _, col := range tableResp.Columns {
-		if col.Title == "Title" {
-			titleColumnID = col.ID.String()
-			break
+	createdTable := true
+
+	cleanup := func() {
+		if createdTable {
+			if delErr := s.tableService.DeleteTable(ctx, schemaName, tableResp.Model.ID.String()); delErr != nil {
+				lg.Error().Stack().Err(delErr).Str("tableID", tableResp.Model.ID.String()).Msg("Failed to cleanup created table after import error")
+			}
+		}
+		if createdBase {
+			if delErr := s.baseManagementService.DeleteBase(ctx, schemaName, baseID); delErr != nil {
+				lg.Error().Stack().Err(delErr).Str("baseID", baseID).Msg("Failed to cleanup auto-created base after import error")
+			}
 		}
 	}
 
-	if titleColumnID == "" {
-		return nil
-	}
-
-	lg.Info().Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Str("columnType", columnType).Msg("Updating title column name and type")
-
-	// Get the database type for the inferred column type
-	dt := s.getDatabaseType(columnType)
-
-	updateColReq := dto.ColumnUpdate{
-		Title: &titleColumnName,
-		UIDT:  &columnType,
-		DT:    &dt,
-	}
-	if _, err := s.tableService.UpdateColumn(ctx, schemaName, titleColumnID, updateColReq); err != nil {
-		lg.Error().Stack().Err(err).Str("columnID", titleColumnID).Str("newTitle", titleColumnName).Msg("Failed to update title column")
-		return err
-	}
-
-	lg.Info().Str("columnID", titleColumnID).Msg("Title column updated successfully")
-	return nil
+	return tableResp, cleanup, nil
 }
 
-func (s *importService) addColumns(ctx context.Context, schemaName string, req dto.CreateTableRequest, headers []string, columnTypes []string, tableResp dto.TableResponse, lg *zerolog.Logger) (map[int]dto.ColumnResponse, error) {
-	lg.Info().Int("columnCount", len(headers)-1).Msg("Starting to add columns")
-	columnMap := make(map[int]dto.ColumnResponse)
-	systemFieldAdded := false
-
-	for i, header := range headers {
-		if i == 0 {
-			continue
+// cleanupBaseIfNeeded deletes the auto-created base if it was created and logs errors
+func (s *importService) cleanupBaseIfNeeded(ctx context.Context, schemaName string, baseID string, createdBase bool, lg *zerolog.Logger) {
+	if createdBase {
+		if delErr := s.baseManagementService.DeleteBase(ctx, schemaName, baseID); delErr != nil {
+			lg.Error().Stack().Err(delErr).Str("baseID", baseID).Msg("Failed to cleanup auto-created base after table creation failure")
 		}
-
-		colType := columnTypes[i]
-		if colType == "text" && !systemFieldAdded {
-			systemFieldAdded = true
-		}
-
-		if header == "" {
-			continue
-		}
-
-		addColReq := dto.AddColumnRequest{
-			ModelID:     tableResp.Model.ID,
-			BaseID:      tableResp.Model.BaseID,
-			Title:       header,
-			Description: "",
-			Meta:        map[string]interface{}{},
-			UIDT:        colType,
-			DT:          s.getDatabaseType(colType),
-			OrderIndex:  helpers.Float64Ptr(float64(i + 6)),
-			Virtual:     helpers.BoolPtr(false),
-			System:      helpers.BoolPtr(false),
-			CreatedBy:   req.CreatedBy,
-		}
-		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
-		if err != nil {
-			lg.Error().Stack().Err(err).Str("columnTitle", header).Str("columnType", colType).Msg("Failed to add column")
-			return nil, err
-		}
-		columnMap[i] = colResp
-		lg.Debug().Str("columnTitle", header).Str("columnType", colType).Msg("Column added successfully")
 	}
-
-	lg.Info().Int("columnsAdded", len(columnMap)).Msg("All columns added")
-	return columnMap, nil
 }
 
-func (s *importService) buildRecords(dataRows [][]string, columnTypes []string, columnMap map[int]dto.ColumnResponse, req dto.CreateTableRequest, lg *zerolog.Logger) []map[string]interface{} {
-	lg.Info().Int("recordCount", len(dataRows)).Msg("Starting to insert records")
-
-	newRecords := []map[string]interface{}{}
-	for _, row := range dataRows {
-		record := map[string]interface{}{
-			"created_by":         req.CreatedBy,
-			"last_modified_by":   req.CreatedBy,
-			"created_time":       time.Now().UTC(),
-			"last_modified_time": time.Now().UTC(),
-		}
-
-		for i, cellVal := range row {
-			if cellVal == "" {
-				continue
-			}
-
-			if i == 0 {
-				val := s.convertValue(cellVal, columnTypes[i])
-				record["title"] = val
-				continue
-			}
-
-			colResp, exists := columnMap[i]
-			if !exists {
-				continue
-			}
-			val := s.convertValue(cellVal, columnTypes[i])
-			record[fmt.Sprintf("\"%s\"", colResp.ColumnName)] = val
-		}
-		newRecords = append(newRecords, record)
-	}
-
-	return newRecords
-}
 
 func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, schemaName string, tableResp dto.TableResponse, newRecords []map[string]interface{}, headers []string, lg *zerolog.Logger) ([][]string, []string) {
 	batchSize := 50
@@ -467,31 +354,22 @@ func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, sche
 			lg.Warn().Stack().Err(err).Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Batch insertion failed - testing rows individually to identify problematic rows")
 
 			// Try inserting each row individually to find which ones actually fail
-			for j := 0; j < len(batch); j++ {
-				rowIndex := startRowIndex + j
-				lineNumber := rowIndex + 2 // Line numbers start from 2 (row 1 is header)
-				singleRowBatch := []map[string]interface{}{batch[j]}
-
-				if _, err := s.tableService.CreateRowsWithRecordsBulk(ctx, schemaName, tableResp.Model.Alias, singleRowBatch); err != nil {
-					// This specific row failed
-					lg.Error().Stack().Err(err).Int("batchNumber", batchNum).Int("lineNumber", lineNumber).Int("rowIndex", rowIndex).Msg("Row failed - skipping")
-
-					// Create error message with specific row line number
-					failureMsg := fmt.Sprintf("[Database Error %d] Batch %d, Row Line %d (CSV Line %d)\n", len(failedRows)+1, batchNum, lineNumber, lineNumber)
-					failureMsg += fmt.Sprintf("Error: %v\n", err)
-					failureMsg += fmt.Sprintf("Record: %v\n", batch[j])
-
-					errorMessages = append(errorMessages, failureMsg)
-
-					// Create a representation of the failed row
-					failedRowData := make([]string, len(headers))
-					for k := range failedRowData {
-						failedRowData[k] = "[FAILED_TO_INSERT]"
-					}
-					failedRows = append(failedRows, failedRowData)
-				} else {
-					lg.Debug().Int("batchNumber", batchNum).Int("lineNumber", lineNumber).Msg("Row inserted successfully")
-				}
+			newFailedRows, newErrorMessages := s.testInsertRowsIndividually(batchInsertOptions{
+				Ctx:           ctx,
+				SchemaName:    schemaName,
+				TableResp:     tableResp,
+				Batch:         batch,
+				StartRowIndex: startRowIndex,
+				Headers:       headers,
+				BatchNum:      batchNum,
+				FailedOffset:  len(failedRows),
+				LG:            lg,
+			})
+			if len(newFailedRows) > 0 {
+				failedRows = append(failedRows, newFailedRows...)
+			}
+			if len(newErrorMessages) > 0 {
+				errorMessages = append(errorMessages, newErrorMessages...)
 			}
 			// Continue to next batch after processing individual rows
 			continue
@@ -506,6 +384,57 @@ func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, sche
 	}
 
 	return failedRows, errorMessages
+}
+// batchInsertOptions packages parameters for per-row retry helper to keep parameter
+// counts low and the callsite readable.
+type batchInsertOptions struct {
+	Ctx           context.Context
+	SchemaName    string
+	TableResp     dto.TableResponse
+	Batch         []map[string]interface{}
+	StartRowIndex int
+	Headers       []string
+	BatchNum      int
+	FailedOffset  int
+	LG            *zerolog.Logger
+}
+
+// testInsertRowsIndividually tries to insert each row in the provided batch independently
+// and returns failed row placeholders and corresponding error messages. `FailedOffset`
+// should be the count of previously collected failed rows so that error numbering stays
+// consistent with the original implementation.
+func (s *importService) testInsertRowsIndividually(opts batchInsertOptions) ([][]string, []string) {
+	newFailedRows := [][]string{}
+	newErrorMessages := []string{}
+
+	for j := 0; j < len(opts.Batch); j++ {
+		rowIndex := opts.StartRowIndex + j
+		lineNumber := rowIndex + 2 // Line numbers start from 2 (row 1 is header)
+		singleRowBatch := []map[string]interface{}{opts.Batch[j]}
+
+		if _, err := s.tableService.CreateRowsWithRecordsBulk(opts.Ctx, opts.SchemaName, opts.TableResp.Model.Alias, singleRowBatch); err != nil {
+			// This specific row failed
+			opts.LG.Error().Stack().Err(err).Int("batchNumber", opts.BatchNum).Int("lineNumber", lineNumber).Int("rowIndex", rowIndex).Msg("Row failed - skipping")
+
+			// Create error message with specific row line number and consistent numbering
+			failureMsg := fmt.Sprintf("[Database Error %d] Batch %d, Row Line %d (CSV Line %d)\n", opts.FailedOffset+len(newFailedRows)+1, opts.BatchNum, lineNumber, lineNumber)
+			failureMsg += fmt.Sprintf("Error: %v\n", err)
+			failureMsg += fmt.Sprintf("Record: %v\n", opts.Batch[j])
+
+			newErrorMessages = append(newErrorMessages, failureMsg)
+
+			// Create a representation of the failed row
+			failedRowData := make([]string, len(opts.Headers))
+			for k := range failedRowData {
+				failedRowData[k] = "[FAILED_TO_INSERT]"
+			}
+			newFailedRows = append(newFailedRows, failedRowData)
+		} else {
+			opts.LG.Debug().Int("batchNumber", opts.BatchNum).Int("lineNumber", lineNumber).Msg("Row inserted successfully")
+		}
+	}
+
+	return newFailedRows, newErrorMessages
 }
 
 func (s *importService) refreshTable(ctx context.Context, schemaName string, tableResp dto.TableResponse, lg *zerolog.Logger) (dto.TableResponse, error) {
@@ -838,10 +767,7 @@ func (s *importService) getUniqueBaseName(ctx context.Context, schemaName string
 	}
 
 	// Remove "_base" suffix if present to get the clean base name
-	cleanBaseName := proposedName
-	if strings.HasSuffix(cleanBaseName, "_base") {
-		cleanBaseName = strings.TrimSuffix(cleanBaseName, "_base")
-	}
+	cleanBaseName := strings.TrimSuffix(proposedName, "_base")
 
 	// Extract base titles into a slice
 	existingBaseNames := make([]string, len(allBases))
@@ -870,8 +796,8 @@ func (s *importService) ensureBaseWithConfig(ctx context.Context, schemaName str
 	}
 
 	if req.WorkspaceID == "" {
-		lg.Error().Msg("workspace_id is required when base_id is not provided")
-		return fmt.Errorf("workspace_id is required when base_id is not provided")
+		lg.Error().Msg(errWorkspaceIDRequiredMsg)
+		return fmt.Errorf("%s", errWorkspaceIDRequiredMsg)
 	}
 
 	baseName := tableTitle
@@ -893,14 +819,14 @@ func (s *importService) ensureBaseWithConfig(ctx context.Context, schemaName str
 
 	createBaseReq := dto.CreateBaseRequest{
 		Title:       uniqueBaseName,
-		Description: helpers.StringPtr("Auto-created base for table import"),
+		Description: helpers.StringPtr(descAutoCreatedBase),
 		WorkspaceID: req.WorkspaceID,
 		CreatedBy:   req.CreatedBy,
 	}
 
 	newBase, err := s.baseManagementService.CreateBaseWithoutTable(ctx, createBaseReq, schemaName, req.CreatedBy)
 	if err != nil {
-		lg.Error().Stack().Err(err).Str("baseName", uniqueBaseName).Msg("Failed to create base for import")
+		lg.Error().Stack().Err(err).Str("baseName", uniqueBaseName).Msg(errFailedCreateBase)
 		return fmt.Errorf("failed to create base: %w", err)
 	}
 
@@ -937,247 +863,152 @@ func (s *importService) cleanData(rows [][]string, settings dto.ImportSettings) 
 	return cleanedRows
 }
 
-// removeDuplicateRecords removes duplicate rows while preserving order
-func (s *importService) removeDuplicateRecords(rows [][]string) [][]string {
-	seen := make(map[string]bool)
-	var uniqueRows [][]string
-
-	for _, row := range rows {
-		// Create a key from the row by joining all cells
-		key := strings.Join(row, "|")
-
-		if !seen[key] {
-			seen[key] = true
-			uniqueRows = append(uniqueRows, row)
-		}
-	}
-
-	return uniqueRows
-}
-
 // addColumnsWithConfig adds columns to the table using user-provided config
-func (s *importService) addColumnsWithConfig(ctx context.Context, schemaName string, req dto.CreateTableRequest, headers []string, columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, tableResp dto.TableResponse, lg *zerolog.Logger) (map[int]dto.ColumnResponse, error) {
-	lg.Info().Int("columnCount", len(columnConfigs)).Msg("Starting to add columns with config")
+func (s *importService) addColumnsWithConfig(params dto.AddColumnsWithConfigParams, lg *zerolog.Logger) (map[int]dto.ColumnResponse, error) {
+	lg.Info().Int("columnCount", len(params.ColumnConfigs)).Msg("Starting to add columns with config")
 	columnMap := make(map[int]dto.ColumnResponse)
 
 	// Build a map of source names to configs for quick lookup
 	configMap := make(map[string]dto.ColumnConfig)
-	for _, cfg := range columnConfigs {
+	for _, cfg := range params.ColumnConfigs {
 		configMap[cfg.ColumnName] = cfg
 	}
 
-	for i, header := range headers {
-		if header == "" {
-			continue
-		}
-
-		// Use column config for the header, overriding with primary column config when matched.
-		cfg, exists := configMap[header]
-		primaryMatch := false
-		if primary != nil && primary.ColumnName == header {
-			primaryMatch = true
-			// Use primary config as the effective cfg (overrides any entry)
-			cfg = *primary
-			exists = true
-		}
-
-		if !exists {
-			// Skip columns not in config (frontend controls what config is sent)
-			lg.Debug().Str("columnName", header).Msg("Skipping column not in config")
-			continue
-		}
-
-		// only for the configured primary column as the default Title column.
-		isTitleColumn := primaryMatch
-		if isTitleColumn {
-			// find the existing Title column id
-			titleColID := ""
-			for _, c := range tableResp.Columns {
-				if c.Title == "Title" {
-					titleColID = c.ID.String()
-					break
-				}
-			}
-			if titleColID == "" {
-				lg.Warn().Msg("Title column not found to update with config")
-			} else {
-				// prepare update with meta/type/title
-				colType := cfg.UIDT
-				if colType == "" {
-					colType = "text"
-				}
-				colDT := s.getDatabaseType(colType)
-
-				meta := map[string]interface{}{}
-				if cfg.Meta != nil {
-					meta = cfg.Meta
-				}
-
-				// ColumnUpdate expects *map[string]interface{} for Meta
-				metaPtr := meta
-				titleStr := cfg.Title
-				if titleStr == "" {
-					titleStr = header
-				}
-				updateReq := dto.ColumnUpdate{
-					Title: &titleStr,
-					UIDT:  &colType,
-					DT:    &colDT,
-					Meta:  &metaPtr,
-				}
-				if _, err := s.tableService.UpdateColumn(ctx, schemaName, titleColID, updateReq); err != nil {
-					lg.Error().Stack().Err(err).Str("column", titleColID).Msg("Failed to update Title column with config meta")
-					return nil, err
-				}
-			}
-			continue
-		}
-
-		// Use provided field type or default to text
-		colType := cfg.UIDT
-		if colType == "" {
-			colType = "text"
-		}
-
-		// Use provided title or default to source name
-		colTitle := cfg.Title
-		if colTitle == "" {
-			colTitle = header
-		}
-
-		// Compute DT from UIDT (database type auto-generated from UI type)
-		colDT := s.getDatabaseType(colType)
-
-		// Use provided meta if present
-		meta := map[string]interface{}{}
-		if cfg.Meta != nil {
-			meta = cfg.Meta
-		}
-
-		// Default values are expected to come from meta["default_value"]
-		addColReq := dto.AddColumnRequest{
-			ModelID:     tableResp.Model.ID,
-			BaseID:      tableResp.Model.BaseID,
-			Title:       colTitle,
-			Description: "",
-			Meta:        meta,
-			UIDT:        colType,
-			DT:          colDT,
-			OrderIndex:  helpers.Float64Ptr(float64(i + 6)),
-			Virtual:     helpers.BoolPtr(false),
-			System:      helpers.BoolPtr(false),
-			CreatedBy:   req.CreatedBy,
-		}
-
-		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
+	for i, header := range params.Headers {
+		colResp, added, err := s.addColumnForHeader(params, header, i, configMap, lg)
 		if err != nil {
-			lg.Error().Stack().Err(err).Str("columnTitle", colTitle).Str("columnType", colType).Msg("Failed to add column with config")
 			return nil, err
 		}
-
-		columnMap[i] = colResp
-		lg.Debug().Str("columnTitle", colTitle).Str("columnType", colType).Msg("Column added with config")
+		if added {
+			columnMap[i] = colResp
+			lg.Debug().Str("columnTitle", colResp.Title).Str("columnType", colResp.UIDT).Msg("Column added with config")
+		}
 	}
 
 	lg.Info().Int("columnsAdded", len(columnMap)).Msg("All columns added with config")
 	return columnMap, nil
 }
 
-// buildRecordsWithConfig builds records using column configuration
-func (s *importService) buildRecordsWithConfig(dataRows [][]string, columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, columnMap map[int]dto.ColumnResponse, req dto.CreateTableRequest, headers []string, lg *zerolog.Logger) []map[string]interface{} {
-	lg.Info().Int("recordCount", len(dataRows)).Msg("Starting to insert records with config")
-
-	// Build config map for quick lookup
-	configMap := make(map[string]dto.ColumnConfig)
-	for _, cfg := range columnConfigs {
-		configMap[cfg.ColumnName] = cfg
+// updateTitleColumnWithConfig updates the existing Title column with provided config metadata
+func (s *importService) updateTitleColumnWithConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, lg *zerolog.Logger) error {
+	// find the existing Title column id
+	titleColID := ""
+	for _, c := range params.TableResp.Columns {
+		if c.Title == "Title" {
+			titleColID = c.ID.String()
+			break
+		}
+	}
+	if titleColID == "" {
+		lg.Warn().Msg("Title column not found to update with config")
+		return nil
 	}
 
-	newRecords := []map[string]interface{}{}
+	// prepare update with meta/type/title
+	colType := cfg.UIDT
+	if colType == "" {
+		colType = "text"
+	}
+	colDT := s.getDatabaseType(colType)
 
-	for _, row := range dataRows {
-		record := map[string]interface{}{
-			"created_by":         req.CreatedBy,
-			"last_modified_by":   req.CreatedBy,
-			"created_time":       time.Now().UTC(),
-			"last_modified_time": time.Now().UTC(),
-		}
-
-		for i, cellVal := range row {
-			if i >= len(headers) {
-				break
-			}
-
-			header := headers[i]
-			cfg, configExists := configMap[header]
-
-			// Determine if this header is the designated primary/title column.
-			primaryMatch := false
-			if primary != nil && primary.ColumnName == header {
-				primaryMatch = true
-				cfg = *primary
-				configExists = true
-			}
-
-			// Handle title column (only if primary explicitly matches this header)
-			if primaryMatch {
-				// title column: prefer default from meta if present
-				var defaultVal string
-				if cfg.Meta != nil {
-					if dv, ok := cfg.Meta["default_value"]; ok {
-						if sVal, ok2 := dv.(string); ok2 {
-							defaultVal = sVal
-						}
-					}
-				}
-
-				if cellVal == "" && defaultVal != "" {
-					record["title"] = s.convertValue(defaultVal, cfg.UIDT)
-				} else if cellVal != "" {
-					record["title"] = s.convertValue(cellVal, cfg.UIDT)
-				}
-				continue
-			}
-
-			// Skip if column not in config (frontend controls what config is sent)
-			if !configExists {
-				continue
-			}
-
-			// Skip if no column map entry (shouldn't happen)
-			colResp, colExists := columnMap[i]
-			if !colExists {
-				continue
-			}
-
-			// Use cell value or default value
-			var val interface{}
-			// Determine default value: prefer meta["default_value"] then cfg.DefaultValue
-			var defaultVal string
-			if cfg.Meta != nil {
-				if dv, ok := cfg.Meta["default_value"]; ok {
-					if sVal, ok2 := dv.(string); ok2 {
-						defaultVal = sVal
-					}
-				}
-			}
-
-			if cellVal == "" && defaultVal != "" {
-				val = s.convertValue(defaultVal, cfg.UIDT)
-			} else if cellVal != "" {
-				val = s.convertValue(cellVal, cfg.UIDT)
-			} else {
-				continue // Skip empty cells with no default
-			}
-
-			record[fmt.Sprintf("\"%s\"", colResp.ColumnName)] = val
-		}
-
-		newRecords = append(newRecords, record)
+	meta := map[string]interface{}{}
+	if cfg.Meta != nil {
+		meta = cfg.Meta
 	}
 
-	return newRecords
+	metaPtr := meta
+	titleStr := cfg.Title
+	if titleStr == "" {
+		titleStr = header
+	}
+	updateReq := dto.ColumnUpdate{
+		Title: &titleStr,
+		UIDT:  &colType,
+		DT:    &colDT,
+		Meta:  &metaPtr,
+	}
+	if _, err := s.tableService.UpdateColumn(params.Ctx, params.SchemaName, titleColID, updateReq); err != nil {
+		lg.Error().Stack().Err(err).Str("column", titleColID).Msg("Failed to update Title column with config meta")
+		return err
+	}
+	return nil
 }
+
+// createColumnFromConfig constructs AddColumnRequest and calls tableService.AddColumn
+func (s *importService) createColumnFromConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, i int, lg *zerolog.Logger) (dto.ColumnResponse, error) {
+	colType := cfg.UIDT
+	if colType == "" {
+		colType = "text"
+	}
+
+	colTitle := cfg.Title
+	if colTitle == "" {
+		colTitle = header
+	}
+
+	colDT := s.getDatabaseType(colType)
+
+	meta := map[string]interface{}{}
+	if cfg.Meta != nil {
+		meta = cfg.Meta
+	}
+
+	addColReq := dto.AddColumnRequest{
+		ModelID:     params.TableResp.Model.ID,
+		BaseID:      params.TableResp.Model.BaseID,
+		Title:       colTitle,
+		Description: "",
+		Meta:        meta,
+		UIDT:        colType,
+		DT:          colDT,
+		OrderIndex:  helpers.Float64Ptr(float64(i + 6)),
+		Virtual:     helpers.BoolPtr(false),
+		System:      helpers.BoolPtr(false),
+		CreatedBy:   params.Req.CreatedBy,
+	}
+
+	colResp, err := s.tableService.AddColumn(params.Ctx, params.SchemaName, addColReq)
+	if err != nil {
+		lg.Error().Stack().Err(err).Str("columnTitle", colTitle).Str("columnType", colType).Msg("Failed to add column with config")
+		return dto.ColumnResponse{}, err
+	}
+	return colResp, nil
+}
+
+// addColumnForHeader processes a single header: update title column or create new column
+func (s *importService) addColumnForHeader(params dto.AddColumnsWithConfigParams, header string, i int, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (dto.ColumnResponse, bool, error) {
+	if header == "" {
+		return dto.ColumnResponse{}, false, nil
+	}
+
+	cfg, exists := configMap[header]
+	primaryMatch := false
+	if params.Primary != nil && params.Primary.ColumnName == header {
+		primaryMatch = true
+		cfg = *params.Primary
+		exists = true
+	}
+
+	if !exists {
+		lg.Debug().Str("columnName", header).Msg("Skipping column not in config")
+		return dto.ColumnResponse{}, false, nil
+	}
+
+	if primaryMatch {
+		if err := s.updateTitleColumnWithConfig(params, cfg, header, lg); err != nil {
+			return dto.ColumnResponse{}, false, err
+		}
+		return dto.ColumnResponse{}, false, nil
+	}
+
+	colResp, err := s.createColumnFromConfig(params, cfg, header, i, lg)
+	if err != nil {
+		return dto.ColumnResponse{}, false, err
+	}
+	return colResp, true, nil
+}
+
+
 
 // saveErrorRows writes error rows, empty rows, and duplicate rows to a text log file
 func (s *importService) saveErrorRows(headers []string, errorRows [][]string, errorMessages []string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string, lg *zerolog.Logger) (string, error) {
@@ -1228,187 +1059,22 @@ func (s *importService) saveErrorRows(headers []string, errorRows [][]string, er
 
 	// Write ALL ERRORS section FIRST - comprehensive error details
 	if len(errorRows) > 0 {
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n")
-		content.WriteString("ALL VALIDATION ERRORS (Detailed Error Analysis)\n")
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n\n")
-
-		for i, errorMsg := range errorMessages {
-			content.WriteString(fmt.Sprintf("[Error Set %d]\n", i+1))
-			content.WriteString(fmt.Sprintf("%s\n", errorMsg))
-			content.WriteString("\n")
-		}
-		content.WriteString(strings.Repeat("-", 100))
-		content.WriteString("\n\n")
-
-		// Write ERROR TYPE SUMMARY - Only CSV validation errors
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n")
-		content.WriteString("CSV VALIDATION ERROR TYPES\n")
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n\n")
-
-		errorTypeCount := make(map[string]int)
-		for _, errMsg := range errorMessages {
-			// Type format errors
-			if strings.Contains(errMsg, "Invalid number format") {
-				errorTypeCount["Invalid Number Format"]++
-			} else if strings.Contains(errMsg, "Invalid decimal format") {
-				errorTypeCount["Invalid Decimal Format"]++
-			} else if strings.Contains(errMsg, "Invalid boolean value") {
-				errorTypeCount["Invalid Boolean Format"]++
-			} else if strings.Contains(errMsg, "Invalid email format") {
-				errorTypeCount["Invalid Email Format"]++
-			} else if strings.Contains(errMsg, "Invalid JSON format") {
-				errorTypeCount["Invalid JSON Format"]++
-			} else if strings.Contains(errMsg, "Text length") {
-				errorTypeCount["Field Length Violation"]++
-			} else if strings.Contains(errMsg, "exceeds maximum") || strings.Contains(errMsg, "is less than minimum") {
-				errorTypeCount["Value Out of Range"]++
-			} else if strings.Contains(errMsg, "out of range for") {
-				errorTypeCount["Value Out of Range"]++
-			}
-		}
-
-		// Sort error types for consistent output
-		errorTypes := make([]string, 0, len(errorTypeCount))
-		for errType := range errorTypeCount {
-			errorTypes = append(errorTypes, errType)
-		}
-		sort.Strings(errorTypes)
-
-		for _, errType := range errorTypes {
-			content.WriteString(fmt.Sprintf("  • %s: %d errors\n", errType, errorTypeCount[errType]))
-		}
-		content.WriteString("\n")
-		content.WriteString(strings.Repeat("-", 100))
-		content.WriteString("\n\n")
+		content.WriteString(s.buildAllValidationErrorsBlock(errorMessages))
+		content.WriteString(s.buildErrorTypeSummary(errorMessages))
 	}
 
 	// Write EMPTY ROWS section
 	if len(emptyRowsWithLineNumbers) > 0 {
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n")
-		content.WriteString("EMPTY ROWS (All cells are empty)\n")
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n\n")
-
-		lineNumbers := make([]int, 0, len(emptyRowsWithLineNumbers))
-		for lineNum := range emptyRowsWithLineNumbers {
-			lineNumbers = append(lineNumbers, lineNum)
-		}
-		sort.Ints(lineNumbers)
-
-		for idx, lineNum := range lineNumbers {
-			row := emptyRowsWithLineNumbers[lineNum]
-			content.WriteString(fmt.Sprintf("[Empty Row %d] Line %d in CSV file\n", idx+1, lineNum))
-			content.WriteString(fmt.Sprintf("Row Data: %v\n", row))
-			content.WriteString("\n")
-		}
+		content.WriteString(s.buildEmptyRowsHumanSection(emptyRowsWithLineNumbers))
 	}
 
 	// Write DUPLICATE ROWS section
 	if len(duplicateRowsWithLineNumbers) > 0 {
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n")
-		content.WriteString("DUPLICATE ROWS (Identical rows found)\n")
-		content.WriteString(strings.Repeat("=", 100))
-		content.WriteString("\n\n")
-
-		lineNumbers := make([]int, 0, len(duplicateRowsWithLineNumbers))
-		for lineNum := range duplicateRowsWithLineNumbers {
-			lineNumbers = append(lineNumbers, lineNum)
-		}
-		sort.Ints(lineNumbers)
-
-		for idx, lineNum := range lineNumbers {
-			row := duplicateRowsWithLineNumbers[lineNum]
-			content.WriteString(fmt.Sprintf("[Duplicate Row %d] Line %d in CSV file\n", idx+1, lineNum))
-			content.WriteString(fmt.Sprintf("Row Data: %v\n", row))
-			content.WriteString("\n")
-		}
+		content.WriteString(s.buildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers))
 	}
 
-	// Write CSV format section
-	content.WriteString(strings.Repeat("=", 100))
-	content.WriteString("\n")
-	content.WriteString("RAW DATA (CSV Format)\n")
-	content.WriteString(strings.Repeat("=", 100))
-	content.WriteString("\n\n")
-
-	// Headers
-	content.WriteString(strings.Join(headers, ","))
-	content.WriteString("\n")
-
-	// Error rows in CSV format
-	if len(errorRows) > 0 {
-		content.WriteString("# ERROR ROWS:\n")
-		for _, row := range errorRows {
-			escapedRow := make([]string, len(row))
-			for j, cell := range row {
-				if strings.Contains(cell, ",") || strings.Contains(cell, "\"") || strings.Contains(cell, "\n") {
-					escapedRow[j] = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
-				} else {
-					escapedRow[j] = cell
-				}
-			}
-			content.WriteString(strings.Join(escapedRow, ","))
-			content.WriteString("\n")
-		}
-		content.WriteString("\n")
-	}
-
-	// Empty rows in CSV format
-	if len(emptyRowsWithLineNumbers) > 0 {
-		content.WriteString("# EMPTY ROWS:\n")
-		lineNumbers := make([]int, 0, len(emptyRowsWithLineNumbers))
-		for lineNum := range emptyRowsWithLineNumbers {
-			lineNumbers = append(lineNumbers, lineNum)
-		}
-		sort.Ints(lineNumbers)
-
-		for _, lineNum := range lineNumbers {
-			row := emptyRowsWithLineNumbers[lineNum]
-			escapedRow := make([]string, len(row))
-			for j, cell := range row {
-				if strings.Contains(cell, ",") || strings.Contains(cell, "\"") || strings.Contains(cell, "\n") {
-					escapedRow[j] = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
-				} else {
-					escapedRow[j] = cell
-				}
-			}
-			content.WriteString(fmt.Sprintf("# Line %d: ", lineNum))
-			content.WriteString(strings.Join(escapedRow, ","))
-			content.WriteString("\n")
-		}
-		content.WriteString("\n")
-	}
-
-	// Duplicate rows in CSV format
-	if len(duplicateRowsWithLineNumbers) > 0 {
-		content.WriteString("# DUPLICATE ROWS:\n")
-		lineNumbers := make([]int, 0, len(duplicateRowsWithLineNumbers))
-		for lineNum := range duplicateRowsWithLineNumbers {
-			lineNumbers = append(lineNumbers, lineNum)
-		}
-		sort.Ints(lineNumbers)
-
-		for _, lineNum := range lineNumbers {
-			row := duplicateRowsWithLineNumbers[lineNum]
-			escapedRow := make([]string, len(row))
-			for j, cell := range row {
-				if strings.Contains(cell, ",") || strings.Contains(cell, "\"") || strings.Contains(cell, "\n") {
-					escapedRow[j] = "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
-				} else {
-					escapedRow[j] = cell
-				}
-			}
-			content.WriteString(fmt.Sprintf("# Line %d: ", lineNum))
-			content.WriteString(strings.Join(escapedRow, ","))
-			content.WriteString("\n")
-		}
-	}
+	// RAW DATA (CSV Format)
+	content.WriteString(s.buildRawCSVSection(headers, errorRows, emptyRowsWithLineNumbers, duplicateRowsWithLineNumbers))
 
 	// Write to file
 	if err := os.WriteFile(errorFile, []byte(content.String()), 0644); err != nil {
@@ -1420,6 +1086,184 @@ func (s *importService) saveErrorRows(headers []string, errorRows [][]string, er
 
 	// Return file content directly instead of path
 	return content.String(), nil
+}
+
+// escapeCSVCell returns a CSV-escaped cell (quotes doubled and wrapped) when needed
+func (s *importService) escapeCSVCell(cell string) string {
+	if strings.Contains(cell, ",") || strings.Contains(cell, "\"") || strings.Contains(cell, "\n") {
+		return "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
+	}
+	return cell
+}
+
+// escapeRowForCSV returns a slice of escaped cells for a row
+func (s *importService) escapeRowForCSV(row []string) []string {
+	escaped := make([]string, len(row))
+	for i, cell := range row {
+		escaped[i] = s.escapeCSVCell(cell)
+	}
+	return escaped
+}
+
+// sortedLineNumbers returns sorted keys from a map[int][]string
+func (s *importService) sortedLineNumbers(m map[int][]string) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys
+}
+
+// buildErrorTypeSummary builds the CSV validation error types summary block
+func (s *importService) buildErrorTypeSummary(errorMessages []string) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n")
+	b.WriteString("CSV VALIDATION ERROR TYPES\n")
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n\n")
+
+	errorTypeCount := make(map[string]int)
+	for _, errMsg := range errorMessages {
+		if strings.Contains(errMsg, "Invalid number format") {
+			errorTypeCount["Invalid Number Format"]++
+		} else if strings.Contains(errMsg, "Invalid decimal format") {
+			errorTypeCount["Invalid Decimal Format"]++
+		} else if strings.Contains(errMsg, "Invalid boolean value") {
+			errorTypeCount["Invalid Boolean Format"]++
+		} else if strings.Contains(errMsg, "Invalid email format") {
+			errorTypeCount["Invalid Email Format"]++
+		} else if strings.Contains(errMsg, "Invalid JSON format") {
+			errorTypeCount["Invalid JSON Format"]++
+		} else if strings.Contains(errMsg, "Text length") {
+			errorTypeCount["Field Length Violation"]++
+		} else if strings.Contains(errMsg, "exceeds maximum") || strings.Contains(errMsg, "is less than minimum") {
+			errorTypeCount["Value Out of Range"]++
+		} else if strings.Contains(errMsg, "out of range for") {
+			errorTypeCount["Value Out of Range"]++
+		}
+	}
+
+	// Sort error types for consistent output
+	errorTypes := make([]string, 0, len(errorTypeCount))
+	for errType := range errorTypeCount {
+		errorTypes = append(errorTypes, errType)
+	}
+	sort.Strings(errorTypes)
+
+	for _, errType := range errorTypes {
+		b.WriteString(fmt.Sprintf("  • %s: %d errors\n", errType, errorTypeCount[errType]))
+	}
+	b.WriteString("\n")
+	b.WriteString(strings.Repeat("-", 100))
+	b.WriteString("\n\n")
+	return b.String()
+}
+
+// buildAllValidationErrorsBlock builds the detailed ALL VALIDATION ERRORS block
+func (s *importService) buildAllValidationErrorsBlock(errorMessages []string) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n")
+	b.WriteString("ALL VALIDATION ERRORS (Detailed Error Analysis)\n")
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n\n")
+
+	for i, errorMsg := range errorMessages {
+		b.WriteString(fmt.Sprintf("[Error Set %d]\n", i+1))
+		b.WriteString(fmt.Sprintf("%s\n", errorMsg))
+		b.WriteString("\n")
+	}
+	b.WriteString(strings.Repeat("-", 100))
+	b.WriteString("\n\n")
+	return b.String()
+}
+
+// buildEmptyRowsHumanSection builds the human-readable EMPTY ROWS section
+func (s *importService) buildEmptyRowsHumanSection(emptyRowsWithLineNumbers map[int][]string) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n")
+	b.WriteString("EMPTY ROWS (All cells are empty)\n")
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n\n")
+
+	lineNumbers := s.sortedLineNumbers(emptyRowsWithLineNumbers)
+	for idx, lineNum := range lineNumbers {
+		row := emptyRowsWithLineNumbers[lineNum]
+		b.WriteString(fmt.Sprintf("[Empty Row %d] Line %d in CSV file\n", idx+1, lineNum))
+		b.WriteString(fmt.Sprintf("Row Data: %v\n", row))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// buildDuplicateRowsHumanSection builds the human-readable DUPLICATE ROWS section
+func (s *importService) buildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers map[int][]string) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n")
+	b.WriteString("DUPLICATE ROWS (Identical rows found)\n")
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n\n")
+
+	lineNumbers := s.sortedLineNumbers(duplicateRowsWithLineNumbers)
+	for idx, lineNum := range lineNumbers {
+		row := duplicateRowsWithLineNumbers[lineNum]
+		b.WriteString(fmt.Sprintf("[Duplicate Row %d] Line %d in CSV file\n", idx+1, lineNum))
+		b.WriteString(fmt.Sprintf("Row Data: %v\n", row))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// buildRawCSVSection builds the RAW DATA (CSV Format) block including headers and CSV rows
+func (s *importService) buildRawCSVSection(headers []string, errorRows [][]string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n")
+	b.WriteString("RAW DATA (CSV Format)\n")
+	b.WriteString(strings.Repeat("=", 100))
+	b.WriteString("\n\n")
+
+	// Headers
+	b.WriteString(strings.Join(headers, ","))
+	b.WriteString("\n")
+
+	// Error rows in CSV format
+	if len(errorRows) > 0 {
+		b.WriteString("# ERROR ROWS:\n")
+		for _, row := range errorRows {
+			b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Empty rows in CSV format
+	if len(emptyRowsWithLineNumbers) > 0 {
+		b.WriteString("# EMPTY ROWS:\n")
+		for _, lineNum := range s.sortedLineNumbers(emptyRowsWithLineNumbers) {
+			row := emptyRowsWithLineNumbers[lineNum]
+			b.WriteString(fmt.Sprintf("# Line %d: ", lineNum))
+			b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Duplicate rows in CSV format
+	if len(duplicateRowsWithLineNumbers) > 0 {
+		b.WriteString("# DUPLICATE ROWS:\n")
+		for _, lineNum := range s.sortedLineNumbers(duplicateRowsWithLineNumbers) {
+			row := duplicateRowsWithLineNumbers[lineNum]
+			b.WriteString(fmt.Sprintf("# Line %d: ", lineNum))
+			b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 // getDefaultValue extracts default value from column config metadata
@@ -1437,102 +1281,88 @@ func (s *importService) getDefaultValue(cfg *dto.ColumnConfig) string {
 
 // validateFieldValue performs comprehensive validation on a cell value for all UIDT types
 func (s *importService) validateFieldValue(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
-	var errors []string
-
 	// Skip validation for empty values
 	if cellVal == "" {
+		return nil
+	}
+
+	switch fieldType {
+	case "number":
+		return s.validateNumberField(cellVal, columnName, meta)
+	case "decimal":
+		return s.validateDecimalField(cellVal, columnName, meta)
+	case "boolean":
+		return s.validateBooleanField(cellVal, columnName)
+	case "email":
+		return s.validateEmailField(cellVal, columnName)
+	case "json":
+		return s.validateJSONField(cellVal, columnName)
+	case "text", "longText":
+		return s.validateTextField(cellVal, columnName, fieldType, meta)
+	default:
+		return nil
+	}
+}
+
+// validateNumberField validates integer number fields including range and meta bounds
+func (s *importService) validateNumberField(cellVal string, columnName string, meta map[string]interface{}) []string {
+	var errors []string
+
+	// For integer field, reject decimal values
+	if strings.Contains(cellVal, ".") {
+		errors = append(errors, fmt.Sprintf("Column '%s' [number]: Invalid number format '%s' - integer field cannot contain decimal point", columnName, cellVal))
 		return errors
 	}
 
-	// Type-specific validation
-	switch fieldType {
-	case "number":
-		// For integer field, reject decimal values
-		if strings.Contains(cellVal, ".") {
-			errors = append(errors, fmt.Sprintf("Column '%s' [number]: Invalid number format '%s' - integer field cannot contain decimal point", columnName, cellVal))
-		} else {
-			// Try parsing as int64
-			if intVal, err := strconv.ParseInt(cellVal, 10, 64); err != nil {
-				errors = append(errors, fmt.Sprintf("Column '%s' [number]: Invalid number format '%s' - cannot parse as integer", columnName, cellVal))
-			} else {
-				// Check if value is within int32 range (PostgreSQL integer type)
-				if intVal > math.MaxInt32 || intVal < math.MinInt32 {
-					errors = append(errors, fmt.Sprintf("Column '%s' [number]: Value %s is out of range for integer type (must be between %d and %d)", columnName, cellVal, math.MinInt32, math.MaxInt32))
-				}
-			}
+	if intVal, err := strconv.ParseInt(cellVal, 10, 64); err != nil {
+		errors = append(errors, fmt.Sprintf("Column '%s' [number]: Invalid number format '%s' - cannot parse as integer", columnName, cellVal))
+	} else {
+		if intVal > math.MaxInt32 || intVal < math.MinInt32 {
+			errors = append(errors, fmt.Sprintf("Column '%s' [number]: Value %s is out of range for integer type (must be between %d and %d)", columnName, cellVal, math.MinInt32, math.MaxInt32))
 		}
-		// Check min/max bounds from meta
-		if meta != nil {
-			if minVal, ok := meta["min"]; ok {
-				if minFloat, ok2 := minVal.(float64); ok2 {
-					if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v < minFloat {
-						errors = append(errors, fmt.Sprintf("Column '%s' [number]: Value %s is less than minimum %v", columnName, cellVal, minFloat))
-					}
-				}
-			}
-			if maxVal, ok := meta["max"]; ok {
-				if maxFloat, ok2 := maxVal.(float64); ok2 {
-					if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v > maxFloat {
-						errors = append(errors, fmt.Sprintf("Column '%s' [number]: Value %s exceeds maximum %v", columnName, cellVal, maxFloat))
-					}
-				}
-			}
-		}
+	}
 
-	case "decimal":
-		if _, err := strconv.ParseFloat(cellVal, 64); err != nil {
-			errors = append(errors, fmt.Sprintf("Column '%s' [decimal]: Invalid decimal format '%s' - must be a valid floating point number", columnName, cellVal))
-		}
-		// Check min/max bounds
-		if meta != nil {
-			if minVal, ok := meta["min"]; ok {
-				if minFloat, ok2 := minVal.(float64); ok2 {
-					if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v < minFloat {
-						errors = append(errors, fmt.Sprintf("Column '%s' [decimal]: Value %s is less than minimum %v", columnName, cellVal, minFloat))
-					}
-				}
-			}
-			if maxVal, ok := meta["max"]; ok {
-				if maxFloat, ok2 := maxVal.(float64); ok2 {
-					if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v > maxFloat {
-						errors = append(errors, fmt.Sprintf("Column '%s' [decimal]: Value %s exceeds maximum %v", columnName, cellVal, maxFloat))
-					}
-				}
-			}
-		}
+	// Check numeric bounds using generic helper
+	if boundErrors := s.checkNumericBounds(cellVal, columnName, "number", meta); len(boundErrors) > 0 {
+		errors = append(errors, boundErrors...)
+	}
 
-	case "boolean":
-		lower := strings.ToLower(cellVal)
-		if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
-			errors = append(errors, fmt.Sprintf("Column '%s' [boolean]: Invalid boolean value '%s' - must be one of: true, false, 0, 1, yes, no", columnName, cellVal))
-		}
+	return errors
+}
 
-	case "email":
-		atIndex := strings.LastIndex(cellVal, "@")
-		if atIndex == -1 || atIndex == 0 || atIndex == len(cellVal)-1 {
-			errors = append(errors, fmt.Sprintf("Column '%s' [email]: Invalid email format '%s' - must contain @ with local and domain parts", columnName, cellVal))
-		} else {
-			domain := cellVal[atIndex+1:]
-			if !strings.Contains(domain, ".") {
-				errors = append(errors, fmt.Sprintf("Column '%s' [email]: Invalid email format '%s' - domain must contain a dot (.)", columnName, cellVal))
+// validateDecimalField validates floating point decimal fields and meta bounds
+func (s *importService) validateDecimalField(cellVal string, columnName string, meta map[string]interface{}) []string {
+	var errors []string
+	if _, err := strconv.ParseFloat(cellVal, 64); err != nil {
+		errors = append(errors, fmt.Sprintf("Column '%s' [decimal]: Invalid decimal format '%s' - must be a valid floating point number", columnName, cellVal))
+		return errors
+	}
+	// Check numeric bounds using generic helper
+	if boundErrors := s.checkNumericBounds(cellVal, columnName, "decimal", meta); len(boundErrors) > 0 {
+		errors = append(errors, boundErrors...)
+	}
+
+	return errors
+}
+
+// checkNumericBounds checks meta min/max bounds for numeric values and returns any errors
+func (s *importService) checkNumericBounds(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+	var errors []string
+	if meta == nil {
+		return nil
+	}
+
+	if minVal, ok := meta["min"]; ok {
+		if minFloat, ok2 := minVal.(float64); ok2 {
+			if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v < minFloat {
+				errors = append(errors, fmt.Sprintf("Column '%s' [%s]: Value %s is less than minimum %v", columnName, fieldType, cellVal, minFloat))
 			}
 		}
-
-	case "json":
-		var js interface{}
-		if err := json.Unmarshal([]byte(cellVal), &js); err != nil {
-			errors = append(errors, fmt.Sprintf("Column '%s' [json]: Invalid JSON format '%s' - %v", columnName, cellVal, err))
-		}
-
-	case "text", "longText":
-		// Check max length from meta
-		if meta != nil {
-			if maxLen, ok := meta["max_length"]; ok {
-				if maxLenInt, ok2 := maxLen.(float64); ok2 {
-					if len(cellVal) > int(maxLenInt) {
-						errors = append(errors, fmt.Sprintf("Column '%s' [%s]: Text length %d exceeds maximum length of %d characters", columnName, fieldType, len(cellVal), int(maxLenInt)))
-					}
-				}
+	}
+	if maxVal, ok := meta["max"]; ok {
+		if maxFloat, ok2 := maxVal.(float64); ok2 {
+			if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v > maxFloat {
+				errors = append(errors, fmt.Sprintf("Column '%s' [%s]: Value %s exceeds maximum %v", columnName, fieldType, cellVal, maxFloat))
 			}
 		}
 	}
@@ -1540,125 +1370,72 @@ func (s *importService) validateFieldValue(cellVal string, columnName string, fi
 	return errors
 }
 
+// validateBooleanField validates boolean-like values
+func (s *importService) validateBooleanField(cellVal string, columnName string) []string {
+	lower := strings.ToLower(cellVal)
+	if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
+		return []string{fmt.Sprintf("Column '%s' [boolean]: Invalid boolean value '%s' - must be one of: true, false, 0, 1, yes, no", columnName, cellVal)}
+	}
+	return nil
+}
+
+// validateEmailField performs basic email format checks
+func (s *importService) validateEmailField(cellVal string, columnName string) []string {
+	atIndex := strings.LastIndex(cellVal, "@")
+	if atIndex == -1 || atIndex == 0 || atIndex == len(cellVal)-1 {
+		return []string{fmt.Sprintf("Column '%s' [email]: Invalid email format '%s' - must contain @ with local and domain parts", columnName, cellVal)}
+	}
+	domain := cellVal[atIndex+1:]
+	if !strings.Contains(domain, ".") {
+		return []string{fmt.Sprintf("Column '%s' [email]: Invalid email format '%s' - domain must contain a dot (.)", columnName, cellVal)}
+	}
+	return nil
+}
+
+// validateJSONField checks if the value is valid JSON
+func (s *importService) validateJSONField(cellVal string, columnName string) []string {
+	var js interface{}
+	if err := json.Unmarshal([]byte(cellVal), &js); err != nil {
+		return []string{fmt.Sprintf("Column '%s' [json]: Invalid JSON format '%s' - %v", columnName, cellVal, err)}
+	}
+	return nil
+}
+
+// validateTextField validates text/longText fields against max_length meta
+func (s *importService) validateTextField(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+	if meta != nil {
+		if maxLen, ok := meta["max_length"]; ok {
+			if maxLenInt, ok2 := maxLen.(float64); ok2 {
+				if len(cellVal) > int(maxLenInt) {
+					return []string{fmt.Sprintf("Column '%s' [%s]: Text length %d exceeds maximum length of %d characters", columnName, fieldType, len(cellVal), int(maxLenInt))}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // buildRecordsWithConfigAndErrors builds records using column configuration and tracks comprehensive error rows
-func (s *importService) buildRecordsWithConfigAndErrors(dataRows [][]string, columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, columnMap map[int]dto.ColumnResponse, req dto.CreateTableRequest, headers []string, settings dto.ImportSettings, lg *zerolog.Logger) ([]map[string]interface{}, [][]string, []string) {
-	lg.Info().Int("recordCount", len(dataRows)).Msg("Starting to insert records with comprehensive error tracking")
+func (s *importService) buildRecordsWithConfigAndErrors(params dto.BuildRecordsWithConfigAndErrorsParams, lg *zerolog.Logger) ([]map[string]interface{}, [][]string, []string) {
+	lg.Info().Int("recordCount", len(params.DataRows)).Msg("Starting to insert records with comprehensive error tracking")
 
 	// Build config map for quick lookup
 	configMap := make(map[string]dto.ColumnConfig)
-	for _, cfg := range columnConfigs {
+	for _, cfg := range params.ColumnConfigs {
 		configMap[cfg.ColumnName] = cfg
 	}
 
-	newRecords := []map[string]interface{}{}
-	errorRows := [][]string{}
-	errorMessages := []string{}
+	var newRecords []map[string]interface{}
+	var errorRows [][]string
+	var errorMessages []string
 
-	for rowIdx, row := range dataRows {
-		record := map[string]interface{}{
-			"created_by":         req.CreatedBy,
-			"last_modified_by":   req.CreatedBy,
-			"created_time":       time.Now().UTC(),
-			"last_modified_time": time.Now().UTC(),
-		}
+	for rowIdx, row := range params.DataRows {
+		record, rowErrors, valid := s.buildRecordFromRow(rowIdx, row, params, configMap, lg)
 
-		rowErrors := []string{} // Collect all errors for this row
-		recordValid := true
-
-		for i, cellVal := range row {
-			if i >= len(headers) {
-				break
-			}
-
-			header := headers[i]
-			cfg, configExists := configMap[header]
-
-			// Determine if this header is the designated primary/title column
-			primaryMatch := false
-			if primary != nil && primary.ColumnName == header {
-				primaryMatch = true
-				cfg = *primary
-				configExists = true
-			}
-
-			// Handle title column (only if primary explicitly matches this header)
-			if primaryMatch {
-				defaultVal := s.getDefaultValue(&cfg)
-
-				// If cell is empty, use default if available
-				if cellVal == "" && defaultVal != "" {
-					valToValidate := defaultVal
-
-					// Run validation checks on default value
-					validationErrors := s.validateFieldValue(valToValidate, header, cfg.UIDT, cfg.Meta)
-					if len(validationErrors) > 0 {
-						recordValid = false
-						rowErrors = append(rowErrors, validationErrors...)
-					} else {
-						record["title"] = s.convertValue(defaultVal, cfg.UIDT)
-					}
-				} else if cellVal != "" {
-					// Validate the cell value
-					validationErrors := s.validateFieldValue(cellVal, header, cfg.UIDT, cfg.Meta)
-					if len(validationErrors) > 0 {
-						recordValid = false
-						rowErrors = append(rowErrors, validationErrors...)
-					} else {
-						record["title"] = s.convertValue(cellVal, cfg.UIDT)
-					}
-				}
-				// If both cellVal and defaultVal are empty, leave title as is (allow empty rows)
-				continue
-			}
-
-			// Skip if column not in config
-			if !configExists {
-				continue
-			}
-
-			// Skip if no column map entry
-			colResp, colExists := columnMap[i]
-			if !colExists {
-				continue
-			}
-
-			defaultVal := s.getDefaultValue(&cfg)
-
-			// Handle empty cells
-			if cellVal == "" && defaultVal == "" {
-				continue // Skip empty cells with no default
-			}
-
-			// Use cell value or default
-			valToValidate := cellVal
-			if cellVal == "" && defaultVal != "" {
-				valToValidate = defaultVal
-			}
-
-			// Run validation checks before conversion
-			validationErrors := s.validateFieldValue(valToValidate, header, cfg.UIDT, cfg.Meta)
-			if len(validationErrors) > 0 {
-				recordValid = false
-				rowErrors = append(rowErrors, validationErrors...)
-				continue // Skip this field if validation fails
-			}
-
-			// Convert value
-			val := s.convertValue(valToValidate, cfg.UIDT)
-			record[fmt.Sprintf("\"%s\"", colResp.ColumnName)] = val
-		}
-
-		// Check for empty title and allow it
-		if _, hasTitle := record["title"]; !hasTitle {
-			// Don't mark as invalid, just log it - allow empty rows to be inserted
-		}
-
-		if recordValid && len(rowErrors) == 0 {
+		if valid && len(rowErrors) == 0 {
 			newRecords = append(newRecords, record)
 		} else {
-			// Add error row with all error messages
 			errorRows = append(errorRows, row)
-			// Show ALL ERRORS FIRST for this row
 			errorMsg := fmt.Sprintf("Row %d Errors:\n%s\nRow Data: %v", rowIdx+2, strings.Join(rowErrors, "\n"), row)
 			errorMessages = append(errorMessages, errorMsg)
 			for _, errMsg := range rowErrors {
@@ -1669,6 +1446,125 @@ func (s *importService) buildRecordsWithConfigAndErrors(dataRows [][]string, col
 
 	lg.Info().Int("validRecords", len(newRecords)).Int("errorRows", len(errorRows)).Int("totalErrors", len(errorMessages)).Msg("Record processing completed with comprehensive error tracking")
 	return newRecords, errorRows, errorMessages
+}
+
+// buildRecordFromRow constructs a record from a CSV row based on provided params and returns any validation errors
+func (s *importService) buildRecordFromRow(rowIdx int, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (map[string]interface{}, []string, bool) {
+	record := map[string]interface{}{
+		"created_by":         params.Req.CreatedBy,
+		"last_modified_by":   params.Req.CreatedBy,
+		"created_time":       time.Now().UTC(),
+		"last_modified_time": time.Now().UTC(),
+	}
+	rowErrors, recordValid := s.populateRecordFromCells(record, row, params, configMap, lg)
+	return record, rowErrors, recordValid
+}
+
+// populateRecordFromCells iterates cells in a row and applies validations/conversions
+func (s *importService) populateRecordFromCells(record map[string]interface{}, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) ([]string, bool) {
+	rowErrors := []string{}
+	recordValid := true
+
+	for i, cellVal := range row {
+		if i >= len(params.Headers) {
+			break
+		}
+
+		header := params.Headers[i]
+		cfg, configExists := configMap[header]
+
+		// Primary column handling
+		if params.Primary != nil && params.Primary.ColumnName == header {
+			cfg = *params.Primary
+			configExists = true
+			if errs := s.applyPrimaryCell(record, header, cfg, cellVal); len(errs) > 0 {
+				recordValid = false
+				rowErrors = append(rowErrors, errs...)
+			}
+			continue
+		}
+
+		if errs, applied := s.applyNonPrimary(record, header, cfg, configExists, params, i, cellVal); len(errs) > 0 {
+			recordValid = false
+			rowErrors = append(rowErrors, errs...)
+			continue
+		} else if applied {
+			continue
+		}
+	}
+
+	return rowErrors, recordValid
+}
+
+// applyNonPrimary handles non-primary column processing for a single cell
+func (s *importService) applyNonPrimary(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool) {
+	if !configExists {
+		return nil, false
+	}
+
+	colResp, colExists := params.ColumnMap[i]
+	if !colExists {
+		return nil, false
+	}
+
+	return s.handleDataCellForRow(record, header, cfg, colResp, cellVal)
+}
+
+// applyPrimaryCell validates and applies the primary/title cell to the record
+func (s *importService) applyPrimaryCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, cellVal string) []string {
+	if val, errs := s.processTitleCell(header, cfg, cellVal); len(errs) > 0 {
+		return errs
+	} else if val != nil {
+		record["title"] = val
+	}
+	return nil
+}
+
+// handleDataCellForRow validates a non-primary data cell and applies it to the record if valid
+func (s *importService) handleDataCellForRow(record map[string]interface{}, header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) ([]string, bool) {
+	if key, val, errs, ok := s.processDataCell(header, cfg, colResp, cellVal); len(errs) > 0 {
+		return errs, false
+	} else if ok {
+		record[key] = val
+		return nil, true
+	}
+	return nil, false
+}
+
+// processTitleCell handles validation and conversion for the primary/title column
+func (s *importService) processTitleCell(header string, cfg dto.ColumnConfig, cellVal string) (interface{}, []string) {
+	defaultVal := s.getDefaultValue(&cfg)
+	if cellVal == "" && defaultVal == "" {
+		return nil, nil
+	}
+	valToValidate := cellVal
+	if cellVal == "" && defaultVal != "" {
+		valToValidate = defaultVal
+	}
+	validationErrors := s.validateFieldValue(valToValidate, header, cfg.UIDT, cfg.Meta)
+	if len(validationErrors) > 0 {
+		return nil, validationErrors
+	}
+	return s.convertValue(valToValidate, cfg.UIDT), nil
+}
+
+// processDataCell handles validation and conversion for non-primary data cells
+func (s *importService) processDataCell(header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) (string, interface{}, []string, bool) {
+	defaultVal := s.getDefaultValue(&cfg)
+	if cellVal == "" && defaultVal == "" {
+		return "", nil, nil, false
+	}
+	valToValidate := cellVal
+	if cellVal == "" && defaultVal != "" {
+		valToValidate = defaultVal
+	}
+	validationErrors := s.validateFieldValue(valToValidate, header, cfg.UIDT, cfg.Meta)
+	if len(validationErrors) > 0 {
+		return "", nil, validationErrors, false
+	}
+	val := s.convertValue(valToValidate, cfg.UIDT)
+	key := fmt.Sprintf(colNameFmt, colResp.ColumnName)
+	return key, val, nil, true
 }
 
 // validateColumnConfig validates that all column configs have required fields and valid source names
@@ -1686,53 +1582,61 @@ func (s *importService) validateColumnConfig(columnConfigs []dto.ColumnConfig, p
 		}
 	}
 
-	// Validate each column config
+	if err := s.validatePrimaryConfig(primary, headers, lg); err != nil {
+		return err
+	}
+
+	if err := s.validateEachColumnConfig(columnConfigs, validHeaders, lg); err != nil {
+		return err
+	}
+
+	lg.Info().Int("columnCount", len(columnConfigs)).Msg("Column config validation passed")
+	return nil
+}
+
+// validatePrimaryConfig checks the primary column configuration
+func (s *importService) validatePrimaryConfig(primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
+	if primary == nil {
+		lg.Error().Msg("primary_column is required in import config")
+		return fmt.Errorf("primary_column is required in import config")
+	}
+	if primary.ColumnName == "" {
+		lg.Error().Msg("PrimaryColumn provided but ColumnName is empty")
+		return fmt.Errorf("primary_column: column_name is required")
+	}
+
+	primaryValid := false
+	for _, h := range headers {
+		if h == primary.ColumnName {
+			primaryValid = true
+			break
+		}
+	}
+	if !primaryValid {
+		lg.Error().Str("primaryColumn", primary.ColumnName).Msg("PrimaryColumn does not match any CSV header")
+		return fmt.Errorf("primary_column '%s' not found in CSV headers", primary.ColumnName)
+	}
+	return nil
+}
+
+// validateEachColumnConfig iterates and checks each column config entry
+func (s *importService) validateEachColumnConfig(columnConfigs []dto.ColumnConfig, validHeaders map[string]bool, lg *zerolog.Logger) error {
 	for i, cfg := range columnConfigs {
-		// ColumnName is required
 		if cfg.ColumnName == "" {
 			lg.Error().Int("columnIndex", i).Msg("ColumnName is required for column config")
 			return fmt.Errorf("column %d: column_name is required", i)
 		}
-
-		// ColumnName must match a CSV header
 		if !validHeaders[cfg.ColumnName] {
 			lg.Error().Str("columnName", cfg.ColumnName).Msg("ColumnName does not match any CSV column header")
 			return fmt.Errorf("column %d: column_name '%s' not found in CSV headers", i, cfg.ColumnName)
 		}
-
-		// Primary column is required and must match a CSV header
-		if primary == nil {
-			lg.Error().Msg("primary_column is required in import config")
-			return fmt.Errorf("primary_column is required in import config")
-		}
-		if primary.ColumnName == "" {
-			lg.Error().Msg("PrimaryColumn provided but ColumnName is empty")
-			return fmt.Errorf("primary_column: column_name is required")
-		}
-		valid := false
-		for _, h := range headers {
-			if h == primary.ColumnName {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			lg.Error().Str("primaryColumn", primary.ColumnName).Msg("PrimaryColumn does not match any CSV header")
-			return fmt.Errorf("primary_column '%s' not found in CSV headers", primary.ColumnName)
-		}
-
-		// Title is the display name (optional)
 		if cfg.Title == "" {
 			lg.Warn().Str("columnName", cfg.ColumnName).Msg("Title is empty for column config, will use column name")
 		}
-
-		// UIDT (field type) should not be empty
 		if cfg.UIDT == "" {
 			lg.Warn().Str("columnName", cfg.ColumnName).Msg("UIDT is empty for column config, defaulting to text")
 		}
 	}
-
-	lg.Info().Int("columnCount", len(columnConfigs)).Msg("Column config validation passed")
 	return nil
 }
 
@@ -1762,6 +1666,24 @@ func (s *importService) removeEmptyRows(rows [][]string) [][]string {
 		}
 	}
 	return nonEmptyRows
+}
+
+// removeDuplicateRecords removes duplicate rows while preserving order
+func (s *importService) removeDuplicateRecords(rows [][]string) [][]string {
+	seen := make(map[string]bool)
+	var uniqueRows [][]string
+
+	for _, row := range rows {
+		// Create a key from the row by joining all cells
+		key := strings.Join(row, "|")
+
+		if !seen[key] {
+			seen[key] = true
+			uniqueRows = append(uniqueRows, row)
+		}
+	}
+
+	return uniqueRows
 }
 
 // countEmptyRows counts rows where all cells are empty without removing them
@@ -1910,4 +1832,68 @@ func (s *importService) logCleanedDataWithSettings(headers []string, dataRows []
 			Str("rowData", fmt.Sprintf("%v", dataRows[i])).
 			Msg("Sample cleaned row")
 	}
+}
+
+// prepareImportData parses CSV, validates column config, applies cleaning settings,
+// logs cleaned data and determines a unique table title. Returns headers, cleaned
+// data rows, statistics and the unique table title (or original on error).
+func (s *importService) prepareImportData(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string, lg *zerolog.Logger) ([]string, [][]string, *dto.ImportStatistics, string, error) {
+	headers, dataRows, err := s.parseCSV(file, lg)
+	if err != nil {
+		return nil, nil, nil, "", err
+	}
+
+	// Initialize statistics
+	stats := &dto.ImportStatistics{}
+
+	// Validate column config
+	if err := s.validateColumnConfig(req.Config.Columns, req.Config.PrimaryColumn, headers, lg); err != nil {
+		return nil, nil, stats, "", err
+	}
+
+	// Step 1: Apply TrimSpaces setting (if enabled)
+	if req.Config.Settings.TrimSpaces {
+		dataRows = s.cleanData(dataRows, req.Config.Settings)
+		lg.Info().Bool("trimSpaces", true).Msg("Trim spaces applied")
+	} else {
+		lg.Info().Bool("trimSpaces", false).Msg("Trim spaces skipped")
+	}
+
+	// Step 2: Count and optionally remove empty rows (after trimming for accurate detection)
+	emptyRowCount := s.countEmptyRows(dataRows)
+	stats.EmptyRows = emptyRowCount
+	if req.Config.Settings.RemoveEmptyRows {
+		dataRows = s.removeEmptyRows(dataRows)
+		stats.EmptyRowsSkipped = emptyRowCount
+		lg.Info().Bool("removeEmptyRows", true).Int("emptyRowsDetected", emptyRowCount).Int("emptyRowsRemoved", emptyRowCount).Msg("Empty rows removed")
+	} else {
+		stats.EmptyRowsSkipped = 0
+		lg.Info().Bool("removeEmptyRows", false).Int("emptyRowsDetected", emptyRowCount).Msg("Empty rows detected but not removed")
+	}
+
+	// Step 3: Count and optionally remove duplicates
+	duplicateRowCount := s.countDuplicateRecords(dataRows)
+	stats.DuplicateRows = duplicateRowCount
+	if req.Config.Settings.RemoveDuplicateRecords {
+		dataRows = s.removeDuplicateRecords(dataRows)
+		stats.DuplicatesRemoved = duplicateRowCount
+		lg.Info().Bool("removeDuplicates", true).Int("duplicatesDetected", duplicateRowCount).Int("duplicatesRemoved", duplicateRowCount).Int("recordsAfterDedup", len(dataRows)).Msg("Duplicate records removed")
+	} else {
+		stats.DuplicatesRemoved = 0
+		lg.Info().Bool("removeDuplicates", false).Int("duplicatesDetected", duplicateRowCount).Msg("Duplicate records detected but not removed")
+	}
+
+	// Always log and save cleaned data to JSON file (regardless of settings)
+	s.logCleanedDataWithSettings(headers, dataRows, stats, req.Config.Settings, lg)
+
+	// Check for duplicate table names and get unique name if needed
+	uniqueTableTitle := tableTitle
+	uniqueTableTitle, err = s.getUniqueTableName(ctx, schemaName, req.BaseID, tableTitle, lg)
+	if err != nil {
+		lg.Error().Stack().Err(err).Str("tableName", tableTitle).Msg("Failed to check for duplicate table names")
+		// Continue with original name if check fails
+		uniqueTableTitle = tableTitle
+	}
+
+	return headers, dataRows, stats, uniqueTableTitle, nil
 }

@@ -1127,8 +1127,8 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 		return
 	}
 
-	var importConfig dto.ImportConfig
-	if err := json.Unmarshal([]byte(configJSON), &importConfig); err != nil {
+	importConfig, err := parseImportConfig(configJSON)
+	if err != nil {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
 	}
@@ -1136,30 +1136,67 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 	// Map the provided primary column name to its matching column config.
 	primaryName := c.PostForm("primary_column")
 	if primaryName != "" {
-		found := false
-		for _, col := range importConfig.Columns {
-			if col.ColumnName == primaryName {
-				// take a copy to get a stable address
-				copyCol := col
-				importConfig.PrimaryColumn = &copyCol
-				found = true
-				break
-			}
-		}
-		if !found {
+		if err := setPrimaryColumn(&importConfig, primaryName); err != nil {
 			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "primary_column not found in config columns")
 			return
 		}
 	}
 
-	// Build import request
+	// Build import request from context values and config
+	title := c.PostForm("title")
+	if title == "" {
+		title = file.Filename
+	}
+
+	req := buildImportRequestFromContext(c, importConfig, title)
+
+	// Remove file extension from filename to use as table title
+	fileName := req.Title
+	if lastDot := strings.LastIndex(fileName, "."); lastDot != -1 {
+		fileName = fileName[:lastDot]
+	}
+
+	// Get schema from context
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	// Call import service with config
+	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, fileName)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, tableResp)
+}
+
+// parseImportConfig parses the import config JSON into a dto.ImportConfig
+func parseImportConfig(configJSON string) (dto.ImportConfig, error) {
+	var importConfig dto.ImportConfig
+	if err := json.Unmarshal([]byte(configJSON), &importConfig); err != nil {
+		return importConfig, err
+	}
+	return importConfig, nil
+}
+
+// setPrimaryColumn finds the named column in importConfig and sets PrimaryColumn
+func setPrimaryColumn(importConfig *dto.ImportConfig, primaryName string) error {
+	for _, col := range importConfig.Columns {
+		if col.ColumnName == primaryName {
+			copyCol := col
+			importConfig.PrimaryColumn = &copyCol
+			return nil
+		}
+	}
+	return errors.New("primary_column not found in config columns")
+}
+
+// buildImportRequestFromContext builds dto.ImportWithConfigRequest from the gin context and parsed config
+func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig, title string) dto.ImportWithConfigRequest {
 	var req dto.ImportWithConfigRequest
 	req.BaseID = c.PostForm("base_id")
 	req.WorkspaceID = c.PostForm("workspace_id")
-	req.Title = c.PostForm("title")
-	if req.Title == "" {
-		req.Title = file.Filename
-	}
+	req.Title = title
 	req.Description = c.PostForm("description")
 	req.Config = importConfig
 
@@ -1172,31 +1209,13 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 		}
 	}
 
-	// Get schema and user from context
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
 	}
 
-	// Remove file extension from filename to use as table title
-	fileName := req.Title
-
-	if lastDot := strings.LastIndex(fileName, "."); lastDot != -1 {
-		fileName = fileName[:lastDot]
-	}
-
-	// Call import service with config
-	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, fileName)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, tableResp)
+	return req
 }
 
 // @Summary      Bulk delete rows

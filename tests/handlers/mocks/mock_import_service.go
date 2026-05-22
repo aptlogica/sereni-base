@@ -13,6 +13,7 @@ import (
 	context "context"
 	multipart "mime/multipart"
 	reflect "reflect"
+
 	dto "github.com/aptlogica/sereni-base/internal/dto"
 
 	gomock "go.uber.org/mock/gomock"
@@ -55,4 +56,19 @@ func (m *MockImportService) Import(ctx context.Context, schemaName string, req d
 func (mr *MockImportServiceMockRecorder) Import(ctx, schemaName, req, file any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Import", reflect.TypeOf((*MockImportService)(nil).Import), ctx, schemaName, req, file)
+}
+
+// ImportWithConfig mocks base method for the newer interface.
+func (m *MockImportService) ImportWithConfig(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ImportWithConfig", ctx, schemaName, req, file, tableTitle)
+	ret0, _ := ret[0].(dto.ImportTableResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ImportWithConfig indicates an expected call of ImportWithConfig.
+func (mr *MockImportServiceMockRecorder) ImportWithConfig(ctx, schemaName, req, file, tableTitle any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ImportWithConfig", reflect.TypeOf((*MockImportService)(nil).ImportWithConfig), ctx, schemaName, req, file, tableTitle)
 }

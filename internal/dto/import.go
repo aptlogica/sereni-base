@@ -5,6 +5,10 @@
 
 package dto
 
+import (
+	"context"
+)
+
 type ImportSettings struct {
 	RemoveDuplicateRecords bool `json:"remove_duplicate_records"`
 	TrimSpaces             bool `json:"trim_extra_spaces"`
@@ -62,4 +66,25 @@ type ImportWithConfigRequest struct {
 	OrderIndex  float64      `form:"order_index" json:"order_index"`
 	Config      ImportConfig `form:"config" json:"config"`
 	CreatedBy   string       `form:"created_by" json:"created_by,omitempty"`
+}
+
+// Parameter objects to reduce function parameter counts (go:S107)
+type AddColumnsWithConfigParams struct {
+	Ctx           context.Context
+	SchemaName    string
+	Req           CreateTableRequest
+	Headers       []string
+	ColumnConfigs []ColumnConfig
+	Primary       *ColumnConfig
+	TableResp     TableResponse
+}
+
+type BuildRecordsWithConfigAndErrorsParams struct {
+	DataRows      [][]string
+	ColumnConfigs []ColumnConfig
+	Primary       *ColumnConfig
+	ColumnMap     map[int]ColumnResponse
+	Req           CreateTableRequest
+	Headers       []string
+	Settings      ImportSettings
 }
