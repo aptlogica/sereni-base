@@ -188,6 +188,12 @@ func (s *rbacManagementService) createDefaultPermissions(
 		{constant.ResourceCodes.Base, constant.ActionCodes.Update},
 		{constant.ResourceCodes.Base, constant.ActionCodes.Delete},
 
+		// Table permissions
+		{constant.ResourceCodes.Table, constant.ActionCodes.Read},
+		{constant.ResourceCodes.Table, constant.ActionCodes.Create},
+		{constant.ResourceCodes.Table, constant.ActionCodes.Update},
+		{constant.ResourceCodes.Table, constant.ActionCodes.Delete},
+
 		// Records permissions
 		{constant.ResourceCodes.Records, constant.ActionCodes.Read},
 		{constant.ResourceCodes.Records, constant.ActionCodes.Create},
@@ -221,6 +227,12 @@ func (s *rbacManagementService) createDefaultPermissions(
 		{constant.ResourceCodes.Webhooks, constant.ActionCodes.Create},
 		{constant.ResourceCodes.Webhooks, constant.ActionCodes.Update},
 		{constant.ResourceCodes.Webhooks, constant.ActionCodes.Delete},
+
+		// Automations permissions
+		{constant.ResourceCodes.Automations, constant.ActionCodes.Read},
+		{constant.ResourceCodes.Automations, constant.ActionCodes.Create},
+		{constant.ResourceCodes.Automations, constant.ActionCodes.Update},
+		{constant.ResourceCodes.Automations, constant.ActionCodes.Delete},
 	}
 
 	for _, combo := range permissionCombinations {
@@ -251,29 +263,146 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 	roleMap map[string]uuid.UUID,
 	permissionMap map[string]uuid.UUID,
 ) {
-	// Step 5: Assign permissions to roles
-	fmt.Println("\nAssigning permissions to roles...")
+	// // Step 5: Assign permissions to roles
+	// fmt.Println("\nAssigning permissions to roles...")
 
+	// ownerPermissions := []string{
+	// 	"workspace.read", "workspace.create", "workspace.update", "workspace.delete", "workspace.share", "workspace.invite",
+	// 	"base.read", "base.create", "base.update", "base.delete",
+	// 	"records.read", "records.create", "records.update", "records.delete", "records.export",
+	// 	"members.read", "members.invite", "members.manage",
+	// 	"views.read", "views.create", "views.update", "views.delete",
+	// 	"settings.read", "settings.update",
+	// 	"api_tokens.read", "api_tokens.create", "api_tokens.delete", "api_tokens.manage",
+	// 	"webhooks.read", "webhooks.create", "webhooks.update", "webhooks.delete",
+	// }
+
+	// s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.Owner, ownerPermissions, "owner")
+
+	// memberPermissions := []string{
+	// 	"base.read",
+	// 	"records.read", "records.create", "records.update", "records.delete", "records.export",
+	// 	"views.read", "views.create", "views.update", "views.delete",
+	// }
+
+	// s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.BaseMember, memberPermissions, "member")
+	// Owner - Full Access
 	ownerPermissions := []string{
 		"workspace.read", "workspace.create", "workspace.update", "workspace.delete", "workspace.share", "workspace.invite",
 		"base.read", "base.create", "base.update", "base.delete",
+		"table.read", "table.create", "table.update", "table.delete",
 		"records.read", "records.create", "records.update", "records.delete", "records.export",
 		"members.read", "members.invite", "members.manage",
 		"views.read", "views.create", "views.update", "views.delete",
 		"settings.read", "settings.update",
 		"api_tokens.read", "api_tokens.create", "api_tokens.delete", "api_tokens.manage",
 		"webhooks.read", "webhooks.create", "webhooks.update", "webhooks.delete",
+		"automations.read", "automations.create", "automations.update", "automations.delete",
 	}
 
-	s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.Owner, ownerPermissions, "owner")
+	s.assignPermissionsToRole(
+		ctx,
+		schema,
+		roleMap,
+		permissionMap,
+		constant.RBACRoleNames.Owner,
+		ownerPermissions,
+		"owner",
+	)
 
-	memberPermissions := []string{
+	// Co-Owner - Same as Owner
+	s.assignPermissionsToRole(
+		ctx,
+		schema,
+		roleMap,
+		permissionMap,
+		constant.RBACRoleNames.CoOwner,
+		ownerPermissions,
+		"co-owner",
+	)
+
+	// Workspace Maintainer
+	workspaceMaintainerPermissions := []string{
+		"workspace.read",
 		"base.read",
+
+		"table.read", "table.create", "table.update", "table.delete",
+
 		"records.read", "records.create", "records.update", "records.delete", "records.export",
+
+		"members.read", "members.invite",
+
 		"views.read", "views.create", "views.update", "views.delete",
 	}
 
-	s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.BaseMember, memberPermissions, "member")
+	s.assignPermissionsToRole(
+		ctx,
+		schema,
+		roleMap,
+		permissionMap,
+		constant.RBACRoleNames.WorkspaceMaintainer,
+		workspaceMaintainerPermissions,
+		"workspace-maintainer",
+	)
+
+	// Base Member - Limited Access
+	baseMemberPermissions := []string{
+		"base.read",
+
+		"table.read", "table.create", "table.update", "table.delete",
+
+		"records.read", "records.create", "records.update", "records.delete", "records.export",
+
+		"views.read", "views.create", "views.update", "views.delete",
+	}
+
+	s.assignPermissionsToRole(
+		ctx,
+		schema,
+		roleMap,
+		permissionMap,
+		constant.RBACRoleNames.BaseMember,
+		baseMemberPermissions,
+		"base-member",
+	)
+
+	// Workspace Maintainer Read Only
+	workspaceMaintainerReadOnlyPermissions := []string{
+		"workspace.read",
+		"base.read",
+		"table.read",
+		"records.read",
+		"views.read",
+		"members.read",
+	}
+
+	s.assignPermissionsToRole(
+		ctx,
+		schema,
+		roleMap,
+		permissionMap,
+		constant.RBACRoleNames.WorkspaceMaintainerRO,
+		workspaceMaintainerReadOnlyPermissions,
+		"workspace-maintainer-readonly",
+	)
+
+	// Base Member Read Only
+	baseMemberReadOnlyPermissions := []string{
+		"base.read",
+		"table.read",
+		"records.read",
+		"views.read",
+	}
+
+	s.assignPermissionsToRole(
+		ctx,
+		schema,
+		roleMap,
+		permissionMap,
+		constant.RBACRoleNames.BaseMemberReadOnly,
+		baseMemberReadOnlyPermissions,
+		"base-member-readonly",
+	)
 }
 
 func (s *rbacManagementService) assignPermissionsToRole(

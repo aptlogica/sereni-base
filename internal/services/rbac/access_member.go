@@ -7,10 +7,12 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	common "github.com/aptlogica/sereni-base/internal/services/common"
@@ -269,20 +271,83 @@ func (s *accessMemberService) GetUserPermissions(ctx context.Context, schemaName
 }
 
 func (s *accessMemberService) CheckUserPermission(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string, resourceCode, actionCode string) (bool, error) {
-	// Get user's permissions for this scope
-	permissions, err := s.GetUserPermissions(ctx, schemaName, userID, scopeType, scopeID)
+	if userID == "" {
+		return false, app_errors.ErrRecordNotFound
+	}
+	if scopeType == "" {
+		return false, app_errors.InvalidScopeType
+	}
+
+	// Step 1: membership check for this scope.
+	accessMembers, err := s.GetUserAccessByScope(ctx, schemaName, userID, scopeType, scopeID)
 	if err != nil {
 		return false, err
 	}
+	if len(accessMembers) == 0 {
+		return false, nil
+	}
 
-	// Check if any permission matches
-	for _, perm := range permissions {
-		if perm.ResourceCode == resourceCode && perm.ActionCode == actionCode {
-			return true, nil
+	// RBAC permissions are evaluated via role -> permission mappings
+	// (no explicit owner override here; owner/co-owner roles should
+	// carry required permissions via role_permissions in the DB).
+
+	// Step 2: joined permission check via DB function:
+	// access_members -> role_permissions -> permissions -> actions/resources.
+	functionName := "get_user_permission_access"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	scopeIDArg := ""
+	if scopeID != nil {
+		scopeIDArg = *scopeID
+	}
+
+	args := map[string]interface{}{
+		"p_schema_name":   schemaName,
+		"p_user_id":       userID,
+		"p_scope_type":    scopeType,
+		"p_scope_id":      scopeIDArg,
+		"p_resource_code": resourceCode,
+		"p_action_code":   actionCode,
+	}
+
+	records, err := s.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+	if err != nil {
+		return false, app_errors.LogDatabaseError(err, "failed to execute permission access function")
+	}
+
+	for _, record := range records {
+		if hasAccess, found := parsePermissionAccessResult(record, functionName); found {
+			return hasAccess, nil
 		}
 	}
 
 	return false, nil
+}
+
+// Note: owner/co-owner override logic removed; rely on RBAC role_permissions.
+
+func parsePermissionAccessResult(record map[string]interface{}, functionName string) (bool, bool) {
+	raw, exists := record[functionName]
+	if !exists {
+		return false, false
+	}
+
+	if jsonMap, ok := raw.(map[string]interface{}); ok {
+		if hasAccess, ok := jsonMap["has_access"].(bool); ok {
+			return hasAccess, true
+		}
+	}
+
+	if jsonString, ok := raw.(string); ok {
+		var jsonMap map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonString), &jsonMap); err == nil {
+			if hasAccess, ok := jsonMap["has_access"].(bool); ok {
+				return hasAccess, true
+			}
+		}
+	}
+
+	return false, false
 }
 
 func (s *accessMemberService) GetUserHighestRole(ctx context.Context, schemaName string, userID, scopeType string, scopeID *string) (*dto.AccessRoleDTO, error) {

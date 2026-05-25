@@ -9,8 +9,10 @@ import (
 	"net/http"
 
 	"github.com/aptlogica/sereni-base/internal/config"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
@@ -32,6 +34,7 @@ type Middlewares struct {
 	FileSizeLimitMiddleware                    func() gin.HandlerFunc
 	ScopeHeaderMiddleware                      func(scope string) gin.HandlerFunc
 	WorkspaceAndBaseAccessValidationMiddleware func(allowedAccess []string) gin.HandlerFunc
+	AccessMemberService                        interfaces.AccessMemberService
 }
 
 type Handlers struct {
@@ -100,14 +103,14 @@ func Setup(cfg *config.Config,
 	private := api.Group("")
 	private.Use(middlewareGroups.AuthMiddleware())
 	{
-		setupUserRoutes(private, handlerGroups)
-		setupOrganizationRoutes(private, handlerGroups)
-		setupWorkspaceRoutes(private, handlerGroups)
-		setupBaseRoutes(private, handlerGroups)
-		setupTableRoutes(private, handlerGroups)
-		setupColumnRoutes(private, handlerGroups)
+		setupUserRoutes(private, handlerGroups, middlewareGroups)
+		setupOrganizationRoutes(private, handlerGroups, middlewareGroups)
+		setupWorkspaceRoutes(private, handlerGroups, middlewareGroups)
+		setupBaseRoutes(private, handlerGroups, middlewareGroups)
+		setupTableRoutes(private, handlerGroups, middlewareGroups)
+		setupColumnRoutes(private, handlerGroups, middlewareGroups)
 		setupRowRoutes(private, handlerGroups, middlewareGroups)
-		setupViewRoutes(private, handlerGroups)
+		setupViewRoutes(private, handlerGroups, middlewareGroups)
 		setupAssetRoutes(private, handlerGroups, middlewareGroups)
 	}
 
@@ -135,7 +138,7 @@ func setupAuthRoutes(api *gin.RouterGroup, handlers Handlers) {
 }
 
 // setupUserRoutes configures user management endpoints
-func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
+func setupUserRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	user := private.Group("/user")
 	{
 		// User profile endpoints
@@ -162,7 +165,7 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers) {
 }
 
 // setupOrganizationRoutes configures organization management endpoints
-func setupOrganizationRoutes(private *gin.RouterGroup, handlers Handlers) {
+func setupOrganizationRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	organization := private.Group("/organization")
 	{
 		organization.GET("", handlers.Organization.GetAllOrganizations)
@@ -171,49 +174,73 @@ func setupOrganizationRoutes(private *gin.RouterGroup, handlers Handlers) {
 }
 
 // setupWorkspaceRoutes configures workspace management endpoints
-func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers) {
+func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	workspace := private.Group("/workspace")
 	{
-		// Admin operations
-		workspace.POST(RouteCreate, handlers.Workspace.CreateWorkspace)
+		// Admin operations with permission-based guards
+		workspace.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.CreateWorkspace)
 		workspace.GET("/", handlers.Workspace.GetAllWorkspaces)
 		workspace.GET("/:id/tables", handlers.Workspace.GetTablesByWorkspaceId)
-		workspace.PUT("/:id", handlers.Workspace.UpdateWorkspace)
-		workspace.DELETE("/:id", handlers.Workspace.DeleteWorkspace)
+		workspace.PUT("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.UpdateWorkspace)
+		workspace.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.DeleteWorkspace)
 
 		// Full access operations
-		workspace.POST("/:id/remove", handlers.Auth.RemoveUserFromWorkspace)
+		workspace.POST("/:id/remove",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.RemoveUserFromWorkspace)
 		workspace.GET("/:id/members", handlers.Auth.GetWorkspaceMembers)
 		workspace.GET("/:id/members-with-roles", handlers.Auth.GetWorkspaceMembersWithRole)
-		workspace.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddMembers)
-		workspace.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
+		workspace.POST("/:id/bulk-add-members",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.BulkAddMembers)
+		workspace.DELETE("/access/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.RemoveAccessMemberByID)
 		// All access operations
 		workspace.GET("/:id/bases", handlers.Workspace.GetBasesByWorkspaceId)
 		workspace.GET("/:id", handlers.Workspace.GetWorkspaceByID)
 	}
 }
 
-// setupBaseRoutes configures base management endpointsmembers-with-roles
-func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
+// setupBaseRoutes configures base management endpoints
+func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	base := private.Group("/base")
 	{
-		// Admin operations
-		base.POST(RouteCreate, handlers.Base.CreateBase)
+		// Admin operations with permission-based guards
+		base.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Base.CreateBase)
 
 		// Full access operations - member management with specific routes before dynamic :id routes
-		base.POST("/:id/remove", handlers.Auth.RemoveUserFromBase)
+		base.POST("/:id/remove",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.RemoveUserFromBase)
 		base.GET("/:id/members", handlers.Auth.GetBaseMembers)
 		base.GET("/:id/members-with-roles", handlers.Auth.GetBaseMembersWithRole)
-		base.POST("/:id/bulk-add-members", handlers.Workspace.BulkAddBaseMembers)
-		base.DELETE("/access/:id", handlers.Auth.RemoveAccessMemberByID)
+		base.POST("/:id/bulk-add-members",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.BulkAddBaseMembers)
+		base.DELETE("/access/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.RemoveAccessMemberByID)
 
 		// Image operations
 		base.POST("/:id/image", handlers.Base.AddBaseImage)
 		base.DELETE("/:id/image", handlers.Base.RemoveBaseImage)
 
 		// Base CRUD operations
-		base.PUT("/:id", handlers.Base.UpdateBase)
-		base.DELETE("/:id", handlers.Base.DeleteBase)
+		base.PUT("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Base.UpdateBase)
+		base.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Base.DeleteBase)
 
 		// All access operations
 		base.GET("/:id", handlers.Base.GetBaseByID)
@@ -222,31 +249,59 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers) {
 }
 
 // setupTableRoutes configures table management endpoints
-func setupTableRoutes(private *gin.RouterGroup, handlers Handlers) {
+func setupTableRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	table := private.Group("/table")
 	{
-		table.POST(RouteCreate, handlers.Table.CreateTable)
-		table.POST("/import", handlers.Table.ImportTable)
-		table.PATCH("/:id", handlers.Table.UpdateTable)
+		// Write operations require table.create permission
+		table.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.CreateTable)
+		table.POST("/import",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.ImportTable)
+		table.PATCH("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.UpdateTable)
+
+		// Read operations (no guard needed - checked at handler level if needed)
 		table.GET("/:id", handlers.Table.GetTableByID)
 		table.GET("/", handlers.Table.GetAllTables)
 		table.GET("/:id/columns", handlers.Table.GetColumnsByTable)
 		table.GET("/:id/views", handlers.Table.GetViewsByModelID)
 		table.GET("/:id/records", handlers.Table.GetAllRecords)
-		table.DELETE("/:id", handlers.Table.DeleteTable)
+
+		// Delete requires table.delete permission
+		table.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.DeleteTable)
 	}
 }
 
 // setupColumnRoutes configures column management endpoints
-func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers) {
+func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	column := private.Group("/column")
 	{
-		column.POST(RouteCreate, handlers.Table.AddColumn)
+		// Write operations require table.create permission
+		column.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.AddColumn)
+
+		// Read operations
 		column.GET("/:id", handlers.Table.GetColumnById)
 		column.GET("/", handlers.Table.GetAllColumns)
-		column.PATCH("/:id", handlers.Table.UpdateColumn)
-		column.DELETE("/:id", handlers.Table.DeleteColumn)
-		column.POST("/reorder", handlers.Table.ReorderColumn)
+
+		// Update requires table.update permission
+		column.PATCH("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.UpdateColumn)
+
+		// Delete requires table.delete permission
+		column.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.DeleteColumn)
+		column.POST("/reorder",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.ReorderColumn)
 	}
 }
 
@@ -254,31 +309,65 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers) {
 func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	row := private.Group("/row")
 	{
-		row.POST(RouteCreate, handlers.Table.CreateRow)
-		row.POST("/remove", handlers.Table.DeleteRow)
-		row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
-		row.POST("/data/insert", handlers.Table.InsertRowData)
-		row.POST("/data/relation", handlers.Table.InsertRowDataForLinks)
+		// Write operations require records.create permission
+		row.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.CreateRow)
 
-		// Attachment endpoints with file size limit
+		// Delete operations require records.delete permission
+		row.POST("/remove",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.DeleteRow)
+		row.POST("/bulk-remove",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.BulkDeleteRows)
+
+		// Data manipulation operations
+		row.POST("/data/insert",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.InsertRowData)
+		row.POST("/data/relation",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.InsertRowDataForLinks)
+
+		// Attachment endpoints with file size limit (requires create permission)
 		am := row.Group("")
 		am.Use(middlewares.FileSizeLimitMiddleware())
-		am.POST("/attachment/add", handlers.Table.AddAttachment)
-		row.POST("/attachment/update", handlers.Table.UpdateAttachment)
+		am.POST("/attachment/add",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.AddAttachment)
+		row.POST("/attachment/update",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.UpdateAttachment)
 
-		row.POST("/attachment/remove", handlers.Table.RemoveAttachments)
+		row.POST("/attachment/remove",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.RemoveAttachments)
 	}
 }
 
 // setupViewRoutes configures view management endpoints
-func setupViewRoutes(private *gin.RouterGroup, handlers Handlers) {
+func setupViewRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	view := private.Group("/view")
 	{
-		view.POST(RouteCreate, handlers.Table.CreateView)
+		// Create requires views.create permission
+		view.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Views, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.CreateView)
+
+		// Read operations
 		view.GET("/:id", handlers.Table.GetViewByID)
 		view.GET("/", handlers.Table.GetAllViews)
-		view.PATCH("/:id", handlers.Table.UpdateView)
-		view.DELETE("/:id", handlers.Table.DeleteView)
+
+		// Update requires views.update permission
+		view.PATCH("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Views, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.UpdateView)
+
+		// Delete requires views.delete permission
+		view.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Views, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.DeleteView)
 	}
 }
 
@@ -288,11 +377,25 @@ func setupAssetRoutes(private *gin.RouterGroup, handlers Handlers, middlewares M
 	{
 		am := asset.Group("")
 		am.Use(middlewares.FileSizeLimitMiddleware())
-		am.POST("/upload", handlers.Asset.Upload)
-		am.POST("/upload-image", handlers.Asset.UploadImage)
+		// Upload requires records.create permission (for storing assets)
+		am.POST("/upload",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Asset.Upload)
+		am.POST("/upload-image",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Asset.UploadImage)
 
+		// Read operations
 		asset.POST("/bulk", handlers.Asset.GetBulkAssets)
-		asset.PATCH("/:id", handlers.Asset.UpdateAssetByID)
-		asset.DELETE("/:id", handlers.Asset.DeleteAssetByID)
+
+		// Update requires records.create permission (for modifying assets)
+		asset.PATCH("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Asset.UpdateAssetByID)
+
+		// Delete requires records.delete permission
+		asset.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Asset.DeleteAssetByID)
 	}
 }
