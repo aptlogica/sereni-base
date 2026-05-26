@@ -7,8 +7,10 @@ import (
 	ut "github.com/go-playground/universal-translator"
 	validator "github.com/go-playground/validator/v10"
 
+	"github.com/aptlogica/sereni-base/internal/dto"
 	handlersValidators "github.com/aptlogica/sereni-base/internal/handlers/validators"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
+	"github.com/google/uuid"
 )
 
 type fakeFieldError struct {
@@ -550,6 +552,60 @@ func TestTableValidators(t *testing.T) {
 
 		runValidationCases(t, cases)
 	})
+
+	t.Run("UpdateRow", func(t *testing.T) {
+		cases := []validationCase{
+			{name: "UpdateRowModelIDRequired", fn: handlersValidators.UpdateRowRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+			{name: "UpdateRowModelIDInvalid", fn: handlersValidators.UpdateRowRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+			{name: "UpdateRowRowIdRequired", fn: handlersValidators.UpdateRowRequestValidationError, field: "RowId", tag: "required", want: responseConst.TableError.RowIdRequired},
+			{name: "UpdateRowRowIdInvalid", fn: handlersValidators.UpdateRowRequestValidationError, field: "RowId", tag: "uuid", want: responseConst.TableError.RowIdInvalid},
+			{name: "UpdateRowUnknown", fn: handlersValidators.UpdateRowRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+		}
+
+		runValidationCases(t, cases)
+	})
+
+	t.Run("UpdateAttachment", func(t *testing.T) {
+		cases := []validationCase{
+			{name: "UpdateAttachmentModelIDRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+			{name: "UpdateAttachmentModelIDInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+			{name: "UpdateAttachmentColumnIdRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ColumnId", tag: "required", want: responseConst.TableError.ColumnIdRequired},
+			{name: "UpdateAttachmentColumnIdInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "ColumnId", tag: "uuid", want: responseConst.TableError.ColumnIdInvalid},
+			{name: "UpdateAttachmentRowIdRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "RowId", tag: "required", want: responseConst.TableError.RowIdRequired},
+			{name: "UpdateAttachmentRowIdInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "RowId", tag: "uuid", want: responseConst.TableError.RowIdInvalid},
+			{name: "UpdateAttachmentAssetIdRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "AssetId", tag: "required", want: responseConst.TableError.AssetIdRequired},
+			{name: "UpdateAttachmentAssetIdInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "AssetId", tag: "uuid", want: responseConst.TableError.AssetIdInvalid},
+			{name: "UpdateAttachmentContentRequired", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "Content", tag: "required", want: responseConst.TableError.ContentRequired},
+			{name: "UpdateAttachmentContentInvalid", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "Content", tag: "json", want: responseConst.TableError.ContentInvalid},
+			{name: "UpdateAttachmentUnknown", fn: handlersValidators.UpdateAttachmentRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+		}
+
+		runValidationCases(t, cases)
+	})
+
+	t.Run("BulkUpdateColumns", func(t *testing.T) {
+		cases := []validationCase{
+			{name: "BulkUpdateModelIDRequired", fn: handlersValidators.BulkUpdateColumnsRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+			{name: "BulkUpdateModelIDInvalid", fn: handlersValidators.BulkUpdateColumnsRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+			{name: "BulkUpdateUpdatesRequired", fn: handlersValidators.BulkUpdateColumnsRequestValidationError, field: "Updates", tag: "required", want: responseConst.TableError.UpdatesRequired},
+			{name: "BulkUpdateUpdatesInvalid", fn: handlersValidators.BulkUpdateColumnsRequestValidationError, field: "Updates", tag: "json", want: responseConst.TableError.UpdatesInvalid},
+			{name: "BulkUpdateUnknown", fn: handlersValidators.BulkUpdateColumnsRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+		}
+
+		runValidationCases(t, cases)
+	})
+
+	t.Run("ResetColumnValues", func(t *testing.T) {
+		cases := []validationCase{
+			{name: "ResetColumnModelIDRequired", fn: handlersValidators.ResetColumnValuesRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+			{name: "ResetColumnModelIDInvalid", fn: handlersValidators.ResetColumnValuesRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+			{name: "ResetColumnColumnIdRequired", fn: handlersValidators.ResetColumnValuesRequestValidationError, field: "ColumnId", tag: "required", want: responseConst.TableError.ColumnIdRequired},
+			{name: "ResetColumnColumnIdInvalid", fn: handlersValidators.ResetColumnValuesRequestValidationError, field: "ColumnId", tag: "uuid", want: responseConst.TableError.ColumnIdInvalid},
+			{name: "ResetColumnUnknown", fn: handlersValidators.ResetColumnValuesRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+		}
+
+		runValidationCases(t, cases)
+	})
 }
 
 func TestUserValidators(t *testing.T) {
@@ -586,5 +642,177 @@ func TestWorkspaceValidators(t *testing.T) {
 		}
 
 		runValidationCases(t, cases)
+	})
+}
+
+func TestValidateCreateViewMeta(t *testing.T) {
+	t.Run("nil meta", func(t *testing.T) {
+		req := dto.CreateViewRequest{Meta: nil}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.MetaRequired {
+			t.Errorf("expected MetaRequired error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("gallery view with valid attachment_field_id", func(t *testing.T) {
+		fieldID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "gallery",
+			Meta: &map[string]interface{}{
+				"attachment_field_id": fieldID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if hasError || code != "" {
+			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("gallery view missing attachment_field_id", func(t *testing.T) {
+		req := dto.CreateViewRequest{
+			Type: "gallery",
+			Meta: &map[string]interface{}{},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDRequired {
+			t.Errorf("expected ViewAttachmentFieldIDRequired error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("gallery view with invalid attachment_field_id uuid", func(t *testing.T) {
+		req := dto.CreateViewRequest{
+			Type: "gallery",
+			Meta: &map[string]interface{}{
+				"attachment_field_id": "invalid-uuid",
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDInvalid {
+			t.Errorf("expected ViewAttachmentFieldIDInvalid error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("gallery view with empty attachment_field_id", func(t *testing.T) {
+		req := dto.CreateViewRequest{
+			Type: "gallery",
+			Meta: &map[string]interface{}{
+				"attachment_field_id": "",
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDInvalid {
+			t.Errorf("expected ViewAttachmentFieldIDInvalid error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("kanban view with valid view_target_field", func(t *testing.T) {
+		fieldID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "kanban",
+			Meta: &map[string]interface{}{
+				"view_target_field": fieldID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if hasError || code != "" {
+			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("calendar view with valid date_field_id", func(t *testing.T) {
+		fieldID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "calendar",
+			Meta: &map[string]interface{}{
+				"date_field_id": fieldID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if hasError || code != "" {
+			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("calender view with valid date_field_id", func(t *testing.T) {
+		fieldID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "calender",
+			Meta: &map[string]interface{}{
+				"date_field_id": fieldID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if hasError || code != "" {
+			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("ganttchart view with valid dates", func(t *testing.T) {
+		startID := uuid.New().String()
+		endID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "ganttchart",
+			Meta: &map[string]interface{}{
+				"start_date_field_id": startID,
+				"end_date_field_id":   endID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if hasError || code != "" {
+			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("ganttchart view missing end_date_field_id", func(t *testing.T) {
+		startID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "ganttchart",
+			Meta: &map[string]interface{}{
+				"start_date_field_id": startID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.ViewEndDateFieldIDRequired {
+			t.Errorf("expected ViewEndDateFieldIDRequired error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("ganttchart view with invalid start_date", func(t *testing.T) {
+		endID := uuid.New().String()
+		req := dto.CreateViewRequest{
+			Type: "ganttchart",
+			Meta: &map[string]interface{}{
+				"start_date_field_id": "invalid",
+				"end_date_field_id":   endID,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.ViewStartDateFieldIDInvalid {
+			t.Errorf("expected ViewStartDateFieldIDInvalid error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("grid view no meta validation needed", func(t *testing.T) {
+		req := dto.CreateViewRequest{
+			Type: "grid",
+			Meta: &map[string]interface{}{},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if hasError || code != "" {
+			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
+		}
+	})
+
+	t.Run("non-string attachment_field_id", func(t *testing.T) {
+		req := dto.CreateViewRequest{
+			Type: "gallery",
+			Meta: &map[string]interface{}{
+				"attachment_field_id": 123,
+			},
+		}
+		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
+		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDInvalid {
+			t.Errorf("expected ViewAttachmentFieldIDInvalid error for non-string, got code=%v hasError=%v", code, hasError)
+		}
 	})
 }
