@@ -1361,6 +1361,148 @@ func TestTableHandler_RemoveAttachments_ValidationError(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
+// Tests for BulkUpdateColumns
+func TestTableHandler_BulkUpdateColumns_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().BulkUpdateColumns(gomock.Any(), "test", gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.BulkUpdateColumnsRequest{
+		ModelID:  uuid.New().String(),
+		ColumnID: uuid.New().String(),
+		Updates: []dto.UpdateColumnsRequest{
+			{Id: "1", Value: "value1"},
+			{Id: "2", Value: "value2"},
+		},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/bulk-update", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.BulkUpdateColumns(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_BulkUpdateColumns_InvalidJSON(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/bulk-update", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.BulkUpdateColumns(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_BulkUpdateColumns_ValidationError(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	body, _ := json.Marshal(dto.BulkUpdateColumnsRequest{})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/bulk-update", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.BulkUpdateColumns(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_BulkUpdateColumns_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().BulkUpdateColumns(gomock.Any(), "test", gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(errors.New("bulk update failed"))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.BulkUpdateColumnsRequest{
+		ModelID:  uuid.New().String(),
+		ColumnID: uuid.New().String(),
+		Updates: []dto.UpdateColumnsRequest{
+			{Id: "1", Value: "value1"},
+		},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/bulk-update", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.BulkUpdateColumns(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+// Tests for ResetColumnValues
+func TestTableHandler_ResetColumnValues_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().ResetColumnValues(gomock.Any(), "test", gomock.Any(), gomock.Any()).
+		Return(nil)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.ResetColumnValuesRequest{
+		ModelID:  uuid.New().String(),
+		ColumnId: uuid.New().String(),
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/reset", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.ResetColumnValues(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_ResetColumnValues_InvalidJSON(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/reset", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.ResetColumnValues(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_ResetColumnValues_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().ResetColumnValues(gomock.Any(), "test", gomock.Any(), gomock.Any()).
+		Return(errors.New("reset failed"))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.ResetColumnValuesRequest{
+		ModelID:  uuid.New().String(),
+		ColumnId: uuid.New().String(),
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns/reset", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.ResetColumnValues(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func ptrString(s string) *string {
 	return &s
 }

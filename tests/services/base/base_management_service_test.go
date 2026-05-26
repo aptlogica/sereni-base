@@ -262,6 +262,16 @@ func (m *MockTableManagementService) RemoveAttachments(ctx context.Context, sche
 	return args.Get(0).(dto.RecordResponse), args.Error(1)
 }
 
+func (m *MockTableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	args := m.Called(ctx, schemaName, modelID, columnID, updates)
+	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	args := m.Called(ctx, schemaName, modelID, columnID)
+	return args.Error(0)
+}
+
 // MockModelService is a mock implementation of ModelService interface
 type MockModelService struct {
 	mock.Mock

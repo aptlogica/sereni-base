@@ -502,3 +502,163 @@ func TestGetMaxOrderIndexOfColumn(t *testing.T) {
 		assert.Equal(t, float64(0), val)
 	})
 }
+
+func TestBulkUpdate(t *testing.T) {
+	t.Run("empty updates", func(t *testing.T) {
+		db, _ := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		err := svc.BulkUpdate(context.Background(), "schema", "table", "column", []dto.UpdateColumnsRequest{})
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("get by function error", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "schema.bulk_update", mock.Anything).
+			Return(nil, errors.New("function error"))
+
+		err := svc.BulkUpdate(context.Background(), "schema", "table", "column", []dto.UpdateColumnsRequest{
+			{Id: "row1", Value: "newValue1"},
+		})
+
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
+		mockTable.AssertExpectations(t)
+	})
+
+	t.Run("success with single update", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "schema.bulk_update", mock.MatchedBy(func(args map[string]interface{}) bool {
+			return args["p_schema_name"] == "schema" &&
+				args["p_table_name"] == "table" &&
+				args["p_column_name"] == "column" &&
+				args["p_data"] != nil
+		})).
+			Return([]map[string]interface{}{}, nil)
+
+		err := svc.BulkUpdate(context.Background(), "schema", "table", "column", []dto.UpdateColumnsRequest{
+			{Id: "row1", Value: "newValue1"},
+		})
+
+		assert.NoError(t, err)
+		mockTable.AssertExpectations(t)
+	})
+
+	t.Run("success with multiple updates", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "schema.bulk_update", mock.MatchedBy(func(args map[string]interface{}) bool {
+			return args["p_schema_name"] == "schema" &&
+				args["p_table_name"] == "users" &&
+				args["p_column_name"] == "status" &&
+				args["p_data"] != nil
+		})).
+			Return([]map[string]interface{}{}, nil)
+
+		err := svc.BulkUpdate(context.Background(), "schema", "users", "status", []dto.UpdateColumnsRequest{
+			{Id: "user1", Value: "active"},
+			{Id: "user2", Value: "inactive"},
+			{Id: "user3", Value: "pending"},
+		})
+
+		assert.NoError(t, err)
+		mockTable.AssertExpectations(t)
+	})
+
+	t.Run("success with different value types", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "schema.bulk_update", mock.Anything).
+			Return([]map[string]interface{}{}, nil)
+
+		// Test with numeric value
+		err := svc.BulkUpdate(context.Background(), "schema", "table", "column", []dto.UpdateColumnsRequest{
+			{Id: "row1", Value: 42},
+		})
+		assert.NoError(t, err)
+
+		// Test with boolean value
+		err = svc.BulkUpdate(context.Background(), "schema", "table", "column", []dto.UpdateColumnsRequest{
+			{Id: "row2", Value: true},
+		})
+		assert.NoError(t, err)
+
+		// Test with null value
+		err = svc.BulkUpdate(context.Background(), "schema", "table", "column", []dto.UpdateColumnsRequest{
+			{Id: "row3", Value: nil},
+		})
+		assert.NoError(t, err)
+	})
+}
+
+func TestResetColumn(t *testing.T) {
+	t.Run("get by function error", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "schema.reset_column", mock.Anything).
+			Return(nil, errors.New("function error"))
+
+		err := svc.ResetColumn(context.Background(), "schema", "table", "column")
+
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
+		mockTable.AssertExpectations(t)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "schema.reset_column", mock.MatchedBy(func(args map[string]interface{}) bool {
+			return args["p_schema_name"] == "schema" &&
+				args["p_table_name"] == "table" &&
+				args["p_column_name"] == "column"
+		})).
+			Return([]map[string]interface{}{}, nil)
+
+		err := svc.ResetColumn(context.Background(), "schema", "table", "column")
+
+		assert.NoError(t, err)
+		mockTable.AssertExpectations(t)
+	})
+
+	t.Run("success with different table names", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, "myschema.reset_column", mock.MatchedBy(func(args map[string]interface{}) bool {
+			return args["p_schema_name"] == "myschema" &&
+				args["p_table_name"] == "users" &&
+				args["p_column_name"] == "created_at"
+		})).
+			Return([]map[string]interface{}{}, nil)
+
+		err := svc.ResetColumn(context.Background(), "myschema", "users", "created_at")
+
+		assert.NoError(t, err)
+		mockTable.AssertExpectations(t)
+	})
+
+	t.Run("success with multiple calls", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewColumnService(db)
+
+		mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).
+			Return([]map[string]interface{}{}, nil)
+
+		err1 := svc.ResetColumn(context.Background(), "schema1", "table1", "col1")
+		err2 := svc.ResetColumn(context.Background(), "schema2", "table2", "col2")
+		err3 := svc.ResetColumn(context.Background(), "schema3", "table3", "col3")
+
+		assert.NoError(t, err1)
+		assert.NoError(t, err2)
+		assert.NoError(t, err3)
+		mockTable.AssertNumberOfCalls(t, "GetByFunction", 3)
+	})
+}

@@ -1782,13 +1782,13 @@ func (s tableManagementService) DeleteUsedLookupColumn(ctx context.Context, sche
 	}
 	for _, col := range columns {
 		if col.UIDT == "links" {
-			s.handleLinkedColumnDeletion(ctx, schemaName, col, columnData)
+			s.HandleLinkedColumnDeletion(ctx, schemaName, col, columnData)
 		}
 	}
 	return nil
 }
 
-func (s tableManagementService) handleLinkedColumnDeletion(ctx context.Context, schemaName string, col dto.ColumnResponse, columnData dto.ColumnResponse) {
+func (s tableManagementService) HandleLinkedColumnDeletion(ctx context.Context, schemaName string, col dto.ColumnResponse, columnData dto.ColumnResponse) {
 	relation, ok := col.Meta["relation"].(map[string]interface{})
 	if !ok {
 		return
@@ -1805,13 +1805,13 @@ func (s tableManagementService) handleLinkedColumnDeletion(ctx context.Context, 
 		if linkedCol.UIDT == "lookup" {
 			lookupColumnID, ok := linkedCol.Meta["lookup_column_id"].(string)
 			if ok && lookupColumnID == columnData.ID.String() {
-				s.deleteLookupColumnAndReorder(ctx, schemaName, linkedCol)
+				s.DeleteLookupColumnAndReorder(ctx, schemaName, linkedCol)
 			}
 		}
 	}
 }
 
-func (s tableManagementService) deleteLookupColumnAndReorder(ctx context.Context, schemaName string, linkedCol dto.ColumnResponse) {
+func (s tableManagementService) DeleteLookupColumnAndReorder(ctx context.Context, schemaName string, linkedCol dto.ColumnResponse) {
 	_ = s.DeleteUsedLookupColumnForRelation(ctx, schemaName, linkedCol)
 	_ = s.reorderColumnsAfterDelete(ctx, schemaName, linkedCol.ModelID.String(), linkedCol)
 }
@@ -2738,7 +2738,7 @@ func (s tableManagementService) CreateRowsWithValues(
 			return nil, err
 		}
 
-		rowID, err := extractCreatedRowID(createdRow.Record)
+		rowID, err := ExtractCreatedRowID(createdRow.Record)
 		if err != nil {
 			return nil, err
 		}
@@ -2769,7 +2769,7 @@ func (s tableManagementService) CreateRowsWithValues(
 	return rows, nil
 }
 
-func extractCreatedRowID(record map[string]interface{}) (int, error) {
+func ExtractCreatedRowID(record map[string]interface{}) (int, error) {
 	id, ok := record["id"]
 	if !ok {
 		return 0, fmt.Errorf("created row id is missing")
