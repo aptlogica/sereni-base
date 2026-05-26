@@ -21,7 +21,7 @@ import (
 )
 
 func TestNewAuthHandler(t *testing.T) {
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 	assert.NotNil(t, handler)
 }
 
@@ -67,7 +67,7 @@ func TestAuthHandler_LoginUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			var body []byte
 			if str, ok := tt.requestBody.(string); ok {
@@ -94,7 +94,7 @@ func TestAuthHandler_LoginUser_ServiceError(t *testing.T) {
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
 	mockService.EXPECT().Login(gomock.Any(), "test@example.com", "password123").Return(dto.LoginResponse{}, errors.New("login failed"))
-	handler := handlers.NewAuthHandler(mockService)
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 	body, _ := json.Marshal(map[string]string{"email": "test@example.com", "password": "password123"})
 	w := httptest.NewRecorder()
@@ -136,7 +136,7 @@ func TestAuthHandler_VerifyEmail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			var body []byte
 			if str, ok := tt.requestBody.(string); ok {
@@ -158,11 +158,25 @@ func TestAuthHandler_VerifyEmail(t *testing.T) {
 
 func TestAuthHandler_VerifyEmail_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/verify-email", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.VerifyEmail(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_VerifyEmail_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{"token": ""})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/verify-email", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	handler.VerifyEmail(c)
@@ -176,7 +190,7 @@ func TestAuthHandler_VerifyEmail_ServiceError(t *testing.T) {
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
 	mockService.EXPECT().VerifyEmail(gomock.Any(), gomock.Any()).Return(dto.LoginResponse{}, errors.New("verify failed"))
-	handler := handlers.NewAuthHandler(mockService)
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 	body, _ := json.Marshal(dto.VerifyEmailRequest{Token: "t", OTP: "123456"})
 	w := httptest.NewRecorder()
@@ -227,7 +241,7 @@ func TestAuthHandler_ResendOTP(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			var body []byte
 			if str, ok := tt.requestBody.(string); ok {
@@ -294,7 +308,7 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			var body []byte
 			if str, ok := tt.requestBody.(string); ok {
@@ -312,6 +326,20 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 			assert.Equal(t, tt.expectedCode, w.Code)
 		})
 	}
+}
+
+func TestAuthHandler_RefreshToken_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/refresh-token", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.RefreshToken(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestAuthHandler_ForgotPassword(t *testing.T) {
@@ -347,7 +375,7 @@ func TestAuthHandler_ForgotPassword(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			body, _ := json.Marshal(tt.requestBody)
 			w := httptest.NewRecorder()
@@ -363,11 +391,25 @@ func TestAuthHandler_ForgotPassword(t *testing.T) {
 
 func TestAuthHandler_ForgotPassword_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/forgot", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.ForgotPassword(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_ForgotPassword_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{"email": ""})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/forgot", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	handler.ForgotPassword(c)
@@ -407,7 +449,7 @@ func TestAuthHandler_ResetPassword(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			body, _ := json.Marshal(tt.requestBody)
 			w := httptest.NewRecorder()
@@ -423,7 +465,7 @@ func TestAuthHandler_ResetPassword(t *testing.T) {
 
 func TestAuthHandler_ResetPassword_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -434,9 +476,23 @@ func TestAuthHandler_ResetPassword_InvalidJSON(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
+func TestAuthHandler_ResetPassword_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{"token": "", "new_password": ""})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/reset", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.ResetPassword(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestAuthHandler_Health(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -448,7 +504,7 @@ func TestAuthHandler_Health(t *testing.T) {
 
 func TestAuthHandler_HealthLive(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -460,7 +516,7 @@ func TestAuthHandler_HealthLive(t *testing.T) {
 
 func TestAuthHandler_HealthReady(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -507,7 +563,7 @@ func TestAuthHandler_ValidateToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
@@ -522,11 +578,25 @@ func TestAuthHandler_ValidateToken(t *testing.T) {
 
 func TestAuthHandler_ValidateToken_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/token/validate", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.ValidateToken(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_ValidateToken_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{"token": ""})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/token/validate", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	handler.ValidateToken(c)
@@ -570,7 +640,7 @@ func TestAuthHandler_VerifyToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			body := bytes.NewBufferString(`{"token":"` + tt.token + `"}`)
 			w := httptest.NewRecorder()
@@ -586,11 +656,25 @@ func TestAuthHandler_VerifyToken(t *testing.T) {
 
 func TestAuthHandler_VerifyToken_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/token/verify", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.VerifyToken(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_VerifyToken_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{"token": ""})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/token/verify", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	handler.VerifyToken(c)
@@ -630,7 +714,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
@@ -645,11 +729,25 @@ func TestAuthHandler_Logout(t *testing.T) {
 
 func TestAuthHandler_Logout_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/logout", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.Logout(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_Logout_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]string{"token": ""})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/logout", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	handler.Logout(c)
@@ -693,7 +791,7 @@ func TestAuthHandler_GetUsers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := mocks.NewMockAuthManagementService(ctrl)
 			tt.mockSetup(mockService)
-			handler := handlers.NewAuthHandler(mockService)
+			handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
@@ -764,7 +862,7 @@ func TestAuthHandler_UpdateUserAccess_Success(t *testing.T) {
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
 	mockService.EXPECT().AssignUserToWorkspace(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	handler := handlers.NewAuthHandler(mockService)
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 	requestBody := dto.CreateMemberRequest{
 		UserID: uuid.New().String(),
@@ -788,7 +886,7 @@ func TestAuthHandler_UpdateUserAccess_Success(t *testing.T) {
 
 func TestAuthHandler_UpdateUserAccess_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -807,7 +905,7 @@ func TestAuthHandler_UpdateUserAccess_ServiceError(t *testing.T) {
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
 	mockService.EXPECT().AssignUserToWorkspace(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("update failed"))
-	handler := handlers.NewAuthHandler(mockService)
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
 
 	requestBody := dto.CreateMemberRequest{
 		UserID: uuid.New().String(),
@@ -861,7 +959,7 @@ func TestAuthHandler_AddUser_Success(t *testing.T) {
 
 func TestAuthHandler_AddUser_InvalidMembership(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -882,7 +980,7 @@ func TestAuthHandler_AddUser_InvalidMembership(t *testing.T) {
 
 func TestAuthHandler_AddUser_ValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := handlers.NewAuthHandler(nil)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -1153,6 +1251,28 @@ func TestAuthHandler_RemoveUserFromWorkspace_InvalidJSON(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
+func TestAuthHandler_RemoveUserFromWorkspace_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockService.EXPECT().RemoveUserFromWorkspace(gomock.Any(), "test", "w1", "u1", "user123").Return(errors.New("remove failed"))
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
+
+	body, _ := json.Marshal(dto.RemoveMemberRequest{UserID: "u1"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/workspaces/w1/remove", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.RemoveUserFromWorkspace(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestAuthHandler_RemoveUserFromBase_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -1189,23 +1309,104 @@ func TestAuthHandler_RemoveUserFromBase_InvalidJSON(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
-func TestAuthHandler_GetWorkspaceMembers_Success(t *testing.T) {
+func TestAuthHandler_RemoveUserFromBase_ServiceError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().GetWorkspaceMembers(gomock.Any(), "test", "w1").Return([]dto.WorkspaceMemberResponse{}, nil)
-	handler := handlers.NewAuthHandler(mockService)
+	mockService.EXPECT().RemoveUserFromBase(gomock.Any(), "test", "b1", "u1", "user123").Return(errors.New("remove failed"))
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
+
+	body, _ := json.Marshal(dto.RemoveMemberRequest{UserID: "u1"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases/b1/remove", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.RemoveUserFromBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembers_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	workspaceID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockWorkspaceService := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspaceService.EXPECT().GetByID(gomock.Any(), "test", workspaceID).Return(tenant.Workspace{}, nil)
+	mockService.EXPECT().GetWorkspaceMembers(gomock.Any(), "test", workspaceID).Return([]dto.WorkspaceMemberResponse{}, nil)
+	handler := handlers.NewAuthHandler(mockService, mockWorkspaceService, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/workspaces/w1/members", nil)
-	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Request = httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: workspaceID}}
 	c.Set("schema", "test")
 
 	handler.GetWorkspaceMembers(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembers_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/invalid/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: "invalid"}}
+
+	handler.GetWorkspaceMembers(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembers_WorkspaceNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	workspaceID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockWorkspaceService := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspaceService.EXPECT().GetByID(gomock.Any(), "test", workspaceID).Return(tenant.Workspace{}, errors.New("workspace not found"))
+	handler := handlers.NewAuthHandler(mockService, mockWorkspaceService, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: workspaceID}}
+	c.Set("schema", "test")
+
+	handler.GetWorkspaceMembers(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembers_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	workspaceID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockWorkspaceService := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspaceService.EXPECT().GetByID(gomock.Any(), "test", workspaceID).Return(tenant.Workspace{}, nil)
+	mockService.EXPECT().GetWorkspaceMembers(gomock.Any(), "test", workspaceID).Return(nil, errors.New("fetch failed"))
+	handler := handlers.NewAuthHandler(mockService, mockWorkspaceService, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: workspaceID}}
+	c.Set("schema", "test")
+
+	handler.GetWorkspaceMembers(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestAuthHandler_GetBaseMembers_Success(t *testing.T) {
@@ -1213,18 +1414,77 @@ func TestAuthHandler_GetBaseMembers_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	baseID := uuid.New().String()
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().GetBaseMembers(gomock.Any(), "test", "b1").Return([]dto.WorkspaceMemberResponse{}, nil)
-	handler := handlers.NewAuthHandler(mockService)
+	mockBaseService := mocks.NewMockBaseManagementService(ctrl)
+	mockBaseService.EXPECT().GetBaseByID(gomock.Any(), "test", baseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseMembers(gomock.Any(), "test", baseID).Return([]dto.WorkspaceMemberResponse{}, nil)
+	handler := handlers.NewAuthHandler(mockService, nil, mockBaseService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/bases/b1/members", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("GET", "/bases/"+baseID+"/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: baseID}}
 	c.Set("schema", "test")
 
 	handler.GetBaseMembers(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetBaseMembers_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/invalid/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: "invalid"}}
+
+	handler.GetBaseMembers(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetBaseMembers_BaseNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	baseID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockBaseService := mocks.NewMockBaseManagementService(ctrl)
+	mockBaseService.EXPECT().GetBaseByID(gomock.Any(), "test", baseID).Return(tenant.Base{}, errors.New("not found"))
+	handler := handlers.NewAuthHandler(mockService, nil, mockBaseService)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/"+baseID+"/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: baseID}}
+	c.Set("schema", "test")
+
+	handler.GetBaseMembers(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetBaseMembers_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	baseID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockBaseService := mocks.NewMockBaseManagementService(ctrl)
+	mockBaseService.EXPECT().GetBaseByID(gomock.Any(), "test", baseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseMembers(gomock.Any(), "test", baseID).Return(nil, errors.New("fetch failed"))
+	handler := handlers.NewAuthHandler(mockService, nil, mockBaseService)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/"+baseID+"/members", nil)
+	c.Params = gin.Params{{Key: "id", Value: baseID}}
+	c.Set("schema", "test")
+
+	handler.GetBaseMembers(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestAuthHandler_GetWorkspaceMembersWithRole_Success(t *testing.T) {
@@ -1232,18 +1492,77 @@ func TestAuthHandler_GetWorkspaceMembersWithRole_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	workspaceID := uuid.New().String()
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().GetWorkspaceMembersWithRole(gomock.Any(), "test", "w1").Return([]dto.UserWithRole{}, nil)
-	handler := handlers.NewAuthHandler(mockService)
+	mockWorkspaceService := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspaceService.EXPECT().GetByID(gomock.Any(), "test", workspaceID).Return(tenant.Workspace{}, nil)
+	mockService.EXPECT().GetWorkspaceMembersWithRole(gomock.Any(), "test", workspaceID).Return([]dto.UserWithRole{}, nil)
+	handler := handlers.NewAuthHandler(mockService, mockWorkspaceService, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/workspaces/w1/members-role", nil)
-	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Request = httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: workspaceID}}
 	c.Set("schema", "test")
 
 	handler.GetWorkspaceMembersWithRole(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembersWithRole_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/invalid/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: "invalid"}}
+
+	handler.GetWorkspaceMembersWithRole(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembersWithRole_WorkspaceNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	workspaceID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockWorkspaceService := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspaceService.EXPECT().GetByID(gomock.Any(), "test", workspaceID).Return(tenant.Workspace{}, errors.New("workspace not found"))
+	handler := handlers.NewAuthHandler(mockService, mockWorkspaceService, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: workspaceID}}
+	c.Set("schema", "test")
+
+	handler.GetWorkspaceMembersWithRole(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetWorkspaceMembersWithRole_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	workspaceID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockWorkspaceService := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspaceService.EXPECT().GetByID(gomock.Any(), "test", workspaceID).Return(tenant.Workspace{}, nil)
+	mockService.EXPECT().GetWorkspaceMembersWithRole(gomock.Any(), "test", workspaceID).Return(nil, errors.New("fetch failed"))
+	handler := handlers.NewAuthHandler(mockService, mockWorkspaceService, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/"+workspaceID+"/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: workspaceID}}
+	c.Set("schema", "test")
+
+	handler.GetWorkspaceMembersWithRole(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestAuthHandler_GetBaseMembersWithRole_Success(t *testing.T) {
@@ -1251,18 +1570,77 @@ func TestAuthHandler_GetBaseMembersWithRole_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	baseID := uuid.New().String()
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().GetBaseMembersWithRole(gomock.Any(), "test", "b1").Return([]dto.UserWithRole{}, nil)
-	handler := handlers.NewAuthHandler(mockService)
+	mockBaseService := mocks.NewMockBaseManagementService(ctrl)
+	mockBaseService.EXPECT().GetBaseByID(gomock.Any(), "test", baseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseMembersWithRole(gomock.Any(), "test", baseID).Return([]dto.UserWithRole{}, nil)
+	handler := handlers.NewAuthHandler(mockService, nil, mockBaseService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/bases/b1/members-role", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("GET", "/bases/"+baseID+"/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: baseID}}
 	c.Set("schema", "test")
 
 	handler.GetBaseMembersWithRole(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetBaseMembersWithRole_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewAuthHandler(nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/invalid/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: "invalid"}}
+
+	handler.GetBaseMembersWithRole(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetBaseMembersWithRole_BaseNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	baseID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockBaseService := mocks.NewMockBaseManagementService(ctrl)
+	mockBaseService.EXPECT().GetBaseByID(gomock.Any(), "test", baseID).Return(tenant.Base{}, errors.New("not found"))
+	handler := handlers.NewAuthHandler(mockService, nil, mockBaseService)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/"+baseID+"/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: baseID}}
+	c.Set("schema", "test")
+
+	handler.GetBaseMembersWithRole(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_GetBaseMembersWithRole_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	baseID := uuid.New().String()
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockBaseService := mocks.NewMockBaseManagementService(ctrl)
+	mockBaseService.EXPECT().GetBaseByID(gomock.Any(), "test", baseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseMembersWithRole(gomock.Any(), "test", baseID).Return(nil, errors.New("fetch failed"))
+	handler := handlers.NewAuthHandler(mockService, nil, mockBaseService)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/"+baseID+"/members-role", nil)
+	c.Params = gin.Params{{Key: "id", Value: baseID}}
+	c.Set("schema", "test")
+
+	handler.GetBaseMembersWithRole(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestAuthHandler_UpdatePassword_Success(t *testing.T) {
@@ -1310,6 +1688,27 @@ func TestAuthHandler_UpdatePassword_InvalidJSON(t *testing.T) {
 	c.Request = httptest.NewRequest("POST", "/users/u1/password", bytes.NewBufferString("invalid"))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: "u1"}}
+
+	handler.UpdatePassword(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestAuthHandler_UpdatePassword_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockAuthManagementService(ctrl)
+	mockService.EXPECT().UpdatePassword(gomock.Any(), "test", "u1", gomock.Any()).Return(errors.New("update failed"))
+	handler := handlers.NewAuthHandler(mockService, nil, nil)
+
+	body, _ := json.Marshal(dto.UpdateUserPasswordRequest{OldPassword: "oldpass", NewPassword: "newpass123"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/users/u1/password", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "u1"}}
+	c.Set("schema", "test")
 
 	handler.UpdatePassword(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)

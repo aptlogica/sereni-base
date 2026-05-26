@@ -340,7 +340,7 @@ func TestAuthValidationErrors(t *testing.T) {
 			{name: "CreateMemberUserInvalid", fn: handlersValidators.CreateMemberRequestError, field: "UserID", tag: "uuid", want: responseConst.UserError.UserIDInvalid},
 			{name: "CreateMemberAccessLevelRequired", fn: handlersValidators.CreateMemberRequestError, field: "AccessLevel", tag: "required", want: responseConst.RoleError.RoleRequired},
 			{name: "CreateMemberBasesInvalid", fn: handlersValidators.CreateMemberRequestError, field: "BasesIds", tag: "uuid", want: responseConst.BaseError.IdInvalid},
-			{name: "RemoveMemberWorkspaceInvalid", fn: handlersValidators.RemoveMemberRequestError, field: "WorkspaceID", tag: "uuid", want: responseConst.WorkspaceError.IdInvalid},
+			{name: "RemoveMemberBaseInvalid", fn: handlersValidators.RemoveMemberRequestError, field: "BaseID", tag: "uuid", want: responseConst.BaseError.IdInvalid},
 			{name: "RemoveMemberUserRequired", fn: handlersValidators.RemoveMemberRequestError, field: "UserID", tag: "required", want: responseConst.UserError.UserIDRequired},
 			{name: "AddMultipleWorkspaceRequired", fn: handlersValidators.AddMultipleMembersRequestError, field: "WorkspaceID", tag: "required", want: responseConst.WorkspaceError.IdRequired},
 			{name: "AddMultipleUserIDsMin", fn: handlersValidators.AddMultipleMembersRequestError, field: "UserIDs", tag: "min", want: responseConst.Error.ValidationFailed},

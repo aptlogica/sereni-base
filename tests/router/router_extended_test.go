@@ -262,7 +262,7 @@ func TestRouterSetup_Recovery(t *testing.T) {
 	cfg := &config.Config{}
 
 	// Create handlers with mock
-	authHandler := handlers.NewAuthHandler(nil)
+	authHandler := handlers.NewAuthHandler(nil, nil, nil)
 	workspaceHandler := handlers.NewWorkspaceHandler(nil, nil)
 	baseHandler := handlers.NewBaseHandler(nil)
 	assetHandler := handlers.NewAssetsHandler(nil)

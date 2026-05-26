@@ -177,6 +177,9 @@ var UserSuccess = struct {
 	WorkspaceFetched         ResponseCode
 	UserRemovedFromWorkspace ResponseCode
 	UserAccessDetailsFetched ResponseCode
+	UserDeactivated          ResponseCode
+	UserActivated            ResponseCode
+	UserRemovedFromBase      ResponseCode
 }{
 	UserCreated:              "USR_SUCCESS_2001",
 	UserUpdated:              "USR_SUCCESS_2002",
@@ -192,6 +195,9 @@ var UserSuccess = struct {
 	WorkspaceFetched:         "USR_SUCCESS_2012",
 	UserRemovedFromWorkspace: "USR_SUCCESS_2013",
 	UserAccessDetailsFetched: "USR_SUCCESS_2014",
+	UserDeactivated:          "USR_SUCCESS_2015",
+	UserActivated:            "USR_SUCCESS_2016",
+	UserRemovedFromBase:      "USR_SUCCESS_2017",
 }
 
 var UserSuccessCodes = map[ResponseCode]MetaResponse{
@@ -264,5 +270,20 @@ var UserSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "User access details fetched successfully",
 		Description: "The user's workspace and base access details have been fetched successfully",
+	},
+	UserSuccess.UserDeactivated: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "User deactivated successfully",
+		Description: "The user has been deactivated successfully",
+	},
+	UserSuccess.UserActivated: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "User activated successfully",
+		Description: "The user has been activated successfully",
+	},
+	UserSuccess.UserRemovedFromBase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "User removed from base successfully",
+		Description: "The user has been removed from the base successfully",
 	},
 }

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/tests/handlers/mocks"
@@ -147,6 +148,64 @@ func TestTableHandler_CreateTable_Success(t *testing.T) {
 
 	handler.CreateTable(c)
 	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_CreateTable_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewTableHandler(nil, nil)
+
+	body, _ := json.Marshal(dto.CreateTableRequest{Title: "Table"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/tables", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateTable(c)
+	assert.NotEqual(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_CreateTable_TitleTooLong(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewTableHandler(nil, nil)
+
+	longTitle := string(bytes.Repeat([]byte("a"), 300))
+	body, _ := json.Marshal(dto.CreateTableRequest{
+		BaseID:      uuid.New().String(),
+		WorkspaceID: uuid.New().String(),
+		Title:       longTitle,
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/tables", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateTable(c)
+	assert.NotEqual(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_CreateTable_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().CreateTableWithDefaults(gomock.Any(), gomock.Any(), "test").Return(dto.TableResponse{}, errors.New("create failed"))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.CreateTableRequest{
+		BaseID:      uuid.New().String(),
+		WorkspaceID: uuid.New().String(),
+		Title:       "Table",
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/tables", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateTable(c)
+	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
 func TestTableHandler_UpdateTable_InvalidID(t *testing.T) {
@@ -306,6 +365,7 @@ func TestTableHandler_AddColumn_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().GetTableByID(gomock.Any(), gomock.Any(), "test").Return(dto.TableResponse{}, nil)
 	mockTableService.EXPECT().AddColumn(gomock.Any(), "test", gomock.Any()).Return(dto.ColumnResponse{}, nil)
 	handler := handlers.NewTableHandler(mockTableService, nil)
 
@@ -346,7 +406,35 @@ func TestTableHandler_AddColumn_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().GetTableByID(gomock.Any(), gomock.Any(), "test").Return(dto.TableResponse{}, nil)
 	mockTableService.EXPECT().AddColumn(gomock.Any(), "test", gomock.Any()).Return(dto.ColumnResponse{}, errors.New("add failed"))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.AddColumnRequest{
+		ModelID: uuid.New(),
+		BaseID:  uuid.New(),
+		Title:   "Column",
+		UIDT:    "text",
+		DT:      "text",
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/columns", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.AddColumn(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_AddColumn_TableNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().GetTableByID(gomock.Any(), gomock.Any(), "test").Return(dto.TableResponse{}, app_errors.TableNotFound)
 	handler := handlers.NewTableHandler(mockTableService, nil)
 
 	body, _ := json.Marshal(dto.AddColumnRequest{
@@ -455,6 +543,7 @@ func TestTableHandler_CreateView_Success(t *testing.T) {
 		BaseID:  uuid.New(),
 		Title:   "View",
 		Type:    "grid",
+		Meta:    &map[string]interface{}{},
 	})
 
 	w := httptest.NewRecorder()
@@ -494,6 +583,7 @@ func TestTableHandler_CreateView_ServiceError(t *testing.T) {
 		BaseID:  uuid.New(),
 		Title:   "View",
 		Type:    "grid",
+		Meta:    &map[string]interface{}{},
 	})
 
 	w := httptest.NewRecorder()
@@ -856,6 +946,85 @@ func TestTableHandler_AddAttachment_Success(t *testing.T) {
 	c.Set("schema", "test")
 
 	handler.AddAttachment(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_UpdateAttachment_InvalidJSON(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/attachments/update", bytes.NewBufferString("invalid"))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateAttachment(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_UpdateAttachment_ValidationError(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	body, _ := json.Marshal(dto.UpdateAttachmentRequest{})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/attachments/update", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateAttachment(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_UpdateAttachment_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().UpdateAttachment(gomock.Any(), "test", gomock.Any()).Return(dto.RecordResponse{}, errors.New("update failed"))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	title := "updated-title"
+	body, _ := json.Marshal(dto.UpdateAttachmentRequest{
+		ModelID:  uuid.New().String(),
+		ColumnId: uuid.New().String(),
+		RowId:    1,
+		AssetId:  uuid.New().String(),
+		Content:  dto.AssetUpdate{Title: &title},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/attachments/update", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.UpdateAttachment(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_UpdateAttachment_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().UpdateAttachment(gomock.Any(), "test", gomock.Any()).Return(dto.RecordResponse{}, nil)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	title := "updated-title"
+	body, _ := json.Marshal(dto.UpdateAttachmentRequest{
+		ModelID:  uuid.New().String(),
+		ColumnId: uuid.New().String(),
+		RowId:    1,
+		AssetId:  uuid.New().String(),
+		Content:  dto.AssetUpdate{Title: &title},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/attachments/update", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.UpdateAttachment(c)
 	assert.Equal(t, http.StatusCreated, w.Code)
 }
 

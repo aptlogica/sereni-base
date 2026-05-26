@@ -12,6 +12,10 @@ support@aptlogica.com
 support@serenibase.com
 */
 
+// @securityDefinitions.apiKey BearerAuth
+// @in header
+// @name Authorization
+// @description Bearer token for authentication
 package main
 
 import (

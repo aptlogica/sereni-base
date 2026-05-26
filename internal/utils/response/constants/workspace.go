@@ -15,6 +15,7 @@ var WorkspaceError = struct {
 	WorkspaceNotUpdated       ResponseCode
 	WorkspaceNotDeleted       ResponseCode
 	NameRequired              ResponseCode
+	NameTooLong               ResponseCode
 	NameInvalid               ResponseCode
 	DescriptionInvalid        ResponseCode
 	IdRequired                ResponseCode
@@ -29,6 +30,7 @@ var WorkspaceError = struct {
 	WorkspaceNotUpdated:       "WSP_3008",
 	WorkspaceNotDeleted:       "WSP_3009",
 	NameRequired:              "WSP_3010",
+	NameTooLong:               "WSP_3018",
 	NameInvalid:               "WSP_3011",
 	DescriptionInvalid:        "WSP_3012",
 	IdRequired:                "WSP_3013",
@@ -68,6 +70,11 @@ var WorkspaceErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Workspace name is required",
 		Description: "The workspace name field is required and was not provided",
+	},
+	WorkspaceError.NameTooLong: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Workspace name must be 50 characters or fewer. Please shorten the name and try again",
+		Description: "The workspace name exceeds the allowed limit of 50 characters. Use a shorter workspace name with 50 characters or fewer",
 	},
 	WorkspaceError.NameInvalid: {
 		HTTPStatus:  http.StatusBadRequest,

@@ -126,12 +126,12 @@ func (v *ViewUpdate) Map() map[string]interface{} {
 }
 
 type CreateViewRequest struct {
-	ModelID     uuid.UUID               `db:"model_id" json:"model_id" mapstructure:"model_id"`
-	BaseID      uuid.UUID               `db:"base_id" json:"base_id" mapstructure:"base_id"`
-	Title       string                  `db:"title" json:"title" mapstructure:"title"`
-	Description string                  `db:"description" json:"description" mapstructure:"description"`
-	Type        string                  `db:"type" json:"type" mapstructure:"type"`
-	Meta        *map[string]interface{} `db:"meta" json:"meta" mapstructure:"meta"`
+	ModelID     uuid.UUID               `db:"model_id" json:"model_id" mapstructure:"model_id" binding:"required"`
+	BaseID      uuid.UUID               `db:"base_id" json:"base_id" mapstructure:"base_id" binding:"required"`
+	Title       string                  `db:"title" json:"title" mapstructure:"title" binding:"required"`
+	Description string                  `db:"description" json:"description" mapstructure:"description" binding:"omitempty"`
+	Type        string                  `db:"type" json:"type" mapstructure:"type" binding:"required"`
+	Meta        *map[string]interface{} `db:"meta" json:"meta" mapstructure:"meta" binding:"required"`
 	OrderIndex  *float64                `db:"order_index" json:"order_index,omitempty" mapstructure:"order_index"`
 	CreatedBy   string                  `json:"created_by,omitempty"`
 }

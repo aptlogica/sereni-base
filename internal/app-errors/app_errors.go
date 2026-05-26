@@ -155,6 +155,7 @@ var (
 	MultipleFilesTooLargeError = errors.New("One or more files exceed the 5MB size limit.")
 	TooManyFilesError          = errors.New("Too many files uploaded. Only 5 files are allowed.")
 	MultipartFormNotFound      = errors.New("multipart form not found")
+	InvalidImageDimensions     = errors.New("image dimensions must be max 800 x 400px")
 )
 
 // table management
