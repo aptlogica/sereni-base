@@ -1150,10 +1150,12 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 
 	req := buildImportRequestFromContext(c, importConfig, title)
 
-	// Remove file extension from filename to use as table title
-	fileName := req.Title
-	if lastDot := strings.LastIndex(fileName, "."); lastDot != -1 {
-		fileName = fileName[:lastDot]
+	// Use provided title or extract from filename
+	if req.Title == "" {
+		req.Title = file.Filename
+	}
+	if lastDot := strings.LastIndex(req.Title, "."); lastDot != -1 {
+		req.Title = req.Title[:lastDot]
 	}
 
 	// Get schema from context
@@ -1161,7 +1163,7 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 	schemaName, _ := schemaNameVal.(string)
 
 	// Call import service with config
-	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, fileName)
+	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, req.Title)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return

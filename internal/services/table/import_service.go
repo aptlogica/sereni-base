@@ -30,6 +30,9 @@ import (
 
 const (
 	isoDateFormat             = "2006-01-02"
+	ddmmyyyyDateFormat        = "02-01-2006"
+	yyyymmddSlashFormat       = "2006/01/02"
+	ddmmyyyySlashFormat       = "02/01/2006"
 	errWorkspaceIDRequiredMsg = "workspace_id is required when base_id is not provided"
 	descAutoCreatedBase       = "Auto-created base for table import"
 	errFailedCreateBase       = "Failed to create base for import"
@@ -332,7 +335,6 @@ func (s *importService) cleanupBaseIfNeeded(ctx context.Context, schemaName stri
 	}
 }
 
-
 func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, schemaName string, tableResp dto.TableResponse, newRecords []map[string]interface{}, headers []string, lg *zerolog.Logger) ([][]string, []string) {
 	batchSize := 50
 	totalBatches := (len(newRecords) + batchSize - 1) / batchSize
@@ -385,6 +387,7 @@ func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, sche
 
 	return failedRows, errorMessages
 }
+
 // batchInsertOptions packages parameters for per-row retry helper to keep parameter
 // counts low and the callsite readable.
 type batchInsertOptions struct {
@@ -543,7 +546,7 @@ func (s *importService) checkBoolType(val string) bool {
 }
 
 func (s *importService) checkDateType(val string) bool {
-	formats := []string{isoDateFormat, "02-01-2006", "2006/01/02", "02/01/2006"}
+	formats := []string{isoDateFormat, ddmmyyyyDateFormat, yyyymmddSlashFormat, ddmmyyyySlashFormat}
 	for _, f := range formats {
 		if _, err := time.Parse(f, val); err == nil {
 			return true
@@ -651,10 +654,10 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 // convertDateToISO converts date strings from various formats to ISO format (YYYY-MM-DD)
 func (s *importService) convertDateToISO(val string) string {
 	formats := []string{
-		isoDateFormat, // Already ISO format
-		"02-01-2006",  // DD-MM-YYYY
-		"2006/01/02",  // YYYY/MM/DD
-		"02/01/2006",  // DD/MM/YYYY
+		isoDateFormat,
+		ddmmyyyyDateFormat,
+		yyyymmddSlashFormat,
+		ddmmyyyySlashFormat,
 	}
 
 	for _, format := range formats {
@@ -1008,39 +1011,16 @@ func (s *importService) addColumnForHeader(params dto.AddColumnsWithConfigParams
 	return colResp, true, nil
 }
 
-
-
 // saveErrorRows writes error rows, empty rows, and duplicate rows to a text log file
 func (s *importService) saveErrorRows(headers []string, errorRows [][]string, errorMessages []string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string, lg *zerolog.Logger) (string, error) {
-	// Create tmp directory if it doesn't exist
-	tmpDir := "./internal/tmp"
-	if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(tmpDir, 0755); err != nil {
-			lg.Warn().Err(err).Str("dir", tmpDir).Msg("Failed to create tmp directory for error rows, continuing without file save")
-			// Don't fail - continue with content in memory
-		}
-	} else if err != nil {
-		lg.Warn().Err(err).Str("dir", tmpDir).Msg("Error checking tmp directory, continuing without file save")
-		// Continue anyway
-	} else {
-		// Directory exists, try to set proper permissions
-		if err := os.Chmod(tmpDir, 0755); err != nil {
-			lg.Warn().Err(err).Str("dir", tmpDir).Msg("Failed to set directory permissions, continuing anyway")
-		}
-	}
-
-	// Generate filename with timestamp
-	timestamp := time.Now().Format("20060102_150405")
-	errorFile := fmt.Sprintf("%s/import_error_rows_%s.txt", tmpDir, timestamp)
-
-	// Build the content
+	// Build the content using helper functions
 	var content strings.Builder
 	content.WriteString("Import Issues Report\n")
 	content.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format(time.RFC3339)))
 	content.WriteString(strings.Repeat("=", 100))
 	content.WriteString("\n\n")
 
-	// Write summary
+	// Summary
 	content.WriteString("SUMMARY:\n")
 	content.WriteString(fmt.Sprintf("Total Error Rows: %d\n", len(errorRows)))
 	content.WriteString(fmt.Sprintf("Total Empty Rows: %d\n", len(emptyRowsWithLineNumbers)))
@@ -1050,41 +1030,41 @@ func (s *importService) saveErrorRows(headers []string, errorRows [][]string, er
 		content.WriteString("\nStatus: ✓ No issues detected - All rows are valid\n")
 	}
 	content.WriteString(strings.Repeat("-", 100))
-	content.WriteString("\n\n")
-
-	// Write headers
-	content.WriteString("CSV Headers:\n")
+	content.WriteString("\n\nCSV Headers:\n")
 	content.WriteString(strings.Join(headers, " | "))
 	content.WriteString("\n\n")
 
-	// Write ALL ERRORS section FIRST - comprehensive error details
-	if len(errorRows) > 0 {
-		content.WriteString(s.buildAllValidationErrorsBlock(errorMessages))
+	// Use helper functions for section building
+	if len(errorMessages) > 0 {
 		content.WriteString(s.buildErrorTypeSummary(errorMessages))
+		content.WriteString(s.buildAllValidationErrorsBlock(errorMessages))
 	}
-
-	// Write EMPTY ROWS section
 	if len(emptyRowsWithLineNumbers) > 0 {
 		content.WriteString(s.buildEmptyRowsHumanSection(emptyRowsWithLineNumbers))
 	}
-
-	// Write DUPLICATE ROWS section
 	if len(duplicateRowsWithLineNumbers) > 0 {
 		content.WriteString(s.buildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers))
 	}
 
-	// RAW DATA (CSV Format)
+	// Raw CSV data section
 	content.WriteString(s.buildRawCSVSection(headers, errorRows, emptyRowsWithLineNumbers, duplicateRowsWithLineNumbers))
 
+	// Ensure tmp directory exists
+	tmpDir := "./internal/tmp"
+	if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			lg.Warn().Err(err).Str("dir", tmpDir).Msg("Failed to create tmp directory, continuing without file save")
+		}
+	}
+
 	// Write to file
+	errorFile := fmt.Sprintf("%s/import_error_rows_%s.txt", tmpDir, time.Now().Format("20060102_150405"))
 	if err := os.WriteFile(errorFile, []byte(content.String()), 0644); err != nil {
 		lg.Warn().Err(err).Str("file", errorFile).Msg("Failed to save error rows to file, but returning content anyway")
-		// Don't fail - return the content even if file write fails
 	} else {
 		lg.Info().Str("file", errorFile).Int("errorRowCount", len(errorRows)).Int("emptyRowCount", len(emptyRowsWithLineNumbers)).Int("duplicateRowCount", len(duplicateRowsWithLineNumbers)).Msg("Import log file generated successfully")
 	}
 
-	// Return file content directly instead of path
 	return content.String(), nil
 }
 
@@ -1231,39 +1211,50 @@ func (s *importService) buildRawCSVSection(headers []string, errorRows [][]strin
 	b.WriteString(strings.Join(headers, ","))
 	b.WriteString("\n")
 
-	// Error rows in CSV format
-	if len(errorRows) > 0 {
-		b.WriteString("# ERROR ROWS:\n")
-		for _, row := range errorRows {
-			b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-	}
+	// Add row sections
+	s.appendErrorRowsToCSV(&b, errorRows)
+	s.appendEmptyRowsToCSV(&b, emptyRowsWithLineNumbers)
+	s.appendDuplicateRowsToCSV(&b, duplicateRowsWithLineNumbers)
 
-	// Empty rows in CSV format
-	if len(emptyRowsWithLineNumbers) > 0 {
-		b.WriteString("# EMPTY ROWS:\n")
-		for _, lineNum := range s.sortedLineNumbers(emptyRowsWithLineNumbers) {
-			row := emptyRowsWithLineNumbers[lineNum]
-			b.WriteString(fmt.Sprintf("# Line %d: ", lineNum))
-			b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-	}
-
-	// Duplicate rows in CSV format
-	if len(duplicateRowsWithLineNumbers) > 0 {
-		b.WriteString("# DUPLICATE ROWS:\n")
-		for _, lineNum := range s.sortedLineNumbers(duplicateRowsWithLineNumbers) {
-			row := duplicateRowsWithLineNumbers[lineNum]
-			b.WriteString(fmt.Sprintf("# Line %d: ", lineNum))
-			b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
-			b.WriteString("\n")
-		}
-	}
 	return b.String()
+}
+
+// appendErrorRowsToCSV appends error rows to CSV output
+func (s *importService) appendErrorRowsToCSV(b *strings.Builder, errorRows [][]string) {
+	if len(errorRows) == 0 {
+		return
+	}
+	b.WriteString("# ERROR ROWS:\n")
+	for _, row := range errorRows {
+		b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+}
+
+// appendEmptyRowsToCSV appends empty rows to CSV output
+func (s *importService) appendEmptyRowsToCSV(b *strings.Builder, emptyRows map[int][]string) {
+	if len(emptyRows) == 0 {
+		return
+	}
+	b.WriteString("# EMPTY ROWS:\n")
+	for _, lineNum := range s.sortedLineNumbers(emptyRows) {
+		row := emptyRows[lineNum]
+		b.WriteString(fmt.Sprintf("# Line %d: %s\n", lineNum, strings.Join(s.escapeRowForCSV(row), ",")))
+	}
+	b.WriteString("\n")
+}
+
+// appendDuplicateRowsToCSV appends duplicate rows to CSV output
+func (s *importService) appendDuplicateRowsToCSV(b *strings.Builder, duplicateRows map[int][]string) {
+	if len(duplicateRows) == 0 {
+		return
+	}
+	b.WriteString("# DUPLICATE ROWS:\n")
+	for _, lineNum := range s.sortedLineNumbers(duplicateRows) {
+		row := duplicateRows[lineNum]
+		b.WriteString(fmt.Sprintf("# Line %d: %s\n", lineNum, strings.Join(s.escapeRowForCSV(row), ",")))
+	}
 }
 
 // getDefaultValue extracts default value from column config metadata
@@ -1277,31 +1268,6 @@ func (s *importService) getDefaultValue(cfg *dto.ColumnConfig) string {
 		}
 	}
 	return ""
-}
-
-// validateFieldValue performs comprehensive validation on a cell value for all UIDT types
-func (s *importService) validateFieldValue(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
-	// Skip validation for empty values
-	if cellVal == "" {
-		return nil
-	}
-
-	switch fieldType {
-	case "number":
-		return s.validateNumberField(cellVal, columnName, meta)
-	case "decimal":
-		return s.validateDecimalField(cellVal, columnName, meta)
-	case "boolean":
-		return s.validateBooleanField(cellVal, columnName)
-	case "email":
-		return s.validateEmailField(cellVal, columnName)
-	case "json":
-		return s.validateJSONField(cellVal, columnName)
-	case "text", "longText":
-		return s.validateTextField(cellVal, columnName, fieldType, meta)
-	default:
-		return nil
-	}
 }
 
 // validateNumberField validates integer number fields including range and meta bounds
@@ -1347,27 +1313,43 @@ func (s *importService) validateDecimalField(cellVal string, columnName string, 
 
 // checkNumericBounds checks meta min/max bounds for numeric values and returns any errors
 func (s *importService) checkNumericBounds(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
-	var errors []string
 	if meta == nil {
 		return nil
 	}
 
-	if minVal, ok := meta["min"]; ok {
-		if minFloat, ok2 := minVal.(float64); ok2 {
-			if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v < minFloat {
-				errors = append(errors, fmt.Sprintf("Column '%s' [%s]: Value %s is less than minimum %v", columnName, fieldType, cellVal, minFloat))
-			}
-		}
-	}
-	if maxVal, ok := meta["max"]; ok {
-		if maxFloat, ok2 := maxVal.(float64); ok2 {
-			if v, err := strconv.ParseFloat(cellVal, 64); err == nil && v > maxFloat {
-				errors = append(errors, fmt.Sprintf("Column '%s' [%s]: Value %s exceeds maximum %v", columnName, fieldType, cellVal, maxFloat))
-			}
-		}
+	numVal, err := strconv.ParseFloat(cellVal, 64)
+	if err != nil {
+		return nil // Already validated in caller
 	}
 
+	var errors []string
+	if errs := s.checkMinBound(numVal, cellVal, columnName, fieldType, meta); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
+	if errs := s.checkMaxBound(numVal, cellVal, columnName, fieldType, meta); len(errs) > 0 {
+		errors = append(errors, errs...)
+	}
 	return errors
+}
+
+// checkMinBound checks minimum bound for numeric values
+func (s *importService) checkMinBound(numVal float64, cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+	if minVal, ok := meta["min"]; ok {
+		if minFloat, ok2 := minVal.(float64); ok2 && numVal < minFloat {
+			return []string{fmt.Sprintf("Column '%s' [%s]: Value %s is less than minimum %v", columnName, fieldType, cellVal, minFloat)}
+		}
+	}
+	return nil
+}
+
+// checkMaxBound checks maximum bound for numeric values
+func (s *importService) checkMaxBound(numVal float64, cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+	if maxVal, ok := meta["max"]; ok {
+		if maxFloat, ok2 := maxVal.(float64); ok2 && numVal > maxFloat {
+			return []string{fmt.Sprintf("Column '%s' [%s]: Value %s exceeds maximum %v", columnName, fieldType, cellVal, maxFloat)}
+		}
+	}
+	return nil
 }
 
 // validateBooleanField validates boolean-like values
@@ -1462,7 +1444,7 @@ func (s *importService) buildRecordFromRow(rowIdx int, row []string, params dto.
 
 // populateRecordFromCells iterates cells in a row and applies validations/conversions
 func (s *importService) populateRecordFromCells(record map[string]interface{}, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) ([]string, bool) {
-	rowErrors := []string{}
+	var rowErrors []string
 	recordValid := true
 
 	for i, cellVal := range row {
@@ -1470,30 +1452,33 @@ func (s *importService) populateRecordFromCells(record map[string]interface{}, r
 			break
 		}
 
-		header := params.Headers[i]
-		cfg, configExists := configMap[header]
-
-		// Primary column handling
-		if params.Primary != nil && params.Primary.ColumnName == header {
-			cfg = *params.Primary
-			configExists = true
-			if errs := s.applyPrimaryCell(record, header, cfg, cellVal); len(errs) > 0 {
-				recordValid = false
-				rowErrors = append(rowErrors, errs...)
-			}
-			continue
-		}
-
-		if errs, applied := s.applyNonPrimary(record, header, cfg, configExists, params, i, cellVal); len(errs) > 0 {
-			recordValid = false
+		errs := s.processCellByType(record, i, cellVal, params, configMap)
+		if len(errs) > 0 {
 			rowErrors = append(rowErrors, errs...)
-			continue
-		} else if applied {
-			continue
+			recordValid = false
 		}
 	}
 
 	return rowErrors, recordValid
+}
+
+// processCellByType processes a cell based on whether it's primary or non-primary
+func (s *importService) processCellByType(record map[string]interface{}, colIdx int, cellVal string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig) []string {
+	header := params.Headers[colIdx]
+	cfg, configExists := configMap[header]
+
+	// Handle primary column
+	if params.Primary != nil && params.Primary.ColumnName == header {
+		cfg = *params.Primary
+		return s.applyPrimaryCell(record, header, cfg, cellVal)
+	}
+
+	// Handle non-primary column
+	errs, applied := s.applyNonPrimary(record, header, cfg, configExists, params, colIdx, cellVal)
+	if len(errs) > 0 || applied {
+		return errs
+	}
+	return nil
 }
 
 // applyNonPrimary handles non-primary column processing for a single cell
@@ -1534,35 +1519,50 @@ func (s *importService) handleDataCellForRow(record map[string]interface{}, head
 // processTitleCell handles validation and conversion for the primary/title column
 func (s *importService) processTitleCell(header string, cfg dto.ColumnConfig, cellVal string) (interface{}, []string) {
 	defaultVal := s.getDefaultValue(&cfg)
-	if cellVal == "" && defaultVal == "" {
+
+	// Determine which value to use
+	var primaryValue string
+	if cellVal != "" {
+		primaryValue = cellVal
+	} else if defaultVal != "" {
+		primaryValue = defaultVal
+	}
+
+	// If both cell and default are empty, title remains unset
+	if primaryValue == "" {
 		return nil, nil
 	}
-	valToValidate := cellVal
-	if cellVal == "" && defaultVal != "" {
-		valToValidate = defaultVal
+
+	// Validate primary column type conversion
+	conversionErr := s.validateConversion(primaryValue, cfg.UIDT)
+	if conversionErr != "" {
+		return nil, []string{"Primary column: " + conversionErr}
 	}
-	validationErrors := s.validateFieldValue(valToValidate, header, cfg.UIDT, cfg.Meta)
-	if len(validationErrors) > 0 {
-		return nil, validationErrors
-	}
-	return s.convertValue(valToValidate, cfg.UIDT), nil
+
+	return s.convertValue(primaryValue, cfg.UIDT), nil
 }
 
 // processDataCell handles validation and conversion for non-primary data cells
 func (s *importService) processDataCell(header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) (string, interface{}, []string, bool) {
 	defaultVal := s.getDefaultValue(&cfg)
-	if cellVal == "" && defaultVal == "" {
-		return "", nil, nil, false
-	}
-	valToValidate := cellVal
+
+	// Determine which value to use
+	var valueToConvert string
 	if cellVal == "" && defaultVal != "" {
-		valToValidate = defaultVal
+		valueToConvert = defaultVal
+	} else if cellVal != "" {
+		valueToConvert = cellVal
+	} else {
+		return "", nil, nil, false // Skip empty cells with no default
 	}
-	validationErrors := s.validateFieldValue(valToValidate, header, cfg.UIDT, cfg.Meta)
-	if len(validationErrors) > 0 {
-		return "", nil, validationErrors, false
+
+	// Validate type conversion before applying
+	conversionErr := s.validateConversion(valueToConvert, cfg.UIDT)
+	if conversionErr != "" {
+		return "", nil, []string{conversionErr}, false
 	}
-	val := s.convertValue(valToValidate, cfg.UIDT)
+
+	val := s.convertValue(valueToConvert, cfg.UIDT)
 	key := fmt.Sprintf(colNameFmt, colResp.ColumnName)
 	return key, val, nil, true
 }
@@ -1896,4 +1896,81 @@ func (s *importService) prepareImportData(ctx context.Context, schemaName string
 	}
 
 	return headers, dataRows, stats, uniqueTableTitle, nil
+}
+
+// validateConversion checks if a value can be successfully converted to the target type
+// Returns an error message if conversion would fail, or empty string if valid
+func (s *importService) validateConversion(val string, typeName string) string {
+	if val == "" {
+		return "" // Empty values are allowed (will use defaults or be skipped)
+	}
+
+	switch typeName {
+	case "number":
+		return s.validateNumberConversion(val)
+	case "decimal":
+		return s.validateDecimalConversion(val)
+	case "boolean":
+		return s.validateBooleanConversion(val)
+	case "date":
+		return s.validateDateConversion(val)
+	case "email":
+		return s.validateEmailConversion(val)
+	}
+	return "" // Other types pass through
+}
+
+// validateNumberConversion checks if value is a valid number
+func (s *importService) validateNumberConversion(val string) string {
+	if _, err := strconv.ParseInt(val, 10, 64); err == nil {
+		return "" // Valid integer
+	}
+	if _, err := strconv.ParseFloat(val, 64); err == nil {
+		return "" // Valid float
+	}
+	return fmt.Sprintf("Column type 'number' expects numeric value, got '%s'", val)
+}
+
+// validateDecimalConversion checks if value is a valid decimal
+func (s *importService) validateDecimalConversion(val string) string {
+	if _, err := strconv.ParseFloat(val, 64); err != nil {
+		return fmt.Sprintf("Column type 'decimal' expects numeric value, got '%s'", val)
+	}
+	return ""
+}
+
+// validateBooleanConversion checks if value is a valid boolean
+func (s *importService) validateBooleanConversion(val string) string {
+	lower := strings.ToLower(val)
+	validBools := []string{"true", "false", "1", "0", "yes", "no"}
+	for _, b := range validBools {
+		if lower == b {
+			return "" // Valid boolean
+		}
+	}
+	return fmt.Sprintf("Column type 'boolean' expects true/false/yes/no/1/0, got '%s'", val)
+}
+
+// validateDateConversion checks if value is a valid date
+func (s *importService) validateDateConversion(val string) string {
+	formats := []string{
+		isoDateFormat,
+		ddmmyyyyDateFormat,
+		yyyymmddSlashFormat,
+		ddmmyyyySlashFormat,
+	}
+	for _, format := range formats {
+		if _, err := time.Parse(format, val); err == nil {
+			return "" // Valid date format
+		}
+	}
+	return fmt.Sprintf("Column type 'date' cannot parse '%s' (expected YYYY-MM-DD, DD-MM-YYYY, or similar)", val)
+}
+
+// validateEmailConversion checks if value is a valid email
+func (s *importService) validateEmailConversion(val string) string {
+	if !strings.Contains(val, "@") {
+		return fmt.Sprintf("Column type 'email' expects valid email format, got '%s'", val)
+	}
+	return ""
 }
