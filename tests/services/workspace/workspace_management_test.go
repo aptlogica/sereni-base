@@ -26,6 +26,7 @@ func TestNewWorkspaceManagementService(t *testing.T) {
 func TestWorkspaceManagementCreate(t *testing.T) {
 	t.Run("workspace insertion error", func(t *testing.T) {
 		db, _ := setupMockDB()
+
 		workspaceSvc := &StubWorkspaceService{
 			WorkspaceInsertionFn: func(ctx context.Context, req dto.CreateWorkspaceRequest, schemaName string) (tenant.Workspace, error) {
 				return tenant.Workspace{}, errors.New("fail")
