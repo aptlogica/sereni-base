@@ -57,7 +57,7 @@ func NewImportService(tableService interfaces.TableManagementService, baseManage
 func (s *importService) ImportWithConfig(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
 	lg := logger.Get()
 
-	if err := s.scanFile(ctx, file, lg); err != nil {
+	if err := s.ScanFile(ctx, file, lg); err != nil {
 		return dto.ImportTableResponse{}, err
 	}
 	// Track whether we auto-created a base/table so we can clean up on partial failures
@@ -89,7 +89,7 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	}
 
 	// Add columns with config
-	columnMap, err := s.addColumnsWithConfig(dto.AddColumnsWithConfigParams{
+	columnMap, err := s.AddColumnsWithConfig(dto.AddColumnsWithConfigParams{
 		Ctx:           ctx,
 		SchemaName:    schemaName,
 		Req:           createTableReq,
@@ -132,7 +132,7 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	stats.ErrorRows = len(errorRows)
 	stats.ErrorRowsFileContent = errorRowsFileContent
 
-	return s.finalizeImport(finalizeImportOptions{
+	return s.FinalizeImport(finalizeImportOptions{
 		Ctx:           ctx,
 		SchemaName:    schemaName,
 		TableResp:     tableResp,
@@ -145,10 +145,10 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	})
 }
 
-// finalizeImport handles batch insertion, aggregates DB errors into statistics and
+// FinalizeImport handles batch insertion, aggregates DB errors into statistics and
 // refreshes the table before returning a final response. It mirrors the original
 // inline logic to preserve behavior exactly.
-// finalizeImportOptions packages arguments for finalizeImport helper
+// finalizeImportOptions packages arguments for FinalizeImport helper
 type finalizeImportOptions struct {
 	Ctx           context.Context
 	SchemaName    string
@@ -161,12 +161,12 @@ type finalizeImportOptions struct {
 	LG            *zerolog.Logger
 }
 
-// finalizeImport handles batch insertion, aggregates DB errors into statistics and
+// FinalizeImport handles batch insertion, aggregates DB errors into statistics and
 // refreshes the table before returning a final response. It mirrors the original
 // inline logic to preserve behavior exactly.
-func (s *importService) finalizeImport(opts finalizeImportOptions) (dto.ImportTableResponse, error) {
+func (s *importService) FinalizeImport(opts finalizeImportOptions) (dto.ImportTableResponse, error) {
 	// Insert batches with database error handling - skip failed rows and continue
-	dbErrorRows, dbErrorMessages := s.insertBatchesWithErrorHandling(opts.Ctx, opts.SchemaName, opts.TableResp, opts.NewRecords, opts.Headers, opts.LG)
+	dbErrorRows, dbErrorMessages := s.InsertBatchesWithErrorHandling(opts.Ctx, opts.SchemaName, opts.TableResp, opts.NewRecords, opts.Headers, opts.LG)
 
 	// Add database errors to statistics and error rows
 	if len(dbErrorRows) > 0 {
@@ -187,7 +187,7 @@ func (s *importService) finalizeImport(opts finalizeImportOptions) (dto.ImportTa
 		opts.LG.Warn().Int("dbErrorRowCount", len(dbErrorRows)).Msg("Some rows failed due to database errors - import continued with remaining rows")
 	}
 
-	finalTableResp, err := s.refreshTable(opts.Ctx, opts.SchemaName, opts.TableResp, opts.LG)
+	finalTableResp, err := s.RefreshTable(opts.Ctx, opts.SchemaName, opts.TableResp, opts.LG)
 	if err != nil {
 		return dto.ImportTableResponse{ImportStats: opts.Stats, TableModelViewResponse: dto.TableModelViewResponse{
 			Model: opts.TableResp.Model,
@@ -201,7 +201,7 @@ func (s *importService) finalizeImport(opts finalizeImportOptions) (dto.ImportTa
 	}}, nil
 }
 
-func (s *importService) scanFile(ctx context.Context, file *multipart.FileHeader, lg *zerolog.Logger) error {
+func (s *importService) ScanFile(ctx context.Context, file *multipart.FileHeader, lg *zerolog.Logger) error {
 	if s.antivirusProvider == nil {
 		return nil
 	}
@@ -254,7 +254,7 @@ func (s *importService) EnsureBase(ctx context.Context, schemaName string, req *
 	return nil
 }
 
-func (s *importService) parseCSV(file *multipart.FileHeader, lg *zerolog.Logger) ([]string, [][]string, error) {
+func (s *importService) ParseCSV(file *multipart.FileHeader, lg *zerolog.Logger) ([]string, [][]string, error) {
 	f, err := file.Open()
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("file", file.Filename).Msg("Failed to open CSV file")
@@ -287,7 +287,7 @@ func (s *importService) parseCSV(file *multipart.FileHeader, lg *zerolog.Logger)
 	return headers, dataRows, nil
 }
 
-func (s *importService) createTable(ctx context.Context, schemaName string, req dto.CreateTableRequest, lg *zerolog.Logger, tableTitle string) (dto.TableResponse, error) {
+func (s *importService) CreateTable(ctx context.Context, schemaName string, req dto.CreateTableRequest, lg *zerolog.Logger, tableTitle string) (dto.TableResponse, error) {
 	lg.Info().Str("tableName", tableTitle).Str("schemaName", schemaName).Msg("Creating table with defaults")
 	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
 	if err != nil {
@@ -302,7 +302,7 @@ func (s *importService) createTable(ctx context.Context, schemaName string, req 
 // remove created resources in case of later failures. It mirrors original behavior
 // to ensure semantics remain identical.
 func (s *importService) CreateTableForImport(ctx context.Context, schemaName string, createTableReq dto.CreateTableRequest, lg *zerolog.Logger, createdBase bool, baseID string) (dto.TableResponse, func(), error) {
-	tableResp, err := s.createTable(ctx, schemaName, createTableReq, lg, createTableReq.Title)
+	tableResp, err := s.CreateTable(ctx, schemaName, createTableReq, lg, createTableReq.Title)
 	if err != nil {
 		s.CleanupBaseIfNeeded(ctx, schemaName, baseID, createdBase, lg)
 		return dto.TableResponse{}, nil, err
@@ -335,7 +335,7 @@ func (s *importService) CleanupBaseIfNeeded(ctx context.Context, schemaName stri
 	}
 }
 
-func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, schemaName string, tableResp dto.TableResponse, newRecords []map[string]interface{}, headers []string, lg *zerolog.Logger) ([][]string, []string) {
+func (s *importService) InsertBatchesWithErrorHandling(ctx context.Context, schemaName string, tableResp dto.TableResponse, newRecords []map[string]interface{}, headers []string, lg *zerolog.Logger) ([][]string, []string) {
 	batchSize := 50
 	totalBatches := (len(newRecords) + batchSize - 1) / batchSize
 	failedRows := [][]string{}
@@ -356,7 +356,7 @@ func (s *importService) insertBatchesWithErrorHandling(ctx context.Context, sche
 			lg.Warn().Stack().Err(err).Int("batchNumber", batchNum).Int("batchSize", len(batch)).Msg("Batch insertion failed - testing rows individually to identify problematic rows")
 
 			// Try inserting each row individually to find which ones actually fail
-			newFailedRows, newErrorMessages := s.testInsertRowsIndividually(batchInsertOptions{
+			newFailedRows, newErrorMessages := s.TestInsertRowsIndividually(batchInsertOptions{
 				Ctx:           ctx,
 				SchemaName:    schemaName,
 				TableResp:     tableResp,
@@ -402,11 +402,11 @@ type batchInsertOptions struct {
 	LG            *zerolog.Logger
 }
 
-// testInsertRowsIndividually tries to insert each row in the provided batch independently
+// TestInsertRowsIndividually tries to insert each row in the provided batch independently
 // and returns failed row placeholders and corresponding error messages. `FailedOffset`
 // should be the count of previously collected failed rows so that error numbering stays
 // consistent with the original implementation.
-func (s *importService) testInsertRowsIndividually(opts batchInsertOptions) ([][]string, []string) {
+func (s *importService) TestInsertRowsIndividually(opts batchInsertOptions) ([][]string, []string) {
 	newFailedRows := [][]string{}
 	newErrorMessages := []string{}
 
@@ -440,7 +440,7 @@ func (s *importService) testInsertRowsIndividually(opts batchInsertOptions) ([][
 	return newFailedRows, newErrorMessages
 }
 
-func (s *importService) refreshTable(ctx context.Context, schemaName string, tableResp dto.TableResponse, lg *zerolog.Logger) (dto.TableResponse, error) {
+func (s *importService) RefreshTable(ctx context.Context, schemaName string, tableResp dto.TableResponse, lg *zerolog.Logger) (dto.TableResponse, error) {
 	lg.Info().Str("tableID", tableResp.Model.ID.String()).Msg("Refreshing table response")
 	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName)
 	if err != nil {
@@ -461,11 +461,11 @@ func (s *importService) InferColumnTypes(headers []string, rows [][]string) []st
 }
 
 func (s *importService) InferType(rows [][]string, colIndex int) string {
-	flags := s.collectTypeFlags(rows, colIndex)
+	flags := s.CollectTypeFlags(rows, colIndex)
 	if !flags.hasData {
 		return "text"
 	}
-	return s.determineTypeFromFlags(flags)
+	return s.DetermineTypeFromFlags(flags)
 }
 
 type typeFlags struct {
@@ -474,7 +474,7 @@ type typeFlags struct {
 	totalLength, count                                                   int
 }
 
-func (s *importService) collectTypeFlags(rows [][]string, colIndex int) typeFlags {
+func (s *importService) CollectTypeFlags(rows [][]string, colIndex int) typeFlags {
 	flags := typeFlags{
 		isNumber:  true,
 		isDecimal: true,
@@ -496,27 +496,27 @@ func (s *importService) collectTypeFlags(rows [][]string, colIndex int) typeFlag
 		flags.hasData = true
 		flags.totalLength += len(val)
 		flags.count++
-		s.updateTypeFlags(&flags, val)
+		s.UpdateTypeFlags(&flags, val)
 	}
 	return flags
 }
 
-// updateTypeFlags updates the type flags based on a single value
-func (s *importService) updateTypeFlags(flags *typeFlags, val string) {
+// UpdateTypeFlags updates the type flags based on a single value
+func (s *importService) UpdateTypeFlags(flags *typeFlags, val string) {
 	if flags.isNumber || flags.isDecimal {
-		flags.isNumber, flags.isDecimal = s.checkNumericTypes(val, flags.isNumber, flags.isDecimal)
+		flags.isNumber, flags.isDecimal = s.CheckNumericTypes(val, flags.isNumber, flags.isDecimal)
 	}
 	if flags.isBool {
-		flags.isBool = s.checkBoolType(val)
+		flags.isBool = s.CheckBoolType(val)
 	}
 	if flags.isDate {
 		flags.isDate = s.CheckDateType(val)
 	}
 	if flags.isEmail {
-		flags.isEmail = s.checkEmailType(val)
+		flags.isEmail = s.CheckEmailType(val)
 	}
 	if flags.isURL {
-		flags.isURL = s.checkURLType(val)
+		flags.isURL = s.CheckURLType(val)
 	}
 	if flags.isPhone {
 		flags.isPhone = s.CheckPhoneType(val)
@@ -526,7 +526,7 @@ func (s *importService) updateTypeFlags(flags *typeFlags, val string) {
 	}
 }
 
-func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {
+func (s *importService) CheckNumericTypes(val string, isNumber, isDecimal bool) (bool, bool) {
 	if v, err := strconv.ParseInt(val, 10, 64); err != nil {
 		isNumber = false
 	} else {
@@ -540,7 +540,7 @@ func (s *importService) checkNumericTypes(val string, isNumber, isDecimal bool) 
 	return isNumber, isDecimal
 }
 
-func (s *importService) checkBoolType(val string) bool {
+func (s *importService) CheckBoolType(val string) bool {
 	lower := strings.ToLower(val)
 	return lower == "true" || lower == "false" || lower == "0" || lower == "1" || lower == "yes" || lower == "no"
 }
@@ -555,11 +555,11 @@ func (s *importService) CheckDateType(val string) bool {
 	return false
 }
 
-func (s *importService) checkEmailType(val string) bool {
+func (s *importService) CheckEmailType(val string) bool {
 	return strings.Contains(val, "@") && strings.Contains(val, ".")
 }
 
-func (s *importService) checkURLType(val string) bool {
+func (s *importService) CheckURLType(val string) bool {
 	return strings.HasPrefix(val, "http://") || strings.HasPrefix(val, "https://")
 }
 
@@ -578,7 +578,7 @@ func (s *importService) CheckJSONType(val string) bool {
 	return json.Unmarshal([]byte(val), &js) == nil
 }
 
-func (s *importService) determineTypeFromFlags(flags typeFlags) string {
+func (s *importService) DetermineTypeFromFlags(flags typeFlags) string {
 	avgLength := 0
 	if flags.count > 0 {
 		avgLength = flags.totalLength / flags.count
@@ -866,8 +866,8 @@ func (s *importService) CleanData(rows [][]string, settings dto.ImportSettings) 
 	return cleanedRows
 }
 
-// addColumnsWithConfig adds columns to the table using user-provided config
-func (s *importService) addColumnsWithConfig(params dto.AddColumnsWithConfigParams, lg *zerolog.Logger) (map[int]dto.ColumnResponse, error) {
+// AddColumnsWithConfig adds columns to the table using user-provided config
+func (s *importService) AddColumnsWithConfig(params dto.AddColumnsWithConfigParams, lg *zerolog.Logger) (map[int]dto.ColumnResponse, error) {
 	lg.Info().Int("columnCount", len(params.ColumnConfigs)).Msg("Starting to add columns with config")
 	columnMap := make(map[int]dto.ColumnResponse)
 
@@ -878,7 +878,7 @@ func (s *importService) addColumnsWithConfig(params dto.AddColumnsWithConfigPara
 	}
 
 	for i, header := range params.Headers {
-		colResp, added, err := s.addColumnForHeader(params, header, i, configMap, lg)
+		colResp, added, err := s.AddColumnForHeader(params, header, i, configMap, lg)
 		if err != nil {
 			return nil, err
 		}
@@ -892,8 +892,8 @@ func (s *importService) addColumnsWithConfig(params dto.AddColumnsWithConfigPara
 	return columnMap, nil
 }
 
-// updateTitleColumnWithConfig updates the existing Title column with provided config metadata
-func (s *importService) updateTitleColumnWithConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, lg *zerolog.Logger) error {
+// UpdateTitleColumnWithConfig updates the existing Title column with provided config metadata
+func (s *importService) UpdateTitleColumnWithConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, lg *zerolog.Logger) error {
 	// find the existing Title column id
 	titleColID := ""
 	for _, c := range params.TableResp.Columns {
@@ -937,8 +937,8 @@ func (s *importService) updateTitleColumnWithConfig(params dto.AddColumnsWithCon
 	return nil
 }
 
-// createColumnFromConfig constructs AddColumnRequest and calls tableService.AddColumn
-func (s *importService) createColumnFromConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, i int, lg *zerolog.Logger) (dto.ColumnResponse, error) {
+// CreateColumnFromConfig constructs AddColumnRequest and calls tableService.AddColumn
+func (s *importService) CreateColumnFromConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, i int, lg *zerolog.Logger) (dto.ColumnResponse, error) {
 	colType := cfg.UIDT
 	if colType == "" {
 		colType = "text"
@@ -978,8 +978,8 @@ func (s *importService) createColumnFromConfig(params dto.AddColumnsWithConfigPa
 	return colResp, nil
 }
 
-// addColumnForHeader processes a single header: update title column or create new column
-func (s *importService) addColumnForHeader(params dto.AddColumnsWithConfigParams, header string, i int, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (dto.ColumnResponse, bool, error) {
+// AddColumnForHeader processes a single header: update title column or create new column
+func (s *importService) AddColumnForHeader(params dto.AddColumnsWithConfigParams, header string, i int, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (dto.ColumnResponse, bool, error) {
 	if header == "" {
 		return dto.ColumnResponse{}, false, nil
 	}
@@ -998,13 +998,13 @@ func (s *importService) addColumnForHeader(params dto.AddColumnsWithConfigParams
 	}
 
 	if primaryMatch {
-		if err := s.updateTitleColumnWithConfig(params, cfg, header, lg); err != nil {
+		if err := s.UpdateTitleColumnWithConfig(params, cfg, header, lg); err != nil {
 			return dto.ColumnResponse{}, false, err
 		}
 		return dto.ColumnResponse{}, false, nil
 	}
 
-	colResp, err := s.createColumnFromConfig(params, cfg, header, i, lg)
+	colResp, err := s.CreateColumnFromConfig(params, cfg, header, i, lg)
 	if err != nil {
 		return dto.ColumnResponse{}, false, err
 	}
@@ -1212,15 +1212,15 @@ func (s *importService) BuildRawCSVSection(headers []string, errorRows [][]strin
 	b.WriteString("\n")
 
 	// Add row sections
-	s.appendErrorRowsToCSV(&b, errorRows)
-	s.appendEmptyRowsToCSV(&b, emptyRowsWithLineNumbers)
-	s.appendDuplicateRowsToCSV(&b, duplicateRowsWithLineNumbers)
+	s.AppendErrorRowsToCSV(&b, errorRows)
+	s.AppendEmptyRowsToCSV(&b, emptyRowsWithLineNumbers)
+	s.AppendDuplicateRowsToCSV(&b, duplicateRowsWithLineNumbers)
 
 	return b.String()
 }
 
-// appendErrorRowsToCSV appends error rows to CSV output
-func (s *importService) appendErrorRowsToCSV(b *strings.Builder, errorRows [][]string) {
+// AppendErrorRowsToCSV appends error rows to CSV output
+func (s *importService) AppendErrorRowsToCSV(b *strings.Builder, errorRows [][]string) {
 	if len(errorRows) == 0 {
 		return
 	}
@@ -1232,8 +1232,8 @@ func (s *importService) appendErrorRowsToCSV(b *strings.Builder, errorRows [][]s
 	b.WriteString("\n")
 }
 
-// appendEmptyRowsToCSV appends empty rows to CSV output
-func (s *importService) appendEmptyRowsToCSV(b *strings.Builder, emptyRows map[int][]string) {
+// AppendEmptyRowsToCSV appends empty rows to CSV output
+func (s *importService) AppendEmptyRowsToCSV(b *strings.Builder, emptyRows map[int][]string) {
 	if len(emptyRows) == 0 {
 		return
 	}
@@ -1245,8 +1245,8 @@ func (s *importService) appendEmptyRowsToCSV(b *strings.Builder, emptyRows map[i
 	b.WriteString("\n")
 }
 
-// appendDuplicateRowsToCSV appends duplicate rows to CSV output
-func (s *importService) appendDuplicateRowsToCSV(b *strings.Builder, duplicateRows map[int][]string) {
+// AppendDuplicateRowsToCSV appends duplicate rows to CSV output
+func (s *importService) AppendDuplicateRowsToCSV(b *strings.Builder, duplicateRows map[int][]string) {
 	if len(duplicateRows) == 0 {
 		return
 	}
@@ -1289,7 +1289,7 @@ func (s *importService) ValidateNumberField(cellVal string, columnName string, m
 	}
 
 	// Check numeric bounds using generic helper
-	if boundErrors := s.checkNumericBounds(cellVal, columnName, "number", meta); len(boundErrors) > 0 {
+	if boundErrors := s.CheckNumericBounds(cellVal, columnName, "number", meta); len(boundErrors) > 0 {
 		errors = append(errors, boundErrors...)
 	}
 
@@ -1304,15 +1304,15 @@ func (s *importService) ValidateDecimalField(cellVal string, columnName string, 
 		return errors
 	}
 	// Check numeric bounds using generic helper
-	if boundErrors := s.checkNumericBounds(cellVal, columnName, "decimal", meta); len(boundErrors) > 0 {
+	if boundErrors := s.CheckNumericBounds(cellVal, columnName, "decimal", meta); len(boundErrors) > 0 {
 		errors = append(errors, boundErrors...)
 	}
 
 	return errors
 }
 
-// checkNumericBounds checks meta min/max bounds for numeric values and returns any errors
-func (s *importService) checkNumericBounds(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+// CheckNumericBounds checks meta min/max bounds for numeric values and returns any errors
+func (s *importService) CheckNumericBounds(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
 	if meta == nil {
 		return nil
 	}
@@ -1323,17 +1323,17 @@ func (s *importService) checkNumericBounds(cellVal string, columnName string, fi
 	}
 
 	var errors []string
-	if errs := s.checkMinBound(numVal, cellVal, columnName, fieldType, meta); len(errs) > 0 {
+	if errs := s.CheckMinBound(numVal, cellVal, columnName, fieldType, meta); len(errs) > 0 {
 		errors = append(errors, errs...)
 	}
-	if errs := s.checkMaxBound(numVal, cellVal, columnName, fieldType, meta); len(errs) > 0 {
+	if errs := s.CheckMaxBound(numVal, cellVal, columnName, fieldType, meta); len(errs) > 0 {
 		errors = append(errors, errs...)
 	}
 	return errors
 }
 
-// checkMinBound checks minimum bound for numeric values
-func (s *importService) checkMinBound(numVal float64, cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+// CheckMinBound checks minimum bound for numeric values
+func (s *importService) CheckMinBound(numVal float64, cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
 	if minVal, ok := meta["min"]; ok {
 		if minFloat, ok2 := minVal.(float64); ok2 && numVal < minFloat {
 			return []string{fmt.Sprintf("Column '%s' [%s]: Value %s is less than minimum %v", columnName, fieldType, cellVal, minFloat)}
@@ -1342,8 +1342,8 @@ func (s *importService) checkMinBound(numVal float64, cellVal string, columnName
 	return nil
 }
 
-// checkMaxBound checks maximum bound for numeric values
-func (s *importService) checkMaxBound(numVal float64, cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+// CheckMaxBound checks maximum bound for numeric values
+func (s *importService) CheckMaxBound(numVal float64, cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
 	if maxVal, ok := meta["max"]; ok {
 		if maxFloat, ok2 := maxVal.(float64); ok2 && numVal > maxFloat {
 			return []string{fmt.Sprintf("Column '%s' [%s]: Value %s exceeds maximum %v", columnName, fieldType, cellVal, maxFloat)}
@@ -1412,7 +1412,7 @@ func (s *importService) BuildRecordsWithConfigAndErrors(params dto.BuildRecordsW
 	var errorMessages []string
 
 	for rowIdx, row := range params.DataRows {
-		record, rowErrors, valid := s.buildRecordFromRow(rowIdx, row, params, configMap, lg)
+		record, rowErrors, valid := s.BuildRecordFromRow(rowIdx, row, params, configMap, lg)
 
 		if valid && len(rowErrors) == 0 {
 			newRecords = append(newRecords, record)
@@ -1430,20 +1430,20 @@ func (s *importService) BuildRecordsWithConfigAndErrors(params dto.BuildRecordsW
 	return newRecords, errorRows, errorMessages
 }
 
-// buildRecordFromRow constructs a record from a CSV row based on provided params and returns any validation errors
-func (s *importService) buildRecordFromRow(rowIdx int, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (map[string]interface{}, []string, bool) {
+// BuildRecordFromRow constructs a record from a CSV row based on provided params and returns any validation errors
+func (s *importService) BuildRecordFromRow(rowIdx int, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (map[string]interface{}, []string, bool) {
 	record := map[string]interface{}{
 		"created_by":         params.Req.CreatedBy,
 		"last_modified_by":   params.Req.CreatedBy,
 		"created_time":       time.Now().UTC(),
 		"last_modified_time": time.Now().UTC(),
 	}
-	rowErrors, recordValid := s.populateRecordFromCells(record, row, params, configMap, lg)
+	rowErrors, recordValid := s.PopulateRecordFromCells(record, row, params, configMap, lg)
 	return record, rowErrors, recordValid
 }
 
-// populateRecordFromCells iterates cells in a row and applies validations/conversions
-func (s *importService) populateRecordFromCells(record map[string]interface{}, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) ([]string, bool) {
+// PopulateRecordFromCells iterates cells in a row and applies validations/conversions
+func (s *importService) PopulateRecordFromCells(record map[string]interface{}, row []string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) ([]string, bool) {
 	var rowErrors []string
 	recordValid := true
 
@@ -1452,7 +1452,7 @@ func (s *importService) populateRecordFromCells(record map[string]interface{}, r
 			break
 		}
 
-		errs := s.processCellByType(record, i, cellVal, params, configMap)
+		errs := s.ProcessCellByType(record, i, cellVal, params, configMap)
 		if len(errs) > 0 {
 			rowErrors = append(rowErrors, errs...)
 			recordValid = false
@@ -1462,15 +1462,15 @@ func (s *importService) populateRecordFromCells(record map[string]interface{}, r
 	return rowErrors, recordValid
 }
 
-// processCellByType processes a cell based on whether it's primary or non-primary
-func (s *importService) processCellByType(record map[string]interface{}, colIdx int, cellVal string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig) []string {
+// ProcessCellByType processes a cell based on whether it's primary or non-primary
+func (s *importService) ProcessCellByType(record map[string]interface{}, colIdx int, cellVal string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig) []string {
 	header := params.Headers[colIdx]
 	cfg, configExists := configMap[header]
 
 	// Handle primary column
 	if params.Primary != nil && params.Primary.ColumnName == header {
 		cfg = *params.Primary
-		return s.applyPrimaryCell(record, header, cfg, cellVal)
+		return s.ApplyPrimaryCell(record, header, cfg, cellVal)
 	}
 
 	// Handle non-primary column
@@ -1492,11 +1492,11 @@ func (s *importService) ApplyNonPrimary(record map[string]interface{}, header st
 		return nil, false
 	}
 
-	return s.handleDataCellForRow(record, header, cfg, colResp, cellVal)
+	return s.HandleDataCellForRow(record, header, cfg, colResp, cellVal)
 }
 
-// applyPrimaryCell validates and applies the primary/title cell to the record
-func (s *importService) applyPrimaryCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, cellVal string) []string {
+// ApplyPrimaryCell validates and applies the primary/title cell to the record
+func (s *importService) ApplyPrimaryCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, cellVal string) []string {
 	if val, errs := s.ProcessTitleCell(header, cfg, cellVal); len(errs) > 0 {
 		return errs
 	} else if val != nil {
@@ -1505,8 +1505,8 @@ func (s *importService) applyPrimaryCell(record map[string]interface{}, header s
 	return nil
 }
 
-// handleDataCellForRow validates a non-primary data cell and applies it to the record if valid
-func (s *importService) handleDataCellForRow(record map[string]interface{}, header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) ([]string, bool) {
+// HandleDataCellForRow validates a non-primary data cell and applies it to the record if valid
+func (s *importService) HandleDataCellForRow(record map[string]interface{}, header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) ([]string, bool) {
 	if key, val, errs, ok := s.ProcessDataCell(header, cfg, colResp, cellVal); len(errs) > 0 {
 		return errs, false
 	} else if ok {
@@ -1534,7 +1534,7 @@ func (s *importService) ProcessTitleCell(header string, cfg dto.ColumnConfig, ce
 	}
 
 	// Validate primary column type conversion
-	conversionErr := s.validateConversion(primaryValue, cfg.UIDT)
+	conversionErr := s.ValidateConversion(primaryValue, cfg.UIDT)
 	if conversionErr != "" {
 		return nil, []string{"Primary column: " + conversionErr}
 	}
@@ -1557,7 +1557,7 @@ func (s *importService) ProcessDataCell(header string, cfg dto.ColumnConfig, col
 	}
 
 	// Validate type conversion before applying
-	conversionErr := s.validateConversion(valueToConvert, cfg.UIDT)
+	conversionErr := s.ValidateConversion(valueToConvert, cfg.UIDT)
 	if conversionErr != "" {
 		return "", nil, []string{conversionErr}, false
 	}
@@ -1582,11 +1582,11 @@ func (s *importService) ValidateColumnConfig(columnConfigs []dto.ColumnConfig, p
 		}
 	}
 
-	if err := s.validatePrimaryConfig(primary, headers, lg); err != nil {
+	if err := s.ValidatePrimaryConfig(primary, headers, lg); err != nil {
 		return err
 	}
 
-	if err := s.validateEachColumnConfig(columnConfigs, validHeaders, lg); err != nil {
+	if err := s.ValidateEachColumnConfig(columnConfigs, validHeaders, lg); err != nil {
 		return err
 	}
 
@@ -1594,8 +1594,8 @@ func (s *importService) ValidateColumnConfig(columnConfigs []dto.ColumnConfig, p
 	return nil
 }
 
-// validatePrimaryConfig checks the primary column configuration
-func (s *importService) validatePrimaryConfig(primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
+// ValidatePrimaryConfig checks the primary column configuration
+func (s *importService) ValidatePrimaryConfig(primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
 	if primary == nil {
 		lg.Error().Msg("primary_column is required in import config")
 		return fmt.Errorf("primary_column is required in import config")
@@ -1619,8 +1619,8 @@ func (s *importService) validatePrimaryConfig(primary *dto.ColumnConfig, headers
 	return nil
 }
 
-// validateEachColumnConfig iterates and checks each column config entry
-func (s *importService) validateEachColumnConfig(columnConfigs []dto.ColumnConfig, validHeaders map[string]bool, lg *zerolog.Logger) error {
+// ValidateEachColumnConfig iterates and checks each column config entry
+func (s *importService) ValidateEachColumnConfig(columnConfigs []dto.ColumnConfig, validHeaders map[string]bool, lg *zerolog.Logger) error {
 	for i, cfg := range columnConfigs {
 		if cfg.ColumnName == "" {
 			lg.Error().Int("columnIndex", i).Msg("ColumnName is required for column config")
@@ -1763,9 +1763,9 @@ func (s *importService) IdentifyDuplicateRowsWithLineNumbers(rows [][]string) ma
 	return duplicates
 }
 
-// logCleanedDataWithSettings logs and saves cleaned data to a temporary JSON file before insertion
+// LogCleanedDataWithSettings logs and saves cleaned data to a temporary JSON file before insertion
 // This is called EVERY time regardless of which settings are enabled
-func (s *importService) logCleanedDataWithSettings(headers []string, dataRows [][]string, stats *dto.ImportStatistics, settings dto.ImportSettings, lg *zerolog.Logger) {
+func (s *importService) LogCleanedDataWithSettings(headers []string, dataRows [][]string, stats *dto.ImportStatistics, settings dto.ImportSettings, lg *zerolog.Logger) {
 	// Create a structured representation of the cleaned data
 	cleanedData := map[string]interface{}{
 		"headers": headers,
@@ -1838,7 +1838,7 @@ func (s *importService) logCleanedDataWithSettings(headers []string, dataRows []
 // logs cleaned data and determines a unique table title. Returns headers, cleaned
 // data rows, statistics and the unique table title (or original on error).
 func (s *importService) PrepareImportData(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string, lg *zerolog.Logger) ([]string, [][]string, *dto.ImportStatistics, string, error) {
-	headers, dataRows, err := s.parseCSV(file, lg)
+	headers, dataRows, err := s.ParseCSV(file, lg)
 	if err != nil {
 		return nil, nil, nil, "", err
 	}
@@ -1884,7 +1884,7 @@ func (s *importService) PrepareImportData(ctx context.Context, schemaName string
 	}
 
 	// Always log and save cleaned data to JSON file (regardless of settings)
-	s.logCleanedDataWithSettings(headers, dataRows, stats, req.Config.Settings, lg)
+	s.LogCleanedDataWithSettings(headers, dataRows, stats, req.Config.Settings, lg)
 
 	// Check for duplicate table names and get unique name if needed
 	uniqueTableTitle := tableTitle
@@ -1898,30 +1898,30 @@ func (s *importService) PrepareImportData(ctx context.Context, schemaName string
 	return headers, dataRows, stats, uniqueTableTitle, nil
 }
 
-// validateConversion checks if a value can be successfully converted to the target type
+// ValidateConversion checks if a value can be successfully converted to the target type
 // Returns an error message if conversion would fail, or empty string if valid
-func (s *importService) validateConversion(val string, typeName string) string {
+func (s *importService) ValidateConversion(val string, typeName string) string {
 	if val == "" {
 		return "" // Empty values are allowed (will use defaults or be skipped)
 	}
 
 	switch typeName {
 	case "number":
-		return s.validateNumberConversion(val)
+		return s.ValidateNumberConversion(val)
 	case "decimal":
-		return s.validateDecimalConversion(val)
+		return s.ValidateDecimalConversion(val)
 	case "boolean":
-		return s.validateBooleanConversion(val)
+		return s.ValidateBooleanConversion(val)
 	case "date":
-		return s.validateDateConversion(val)
+		return s.ValidateDateConversion(val)
 	case "email":
-		return s.validateEmailConversion(val)
+		return s.ValidateEmailConversion(val)
 	}
 	return "" // Other types pass through
 }
 
-// validateNumberConversion checks if value is a valid number
-func (s *importService) validateNumberConversion(val string) string {
+// ValidateNumberConversion checks if value is a valid number
+func (s *importService) ValidateNumberConversion(val string) string {
 	if _, err := strconv.ParseInt(val, 10, 64); err == nil {
 		return "" // Valid integer
 	}
@@ -1931,16 +1931,16 @@ func (s *importService) validateNumberConversion(val string) string {
 	return fmt.Sprintf("Column type 'number' expects numeric value, got '%s'", val)
 }
 
-// validateDecimalConversion checks if value is a valid decimal
-func (s *importService) validateDecimalConversion(val string) string {
+// ValidateDecimalConversion checks if value is a valid decimal
+func (s *importService) ValidateDecimalConversion(val string) string {
 	if _, err := strconv.ParseFloat(val, 64); err != nil {
 		return fmt.Sprintf("Column type 'decimal' expects numeric value, got '%s'", val)
 	}
 	return ""
 }
 
-// validateBooleanConversion checks if value is a valid boolean
-func (s *importService) validateBooleanConversion(val string) string {
+// ValidateBooleanConversion checks if value is a valid boolean
+func (s *importService) ValidateBooleanConversion(val string) string {
 	lower := strings.ToLower(val)
 	validBools := []string{"true", "false", "1", "0", "yes", "no"}
 	for _, b := range validBools {
@@ -1951,8 +1951,8 @@ func (s *importService) validateBooleanConversion(val string) string {
 	return fmt.Sprintf("Column type 'boolean' expects true/false/yes/no/1/0, got '%s'", val)
 }
 
-// validateDateConversion checks if value is a valid date
-func (s *importService) validateDateConversion(val string) string {
+// ValidateDateConversion checks if value is a valid date
+func (s *importService) ValidateDateConversion(val string) string {
 	formats := []string{
 		isoDateFormat,
 		ddmmyyyyDateFormat,
@@ -1967,8 +1967,8 @@ func (s *importService) validateDateConversion(val string) string {
 	return fmt.Sprintf("Column type 'date' cannot parse '%s' (expected YYYY-MM-DD, DD-MM-YYYY, or similar)", val)
 }
 
-// validateEmailConversion checks if value is a valid email
-func (s *importService) validateEmailConversion(val string) string {
+// ValidateEmailConversion checks if value is a valid email
+func (s *importService) ValidateEmailConversion(val string) string {
 	if !strings.Contains(val, "@") {
 		return fmt.Sprintf("Column type 'email' expects valid email format, got '%s'", val)
 	}
