@@ -193,6 +193,12 @@ func (s importTableServiceStub) BulkDeleteRows(ctx context.Context, schemaName s
 func (s importTableServiceStub) RemoveAttachments(ctx context.Context, schemaName string, req dto.RemoveAttachmentsRequest) (dto.RecordResponse, error) {
 	return dto.RecordResponse{}, nil
 }
+func (s importTableServiceStub) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	return nil
+}
+func (s importTableServiceStub) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	return nil
+}
 
 type importBaseServiceStub struct {
 	createBaseWithoutTable func(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userID string) (tenant.Base, error)
