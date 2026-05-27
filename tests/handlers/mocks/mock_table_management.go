@@ -13,6 +13,7 @@ import (
 	context "context"
 	multipart "mime/multipart"
 	reflect "reflect"
+
 	dto "github.com/aptlogica/sereni-base/internal/dto"
 
 	gomock "go.uber.org/mock/gomock"
@@ -85,6 +86,34 @@ func (m *MockTableManagementService) BulkDeleteRows(ctx context.Context, schemaN
 func (mr *MockTableManagementServiceMockRecorder) BulkDeleteRows(ctx, schemaName, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkDeleteRows", reflect.TypeOf((*MockTableManagementService)(nil).BulkDeleteRows), ctx, schemaName, req)
+}
+
+// BulkUpdateColumns mocks base method.
+func (m *MockTableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BulkUpdateColumns", ctx, schemaName, modelID, columnID, updates)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BulkUpdateColumns indicates an expected call of BulkUpdateColumns.
+func (mr *MockTableManagementServiceMockRecorder) BulkUpdateColumns(ctx, schemaName, modelID, columnID, updates any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BulkUpdateColumns", reflect.TypeOf((*MockTableManagementService)(nil).BulkUpdateColumns), ctx, schemaName, modelID, columnID, updates)
+}
+
+// ResetColumnValues mocks base method.
+func (m *MockTableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetColumnValues", ctx, schemaName, modelID, columnID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetColumnValues indicates an expected call of ResetColumnValues.
+func (mr *MockTableManagementServiceMockRecorder) ResetColumnValues(ctx, schemaName, modelID, columnID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetColumnValues", reflect.TypeOf((*MockTableManagementService)(nil).ResetColumnValues), ctx, schemaName, modelID, columnID)
 }
 
 // CreateRow mocks base method.

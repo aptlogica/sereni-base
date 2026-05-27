@@ -288,6 +288,36 @@ func InsertRowDataRequestValidationError(e validator.FieldError) responseConst.R
 	}
 }
 
+func UpdateRowRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "RowId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.RowIdRequired
+		default:
+			return responseConst.TableError.RowIdInvalid
+		}
+	case "Values":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
 func DeleteRowDataRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()
@@ -512,6 +542,61 @@ func UpdateAttachmentRequestValidationError(e validator.FieldError) responseCons
 			return responseConst.TableError.ContentInvalid
 		}
 
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func BulkUpdateColumnsRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnIdRequired
+		default:
+			return responseConst.TableError.ColumnIdInvalid
+		}
+	case "Updates":
+		switch tag {
+		case "required":
+			return responseConst.TableError.UpdatesRequired
+		case "min":
+			return responseConst.TableError.UpdatesRequired
+		default:
+			return responseConst.TableError.UpdatesInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func ResetColumnValuesRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnIdRequired
+		default:
+			return responseConst.TableError.ColumnIdInvalid
+		}
 	default:
 		return responseConst.Error.ValidationFailed
 	}

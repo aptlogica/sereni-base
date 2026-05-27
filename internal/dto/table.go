@@ -85,6 +85,20 @@ type InsertRowDataRequest struct {
 	UpdatedBy string       `json:"last_modified_by,omitempty"`
 }
 
+type CreateRowOrBulkInsertRequest struct {
+	ModelID   string                   `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	Rows      []map[string]interface{} `json:"rows"`
+	CreatedBy string                   `json:"created_by,omitempty"`
+	UpdatedBy string                   `json:"last_modified_by,omitempty"`
+}
+
+type UpdateRowRequest struct {
+	ModelID   string                 `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	RowId     int                    `json:"row_id" binding:"required" example:"1"`
+	Values    map[string]interface{} `json:"values" binding:"required"`
+	UpdatedBy string                 `json:"last_modified_by,omitempty"`
+}
+
 type DeleteRowDataRequest struct {
 	ModelID string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
 	RowId   int    `json:"row_id" binding:"required" example:"1"`
@@ -129,4 +143,20 @@ type PaginationRequest struct {
 	ModelID    string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
 	PageSize   int    `json:"page_size" binding:"required" example:"30"`
 	PageNumber int    `json:"page_number" binding:"required" example:"1"`
+}
+
+type UpdateColumnsRequest struct {
+	Id    interface{} `json:"id" binding:"required" example:"row-id-123"`
+	Value interface{} `json:"value" binding:"required" example:"New Value"`
+}
+
+type BulkUpdateColumnsRequest struct {
+	ModelID  string                 `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnID string                 `json:"column_id" binding:"required" example:"col-123"`
+	Updates  []UpdateColumnsRequest `json:"updates" binding:"required,min=1"`
+}
+
+type ResetColumnValuesRequest struct {
+	ModelID  string `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnId string `json:"column_id" binding:"required" example:"col-123"`
 }
