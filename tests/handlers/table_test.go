@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -20,6 +21,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+type bulkCapableTableService struct {
+	*mocks.MockTableManagementService
+	createRowsWithValues func(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
+}
+
+func (s *bulkCapableTableService) CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error) {
+	return s.createRowsWithValues(ctx, schemaName, modelID, rowsInput, createdBy, updatedBy)
+}
 
 func TestNewTableHandler(t *testing.T) {
 	handler := handlers.NewTableHandler(nil, nil)
@@ -804,6 +814,167 @@ func TestTableHandler_CreateRow_ServiceError(t *testing.T) {
 	c.Set("user_id", "user123")
 
 	handler.CreateRow(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_CreateRow_ValidationError(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	body, _ := json.Marshal(dto.CreateRowOrBulkInsertRequest{})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateRow(c)
+	assert.NotEqual(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_CreateRow_BulkSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	modelID := uuid.New().String()
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	handler := handlers.NewTableHandler(&bulkCapableTableService{
+		MockTableManagementService: mockTableService,
+		createRowsWithValues: func(ctx context.Context, schemaName string, gotModelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error) {
+			assert.Equal(t, "test", schemaName)
+			assert.Equal(t, modelID, gotModelID)
+			assert.Len(t, rowsInput, 2)
+			assert.Equal(t, "user123", createdBy)
+			assert.Equal(t, "user123", updatedBy)
+			return []dto.RecordResponse{{Record: map[string]interface{}{"id": 1}}, {Record: map[string]interface{}{"id": 2}}}, nil
+		},
+	}, nil)
+
+	body, _ := json.Marshal(dto.CreateRowOrBulkInsertRequest{
+		ModelID: modelID,
+		Rows: []map[string]interface{}{
+			{"name": "alpha"},
+			{"name": "beta"},
+		},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateRow(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_CreateRow_BulkUnsupportedService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	handler := handlers.NewTableHandler(mocks.NewMockTableManagementService(ctrl), nil)
+
+	body, _ := json.Marshal(dto.CreateRowOrBulkInsertRequest{
+		ModelID: uuid.New().String(),
+		Rows:    []map[string]interface{}{{"name": "alpha"}},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateRow(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_CreateRow_BulkServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	handler := handlers.NewTableHandler(&bulkCapableTableService{
+		MockTableManagementService: mockTableService,
+		createRowsWithValues: func(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error) {
+			return nil, errors.New("bulk failed")
+		},
+	}, nil)
+
+	body, _ := json.Marshal(dto.CreateRowOrBulkInsertRequest{
+		ModelID: uuid.New().String(),
+		Rows:    []map[string]interface{}{{"name": "alpha"}},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateRow(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_UpdateRow_SuccessWithMultipleValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	modelID := uuid.New().String()
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().
+		InsertRowData(gomock.Any(), "test", gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.InsertRowDataRequest) (dto.RecordResponse, error) {
+			assert.Equal(t, modelID, req.ModelID)
+			assert.Equal(t, 7, req.RowId)
+			assert.Equal(t, "user123", req.UpdatedBy)
+			return dto.RecordResponse{Record: map[string]interface{}{"id": req.RowId, "column_id": req.ColumnId}}, nil
+		}).
+		Times(2)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.UpdateRowRequest{
+		ModelID: modelID,
+		RowId:   7,
+		Values: map[string]interface{}{
+			uuid.New().String(): "value",
+			uuid.New().String(): nil,
+		},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PATCH", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateRow(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_UpdateRow_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().InsertRowData(gomock.Any(), "test", gomock.Any()).Return(dto.RecordResponse{}, errors.New("insert failed"))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.UpdateRowRequest{
+		ModelID: uuid.New().String(),
+		RowId:   7,
+		Values:  map[string]interface{}{uuid.New().String(): "value"},
+	})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PATCH", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.UpdateRow(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 

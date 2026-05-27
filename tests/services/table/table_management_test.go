@@ -344,6 +344,79 @@ func TestCreateViewAndUpdateDeleteView(t *testing.T) {
 	})
 }
 
+func TestTableManagement_MetadataErrorBranches(t *testing.T) {
+	t.Run("update table error", func(t *testing.T) {
+		_, _, _, mockModel, _, _, _, _, svc := setupTableManagementService()
+
+		mockModel.On("Update", mock.Anything, "schema", "id", mock.Anything).Return(tenant.Model{}, errors.New("update failed"))
+
+		_, err := svc.UpdateTable(context.Background(), "id", dto.UpdateTableRequest{}, "schema")
+		assert.Error(t, err)
+	})
+
+	t.Run("get all tables error", func(t *testing.T) {
+		_, _, _, mockModel, _, _, _, _, svc := setupTableManagementService()
+
+		mockModel.On("GetAllModels", mock.Anything, "schema").Return([]tenant.Model{}, errors.New("list failed"))
+
+		_, err := svc.GetAllTables(context.Background(), "schema")
+		assert.Error(t, err)
+	})
+
+	t.Run("get models by base error", func(t *testing.T) {
+		_, _, _, mockModel, _, _, _, _, svc := setupTableManagementService()
+
+		mockModel.On("GetModelByBaseID", mock.Anything, "schema", "base").Return(nil, errors.New("base failed"))
+
+		_, err := svc.GetModelByBaseID(context.Background(), "schema", "base")
+		assert.Error(t, err)
+	})
+
+	t.Run("get models by workspace error", func(t *testing.T) {
+		_, _, _, mockModel, _, _, _, _, svc := setupTableManagementService()
+
+		mockModel.On("GetModelByWorkspaceID", mock.Anything, "schema", "workspace").Return([]tenant.Model{}, errors.New("workspace failed"))
+
+		_, err := svc.GetModelByWorkspaceID(context.Background(), "schema", "workspace")
+		assert.Error(t, err)
+	})
+
+	t.Run("column and view read errors", func(t *testing.T) {
+		_, _, _, _, mockColumn, mockView, _, _, svc := setupTableManagementService()
+
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(tenant.Column{}, errors.New("column failed"))
+		mockColumn.On("GetAllColumns", mock.Anything, "schema").Return([]tenant.Column{}, errors.New("columns failed"))
+		mockView.On("GetViewByID", mock.Anything, "schema", "vid").Return(tenant.View{}, errors.New("view failed"))
+		mockView.On("GetAllViews", mock.Anything, "schema").Return([]tenant.View{}, errors.New("views failed"))
+		mockView.On("GetViewsByModelID", mock.Anything, "schema", "mid").Return([]tenant.View{}, errors.New("model views failed"))
+
+		_, err := svc.GetColumnById(context.Background(), "schema", "cid")
+		assert.Error(t, err)
+		_, err = svc.GetAllColumns(context.Background(), "schema")
+		assert.Error(t, err)
+		_, err = svc.GetViewByID(context.Background(), "schema", "vid")
+		assert.Error(t, err)
+		_, err = svc.GetAllViews(context.Background(), "schema")
+		assert.Error(t, err)
+		_, err = svc.GetViewsByModelID(context.Background(), "schema", "mid")
+		assert.Error(t, err)
+	})
+
+	t.Run("update and delete view errors", func(t *testing.T) {
+		_, _, _, _, _, mockView, _, _, svc := setupTableManagementService()
+
+		view := tenant.View{ID: uuid.New(), Title: "v", BaseID: uuid.New().String(), ModelID: uuid.New().String()}
+		mockView.On("GetViewByID", mock.Anything, "schema", "vid").Return(view, nil)
+		mockView.On("UpdateView", mock.Anything, "schema", "vid", mock.Anything).Return(tenant.View{}, errors.New("update view failed"))
+		mockView.On("DeleteView", mock.Anything, "schema", "vid").Return(errors.New("delete view failed"))
+
+		_, err := svc.UpdateView(context.Background(), "schema", "vid", dto.ViewUpdate{})
+		assert.Error(t, err)
+		err = svc.DeleteView(context.Background(), "schema", "vid")
+		assert.Error(t, err)
+	})
+}
+
 // Additional tests from consolidated files
 
 func TestAddColumn_SimpleAndInvalid(t *testing.T) {
@@ -1705,6 +1778,107 @@ func TestCreateRowsWithValues_EmptyRows(t *testing.T) {
 	assert.Len(t, rows, 0)
 }
 
+func TestCreateRowsWithValues_Success(t *testing.T) {
+	stubTable := &StubTableService{}
+	stubBulk := &StubBulkService{}
+	mockModel := &MockModelService{}
+	mockColumn := &MockColumnService{}
+	mockView := &MockViewService{}
+	mockRel := &MockRelationshipService{}
+	mockAsset := &MockAssetManagementService{}
+
+	modelID := uuid.New().String()
+	baseID := uuid.New().String()
+	colTextID := uuid.New().String()
+	colArrayID := uuid.New().String()
+	model := tenant.Model{ID: uuid.MustParse(modelID), Alias: "tbl"}
+
+	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(model, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", colTextID).
+		Return(tenant.Column{ID: uuid.MustParse(colTextID), ModelID: modelID, BaseID: baseID, ColumnName: "text_col", UIDT: "text", DT: helpers.StringPtr("TEXT")}, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", colArrayID).
+		Return(tenant.Column{ID: uuid.MustParse(colArrayID), ModelID: modelID, BaseID: baseID, ColumnName: "array_col", UIDT: "text", DT: helpers.StringPtr("TEXT[]")}, nil)
+
+	nextID := 0
+	stubTable.CreateRecordFn = func(tableName string, data map[string]interface{}) (map[string]interface{}, error) {
+		nextID++
+		assert.Equal(t, "\"schema\".\"tbl\"", tableName)
+		assert.Equal(t, "creator", data["created_by"])
+		return map[string]interface{}{"id": nextID}, nil
+	}
+	stubTable.UpdateRecordFn = func(tableName string, id interface{}, data map[string]interface{}) (map[string]interface{}, error) {
+		assert.Equal(t, "\"schema\".\"tbl\"", tableName)
+		assert.Equal(t, "editor", data["last_modified_by"])
+		return map[string]interface{}{"id": id, "data": data}, nil
+	}
+
+	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
+
+	rows, err := svc.(interface {
+		CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
+	}).CreateRowsWithValues(context.Background(), "schema", modelID, []map[string]interface{}{
+		{colTextID: "alpha", colArrayID: "tag"},
+		{},
+	}, "creator", "editor")
+
+	assert.NoError(t, err)
+	assert.Len(t, rows, 2)
+	assert.Equal(t, 2, nextID)
+	mockModel.AssertExpectations(t)
+	mockColumn.AssertExpectations(t)
+}
+
+func TestCreateRowsWithValues_CreateRowError(t *testing.T) {
+	stubTable := &StubTableService{}
+	stubBulk := &StubBulkService{}
+	mockModel := &MockModelService{}
+	mockColumn := &MockColumnService{}
+	mockView := &MockViewService{}
+	mockRel := &MockRelationshipService{}
+	mockAsset := &MockAssetManagementService{}
+
+	modelID := uuid.New().String()
+	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{}, errors.New("model failed"))
+
+	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
+
+	rows, err := svc.(interface {
+		CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
+	}).CreateRowsWithValues(context.Background(), "schema", modelID, []map[string]interface{}{{"col": "value"}}, "creator", "editor")
+
+	assert.Error(t, err)
+	assert.Nil(t, rows)
+}
+
+func TestCreateRowsWithValues_InsertRowDataError(t *testing.T) {
+	stubTable := &StubTableService{}
+	stubBulk := &StubBulkService{}
+	mockModel := &MockModelService{}
+	mockColumn := &MockColumnService{}
+	mockView := &MockViewService{}
+	mockRel := &MockRelationshipService{}
+	mockAsset := &MockAssetManagementService{}
+
+	modelID := uuid.New().String()
+	columnID := uuid.New().String()
+	model := tenant.Model{ID: uuid.MustParse(modelID), Alias: "tbl"}
+
+	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(model, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", columnID).Return(tenant.Column{}, errors.New("column failed"))
+	stubTable.CreateRecordFn = func(tableName string, data map[string]interface{}) (map[string]interface{}, error) {
+		return map[string]interface{}{"id": 1}, nil
+	}
+
+	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
+
+	rows, err := svc.(interface {
+		CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
+	}).CreateRowsWithValues(context.Background(), "schema", modelID, []map[string]interface{}{{columnID: "value"}}, "creator", "editor")
+
+	assert.Error(t, err)
+	assert.Nil(t, rows)
+}
+
 func TestExtractCreatedRowID_MissingID(t *testing.T) {
 	record := map[string]interface{}{"name": "test"}
 
@@ -1865,4 +2039,50 @@ func TestHandleLinkedColumnDeletion_WithLookupColumn(t *testing.T) {
 	}).HandleLinkedColumnDeletion(context.Background(), "schema", col, columnData)
 
 	mockColumn.AssertCalled(t, "GetColumnByModelID", mock.Anything, "schema", linkedModelID)
+}
+
+func TestDeleteLookupColumnAndReorder_Success(t *testing.T) {
+	_, mockTable, _, _, mockColumn, _, mockRel, _, svc := setupTableManagementService()
+
+	modelID := uuid.New()
+	relationID := uuid.New()
+	lookupSourceColumnID := uuid.New()
+	linkedColumnID := uuid.New()
+	orderIndex := 3.0
+
+	linkedCol := dto.ColumnResponse{
+		ID:         linkedColumnID,
+		ModelID:    modelID,
+		ColumnName: "lookup_title",
+		OrderIndex: &orderIndex,
+		Meta: map[string]interface{}{
+			"lookup_column_id": lookupSourceColumnID.String(),
+			"relation_id":      relationID.String(),
+		},
+	}
+	sourceLookupCol := tenant.Column{ID: lookupSourceColumnID, ColumnName: "title"}
+	relation := tenant.Relation{
+		ID:                  relationID,
+		SourceModelID:       modelID.String(),
+		SourceLookupColumns: []string{"title", "other"},
+	}
+
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupSourceColumnID.String()).Return(sourceLookupCol, nil)
+	mockRel.On("GetRelationByID", mock.Anything, relationID.String(), "schema").Return(relation, nil)
+	mockRel.On("UpdateRelation", mock.Anything, relationID.String(), mock.MatchedBy(func(req dto.RelationUpdate) bool {
+		columns, ok := req.SourceLookupColumns.([]string)
+		return ok && len(columns) == 1 && columns[0] == "other"
+	}), "schema").Return(relation, nil)
+	mockColumn.On("DeleteColumn", mock.Anything, "schema", linkedColumnID.String()).Return(nil)
+	mockTable.On("GetByFunction", mock.Anything, "public.reorder_columns_after_delete", mock.MatchedBy(func(args map[string]interface{}) bool {
+		return args["p_schema_name"] == "schema" && args["p_model_id"] == modelID.String() && args["p_order_index"] == orderIndex
+	})).Return([]map[string]interface{}{}, nil)
+
+	svc.(interface {
+		DeleteLookupColumnAndReorder(ctx context.Context, schemaName string, linkedCol dto.ColumnResponse)
+	}).DeleteLookupColumnAndReorder(context.Background(), "schema", linkedCol)
+
+	mockColumn.AssertExpectations(t)
+	mockRel.AssertExpectations(t)
+	mockTable.AssertExpectations(t)
 }

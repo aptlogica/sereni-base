@@ -645,174 +645,104 @@ func TestWorkspaceValidators(t *testing.T) {
 	})
 }
 
+type createViewMetaCase struct {
+	name         string
+	req          func() dto.CreateViewRequest
+	wantCode     responseConst.ResponseCode
+	wantHasError bool
+}
+
 func TestValidateCreateViewMeta(t *testing.T) {
-	t.Run("nil meta", func(t *testing.T) {
-		req := dto.CreateViewRequest{Meta: nil}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.MetaRequired {
-			t.Errorf("expected MetaRequired error, got code=%v hasError=%v", code, hasError)
-		}
-	})
+	for _, tc := range createViewMetaCases() {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			code, hasError := handlersValidators.ValidateCreateViewMeta(tc.req())
+			if code != tc.wantCode || hasError != tc.wantHasError {
+				t.Fatalf("got code=%v hasError=%v, want code=%v hasError=%v", code, hasError, tc.wantCode, tc.wantHasError)
+			}
+		})
+	}
+}
 
-	t.Run("gallery view with valid attachment_field_id", func(t *testing.T) {
-		fieldID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "gallery",
-			Meta: &map[string]interface{}{
-				"attachment_field_id": fieldID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if hasError || code != "" {
-			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("gallery view missing attachment_field_id", func(t *testing.T) {
-		req := dto.CreateViewRequest{
-			Type: "gallery",
-			Meta: &map[string]interface{}{},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDRequired {
-			t.Errorf("expected ViewAttachmentFieldIDRequired error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("gallery view with invalid attachment_field_id uuid", func(t *testing.T) {
-		req := dto.CreateViewRequest{
-			Type: "gallery",
-			Meta: &map[string]interface{}{
-				"attachment_field_id": "invalid-uuid",
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDInvalid {
-			t.Errorf("expected ViewAttachmentFieldIDInvalid error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("gallery view with empty attachment_field_id", func(t *testing.T) {
-		req := dto.CreateViewRequest{
-			Type: "gallery",
-			Meta: &map[string]interface{}{
-				"attachment_field_id": "",
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDInvalid {
-			t.Errorf("expected ViewAttachmentFieldIDInvalid error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("kanban view with valid view_target_field", func(t *testing.T) {
-		fieldID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "kanban",
-			Meta: &map[string]interface{}{
-				"view_target_field": fieldID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if hasError || code != "" {
-			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("calendar view with valid date_field_id", func(t *testing.T) {
-		fieldID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "calendar",
-			Meta: &map[string]interface{}{
-				"date_field_id": fieldID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if hasError || code != "" {
-			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("calender view with valid date_field_id", func(t *testing.T) {
-		fieldID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "calender",
-			Meta: &map[string]interface{}{
-				"date_field_id": fieldID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if hasError || code != "" {
-			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("ganttchart view with valid dates", func(t *testing.T) {
-		startID := uuid.New().String()
-		endID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "ganttchart",
-			Meta: &map[string]interface{}{
-				"start_date_field_id": startID,
-				"end_date_field_id":   endID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if hasError || code != "" {
-			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("ganttchart view missing end_date_field_id", func(t *testing.T) {
-		startID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "ganttchart",
-			Meta: &map[string]interface{}{
-				"start_date_field_id": startID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.ViewEndDateFieldIDRequired {
-			t.Errorf("expected ViewEndDateFieldIDRequired error, got code=%v hasError=%v", code, hasError)
-		}
-	})
-
-	t.Run("ganttchart view with invalid start_date", func(t *testing.T) {
-		endID := uuid.New().String()
-		req := dto.CreateViewRequest{
-			Type: "ganttchart",
-			Meta: &map[string]interface{}{
+func createViewMetaCases() []createViewMetaCase {
+	return []createViewMetaCase{
+		{
+			name:         "nil meta",
+			req:          func() dto.CreateViewRequest { return dto.CreateViewRequest{Meta: nil} },
+			wantCode:     responseConst.TableError.MetaRequired,
+			wantHasError: true,
+		},
+		validViewMetaCase("gallery view with valid attachment_field_id", "gallery", "attachment_field_id"),
+		{
+			name:         "gallery view missing attachment_field_id",
+			req:          viewMetaRequest("gallery", map[string]interface{}{}),
+			wantCode:     responseConst.TableError.ViewAttachmentFieldIDRequired,
+			wantHasError: true,
+		},
+		{
+			name:         "gallery view with invalid attachment_field_id uuid",
+			req:          viewMetaRequest("gallery", map[string]interface{}{"attachment_field_id": "invalid-uuid"}),
+			wantCode:     responseConst.TableError.ViewAttachmentFieldIDInvalid,
+			wantHasError: true,
+		},
+		{
+			name:         "gallery view with empty attachment_field_id",
+			req:          viewMetaRequest("gallery", map[string]interface{}{"attachment_field_id": ""}),
+			wantCode:     responseConst.TableError.ViewAttachmentFieldIDInvalid,
+			wantHasError: true,
+		},
+		validViewMetaCase("kanban view with valid view_target_field", "kanban", "view_target_field"),
+		validViewMetaCase("calendar view with valid date_field_id", "calendar", "date_field_id"),
+		validViewMetaCase("calender view with valid date_field_id", "calender", "date_field_id"),
+		{
+			name: "ganttchart view with valid dates",
+			req: viewMetaRequest("ganttchart", map[string]interface{}{
+				"start_date_field_id": uuid.New().String(),
+				"end_date_field_id":   uuid.New().String(),
+			}),
+		},
+		{
+			name: "ganttchart view missing end_date_field_id",
+			req: viewMetaRequest("ganttchart", map[string]interface{}{
+				"start_date_field_id": uuid.New().String(),
+			}),
+			wantCode:     responseConst.TableError.ViewEndDateFieldIDRequired,
+			wantHasError: true,
+		},
+		{
+			name: "ganttchart view with invalid start_date",
+			req: viewMetaRequest("ganttchart", map[string]interface{}{
 				"start_date_field_id": "invalid",
-				"end_date_field_id":   endID,
-			},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.ViewStartDateFieldIDInvalid {
-			t.Errorf("expected ViewStartDateFieldIDInvalid error, got code=%v hasError=%v", code, hasError)
-		}
-	})
+				"end_date_field_id":   uuid.New().String(),
+			}),
+			wantCode:     responseConst.TableError.ViewStartDateFieldIDInvalid,
+			wantHasError: true,
+		},
+		{
+			name: "grid view no meta validation needed",
+			req:  viewMetaRequest("grid", map[string]interface{}{}),
+		},
+		{
+			name:         "non-string attachment_field_id",
+			req:          viewMetaRequest("gallery", map[string]interface{}{"attachment_field_id": 123}),
+			wantCode:     responseConst.TableError.ViewAttachmentFieldIDInvalid,
+			wantHasError: true,
+		},
+	}
+}
 
-	t.Run("grid view no meta validation needed", func(t *testing.T) {
-		req := dto.CreateViewRequest{
-			Type: "grid",
-			Meta: &map[string]interface{}{},
-		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if hasError || code != "" {
-			t.Errorf("expected no error, got code=%v hasError=%v", code, hasError)
-		}
-	})
+func validViewMetaCase(name string, viewType string, fieldName string) createViewMetaCase {
+	return createViewMetaCase{
+		name: name,
+		req:  viewMetaRequest(viewType, map[string]interface{}{fieldName: uuid.New().String()}),
+	}
+}
 
-	t.Run("non-string attachment_field_id", func(t *testing.T) {
-		req := dto.CreateViewRequest{
-			Type: "gallery",
-			Meta: &map[string]interface{}{
-				"attachment_field_id": 123,
-			},
+func viewMetaRequest(viewType string, meta map[string]interface{}) func() dto.CreateViewRequest {
+	return func() dto.CreateViewRequest {
+		return dto.CreateViewRequest{
+			Type: viewType,
+			Meta: &meta,
 		}
-		code, hasError := handlersValidators.ValidateCreateViewMeta(req)
-		if !hasError || code != responseConst.TableError.ViewAttachmentFieldIDInvalid {
-			t.Errorf("expected ViewAttachmentFieldIDInvalid error for non-string, got code=%v hasError=%v", code, hasError)
-		}
-	})
+	}
 }
