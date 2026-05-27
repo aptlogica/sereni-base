@@ -1887,8 +1887,7 @@ func (s *importService) PrepareImportData(ctx context.Context, schemaName string
 	s.LogCleanedDataWithSettings(headers, dataRows, stats, req.Config.Settings, lg)
 
 	// Check for duplicate table names and get unique name if needed
-	uniqueTableTitle := tableTitle
-	uniqueTableTitle, err = s.GetUniqueTableName(ctx, schemaName, req.BaseID, tableTitle, lg)
+	uniqueTableTitle, err := s.GetUniqueTableName(ctx, schemaName, req.BaseID, tableTitle, lg)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("tableName", tableTitle).Msg("Failed to check for duplicate table names")
 		// Continue with original name if check fails
