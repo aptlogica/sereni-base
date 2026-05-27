@@ -63,12 +63,12 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	// Track whether we auto-created a base/table so we can clean up on partial failures
 	createdBase := false
 	if req.BaseID == "" {
-		if err := s.ensureBaseWithConfig(ctx, schemaName, &req, lg, tableTitle); err != nil {
+		if err := s.EnsureBaseWithConfig(ctx, schemaName, &req, lg, tableTitle); err != nil {
 			return dto.ImportTableResponse{}, err
 		}
 		createdBase = true
 	}
-	headers, dataRows, stats, uniqueTableTitle, err := s.prepareImportData(ctx, schemaName, req, file, tableTitle, lg)
+	headers, dataRows, stats, uniqueTableTitle, err := s.PrepareImportData(ctx, schemaName, req, file, tableTitle, lg)
 	if err != nil {
 		return dto.ImportTableResponse{}, err
 	}
@@ -83,7 +83,7 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 		CreatedBy:   req.CreatedBy,
 	}
 
-	tableResp, cleanup, err := s.createTableForImport(ctx, schemaName, createTableReq, lg, createdBase, req.BaseID)
+	tableResp, cleanup, err := s.CreateTableForImport(ctx, schemaName, createTableReq, lg, createdBase, req.BaseID)
 	if err != nil {
 		return dto.ImportTableResponse{}, err
 	}
@@ -104,7 +104,7 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	}
 
 	// Build records using config column types with error tracking
-	newRecords, errorRows, errorMessages := s.buildRecordsWithConfigAndErrors(dto.BuildRecordsWithConfigAndErrorsParams{
+	newRecords, errorRows, errorMessages := s.BuildRecordsWithConfigAndErrors(dto.BuildRecordsWithConfigAndErrorsParams{
 		DataRows:      dataRows,
 		ColumnConfigs: req.Config.Columns,
 		Primary:       req.Config.PrimaryColumn,
@@ -116,12 +116,12 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	lg.Info().Int("recordsCreated", len(newRecords)).Int("errorRows", len(errorRows)).Msg("Records prepared for insertion with config and error tracking")
 
 	// Always identify empty and duplicate rows for logging (regardless of settings)
-	emptyRowsWithLineNumbers := s.identifyEmptyRowsWithLineNumbers(dataRows)
-	duplicateRowsWithLineNumbers := s.identifyDuplicateRowsWithLineNumbers(dataRows)
+	emptyRowsWithLineNumbers := s.IdentifyEmptyRowsWithLineNumbers(dataRows)
+	duplicateRowsWithLineNumbers := s.IdentifyDuplicateRowsWithLineNumbers(dataRows)
 
 	// Always generate error report with import details
 	var errorRowsFileContent string
-	errorRowsFileContent, err = s.saveErrorRows(headers, errorRows, errorMessages, emptyRowsWithLineNumbers, duplicateRowsWithLineNumbers, lg)
+	errorRowsFileContent, err = s.SaveErrorRows(headers, errorRows, errorMessages, emptyRowsWithLineNumbers, duplicateRowsWithLineNumbers, lg)
 	if err != nil {
 		lg.Warn().Err(err).Msg("Failed to generate error report, continuing with import")
 		// Don't fail the import if we can't generate error report, just log it
@@ -223,7 +223,7 @@ func (s *importService) scanFile(ctx context.Context, file *multipart.FileHeader
 	return nil
 }
 
-func (s *importService) ensureBase(ctx context.Context, schemaName string, req *dto.CreateTableRequest, lg *zerolog.Logger, tableTitle string) error {
+func (s *importService) EnsureBase(ctx context.Context, schemaName string, req *dto.CreateTableRequest, lg *zerolog.Logger, tableTitle string) error {
 	if req.BaseID != "" {
 		return nil
 	}
@@ -298,13 +298,13 @@ func (s *importService) createTable(ctx context.Context, schemaName string, req 
 	return tableResp, nil
 }
 
-// createTableForImport wraps table creation and returns a cleanup function that will
+// CreateTableForImport wraps table creation and returns a cleanup function that will
 // remove created resources in case of later failures. It mirrors original behavior
 // to ensure semantics remain identical.
-func (s *importService) createTableForImport(ctx context.Context, schemaName string, createTableReq dto.CreateTableRequest, lg *zerolog.Logger, createdBase bool, baseID string) (dto.TableResponse, func(), error) {
+func (s *importService) CreateTableForImport(ctx context.Context, schemaName string, createTableReq dto.CreateTableRequest, lg *zerolog.Logger, createdBase bool, baseID string) (dto.TableResponse, func(), error) {
 	tableResp, err := s.createTable(ctx, schemaName, createTableReq, lg, createTableReq.Title)
 	if err != nil {
-		s.cleanupBaseIfNeeded(ctx, schemaName, baseID, createdBase, lg)
+		s.CleanupBaseIfNeeded(ctx, schemaName, baseID, createdBase, lg)
 		return dto.TableResponse{}, nil, err
 	}
 
@@ -326,8 +326,8 @@ func (s *importService) createTableForImport(ctx context.Context, schemaName str
 	return tableResp, cleanup, nil
 }
 
-// cleanupBaseIfNeeded deletes the auto-created base if it was created and logs errors
-func (s *importService) cleanupBaseIfNeeded(ctx context.Context, schemaName string, baseID string, createdBase bool, lg *zerolog.Logger) {
+// CleanupBaseIfNeeded deletes the auto-created base if it was created and logs errors
+func (s *importService) CleanupBaseIfNeeded(ctx context.Context, schemaName string, baseID string, createdBase bool, lg *zerolog.Logger) {
 	if createdBase {
 		if delErr := s.baseManagementService.DeleteBase(ctx, schemaName, baseID); delErr != nil {
 			lg.Error().Stack().Err(delErr).Str("baseID", baseID).Msg("Failed to cleanup auto-created base after table creation failure")
@@ -452,15 +452,15 @@ func (s *importService) refreshTable(ctx context.Context, schemaName string, tab
 	return finalTableResp, nil
 }
 
-func (s *importService) inferColumnTypes(headers []string, rows [][]string) []string {
+func (s *importService) InferColumnTypes(headers []string, rows [][]string) []string {
 	types := make([]string, len(headers))
 	for i := range headers {
-		types[i] = s.inferType(rows, i)
+		types[i] = s.InferType(rows, i)
 	}
 	return types
 }
 
-func (s *importService) inferType(rows [][]string, colIndex int) string {
+func (s *importService) InferType(rows [][]string, colIndex int) string {
 	flags := s.collectTypeFlags(rows, colIndex)
 	if !flags.hasData {
 		return "text"
@@ -510,7 +510,7 @@ func (s *importService) updateTypeFlags(flags *typeFlags, val string) {
 		flags.isBool = s.checkBoolType(val)
 	}
 	if flags.isDate {
-		flags.isDate = s.checkDateType(val)
+		flags.isDate = s.CheckDateType(val)
 	}
 	if flags.isEmail {
 		flags.isEmail = s.checkEmailType(val)
@@ -519,10 +519,10 @@ func (s *importService) updateTypeFlags(flags *typeFlags, val string) {
 		flags.isURL = s.checkURLType(val)
 	}
 	if flags.isPhone {
-		flags.isPhone = s.checkPhoneType(val)
+		flags.isPhone = s.CheckPhoneType(val)
 	}
 	if flags.isJSON {
-		flags.isJSON = s.checkJSONType(val)
+		flags.isJSON = s.CheckJSONType(val)
 	}
 }
 
@@ -545,7 +545,7 @@ func (s *importService) checkBoolType(val string) bool {
 	return lower == "true" || lower == "false" || lower == "0" || lower == "1" || lower == "yes" || lower == "no"
 }
 
-func (s *importService) checkDateType(val string) bool {
+func (s *importService) CheckDateType(val string) bool {
 	formats := []string{isoDateFormat, ddmmyyyyDateFormat, yyyymmddSlashFormat, ddmmyyyySlashFormat}
 	for _, f := range formats {
 		if _, err := time.Parse(f, val); err == nil {
@@ -563,7 +563,7 @@ func (s *importService) checkURLType(val string) bool {
 	return strings.HasPrefix(val, "http://") || strings.HasPrefix(val, "https://")
 }
 
-func (s *importService) checkPhoneType(val string) bool {
+func (s *importService) CheckPhoneType(val string) bool {
 	// Simple check: contains only digits, spaces, dashes, parentheses, plus
 	for _, r := range val {
 		if !((r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '(' || r == ')' || r == '+') {
@@ -573,7 +573,7 @@ func (s *importService) checkPhoneType(val string) bool {
 	return len(val) > 0
 }
 
-func (s *importService) checkJSONType(val string) bool {
+func (s *importService) CheckJSONType(val string) bool {
 	var js interface{}
 	return json.Unmarshal([]byte(val), &js) == nil
 }
@@ -613,7 +613,7 @@ func (s *importService) determineTypeFromFlags(flags typeFlags) string {
 	return "text"
 }
 
-func (s *importService) getDatabaseType(uidt string) string {
+func (s *importService) GetDatabaseType(uidt string) string {
 	if mapping, exists := constant.UITypeMappings[uidt]; exists {
 		return mapping.Postgres
 	}
@@ -621,7 +621,7 @@ func (s *importService) getDatabaseType(uidt string) string {
 	return "TEXT"
 }
 
-func (s *importService) convertValue(val string, typeName string) interface{} {
+func (s *importService) ConvertValue(val string, typeName string) interface{} {
 	switch typeName {
 	case "number":
 		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
@@ -643,7 +643,7 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 		return false
 	case "date":
 		// Convert date string to PostgreSQL-compatible format (YYYY-MM-DD)
-		return s.convertDateToISO(val)
+		return s.ConvertDateToISO(val)
 	case "email", "url", "phoneNumber", "json":
 		// These are stored as text
 		return val
@@ -651,8 +651,8 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 	return val
 }
 
-// convertDateToISO converts date strings from various formats to ISO format (YYYY-MM-DD)
-func (s *importService) convertDateToISO(val string) string {
+// ConvertDateToISO converts date strings from various formats to ISO format (YYYY-MM-DD)
+func (s *importService) ConvertDateToISO(val string) string {
 	formats := []string{
 		isoDateFormat,
 		ddmmyyyyDateFormat,
@@ -669,9 +669,9 @@ func (s *importService) convertDateToISO(val string) string {
 	return val
 }
 
-// findUniqueName finds a unique name from a list of existing names by appending numbers if needed
+// FindUniqueName finds a unique name from a list of existing names by appending numbers if needed
 // Enforces the specified character limit by truncating the base name
-func (s *importService) findUniqueName(proposedName string, existingNames []string, maxLength int) string {
+func (s *importService) FindUniqueName(proposedName string, existingNames []string, maxLength int) string {
 	// Build a map of existing names for O(1) lookup
 	existingNamesMap := make(map[string]bool)
 	for _, name := range existingNames {
@@ -725,10 +725,10 @@ func (s *importService) findUniqueName(proposedName string, existingNames []stri
 	}
 }
 
-// getUniqueTableName checks if a table with the given name exists in the schema
+// GetUniqueTableName checks if a table with the given name exists in the schema
 // If it does, appends a number (1, 2, 3, etc.) to make it unique
 // Enforces 50 character limit for table names
-func (s *importService) getUniqueTableName(ctx context.Context, schemaName string, baseID string, proposedName string, lg *zerolog.Logger) (string, error) {
+func (s *importService) GetUniqueTableName(ctx context.Context, schemaName string, baseID string, proposedName string, lg *zerolog.Logger) (string, error) {
 	const maxTableNameLength = 50 // UI display limit for table names
 
 	allTables, err := s.tableService.GetModelByBaseID(ctx, schemaName, baseID)
@@ -744,7 +744,7 @@ func (s *importService) getUniqueTableName(ctx context.Context, schemaName strin
 	}
 
 	// Find unique name using helper
-	uniqueName := s.findUniqueName(proposedName, existingTableNames, maxTableNameLength)
+	uniqueName := s.FindUniqueName(proposedName, existingTableNames, maxTableNameLength)
 
 	if uniqueName == proposedName {
 		return uniqueName, nil
@@ -759,10 +759,10 @@ func (s *importService) getUniqueTableName(ctx context.Context, schemaName strin
 	return uniqueName, nil
 }
 
-// getUniqueBaseName checks if a base with the given name exists in the workspace
+// GetUniqueBaseName checks if a base with the given name exists in the workspace
 // If it does, appends a number (1, 2, 3, etc.) to make it unique
 // Enforces 50 character limit for base names
-func (s *importService) getUniqueBaseName(ctx context.Context, schemaName string, workspaceID string, proposedName string, lg *zerolog.Logger) (string, error) {
+func (s *importService) GetUniqueBaseName(ctx context.Context, schemaName string, workspaceID string, proposedName string, lg *zerolog.Logger) (string, error) {
 	allBases, err := s.baseManagementService.GetBasesByWorkspace(ctx, schemaName, workspaceID)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("workspaceID", workspaceID).Msg("Failed to fetch existing bases")
@@ -781,7 +781,7 @@ func (s *importService) getUniqueBaseName(ctx context.Context, schemaName string
 	const maxNameLength = 50
 
 	// Find unique name using helper
-	uniqueName := s.findUniqueName(cleanBaseName, existingBaseNames, maxNameLength)
+	uniqueName := s.FindUniqueName(cleanBaseName, existingBaseNames, maxNameLength)
 
 	if uniqueName == cleanBaseName && len(proposedName) > maxNameLength {
 		lg.Warn().Str("baseName", cleanBaseName).Int("length", len(cleanBaseName)).Int("maxLength", maxNameLength).Msg("Base name exceeds 50 character limit, truncating")
@@ -792,8 +792,8 @@ func (s *importService) getUniqueBaseName(ctx context.Context, schemaName string
 	return uniqueName, nil
 }
 
-// ensureBaseWithConfig ensures a base exists for config-based import
-func (s *importService) ensureBaseWithConfig(ctx context.Context, schemaName string, req *dto.ImportWithConfigRequest, lg *zerolog.Logger, tableTitle string) error {
+// EnsureBaseWithConfig ensures a base exists for config-based import
+func (s *importService) EnsureBaseWithConfig(ctx context.Context, schemaName string, req *dto.ImportWithConfigRequest, lg *zerolog.Logger, tableTitle string) error {
 	if req.BaseID != "" {
 		return nil
 	}
@@ -806,7 +806,7 @@ func (s *importService) ensureBaseWithConfig(ctx context.Context, schemaName str
 	baseName := tableTitle
 
 	// Check for duplicate base names and get unique name if needed (with 50 char limit)
-	uniqueBaseName, err := s.getUniqueBaseName(ctx, schemaName, req.WorkspaceID, baseName, lg)
+	uniqueBaseName, err := s.GetUniqueBaseName(ctx, schemaName, req.WorkspaceID, baseName, lg)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("baseName", baseName).Msg("Failed to check for duplicate base names")
 		// If check fails, at least truncate to 50 characters to avoid database errors
@@ -838,8 +838,8 @@ func (s *importService) ensureBaseWithConfig(ctx context.Context, schemaName str
 	return nil
 }
 
-// cleanData applies data cleaning transformations (trim, remove extra spaces)
-func (s *importService) cleanData(rows [][]string, settings dto.ImportSettings) [][]string {
+// CleanData applies data cleaning transformations (trim, remove extra spaces)
+func (s *importService) CleanData(rows [][]string, settings dto.ImportSettings) [][]string {
 	cleanedRows := make([][]string, len(rows))
 
 	for i, row := range rows {
@@ -912,7 +912,7 @@ func (s *importService) updateTitleColumnWithConfig(params dto.AddColumnsWithCon
 	if colType == "" {
 		colType = "text"
 	}
-	colDT := s.getDatabaseType(colType)
+	colDT := s.GetDatabaseType(colType)
 
 	meta := map[string]interface{}{}
 	if cfg.Meta != nil {
@@ -949,7 +949,7 @@ func (s *importService) createColumnFromConfig(params dto.AddColumnsWithConfigPa
 		colTitle = header
 	}
 
-	colDT := s.getDatabaseType(colType)
+	colDT := s.GetDatabaseType(colType)
 
 	meta := map[string]interface{}{}
 	if cfg.Meta != nil {
@@ -1011,8 +1011,8 @@ func (s *importService) addColumnForHeader(params dto.AddColumnsWithConfigParams
 	return colResp, true, nil
 }
 
-// saveErrorRows writes error rows, empty rows, and duplicate rows to a text log file
-func (s *importService) saveErrorRows(headers []string, errorRows [][]string, errorMessages []string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string, lg *zerolog.Logger) (string, error) {
+// SaveErrorRows writes error rows, empty rows, and duplicate rows to a text log file
+func (s *importService) SaveErrorRows(headers []string, errorRows [][]string, errorMessages []string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string, lg *zerolog.Logger) (string, error) {
 	// Build the content using helper functions
 	var content strings.Builder
 	content.WriteString("Import Issues Report\n")
@@ -1036,18 +1036,18 @@ func (s *importService) saveErrorRows(headers []string, errorRows [][]string, er
 
 	// Use helper functions for section building
 	if len(errorMessages) > 0 {
-		content.WriteString(s.buildErrorTypeSummary(errorMessages))
-		content.WriteString(s.buildAllValidationErrorsBlock(errorMessages))
+		content.WriteString(s.BuildErrorTypeSummary(errorMessages))
+		content.WriteString(s.BuildAllValidationErrorsBlock(errorMessages))
 	}
 	if len(emptyRowsWithLineNumbers) > 0 {
-		content.WriteString(s.buildEmptyRowsHumanSection(emptyRowsWithLineNumbers))
+		content.WriteString(s.BuildEmptyRowsHumanSection(emptyRowsWithLineNumbers))
 	}
 	if len(duplicateRowsWithLineNumbers) > 0 {
-		content.WriteString(s.buildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers))
+		content.WriteString(s.BuildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers))
 	}
 
 	// Raw CSV data section
-	content.WriteString(s.buildRawCSVSection(headers, errorRows, emptyRowsWithLineNumbers, duplicateRowsWithLineNumbers))
+	content.WriteString(s.BuildRawCSVSection(headers, errorRows, emptyRowsWithLineNumbers, duplicateRowsWithLineNumbers))
 
 	// Ensure tmp directory exists
 	tmpDir := "./internal/tmp"
@@ -1068,25 +1068,25 @@ func (s *importService) saveErrorRows(headers []string, errorRows [][]string, er
 	return content.String(), nil
 }
 
-// escapeCSVCell returns a CSV-escaped cell (quotes doubled and wrapped) when needed
-func (s *importService) escapeCSVCell(cell string) string {
+// EscapeCSVCell returns a CSV-escaped cell (quotes doubled and wrapped) when needed
+func (s *importService) EscapeCSVCell(cell string) string {
 	if strings.Contains(cell, ",") || strings.Contains(cell, "\"") || strings.Contains(cell, "\n") {
 		return "\"" + strings.ReplaceAll(cell, "\"", "\"\"") + "\""
 	}
 	return cell
 }
 
-// escapeRowForCSV returns a slice of escaped cells for a row
-func (s *importService) escapeRowForCSV(row []string) []string {
+// EscapeRowForCSV returns a slice of escaped cells for a row
+func (s *importService) EscapeRowForCSV(row []string) []string {
 	escaped := make([]string, len(row))
 	for i, cell := range row {
-		escaped[i] = s.escapeCSVCell(cell)
+		escaped[i] = s.EscapeCSVCell(cell)
 	}
 	return escaped
 }
 
-// sortedLineNumbers returns sorted keys from a map[int][]string
-func (s *importService) sortedLineNumbers(m map[int][]string) []int {
+// SortedLineNumbers returns sorted keys from a map[int][]string
+func (s *importService) SortedLineNumbers(m map[int][]string) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -1095,8 +1095,8 @@ func (s *importService) sortedLineNumbers(m map[int][]string) []int {
 	return keys
 }
 
-// buildErrorTypeSummary builds the CSV validation error types summary block
-func (s *importService) buildErrorTypeSummary(errorMessages []string) string {
+// BuildErrorTypeSummary builds the CSV validation error types summary block
+func (s *importService) BuildErrorTypeSummary(errorMessages []string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n")
@@ -1141,8 +1141,8 @@ func (s *importService) buildErrorTypeSummary(errorMessages []string) string {
 	return b.String()
 }
 
-// buildAllValidationErrorsBlock builds the detailed ALL VALIDATION ERRORS block
-func (s *importService) buildAllValidationErrorsBlock(errorMessages []string) string {
+// BuildAllValidationErrorsBlock builds the detailed ALL VALIDATION ERRORS block
+func (s *importService) BuildAllValidationErrorsBlock(errorMessages []string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n")
@@ -1160,8 +1160,8 @@ func (s *importService) buildAllValidationErrorsBlock(errorMessages []string) st
 	return b.String()
 }
 
-// buildEmptyRowsHumanSection builds the human-readable EMPTY ROWS section
-func (s *importService) buildEmptyRowsHumanSection(emptyRowsWithLineNumbers map[int][]string) string {
+// BuildEmptyRowsHumanSection builds the human-readable EMPTY ROWS section
+func (s *importService) BuildEmptyRowsHumanSection(emptyRowsWithLineNumbers map[int][]string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n")
@@ -1169,7 +1169,7 @@ func (s *importService) buildEmptyRowsHumanSection(emptyRowsWithLineNumbers map[
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n\n")
 
-	lineNumbers := s.sortedLineNumbers(emptyRowsWithLineNumbers)
+	lineNumbers := s.SortedLineNumbers(emptyRowsWithLineNumbers)
 	for idx, lineNum := range lineNumbers {
 		row := emptyRowsWithLineNumbers[lineNum]
 		b.WriteString(fmt.Sprintf("[Empty Row %d] Line %d in CSV file\n", idx+1, lineNum))
@@ -1179,8 +1179,8 @@ func (s *importService) buildEmptyRowsHumanSection(emptyRowsWithLineNumbers map[
 	return b.String()
 }
 
-// buildDuplicateRowsHumanSection builds the human-readable DUPLICATE ROWS section
-func (s *importService) buildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers map[int][]string) string {
+// BuildDuplicateRowsHumanSection builds the human-readable DUPLICATE ROWS section
+func (s *importService) BuildDuplicateRowsHumanSection(duplicateRowsWithLineNumbers map[int][]string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n")
@@ -1188,7 +1188,7 @@ func (s *importService) buildDuplicateRowsHumanSection(duplicateRowsWithLineNumb
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n\n")
 
-	lineNumbers := s.sortedLineNumbers(duplicateRowsWithLineNumbers)
+	lineNumbers := s.SortedLineNumbers(duplicateRowsWithLineNumbers)
 	for idx, lineNum := range lineNumbers {
 		row := duplicateRowsWithLineNumbers[lineNum]
 		b.WriteString(fmt.Sprintf("[Duplicate Row %d] Line %d in CSV file\n", idx+1, lineNum))
@@ -1198,8 +1198,8 @@ func (s *importService) buildDuplicateRowsHumanSection(duplicateRowsWithLineNumb
 	return b.String()
 }
 
-// buildRawCSVSection builds the RAW DATA (CSV Format) block including headers and CSV rows
-func (s *importService) buildRawCSVSection(headers []string, errorRows [][]string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string) string {
+// BuildRawCSVSection builds the RAW DATA (CSV Format) block including headers and CSV rows
+func (s *importService) BuildRawCSVSection(headers []string, errorRows [][]string, emptyRowsWithLineNumbers map[int][]string, duplicateRowsWithLineNumbers map[int][]string) string {
 	var b strings.Builder
 	b.WriteString(strings.Repeat("=", 100))
 	b.WriteString("\n")
@@ -1226,7 +1226,7 @@ func (s *importService) appendErrorRowsToCSV(b *strings.Builder, errorRows [][]s
 	}
 	b.WriteString("# ERROR ROWS:\n")
 	for _, row := range errorRows {
-		b.WriteString(strings.Join(s.escapeRowForCSV(row), ","))
+		b.WriteString(strings.Join(s.EscapeRowForCSV(row), ","))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
@@ -1238,9 +1238,9 @@ func (s *importService) appendEmptyRowsToCSV(b *strings.Builder, emptyRows map[i
 		return
 	}
 	b.WriteString("# EMPTY ROWS:\n")
-	for _, lineNum := range s.sortedLineNumbers(emptyRows) {
+	for _, lineNum := range s.SortedLineNumbers(emptyRows) {
 		row := emptyRows[lineNum]
-		b.WriteString(fmt.Sprintf("# Line %d: %s\n", lineNum, strings.Join(s.escapeRowForCSV(row), ",")))
+		b.WriteString(fmt.Sprintf("# Line %d: %s\n", lineNum, strings.Join(s.EscapeRowForCSV(row), ",")))
 	}
 	b.WriteString("\n")
 }
@@ -1251,14 +1251,14 @@ func (s *importService) appendDuplicateRowsToCSV(b *strings.Builder, duplicateRo
 		return
 	}
 	b.WriteString("# DUPLICATE ROWS:\n")
-	for _, lineNum := range s.sortedLineNumbers(duplicateRows) {
+	for _, lineNum := range s.SortedLineNumbers(duplicateRows) {
 		row := duplicateRows[lineNum]
-		b.WriteString(fmt.Sprintf("# Line %d: %s\n", lineNum, strings.Join(s.escapeRowForCSV(row), ",")))
+		b.WriteString(fmt.Sprintf("# Line %d: %s\n", lineNum, strings.Join(s.EscapeRowForCSV(row), ",")))
 	}
 }
 
-// getDefaultValue extracts default value from column config metadata
-func (s *importService) getDefaultValue(cfg *dto.ColumnConfig) string {
+// GetDefaultValue extracts default value from column config metadata
+func (s *importService) GetDefaultValue(cfg *dto.ColumnConfig) string {
 	if cfg == nil || cfg.Meta == nil {
 		return ""
 	}
@@ -1270,8 +1270,8 @@ func (s *importService) getDefaultValue(cfg *dto.ColumnConfig) string {
 	return ""
 }
 
-// validateNumberField validates integer number fields including range and meta bounds
-func (s *importService) validateNumberField(cellVal string, columnName string, meta map[string]interface{}) []string {
+// ValidateNumberField validates integer number fields including range and meta bounds
+func (s *importService) ValidateNumberField(cellVal string, columnName string, meta map[string]interface{}) []string {
 	var errors []string
 
 	// For integer field, reject decimal values
@@ -1296,8 +1296,8 @@ func (s *importService) validateNumberField(cellVal string, columnName string, m
 	return errors
 }
 
-// validateDecimalField validates floating point decimal fields and meta bounds
-func (s *importService) validateDecimalField(cellVal string, columnName string, meta map[string]interface{}) []string {
+// ValidateDecimalField validates floating point decimal fields and meta bounds
+func (s *importService) ValidateDecimalField(cellVal string, columnName string, meta map[string]interface{}) []string {
 	var errors []string
 	if _, err := strconv.ParseFloat(cellVal, 64); err != nil {
 		errors = append(errors, fmt.Sprintf("Column '%s' [decimal]: Invalid decimal format '%s' - must be a valid floating point number", columnName, cellVal))
@@ -1352,8 +1352,8 @@ func (s *importService) checkMaxBound(numVal float64, cellVal string, columnName
 	return nil
 }
 
-// validateBooleanField validates boolean-like values
-func (s *importService) validateBooleanField(cellVal string, columnName string) []string {
+// ValidateBooleanField validates boolean-like values
+func (s *importService) ValidateBooleanField(cellVal string, columnName string) []string {
 	lower := strings.ToLower(cellVal)
 	if lower != "true" && lower != "false" && lower != "0" && lower != "1" && lower != "yes" && lower != "no" {
 		return []string{fmt.Sprintf("Column '%s' [boolean]: Invalid boolean value '%s' - must be one of: true, false, 0, 1, yes, no", columnName, cellVal)}
@@ -1361,8 +1361,8 @@ func (s *importService) validateBooleanField(cellVal string, columnName string) 
 	return nil
 }
 
-// validateEmailField performs basic email format checks
-func (s *importService) validateEmailField(cellVal string, columnName string) []string {
+// ValidateEmailField performs basic email format checks
+func (s *importService) ValidateEmailField(cellVal string, columnName string) []string {
 	atIndex := strings.LastIndex(cellVal, "@")
 	if atIndex == -1 || atIndex == 0 || atIndex == len(cellVal)-1 {
 		return []string{fmt.Sprintf("Column '%s' [email]: Invalid email format '%s' - must contain @ with local and domain parts", columnName, cellVal)}
@@ -1374,8 +1374,8 @@ func (s *importService) validateEmailField(cellVal string, columnName string) []
 	return nil
 }
 
-// validateJSONField checks if the value is valid JSON
-func (s *importService) validateJSONField(cellVal string, columnName string) []string {
+// ValidateJSONField checks if the value is valid JSON
+func (s *importService) ValidateJSONField(cellVal string, columnName string) []string {
 	var js interface{}
 	if err := json.Unmarshal([]byte(cellVal), &js); err != nil {
 		return []string{fmt.Sprintf("Column '%s' [json]: Invalid JSON format '%s' - %v", columnName, cellVal, err)}
@@ -1383,8 +1383,8 @@ func (s *importService) validateJSONField(cellVal string, columnName string) []s
 	return nil
 }
 
-// validateTextField validates text/longText fields against max_length meta
-func (s *importService) validateTextField(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
+// ValidateTextField validates text/longText fields against max_length meta
+func (s *importService) ValidateTextField(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string {
 	if meta != nil {
 		if maxLen, ok := meta["max_length"]; ok {
 			if maxLenInt, ok2 := maxLen.(float64); ok2 {
@@ -1397,8 +1397,8 @@ func (s *importService) validateTextField(cellVal string, columnName string, fie
 	return nil
 }
 
-// buildRecordsWithConfigAndErrors builds records using column configuration and tracks comprehensive error rows
-func (s *importService) buildRecordsWithConfigAndErrors(params dto.BuildRecordsWithConfigAndErrorsParams, lg *zerolog.Logger) ([]map[string]interface{}, [][]string, []string) {
+// BuildRecordsWithConfigAndErrors builds records using column configuration and tracks comprehensive error rows
+func (s *importService) BuildRecordsWithConfigAndErrors(params dto.BuildRecordsWithConfigAndErrorsParams, lg *zerolog.Logger) ([]map[string]interface{}, [][]string, []string) {
 	lg.Info().Int("recordCount", len(params.DataRows)).Msg("Starting to insert records with comprehensive error tracking")
 
 	// Build config map for quick lookup
@@ -1474,15 +1474,15 @@ func (s *importService) processCellByType(record map[string]interface{}, colIdx 
 	}
 
 	// Handle non-primary column
-	errs, applied := s.applyNonPrimary(record, header, cfg, configExists, params, colIdx, cellVal)
+	errs, applied := s.ApplyNonPrimary(record, header, cfg, configExists, params, colIdx, cellVal)
 	if len(errs) > 0 || applied {
 		return errs
 	}
 	return nil
 }
 
-// applyNonPrimary handles non-primary column processing for a single cell
-func (s *importService) applyNonPrimary(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool) {
+// ApplyNonPrimary handles non-primary column processing for a single cell
+func (s *importService) ApplyNonPrimary(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool) {
 	if !configExists {
 		return nil, false
 	}
@@ -1497,7 +1497,7 @@ func (s *importService) applyNonPrimary(record map[string]interface{}, header st
 
 // applyPrimaryCell validates and applies the primary/title cell to the record
 func (s *importService) applyPrimaryCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, cellVal string) []string {
-	if val, errs := s.processTitleCell(header, cfg, cellVal); len(errs) > 0 {
+	if val, errs := s.ProcessTitleCell(header, cfg, cellVal); len(errs) > 0 {
 		return errs
 	} else if val != nil {
 		record["title"] = val
@@ -1507,7 +1507,7 @@ func (s *importService) applyPrimaryCell(record map[string]interface{}, header s
 
 // handleDataCellForRow validates a non-primary data cell and applies it to the record if valid
 func (s *importService) handleDataCellForRow(record map[string]interface{}, header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) ([]string, bool) {
-	if key, val, errs, ok := s.processDataCell(header, cfg, colResp, cellVal); len(errs) > 0 {
+	if key, val, errs, ok := s.ProcessDataCell(header, cfg, colResp, cellVal); len(errs) > 0 {
 		return errs, false
 	} else if ok {
 		record[key] = val
@@ -1516,9 +1516,9 @@ func (s *importService) handleDataCellForRow(record map[string]interface{}, head
 	return nil, false
 }
 
-// processTitleCell handles validation and conversion for the primary/title column
-func (s *importService) processTitleCell(header string, cfg dto.ColumnConfig, cellVal string) (interface{}, []string) {
-	defaultVal := s.getDefaultValue(&cfg)
+// ProcessTitleCell handles validation and conversion for the primary/title column
+func (s *importService) ProcessTitleCell(header string, cfg dto.ColumnConfig, cellVal string) (interface{}, []string) {
+	defaultVal := s.GetDefaultValue(&cfg)
 
 	// Determine which value to use
 	var primaryValue string
@@ -1539,12 +1539,12 @@ func (s *importService) processTitleCell(header string, cfg dto.ColumnConfig, ce
 		return nil, []string{"Primary column: " + conversionErr}
 	}
 
-	return s.convertValue(primaryValue, cfg.UIDT), nil
+	return s.ConvertValue(primaryValue, cfg.UIDT), nil
 }
 
-// processDataCell handles validation and conversion for non-primary data cells
-func (s *importService) processDataCell(header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) (string, interface{}, []string, bool) {
-	defaultVal := s.getDefaultValue(&cfg)
+// ProcessDataCell handles validation and conversion for non-primary data cells
+func (s *importService) ProcessDataCell(header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) (string, interface{}, []string, bool) {
+	defaultVal := s.GetDefaultValue(&cfg)
 
 	// Determine which value to use
 	var valueToConvert string
@@ -1562,13 +1562,13 @@ func (s *importService) processDataCell(header string, cfg dto.ColumnConfig, col
 		return "", nil, []string{conversionErr}, false
 	}
 
-	val := s.convertValue(valueToConvert, cfg.UIDT)
+	val := s.ConvertValue(valueToConvert, cfg.UIDT)
 	key := fmt.Sprintf(colNameFmt, colResp.ColumnName)
 	return key, val, nil, true
 }
 
-// validateColumnConfig validates that all column configs have required fields and valid source names
-func (s *importService) validateColumnConfig(columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
+// ValidateColumnConfig validates that all column configs have required fields and valid source names
+func (s *importService) ValidateColumnConfig(columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
 	if len(columnConfigs) == 0 {
 		lg.Error().Msg("No columns provided in config")
 		return fmt.Errorf("at least one column must be configured")
@@ -1640,8 +1640,8 @@ func (s *importService) validateEachColumnConfig(columnConfigs []dto.ColumnConfi
 	return nil
 }
 
-// isRowEmpty checks if all cells in a row are empty (after trimming)
-func (s *importService) isRowEmpty(row []string) bool {
+// IsRowEmpty checks if all cells in a row are empty (after trimming)
+func (s *importService) IsRowEmpty(row []string) bool {
 	for _, cell := range row {
 		if strings.TrimSpace(cell) != "" {
 			return false
@@ -1650,8 +1650,8 @@ func (s *importService) isRowEmpty(row []string) bool {
 	return true
 }
 
-// removeEmptyRows removes rows where all cells are empty
-func (s *importService) removeEmptyRows(rows [][]string) [][]string {
+// RemoveEmptyRows removes rows where all cells are empty
+func (s *importService) RemoveEmptyRows(rows [][]string) [][]string {
 	var nonEmptyRows [][]string
 	for _, row := range rows {
 		allEmpty := true
@@ -1668,8 +1668,8 @@ func (s *importService) removeEmptyRows(rows [][]string) [][]string {
 	return nonEmptyRows
 }
 
-// removeDuplicateRecords removes duplicate rows while preserving order
-func (s *importService) removeDuplicateRecords(rows [][]string) [][]string {
+// RemoveDuplicateRecords removes duplicate rows while preserving order
+func (s *importService) RemoveDuplicateRecords(rows [][]string) [][]string {
 	seen := make(map[string]bool)
 	var uniqueRows [][]string
 
@@ -1686,8 +1686,8 @@ func (s *importService) removeDuplicateRecords(rows [][]string) [][]string {
 	return uniqueRows
 }
 
-// countEmptyRows counts rows where all cells are empty without removing them
-func (s *importService) countEmptyRows(rows [][]string) int {
+// CountEmptyRows counts rows where all cells are empty without removing them
+func (s *importService) CountEmptyRows(rows [][]string) int {
 	count := 0
 	for _, row := range rows {
 		allEmpty := true
@@ -1704,8 +1704,8 @@ func (s *importService) countEmptyRows(rows [][]string) int {
 	return count
 }
 
-// countDuplicateRecords counts duplicate rows without removing them
-func (s *importService) countDuplicateRecords(rows [][]string) int {
+// CountDuplicateRecords counts duplicate rows without removing them
+func (s *importService) CountDuplicateRecords(rows [][]string) int {
 	seen := make(map[string]bool)
 	duplicateCount := 0
 
@@ -1723,8 +1723,8 @@ func (s *importService) countDuplicateRecords(rows [][]string) int {
 	return duplicateCount
 }
 
-// identifyEmptyRowsWithLineNumbers returns empty rows with their line numbers in the CSV
-func (s *importService) identifyEmptyRowsWithLineNumbers(rows [][]string) map[int][]string {
+// IdentifyEmptyRowsWithLineNumbers returns empty rows with their line numbers in the CSV
+func (s *importService) IdentifyEmptyRowsWithLineNumbers(rows [][]string) map[int][]string {
 	emptyRows := make(map[int][]string)
 	for idx, row := range rows {
 		allEmpty := true
@@ -1742,8 +1742,8 @@ func (s *importService) identifyEmptyRowsWithLineNumbers(rows [][]string) map[in
 	return emptyRows
 }
 
-// identifyDuplicateRowsWithLineNumbers returns duplicate rows with their line numbers in the CSV
-func (s *importService) identifyDuplicateRowsWithLineNumbers(rows [][]string) map[int][]string {
+// IdentifyDuplicateRowsWithLineNumbers returns duplicate rows with their line numbers in the CSV
+func (s *importService) IdentifyDuplicateRowsWithLineNumbers(rows [][]string) map[int][]string {
 	seen := make(map[string]int) // key -> first occurrence line number
 	duplicates := make(map[int][]string)
 
@@ -1834,10 +1834,10 @@ func (s *importService) logCleanedDataWithSettings(headers []string, dataRows []
 	}
 }
 
-// prepareImportData parses CSV, validates column config, applies cleaning settings,
+// PrepareImportData parses CSV, validates column config, applies cleaning settings,
 // logs cleaned data and determines a unique table title. Returns headers, cleaned
 // data rows, statistics and the unique table title (or original on error).
-func (s *importService) prepareImportData(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string, lg *zerolog.Logger) ([]string, [][]string, *dto.ImportStatistics, string, error) {
+func (s *importService) PrepareImportData(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string, lg *zerolog.Logger) ([]string, [][]string, *dto.ImportStatistics, string, error) {
 	headers, dataRows, err := s.parseCSV(file, lg)
 	if err != nil {
 		return nil, nil, nil, "", err
@@ -1847,35 +1847,35 @@ func (s *importService) prepareImportData(ctx context.Context, schemaName string
 	stats := &dto.ImportStatistics{}
 
 	// Validate column config
-	if err := s.validateColumnConfig(req.Config.Columns, req.Config.PrimaryColumn, headers, lg); err != nil {
+	if err := s.ValidateColumnConfig(req.Config.Columns, req.Config.PrimaryColumn, headers, lg); err != nil {
 		return nil, nil, stats, "", err
 	}
 
 	// Step 1: Apply TrimSpaces setting (if enabled)
 	if req.Config.Settings.TrimSpaces {
-		dataRows = s.cleanData(dataRows, req.Config.Settings)
+		dataRows = s.CleanData(dataRows, req.Config.Settings)
 		lg.Info().Bool("trimSpaces", true).Msg("Trim spaces applied")
 	} else {
 		lg.Info().Bool("trimSpaces", false).Msg("Trim spaces skipped")
 	}
 
 	// Step 2: Count and optionally remove empty rows (after trimming for accurate detection)
-	emptyRowCount := s.countEmptyRows(dataRows)
+	emptyRowCount := s.CountEmptyRows(dataRows)
 	stats.EmptyRows = emptyRowCount
 	if req.Config.Settings.RemoveEmptyRows {
-		dataRows = s.removeEmptyRows(dataRows)
+		dataRows = s.RemoveEmptyRows(dataRows)
 		stats.EmptyRowsSkipped = emptyRowCount
-		lg.Info().Bool("removeEmptyRows", true).Int("emptyRowsDetected", emptyRowCount).Int("emptyRowsRemoved", emptyRowCount).Msg("Empty rows removed")
+		lg.Info().Bool("RemoveEmptyRows", true).Int("emptyRowsDetected", emptyRowCount).Int("emptyRowsRemoved", emptyRowCount).Msg("Empty rows removed")
 	} else {
 		stats.EmptyRowsSkipped = 0
-		lg.Info().Bool("removeEmptyRows", false).Int("emptyRowsDetected", emptyRowCount).Msg("Empty rows detected but not removed")
+		lg.Info().Bool("RemoveEmptyRows", false).Int("emptyRowsDetected", emptyRowCount).Msg("Empty rows detected but not removed")
 	}
 
 	// Step 3: Count and optionally remove duplicates
-	duplicateRowCount := s.countDuplicateRecords(dataRows)
+	duplicateRowCount := s.CountDuplicateRecords(dataRows)
 	stats.DuplicateRows = duplicateRowCount
 	if req.Config.Settings.RemoveDuplicateRecords {
-		dataRows = s.removeDuplicateRecords(dataRows)
+		dataRows = s.RemoveDuplicateRecords(dataRows)
 		stats.DuplicatesRemoved = duplicateRowCount
 		lg.Info().Bool("removeDuplicates", true).Int("duplicatesDetected", duplicateRowCount).Int("duplicatesRemoved", duplicateRowCount).Int("recordsAfterDedup", len(dataRows)).Msg("Duplicate records removed")
 	} else {
@@ -1888,7 +1888,7 @@ func (s *importService) prepareImportData(ctx context.Context, schemaName string
 
 	// Check for duplicate table names and get unique name if needed
 	uniqueTableTitle := tableTitle
-	uniqueTableTitle, err = s.getUniqueTableName(ctx, schemaName, req.BaseID, tableTitle, lg)
+	uniqueTableTitle, err = s.GetUniqueTableName(ctx, schemaName, req.BaseID, tableTitle, lg)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("tableName", tableTitle).Msg("Failed to check for duplicate table names")
 		// Continue with original name if check fails

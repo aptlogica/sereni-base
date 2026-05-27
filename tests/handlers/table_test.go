@@ -350,6 +350,440 @@ func TestTableHandler_ImportTable_NoConfig(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
+// ============ Additional Import API Test Cases ============
+
+func TestTableHandler_ImportTable_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(dto.ImportTableResponse{}, errors.New("database error"))
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.NotEqual(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_MissingSchema(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), "", gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(dto.ImportTableResponse{}, nil)
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	// NOTE: No schema set in context
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_MissingUserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(dto.ImportTableResponse{}, nil)
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	// NOTE: No user_id set in context
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_EmptyTitle_UsesFilename(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "my_data").
+		Return(dto.ImportTableResponse{}, nil)
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "my_data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	// NOTE: No title provided
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_WithDescription(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			if req.Description != "Table description" {
+				return dto.ImportTableResponse{}, errors.New("description not set correctly")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.WriteField("description", "Table description")
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_WithWorkspaceID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	workspaceID := uuid.New().String()
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			if req.WorkspaceID != workspaceID {
+				return dto.ImportTableResponse{}, errors.New("workspace_id not set correctly")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("workspace_id", workspaceID)
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_WithMultipleColumns(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			if len(req.Config.Columns) != 3 {
+				return dto.ImportTableResponse{}, errors.New("columns count not correct")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[{"column_name":"id","column_type":"text"},{"column_name":"name","column_type":"text"},{"column_name":"email","column_type":"email"}]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_SpecialCharactersInTitle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			if req.Title != "Table@#$%^&*()" {
+				return dto.ImportTableResponse{}, errors.New("title not set correctly")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.WriteField("title", "Table@#$%^&*()")
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_IntegerOrderIndex(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			if req.OrderIndex != 5.0 {
+				return dto.ImportTableResponse{}, errors.New("order index not set correctly")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.WriteField("order_index", "5")
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_InvalidOrderIndexFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			// Invalid format should default to 0
+			if req.OrderIndex != 0.0 {
+				return dto.ImportTableResponse{}, errors.New("order index should default to 0 for invalid format")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.WriteField("order_index", "invalid_number")
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_LargeValidFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// Set import max size to 10MB to allow test file
+	orig := config.AppConfig
+	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 10485760}}
+	defer func() { config.AppConfig = orig }()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(dto.ImportTableResponse{}, nil)
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	// Create content that's just under max size
+	content := strings.Repeat("a,b,c\n", 100000)
+	io.WriteString(part, content)
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_AllFieldsProvided(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	baseID := uuid.New().String()
+	workspaceID := uuid.New().String()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), "test_schema", gomock.Any(), gomock.Any(), "Complete Import").
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			if req.BaseID != baseID {
+				return dto.ImportTableResponse{}, errors.New("base_id not set correctly")
+			}
+			if req.WorkspaceID != workspaceID {
+				return dto.ImportTableResponse{}, errors.New("workspace_id not set correctly")
+			}
+			if req.Title != "Complete Import" {
+				return dto.ImportTableResponse{}, errors.New("title not set correctly")
+			}
+			if req.Description != "Detailed description" {
+				return dto.ImportTableResponse{}, errors.New("description not set correctly")
+			}
+			if req.OrderIndex != 3.5 {
+				return dto.ImportTableResponse{}, errors.New("order_index not set correctly")
+			}
+			if req.CreatedBy != "user123" {
+				return dto.ImportTableResponse{}, errors.New("created_by not set correctly")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "data.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", baseID)
+	writer.WriteField("workspace_id", workspaceID)
+	writer.WriteField("title", "Complete Import")
+	writer.WriteField("description", "Detailed description")
+	writer.WriteField("order_index", "3.5")
+	writer.WriteField("config", `{"columns":[{"column_name":"col1"},{"column_name":"col2"}]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test_schema")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
 func TestTableHandler_CreateTable_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)

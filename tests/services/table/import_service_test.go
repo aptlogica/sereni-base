@@ -931,3 +931,297 @@ func TestImport_UpdateTypeFlags_EmailType(t *testing.T) {
 
 	assert.NoError(t, err)
 }
+
+// ============ VALIDATION ERROR TESTS (Exercise validation functions) ============
+
+// Test import with number validation errors
+func TestImport_ValidationErrors_InvalidNumber(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Age\nJohn,abc\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	// Should succeed but with errors
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with email validation
+func TestImport_ValidationErrors_InvalidEmail(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Email\nJohn,invalidemail\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with boolean validation
+func TestImport_ValidationErrors_InvalidBoolean(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Active\nJohn,maybe\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with JSON validation
+func TestImport_ValidationErrors_InvalidJSON(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Metadata\nJohn,{invalid}\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with decimal validation
+func TestImport_ValidationErrors_InvalidDecimal(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Price\nItem,notanumber\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with multiple rows to exercise error aggregation
+func TestImport_MultipleValidationErrors(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	csvData := "Title,Age,Email\nJohn,abc,invalid\nJane,25,user@example.com\nBob,notnum,noemail\n"
+	file := makeFileHeader(t, "data.csv", csvData)
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with CSV escaping (comma, quote, newline in data)
+func TestImport_CSVEscaping_CommaInValue(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Description\n\"Full Name, Inc\",\"Good, affordable\"\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with very large numbers
+func TestImport_LargeNumbers(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Amount\nTransaction,9999999999999999\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with special characters and unicode
+func TestImport_SpecialCharactersAndUnicode(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,Description\nProduct,中文 Special @#$%\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with mixed boolean formats
+func TestImport_MixedBooleanFormats(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	csvData := "Title,Flag1,Flag2,Flag3\nItem,true,yes,0\n"
+	file := makeFileHeader(t, "data.csv", csvData)
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with empty values
+func TestImport_EmptyAndNullValues(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Title,OptionalField\nItem,\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
+
+// Test import with decimal numbers vs integers
+func TestImport_DecimalVsIntegerNumbers(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	csvData := "Title,IntField,DecimalField\nItem,42,3.14\n"
+	file := makeFileHeader(t, "data.csv", csvData)
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
+	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
+		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
+	}
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	result, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T", CreatedBy: "user"}, file)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, result)
+}
