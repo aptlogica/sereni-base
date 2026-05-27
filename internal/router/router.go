@@ -247,6 +247,8 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers) {
 		column.PATCH("/:id", handlers.Table.UpdateColumn)
 		column.DELETE("/:id", handlers.Table.DeleteColumn)
 		column.POST("/reorder", handlers.Table.ReorderColumn)
+		column.POST("/bulk-update", handlers.Table.BulkUpdateColumns)
+		column.POST("/reset", handlers.Table.ResetColumnValues)
 	}
 }
 
@@ -255,6 +257,7 @@ func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mid
 	row := private.Group("/row")
 	{
 		row.POST(RouteCreate, handlers.Table.CreateRow)
+		row.PATCH("/update", handlers.Table.UpdateRow)
 		row.POST("/remove", handlers.Table.DeleteRow)
 		row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
 		row.POST("/data/insert", handlers.Table.InsertRowData)

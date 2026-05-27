@@ -134,6 +134,14 @@ func (m *MockTableManagementService) BulkDeleteRows(ctx context.Context, schemaN
 func (m *MockTableManagementService) RemoveAttachments(ctx context.Context, schemaName string, req dto.RemoveAttachmentsRequest) (dto.RecordResponse, error) {
 	return dto.RecordResponse{}, nil
 }
+func (m *MockTableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	args := m.Called(ctx, schemaName, modelID, columnID, updates)
+	return args.Error(0)
+}
+func (m *MockTableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	args := m.Called(ctx, schemaName, modelID, columnID)
+	return args.Error(0)
+}
 
 // MockBaseManagementService implements interfaces.BaseManagementService
 // Only CreateBase is used in Import tests.

@@ -51,4 +51,8 @@ type TableManagementService interface {
 	UpdateAttachment(ctx context.Context, schemaName string, req dto.UpdateAttachmentRequest) (dto.RecordResponse, error)
 	BulkDeleteRows(ctx context.Context, schemaName string, req dto.BulkDeleteRowsRequest) (int, error)
 	RemoveAttachments(ctx context.Context, schemaName string, req dto.RemoveAttachmentsRequest) (dto.RecordResponse, error)
+
+	// bulk operations on columns
+	BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error
+	ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error
 }

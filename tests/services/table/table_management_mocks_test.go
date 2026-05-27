@@ -92,6 +92,14 @@ func (m *MockColumnService) GetMaxOrderIndexOfColumn(ctx context.Context, schema
 	args := m.Called(ctx, schemaName, modelId)
 	return args.Get(0).(float64), args.Error(1)
 }
+func (m *MockColumnService) BulkUpdate(ctx context.Context, schemaName string, tableName string, columnName string, updates []dto.UpdateColumnsRequest) error {
+	args := m.Called(ctx, schemaName, tableName, columnName, updates)
+	return args.Error(0)
+}
+func (m *MockColumnService) ResetColumn(ctx context.Context, schemaName string, tableName string, columnName string) error {
+	args := m.Called(ctx, schemaName, tableName, columnName)
+	return args.Error(0)
+}
 
 // MockViewService implements interfaces.ViewService
 type MockViewService struct{ mock.Mock }
