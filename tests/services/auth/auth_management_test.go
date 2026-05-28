@@ -637,15 +637,8 @@ func TestAuthManagement_RemoveUser_Activate_Deactivate(t *testing.T) {
 	userMgmt.UpdateUserFn = func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
 		return tenant.User{ID: uuid.MustParse(id), Email: "u@example.com"}, nil
 	}
-	err := service.RemoveUser(ctx, appConstant.MasterDatabase, userID)
-	assert.NoError(t, err)
 
-	_, err = service.ActivateUser(ctx, appConstant.MasterDatabase, userID)
-	assert.NoError(t, err)
-
-	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-		return nil, nil
-	}
+	// Mock GetByFunction for RemoveUser (checks for Owner and Co-Owner)
 	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
 		{
 			"get_user_role_by_id": map[string]interface{}{
@@ -653,7 +646,17 @@ func TestAuthManagement_RemoveUser_Activate_Deactivate(t *testing.T) {
 			},
 		},
 	}, nil)
-	_, err = service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
+
+	err := service.RemoveUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.NoError(t, err)
+
+	_, err = service.ActivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.NoError(t, err)
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return nil, nil
+	}
+	_, err = service.DeactivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
 	assert.NoError(t, err)
 }
 
@@ -677,8 +680,250 @@ func TestAuthManagement_DeactivateOwnerBlocked(t *testing.T) {
 		},
 	}, nil)
 
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
 	assert.ErrorIs(t, err, app_errors.OwnerCannotBeDeactivated)
+}
+
+func TestAuthManagement_DeactivateCoOwnerBlocked(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	coOwnerRoleID := uuid.New()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{{RoleID: coOwnerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.CoOwner}, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.ErrorIs(t, err, app_errors.CoOwnerCannotBeDeactivated)
+}
+
+func TestAuthManagement_RemoveOwnerBlocked(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	ownerRoleID := uuid.New()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{{RoleID: ownerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.Owner}, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	err := service.RemoveUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.ErrorIs(t, err, app_errors.OwnerCannotBeRemoved)
+}
+
+func TestAuthManagement_RemoveCoOwnerBlocked(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	coOwnerRoleID := uuid.New()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{{RoleID: coOwnerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.CoOwner}, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+
+	err := service.RemoveUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.ErrorIs(t, err, app_errors.CoOwnerCannotBeRemoved)
+}
+
+func TestAuthManagement_ActivateOwnerBlocked(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	ownerRoleID := uuid.New()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{{RoleID: ownerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.Owner}, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	_, err := service.ActivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.ErrorIs(t, err, app_errors.OwnerCannotBeDeactivated)
+}
+
+func TestAuthManagement_ActivateCoOwnerBlocked(t *testing.T) {
+	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	userID := uuid.New().String()
+	coOwnerRoleID := uuid.New()
+
+	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+		return []dto.AccessMemberDTO{{RoleID: coOwnerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.CoOwner}, nil
+	}
+	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+
+	_, err := service.ActivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.ErrorIs(t, err, app_errors.CoOwnerCannotBeDeactivated)
+}
+
+func TestAuthManagement_ActivateCoOwnerAllowedForOwner(t *testing.T) {
+	service, userMgmt, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	targetUserID := uuid.New().String()
+	ownerReqBy := uuid.New().String()
+
+	userMgmt.UpdateUserFn = func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id), Email: "u@example.com"}, nil
+	}
+
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": targetUserID}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": ownerReqBy}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	_, err := service.ActivateUser(ctx, appConstant.MasterDatabase, targetUserID, ownerReqBy)
+	assert.NoError(t, err)
+}
+
+func TestAuthManagement_DeactivateCoOwnerAllowedForOwner(t *testing.T) {
+	service, userMgmt, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	targetUserID := uuid.New().String()
+	ownerReqBy := uuid.New().String()
+
+	userMgmt.UpdateUserFn = func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id), Email: "u@example.com"}, nil
+	}
+
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": targetUserID}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": ownerReqBy}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, targetUserID, ownerReqBy)
+	assert.NoError(t, err)
+}
+
+func TestAuthManagement_RemoveCoOwnerAllowedForOwner(t *testing.T) {
+	service, userMgmt, _, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	targetUserID := uuid.New().String()
+	ownerReqBy := uuid.New().String()
+
+	userMgmt.UpdateUserFn = func(ctx context.Context, schema string, id string, updateData map[string]interface{}) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id), Email: "u@example.com"}, nil
+	}
+
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": targetUserID}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": ownerReqBy}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	err := service.RemoveUser(ctx, appConstant.MasterDatabase, targetUserID, ownerReqBy)
+	assert.NoError(t, err)
+}
+
+func TestAuthManagement_DeleteUserCompletely_CoOwnerAllowedForOwner(t *testing.T) {
+	service, userMgmt, workspaceMgmt, _, _, _, _, _, _, tableSvc := setupAuthManagementService()
+	ctx := context.Background()
+	targetUserID := uuid.New().String()
+	ownerReqBy := uuid.New().String()
+
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": targetUserID}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.CoOwner,
+			},
+		},
+	}, nil)
+	tableSvc.On("GetByFunction", mock.Anything, "public.get_user_role_by_id", map[string]interface{}{"p_user_id": ownerReqBy}).Return([]map[string]interface{}{
+		{
+			"get_user_role_by_id": map[string]interface{}{
+				"role_name": appConstant.RBACRoleNames.Owner,
+			},
+		},
+	}, nil)
+
+	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
+		return tenant.User{ID: uuid.MustParse(id), Status: "pending"}, nil
+	}
+	userMgmt.DeleteUserCompletelyFn = func(ctx context.Context, schema string, userID string) error {
+		return nil
+	}
+	workspaceMgmt.DeleteUserMappingsFn = func(ctx context.Context, schemaName string, userID string) error {
+		return nil
+	}
+
+	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, targetUserID, ownerReqBy)
+	assert.NoError(t, err)
 }
 
 func TestAuthManagement_RemoveUserFromWorkspace_Fallback(t *testing.T) {
@@ -797,7 +1042,7 @@ func TestAuthManagement_GetMembersAndDeleteUserCompletely(t *testing.T) {
 	workspaceMgmt.DeleteUserMappingsFn = func(ctx context.Context, schemaName string, userID string) error {
 		return app_errors.WorkspaceMemberNotFound
 	}
-	err = service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, "00000000-0000-0000-0000-000000000001")
+	err = service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, "00000000-0000-0000-0000-000000000001", "admin-id")
 	assert.NoError(t, err)
 }
 
@@ -955,7 +1200,7 @@ func TestAuthManagement_RemoveUserCompletely_NotPending(t *testing.T) {
 	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
 		return tenant.User{ID: uuid.MustParse(id), Status: "active"}, nil
 	}
-	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String())
+	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.ErrorIs(t, err, app_errors.OnlyPendingUsersCanBeDeleted)
 }
 
@@ -1195,7 +1440,7 @@ func TestAuthManagement_RemoveUserCompletely_DeleteError(t *testing.T) {
 	userMgmt.DeleteUserCompletelyFn = func(ctx context.Context, schema string, userID string) error {
 		return errors.New("delete failed")
 	}
-	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String())
+	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.Error(t, err)
 }
 
@@ -1212,7 +1457,7 @@ func TestAuthManagement_RemoveUserCompletely_MappingError(t *testing.T) {
 	workspaceMgmt.DeleteUserMappingsFn = func(ctx context.Context, schemaName string, userID string) error {
 		return errors.New("mapping failed")
 	}
-	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String())
+	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.Error(t, err)
 }
 
@@ -1244,7 +1489,7 @@ func TestAuthManagement_CheckIfUserIsOwner_ErrorIgnored(t *testing.T) {
 	ctx := context.Background()
 
 	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("db"))
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.NoError(t, err)
 }
 
@@ -1625,7 +1870,7 @@ func TestAuthManagement_DeleteUserCompletely_ErrorOnUserLookup(t *testing.T) {
 	userMgmt.GetUserByIDFn = func(ctx context.Context, schema string, id string) (tenant.User, error) {
 		return tenant.User{}, errors.New("db")
 	}
-	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String())
+	err := service.DeleteUserCompletely(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.Error(t, err)
 }
 
@@ -2317,7 +2562,7 @@ func TestAuthManagement_ParseRoleData_StringValue(t *testing.T) {
 		},
 	}, nil)
 
-	result, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	result, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 }
@@ -2335,7 +2580,7 @@ func TestAuthManagement_ParseRoleData_MapValue(t *testing.T) {
 		},
 	}, nil)
 
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.NoError(t, err)
 }
 
@@ -2360,7 +2605,7 @@ func TestAuthManagement_IsOwnerRole_MatchesOwner(t *testing.T) {
 		},
 	}, nil)
 
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
 	assert.ErrorIs(t, err, app_errors.OwnerCannotBeDeactivated)
 }
 
@@ -2369,9 +2614,13 @@ func TestAuthManagement_IsOwnerRole_DoesNotMatchOwner(t *testing.T) {
 	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
+	coOwnerRoleID := uuid.New()
 
 	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-		return nil, nil
+		return []dto.AccessMemberDTO{{RoleID: coOwnerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.CoOwner}, nil
 	}
 	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
 		{
@@ -2381,8 +2630,8 @@ func TestAuthManagement_IsOwnerRole_DoesNotMatchOwner(t *testing.T) {
 		},
 	}, nil)
 
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
-	assert.NoError(t, err)
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID, "admin-id")
+	assert.ErrorIs(t, err, app_errors.CoOwnerCannotBeDeactivated)
 }
 
 // TestAuthManagement_ParseRoleData_InvalidJSON tests parseRoleData with invalid data
@@ -2396,7 +2645,7 @@ func TestAuthManagement_ParseRoleData_InvalidJSON(t *testing.T) {
 		},
 	}, nil)
 
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.NoError(t, err)
 }
 
@@ -2413,6 +2662,6 @@ func TestAuthManagement_IsOwnerRole_EmptyRoleName(t *testing.T) {
 		},
 	}, nil)
 
-	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String())
+	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, uuid.New().String(), "admin-id")
 	assert.NoError(t, err)
 }

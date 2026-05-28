@@ -1107,7 +1107,7 @@ func TestAuthHandler_RemoveUser_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().DeleteUserCompletely(gomock.Any(), "test", "u1").Return(nil)
+	mockService.EXPECT().DeleteUserCompletely(gomock.Any(), "test", "u1", gomock.Any()).Return(nil)
 	handler := handlers.NewAuthHandler(mockService)
 
 	body, _ := json.Marshal(dto.RemoveUserRequest{UserID: "u1"})
@@ -1116,6 +1116,7 @@ func TestAuthHandler_RemoveUser_Success(t *testing.T) {
 	c.Request = httptest.NewRequest("POST", "/users/remove", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("schema", "test")
+	c.Set("user_id", "requester_id")
 
 	handler.RemoveUser(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -1140,7 +1141,7 @@ func TestAuthHandler_RemoveUser_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().DeleteUserCompletely(gomock.Any(), "test", "u1").Return(errors.New("delete failed"))
+	mockService.EXPECT().DeleteUserCompletely(gomock.Any(), "test", "u1", gomock.Any()).Return(errors.New("delete failed"))
 	handler := handlers.NewAuthHandler(mockService)
 
 	body, _ := json.Marshal(dto.RemoveUserRequest{UserID: "u1"})
@@ -1720,7 +1721,7 @@ func TestAuthHandler_ActivateUser_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().ActivateUser(gomock.Any(), "test", "u1").Return(dto.UserResponse{}, nil)
+	mockService.EXPECT().ActivateUser(gomock.Any(), "test", "u1", gomock.Any()).Return(dto.UserResponse{}, nil)
 	handler := handlers.NewAuthHandler(mockService)
 
 	body, _ := json.Marshal(dto.ActivateUserRequest{UserID: "u1"})
@@ -1729,6 +1730,7 @@ func TestAuthHandler_ActivateUser_Success(t *testing.T) {
 	c.Request = httptest.NewRequest("POST", "/users/activate", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("schema", "test")
+	c.Set("user_id", "requester_id")
 
 	handler.ActivateUser(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -1740,7 +1742,7 @@ func TestAuthHandler_ActivateUser_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().ActivateUser(gomock.Any(), "test", "u1").Return(dto.UserResponse{}, errors.New("activate failed"))
+	mockService.EXPECT().ActivateUser(gomock.Any(), "test", "u1", gomock.Any()).Return(dto.UserResponse{}, errors.New("activate failed"))
 	handler := handlers.NewAuthHandler(mockService)
 
 	body, _ := json.Marshal(dto.ActivateUserRequest{UserID: "u1"})
@@ -1749,6 +1751,7 @@ func TestAuthHandler_ActivateUser_ServiceError(t *testing.T) {
 	c.Request = httptest.NewRequest("POST", "/users/activate", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("schema", "test")
+	c.Set("user_id", "requester_id")
 
 	handler.ActivateUser(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)
@@ -1773,7 +1776,7 @@ func TestAuthHandler_DeactivateUser_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().DeactivateUser(gomock.Any(), "test", "u1").Return(dto.UserResponse{}, nil)
+	mockService.EXPECT().DeactivateUser(gomock.Any(), "test", "u1", gomock.Any()).Return(dto.UserResponse{}, nil)
 	handler := handlers.NewAuthHandler(mockService)
 
 	body, _ := json.Marshal(dto.DeactivateUserRequest{UserID: "u1"})
@@ -1782,6 +1785,7 @@ func TestAuthHandler_DeactivateUser_Success(t *testing.T) {
 	c.Request = httptest.NewRequest("POST", "/users/deactivate", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("schema", "test")
+	c.Set("user_id", "requester_id")
 
 	handler.DeactivateUser(c)
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -1793,7 +1797,7 @@ func TestAuthHandler_DeactivateUser_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockAuthManagementService(ctrl)
-	mockService.EXPECT().DeactivateUser(gomock.Any(), "test", "u1").Return(dto.UserResponse{}, errors.New("deactivate failed"))
+	mockService.EXPECT().DeactivateUser(gomock.Any(), "test", "u1", gomock.Any()).Return(dto.UserResponse{}, errors.New("deactivate failed"))
 	handler := handlers.NewAuthHandler(mockService)
 
 	body, _ := json.Marshal(dto.DeactivateUserRequest{UserID: "u1"})

@@ -244,6 +244,7 @@ func New(cfg *config.Config) (*App, error) {
 		WorkspaceAndBaseAccessValidationMiddleware: func(allowedAccess []string) gin.HandlerFunc {
 			return middleware.WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService, allowedAccess)
 		},
+		AccessMemberService: accessMemberService,
 	}
 
 	r := router.Setup(cfg, handlerGroups, middlewareGroups)

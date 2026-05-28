@@ -59,6 +59,9 @@ func TestAllErrorConstants(t *testing.T) {
 		{"EmailAlreadyVerified", appErrors.EmailAlreadyVerified},
 		{"NewPasswordInvalid", appErrors.NewPasswordInvalid},
 		{"OwnerCannotBeDeactivated", appErrors.OwnerCannotBeDeactivated},
+		{"CoOwnerCannotBeDeactivated", appErrors.CoOwnerCannotBeDeactivated},
+		{"OwnerCannotBeRemoved", appErrors.OwnerCannotBeRemoved},
+		{"CoOwnerCannotBeRemoved", appErrors.CoOwnerCannotBeRemoved},
 		{"OnlyPendingUsersCanBeDeleted", appErrors.OnlyPendingUsersCanBeDeleted},
 
 		// Role management errors

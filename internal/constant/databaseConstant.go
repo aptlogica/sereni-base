@@ -496,6 +496,47 @@ var DefinedFunctions = []Function{
 `,
 	},
 	{
+		FunctionName:   "get_user_permission_access",
+		FunctionParams: "p_schema_name text, p_user_id text, p_scope_type text, p_scope_id text, p_resource_code text, p_action_code text",
+		FunctionSQL: `
+			RETURNS JSON
+			LANGUAGE plpgsql STABLE AS $$
+			DECLARE
+				sql TEXT;
+				has_access BOOLEAN := FALSE;
+			BEGIN
+				sql := format(
+					'WITH candidate_access AS (
+						SELECT am.role_id::uuid AS role_id
+						FROM %I.access_members am
+						WHERE am.user_id = $1
+						  AND am.scope_type = $2
+						  AND ($3 IS NULL OR $3 = '''' OR am.scope_id = $3)
+					)
+					SELECT EXISTS (
+						SELECT 1
+						FROM candidate_access ca
+						JOIN %I.role_permissions rp ON rp.role_id = ca.role_id
+						JOIN %I.permissions p ON rp.permission_id = p.id
+						JOIN %I.actions a ON p.action_id = a.id
+						JOIN %I.resources r ON p.resource_id = r.id
+						WHERE r.code = $4 AND a.code = $5
+					)',
+					p_schema_name,
+					p_schema_name,
+					p_schema_name,
+					p_schema_name,
+					p_schema_name
+				);
+
+				EXECUTE sql INTO has_access USING p_user_id, p_scope_type, p_scope_id, p_resource_code, p_action_code;
+
+				RETURN json_build_object('has_access', COALESCE(has_access, FALSE));
+			END;
+			$$;
+		`,
+	},
+	{
 		FunctionName:   "bulk_update",
 		FunctionParams: "p_schema_name TEXT, p_table_name TEXT, p_column_name TEXT, p_data JSONB",
 		FunctionSQL: `
