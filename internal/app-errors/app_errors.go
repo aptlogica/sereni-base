@@ -90,6 +90,9 @@ var (
 	EmailAlreadyVerified         = errors.New("email already verified")
 	NewPasswordInvalid           = errors.New("new password is invalid")
 	OwnerCannotBeDeactivated     = errors.New("owner cannot be deactivated")
+	CoOwnerCannotBeDeactivated   = errors.New("co-owner cannot be deactivated")
+	OwnerCannotBeRemoved         = errors.New("owner cannot be removed")
+	CoOwnerCannotBeRemoved       = errors.New("co-owner cannot be removed")
 	OnlyPendingUsersCanBeDeleted = errors.New("only users with pending status can be deleted")
 )
 

@@ -150,17 +150,55 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		user.GET("/workspaces", handlers.User.GetWorkspaces)
 		user.GET("/access-details", handlers.User.GetUserAccessDetails)
 		user.GET("/roles-and-access/:id", handlers.User.GetUserRolesAndAccess)
-		user.POST("/assign", handlers.Auth.AssignUserToWorkspace)
-		user.PUT("/access/update", handlers.Auth.UpdateUserAccess)
 
-		// Admin user management endpoints
-		user.POST(RouteCreate, handlers.Auth.AddUser)
-		user.POST("/edit", handlers.Auth.EditUser)
-		user.POST("/remove", handlers.Auth.RemoveUser)
-		user.POST("/activate", handlers.Auth.ActivateUser)
-		user.POST("/deactivate", handlers.Auth.DeactivateUser)
-		user.GET("/list", handlers.Auth.GetUsers)
-		user.GET("/list-for-assign", handlers.Auth.GetActiveUsersForAssign)
+		// Member assignment endpoints (owner, co-owner, maintainer)
+		user.POST("/assign",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.AssignUserToWorkspace)
+		user.PUT("/access/update",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.UpdateUserAccess)
+
+		// System-level admin user management endpoints (owner, co-owner only)
+		user.POST(RouteCreate,
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.AddUser)
+		user.POST("/edit",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.EditUser)
+		user.POST("/remove",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.RemoveUser)
+		user.POST("/activate",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.ActivateUser)
+		user.POST("/deactivate",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.DeactivateUser)
+		user.GET("/list",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.GetUsers)
+		user.GET("/list-for-assign",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.GetActiveUsersForAssign)
 	}
 }
 
@@ -168,8 +206,12 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 func setupOrganizationRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	organization := private.Group("/organization")
 	{
-		organization.GET("", handlers.Organization.GetAllOrganizations)
-		organization.PUT("/:id", handlers.Organization.UpdateOrganization)
+		organization.GET("",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Settings, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Organization.GetAllOrganizations)
+		organization.PUT("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Settings, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Organization.UpdateOrganization)
 	}
 }
 
@@ -181,8 +223,12 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 		workspace.POST(RouteCreate,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.CreateWorkspace)
-		workspace.GET("/", handlers.Workspace.GetAllWorkspaces)
-		workspace.GET("/:id/tables", handlers.Workspace.GetTablesByWorkspaceId)
+		workspace.GET("/",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.GetAllWorkspaces)
+		workspace.GET("/:id/tables",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Workspace.GetTablesByWorkspaceId)
 		workspace.PUT("/:id",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.UpdateWorkspace)
@@ -194,8 +240,16 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 		workspace.POST("/:id/remove",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveUserFromWorkspace)
-		workspace.GET("/:id/members", handlers.Auth.GetWorkspaceMembers)
-		workspace.GET("/:id/members-with-roles", handlers.Auth.GetWorkspaceMembersWithRole)
+		workspace.GET("/:id/members",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.GetWorkspaceMembers)
+		workspace.GET("/:id/members-with-roles",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.GetWorkspaceMembersWithRole)
 		workspace.POST("/:id/bulk-add-members",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.BulkAddMembers)
@@ -221,8 +275,16 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		base.POST("/:id/remove",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveUserFromBase)
-		base.GET("/:id/members", handlers.Auth.GetBaseMembers)
-		base.GET("/:id/members-with-roles", handlers.Auth.GetBaseMembersWithRole)
+		base.GET("/:id/members",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO, appConstant.RBACRoleNames.BaseMember, appConstant.RBACRoleNames.BaseMemberReadOnly},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.GetBaseMembers)
+		base.GET("/:id/members-with-roles",
+			middleware.NewRoleGuard(
+				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO, appConstant.RBACRoleNames.BaseMember, appConstant.RBACRoleNames.BaseMemberReadOnly},
+				middlewares.AccessMemberService).Middleware(),
+			handlers.Auth.GetBaseMembersWithRole)
 		base.POST("/:id/bulk-add-members",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.BulkAddBaseMembers)
@@ -231,8 +293,12 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 			handlers.Auth.RemoveAccessMemberByID)
 
 		// Image operations
-		base.POST("/:id/image", handlers.Base.AddBaseImage)
-		base.DELETE("/:id/image", handlers.Base.RemoveBaseImage)
+		base.POST("/:id/image",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Base.AddBaseImage)
+		base.DELETE("/:id/image",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Base.RemoveBaseImage)
 
 		// Base CRUD operations
 		base.PUT("/:id",
@@ -263,12 +329,21 @@ func setupTableRoutes(private *gin.RouterGroup, handlers Handlers, middlewares M
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.UpdateTable)
 
-
-		table.GET("/:id", handlers.Table.GetTableByID)
-		table.GET("/", handlers.Table.GetAllTables)
-		table.GET("/:id/columns", handlers.Table.GetColumnsByTable)
-		table.GET("/:id/views", handlers.Table.GetViewsByModelID)
-		table.GET("/:id/records", handlers.Table.GetAllRecords)
+		table.GET("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetTableByID)
+		table.GET("/",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetAllTables)
+		table.GET("/:id/columns",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetColumnsByTable)
+		table.GET("/:id/views",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetViewsByModelID)
+		table.GET("/:id/records",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetAllRecords)
 
 		// Delete requires table.delete permission
 		table.DELETE("/:id",
@@ -287,8 +362,12 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 			handlers.Table.AddColumn)
 
 		// Read operations
-		column.GET("/:id", handlers.Table.GetColumnById)
-		column.GET("/", handlers.Table.GetAllColumns)
+		column.GET("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetColumnById)
+		column.GET("/",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetAllColumns)
 
 		// Update requires table.update permission
 		column.PATCH("/:id",
@@ -302,8 +381,12 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/reorder",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.ReorderColumn)
-		column.POST("/bulk-update", handlers.Table.BulkUpdateColumns)
-		column.POST("/reset", handlers.Table.ResetColumnValues)
+		column.POST("/bulk-update",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.BulkUpdateColumns)
+		column.POST("/reset",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.ResetColumnValues)
 	}
 }
 
@@ -315,11 +398,13 @@ func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mid
 		row.POST(RouteCreate,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.CreateRow)
-		row.PATCH("/update", handlers.Table.UpdateRow)
-		row.POST("/remove", handlers.Table.DeleteRow)
-		row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
-		row.POST("/data/insert", handlers.Table.InsertRowData)
-		row.POST("/data/relation", handlers.Table.InsertRowDataForLinks)
+		row.PATCH("/update",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.UpdateRow)
+		// row.POST("/remove", handlers.Table.DeleteRow)
+		// row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
+		// row.POST("/data/insert", handlers.Table.InsertRowData)
+		// row.POST("/data/relation", handlers.Table.InsertRowDataForLinks)
 
 		// Delete operations require records.delete permission
 		row.POST("/remove",
@@ -363,8 +448,12 @@ func setupViewRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 			handlers.Table.CreateView)
 
 		// Read operations
-		view.GET("/:id", handlers.Table.GetViewByID)
-		view.GET("/", handlers.Table.GetAllViews)
+		view.GET("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Views, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetViewByID)
+		view.GET("/",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Views, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.GetAllViews)
 
 		// Update requires views.update permission
 		view.PATCH("/:id",
@@ -393,7 +482,9 @@ func setupAssetRoutes(private *gin.RouterGroup, handlers Handlers, middlewares M
 			handlers.Asset.UploadImage)
 
 		// Read operations
-		asset.POST("/bulk", handlers.Asset.GetBulkAssets)
+		asset.POST("/bulk",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Asset.GetBulkAssets)
 
 		// Update requires records.create permission (for modifying assets)
 		asset.PATCH("/:id",

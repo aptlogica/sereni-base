@@ -910,16 +910,52 @@ func (a *authManagementService) buildUpdatedUserResponse(ctx context.Context, sc
 }
 
 func (a *authManagementService) RemoveUser(ctx context.Context, schema string, userID string) error {
+	// Check if user has Owner role - owners cannot be removed
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+	if isOwner {
+		return app_errors.OwnerCannotBeRemoved
+	}
+
+	// Check if user has Co-Owner role - co-owners cannot be removed
+	isCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+	if isCoOwner {
+		return app_errors.CoOwnerCannotBeRemoved
+	}
+
 	// Local delete only
 	updateData := map[string]interface{}{
 		"is_deleted": true,
 		"deleted_at": time.Now(),
 	}
-	_, err := a.userManagementService.UpdateUser(ctx, schema, userID, updateData)
+	_, err = a.userManagementService.UpdateUser(ctx, schema, userID, updateData)
 	return err
 }
 
 func (a *authManagementService) ActivateUser(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
+	// Check if user has Owner role - cannot activate owner directly
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+	if isOwner {
+		return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
+	}
+
+	// Check if user has Co-Owner role - cannot activate co-owner directly
+	isCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+	if isCoOwner {
+		return dto.UserResponse{}, app_errors.CoOwnerCannotBeDeactivated
+	}
+
 	updateFields := map[string]interface{}{
 		"status":             "active",
 		"last_modified_time": time.Now(),
@@ -947,6 +983,15 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 	}
 	if isOwner {
 		return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
+	}
+
+	// Check if user has Co-Owner role - co-owners cannot be deactivated
+	isCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+	if isCoOwner {
+		return dto.UserResponse{}, app_errors.CoOwnerCannotBeDeactivated
 	}
 
 	updateFields := map[string]interface{}{
@@ -993,6 +1038,32 @@ func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema s
 	return false, nil
 }
 
+// checkIfUserIsCoOwner checks if a user has the Co-Owner role
+func (a *authManagementService) checkIfUserIsCoOwner(ctx context.Context, schema string, userID string) (bool, error) {
+	functionName := "get_user_role_by_id"
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+
+	args := map[string]interface{}{
+		"p_user_id": userID,
+	}
+
+	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+	if err != nil {
+		// If we can't verify co-owner status due to error, assume user is not a co-owner
+		// This allows the operation to proceed gracefully
+		return false, nil
+	}
+
+	for _, record := range records {
+		roleData := a.parseRoleData(record, functionName)
+		if roleData != nil && a.isCoOwnerRole(roleData) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // parseRoleData extracts and parses role data from a record
 func (a *authManagementService) parseRoleData(record map[string]interface{}, functionName string) map[string]interface{} {
 	value, exists := record[functionName]
@@ -1016,6 +1087,12 @@ func (a *authManagementService) parseRoleData(record map[string]interface{}, fun
 func (a *authManagementService) isOwnerRole(roleData map[string]interface{}) bool {
 	roleName, exists := roleData["role_name"].(string)
 	return exists && roleName == appConstant.RBACRoleNames.Owner
+}
+
+// isCoOwnerRole checks if the role data indicates a co-owner role
+func (a *authManagementService) isCoOwnerRole(roleData map[string]interface{}) bool {
+	roleName, exists := roleData["role_name"].(string)
+	return exists && roleName == appConstant.RBACRoleNames.CoOwner
 }
 
 func (a *authManagementService) GetUsers(ctx context.Context, schema string) ([]dto.UserWithRole, error) {
