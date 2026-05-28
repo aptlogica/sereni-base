@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+
 	dto "github.com/aptlogica/sereni-base/internal/dto"
 	tenant "github.com/aptlogica/sereni-base/internal/models/tenant"
 
@@ -43,18 +44,18 @@ func (m *MockAuthManagementService) EXPECT() *MockAuthManagementServiceMockRecor
 }
 
 // ActivateUser mocks base method.
-func (m *MockAuthManagementService) ActivateUser(ctx context.Context, schema, userID string) (dto.UserResponse, error) {
+func (m *MockAuthManagementService) ActivateUser(ctx context.Context, schema, userID, reqBy string) (dto.UserResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ActivateUser", ctx, schema, userID)
+	ret := m.ctrl.Call(m, "ActivateUser", ctx, schema, userID, reqBy)
 	ret0, _ := ret[0].(dto.UserResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ActivateUser indicates an expected call of ActivateUser.
-func (mr *MockAuthManagementServiceMockRecorder) ActivateUser(ctx, schema, userID any) *gomock.Call {
+func (mr *MockAuthManagementServiceMockRecorder) ActivateUser(ctx, schema, userID, reqBy any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateUser", reflect.TypeOf((*MockAuthManagementService)(nil).ActivateUser), ctx, schema, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActivateUser", reflect.TypeOf((*MockAuthManagementService)(nil).ActivateUser), ctx, schema, userID, reqBy)
 }
 
 // AddUser mocks base method.
@@ -117,32 +118,32 @@ func (mr *MockAuthManagementServiceMockRecorder) BulkAddMembers(ctx, schema, req
 }
 
 // DeactivateUser mocks base method.
-func (m *MockAuthManagementService) DeactivateUser(ctx context.Context, schema, userID string) (dto.UserResponse, error) {
+func (m *MockAuthManagementService) DeactivateUser(ctx context.Context, schema, userID, reqBy string) (dto.UserResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeactivateUser", ctx, schema, userID)
+	ret := m.ctrl.Call(m, "DeactivateUser", ctx, schema, userID, reqBy)
 	ret0, _ := ret[0].(dto.UserResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // DeactivateUser indicates an expected call of DeactivateUser.
-func (mr *MockAuthManagementServiceMockRecorder) DeactivateUser(ctx, schema, userID any) *gomock.Call {
+func (mr *MockAuthManagementServiceMockRecorder) DeactivateUser(ctx, schema, userID, reqBy any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeactivateUser", reflect.TypeOf((*MockAuthManagementService)(nil).DeactivateUser), ctx, schema, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeactivateUser", reflect.TypeOf((*MockAuthManagementService)(nil).DeactivateUser), ctx, schema, userID, reqBy)
 }
 
 // DeleteUserCompletely mocks base method.
-func (m *MockAuthManagementService) DeleteUserCompletely(ctx context.Context, schema, userID string) error {
+func (m *MockAuthManagementService) DeleteUserCompletely(ctx context.Context, schema, userID, reqBy string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteUserCompletely", ctx, schema, userID)
+	ret := m.ctrl.Call(m, "DeleteUserCompletely", ctx, schema, userID, reqBy)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteUserCompletely indicates an expected call of DeleteUserCompletely.
-func (mr *MockAuthManagementServiceMockRecorder) DeleteUserCompletely(ctx, schema, userID any) *gomock.Call {
+func (mr *MockAuthManagementServiceMockRecorder) DeleteUserCompletely(ctx, schema, userID, reqBy any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserCompletely", reflect.TypeOf((*MockAuthManagementService)(nil).DeleteUserCompletely), ctx, schema, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserCompletely", reflect.TypeOf((*MockAuthManagementService)(nil).DeleteUserCompletely), ctx, schema, userID, reqBy)
 }
 
 // EditUser mocks base method.
@@ -367,17 +368,17 @@ func (mr *MockAuthManagementServiceMockRecorder) RemoveAccessMemberByID(ctx, sch
 }
 
 // RemoveUser mocks base method.
-func (m *MockAuthManagementService) RemoveUser(ctx context.Context, schema, userID string) error {
+func (m *MockAuthManagementService) RemoveUser(ctx context.Context, schema, userID, reqBy string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveUser", ctx, schema, userID)
+	ret := m.ctrl.Call(m, "RemoveUser", ctx, schema, userID, reqBy)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RemoveUser indicates an expected call of RemoveUser.
-func (mr *MockAuthManagementServiceMockRecorder) RemoveUser(ctx, schema, userID any) *gomock.Call {
+func (mr *MockAuthManagementServiceMockRecorder) RemoveUser(ctx, schema, userID, reqBy any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveUser", reflect.TypeOf((*MockAuthManagementService)(nil).RemoveUser), ctx, schema, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveUser", reflect.TypeOf((*MockAuthManagementService)(nil).RemoveUser), ctx, schema, userID, reqBy)
 }
 
 // RemoveUserFromBase mocks base method.

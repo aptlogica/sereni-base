@@ -909,7 +909,7 @@ func (a *authManagementService) buildUpdatedUserResponse(ctx context.Context, sc
 	return userResponse, nil
 }
 
-func (a *authManagementService) RemoveUser(ctx context.Context, schema string, userID string) error {
+func (a *authManagementService) RemoveUser(ctx context.Context, schema string, userID string, reqBy string) error {
 	// Check if user has Owner role - owners cannot be removed
 	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
 	if err != nil {
@@ -919,13 +919,20 @@ func (a *authManagementService) RemoveUser(ctx context.Context, schema string, u
 		return app_errors.OwnerCannotBeRemoved
 	}
 
-	// Check if user has Co-Owner role - co-owners cannot be removed
-	isCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	// Check if target user is CoOwner
+	isTargetCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
 	if err != nil {
 		return err
 	}
-	if isCoOwner {
-		return app_errors.CoOwnerCannotBeRemoved
+	if isTargetCoOwner {
+		// Only Owner can remove CoOwner
+		isRequesterOwner, err := a.checkIfUserIsOwner(ctx, schema, reqBy)
+		if err != nil {
+			return err
+		}
+		if !isRequesterOwner {
+			return app_errors.CoOwnerCannotBeRemoved
+		}
 	}
 
 	// Local delete only
@@ -937,7 +944,7 @@ func (a *authManagementService) RemoveUser(ctx context.Context, schema string, u
 	return err
 }
 
-func (a *authManagementService) ActivateUser(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
+func (a *authManagementService) ActivateUser(ctx context.Context, schema string, userID string, reqBy string) (dto.UserResponse, error) {
 	// Check if user has Owner role - cannot activate owner directly
 	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
 	if err != nil {
@@ -947,13 +954,20 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 		return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
 	}
 
-	// Check if user has Co-Owner role - cannot activate co-owner directly
-	isCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	// Check if target user is CoOwner
+	isTargetCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}
-	if isCoOwner {
-		return dto.UserResponse{}, app_errors.CoOwnerCannotBeDeactivated
+	if isTargetCoOwner {
+		// Only Owner can activate CoOwner
+		isRequesterOwner, err := a.checkIfUserIsOwner(ctx, schema, reqBy)
+		if err != nil {
+			return dto.UserResponse{}, err
+		}
+		if !isRequesterOwner {
+			return dto.UserResponse{}, app_errors.CoOwnerCannotBeDeactivated
+		}
 	}
 
 	updateFields := map[string]interface{}{
@@ -975,7 +989,7 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 	return userResponse, nil
 }
 
-func (a *authManagementService) DeactivateUser(ctx context.Context, schema string, userID string) (dto.UserResponse, error) {
+func (a *authManagementService) DeactivateUser(ctx context.Context, schema string, userID string, reqBy string) (dto.UserResponse, error) {
 	// Check if user has Owner role - owners cannot be deactivated
 	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
 	if err != nil {
@@ -985,13 +999,20 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 		return dto.UserResponse{}, app_errors.OwnerCannotBeDeactivated
 	}
 
-	// Check if user has Co-Owner role - co-owners cannot be deactivated
-	isCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	// Check if target user is CoOwner
+	isTargetCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
 	if err != nil {
 		return dto.UserResponse{}, err
 	}
-	if isCoOwner {
-		return dto.UserResponse{}, app_errors.CoOwnerCannotBeDeactivated
+	if isTargetCoOwner {
+		// Only Owner can deactivate CoOwner
+		isRequesterOwner, err := a.checkIfUserIsOwner(ctx, schema, reqBy)
+		if err != nil {
+			return dto.UserResponse{}, err
+		}
+		if !isRequesterOwner {
+			return dto.UserResponse{}, app_errors.CoOwnerCannotBeDeactivated
+		}
 	}
 
 	updateFields := map[string]interface{}{
@@ -1338,7 +1359,32 @@ func (a *authManagementService) GetBaseMembers(ctx context.Context, schema strin
 	return res, nil
 }
 
-func (a *authManagementService) DeleteUserCompletely(ctx context.Context, schema string, userID string) error {
+func (a *authManagementService) DeleteUserCompletely(ctx context.Context, schema string, userID string, reqBy string) error {
+	// Check if user has Owner role - owners cannot be removed
+	isOwner, err := a.checkIfUserIsOwner(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+	if isOwner {
+		return app_errors.OwnerCannotBeRemoved
+	}
+
+	// Check if target user is CoOwner
+	isTargetCoOwner, err := a.checkIfUserIsCoOwner(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+	if isTargetCoOwner {
+		// Only Owner can delete CoOwner
+		isRequesterOwner, err := a.checkIfUserIsOwner(ctx, schema, reqBy)
+		if err != nil {
+			return err
+		}
+		if !isRequesterOwner {
+			return app_errors.CoOwnerCannotBeRemoved
+		}
+	}
+
 	// Check if user exists and has pending status
 	user, err := a.userManagementService.GetUserByID(ctx, schema, userID)
 	if err != nil {

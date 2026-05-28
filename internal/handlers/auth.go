@@ -588,8 +588,9 @@ func (h *AuthHandler) RemoveUser(c *gin.Context) {
 	}
 
 	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
-	err := h.authManagementService.DeleteUserCompletely(c.Request.Context(), schemaName, req.UserID)
+	err := h.authManagementService.DeleteUserCompletely(c.Request.Context(), schemaName, req.UserID, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -1021,8 +1022,9 @@ func (h *AuthHandler) ActivateUser(c *gin.Context) {
 	}
 
 	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
-	updatedProfile, err := h.authManagementService.ActivateUser(c.Request.Context(), schemaName, req.UserID)
+	updatedProfile, err := h.authManagementService.ActivateUser(c.Request.Context(), schemaName, req.UserID, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -1057,8 +1059,9 @@ func (h *AuthHandler) DeactivateUser(c *gin.Context) {
 	}
 
 	schemaName := getSchema(c)
+	reqBy := getReqBy(c)
 
-	updatedProfile, err := h.authManagementService.DeactivateUser(c.Request.Context(), schemaName, req.UserID)
+	updatedProfile, err := h.authManagementService.DeactivateUser(c.Request.Context(), schemaName, req.UserID, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
