@@ -226,7 +226,7 @@ func setupTableRoutes(private *gin.RouterGroup, handlers Handlers) {
 	table := private.Group("/table")
 	{
 		table.POST(RouteCreate, handlers.Table.CreateTable)
-		table.POST("/import", handlers.Table.ImportTable)
+		table.POST("/import", handlers.Table.ImportTableWithConfig)
 		table.PATCH("/:id", handlers.Table.UpdateTable)
 		table.GET("/:id", handlers.Table.GetTableByID)
 		table.GET("/", handlers.Table.GetAllTables)

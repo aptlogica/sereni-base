@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -1170,39 +1172,125 @@ func (h *TableHandler) ReorderColumn(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.ColumnReordered, updatedColumns)
 }
 
-// @Summary      Import a table via file
-// @Description  Imports table schema/data from an uploaded file and generates the model along with default configuration.
+// @Summary      Import a table via file with configuration
+// @Description  Imports table schema/data from an uploaded file with user-provided column configuration and data cleaning settings.
 // @Tags         Admin Table Column
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
-// @Param        file         formData  file    true   "CSV/definition file"
+// @Param        file         formData  file    true   "CSV file to import"
 // @Param        base_id      formData  string  true   "Base ID to associate"
 // @Param        workspace_id formData  string  true   "Workspace ID"
-// @Param        title        formData  string  false  "Optional name override"
-// @Param        description  formData  string  false  "Description override"
+// @Param        title        formData  string  true   "Table name"
+// @Param        description  formData  string  false  "Table description"
 // @Param        order_index  formData  string  false  "Numeric order index"
-// @Success      200          {object}  dto.TableResponse  "Imported table returned"
-// @Failure      400          {object}  models.ErrorResponse  "Bad Request — missing file or required IDs"
+// @Param        config       formData  string  true   "JSON config with settings and column configurations"
+// @Success      200          {object}  dto.TableResponse  "Table imported with custom config"
+// @Failure      400          {object}  models.ErrorResponse  "Bad Request — missing required fields"
 // @Failure      401          {object}  models.ErrorResponse  "Unauthorized"
 // @Failure      403          {object}  models.ErrorResponse  "Forbidden"
-// @Failure      422          {object}  models.ErrorResponse  "Unprocessable Entity — invalid file"
+// @Failure      422          {object}  models.ErrorResponse  "Unprocessable Entity — invalid config or file"
 // @Failure      500          {object}  models.ErrorResponse  "Internal Server Error"
 // @Security     BearerAuth
 // @Router       /table/import [post]
-func (h *TableHandler) ImportTable(c *gin.Context) {
-	// Expect multipart form with both file and fields
+func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
+	// Get and validate file
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.SendError(c, responseConst.AssetError.FilesNotFound)
 		return
 	}
+	// Enforce import file size limit
+	maxImportSize := int64(config.AppConfig.Import.MaxSize)
+	if maxImportSize <= 0 {
+		maxImportSize = 2097152 // 2MB fallback
+	}
+	if file.Size > maxImportSize {
+		response.SendError(c, responseConst.AssetError.FileTooLargeError)
+		return
+	}
 
-	var req dto.CreateTableRequest
+	// Parse JSON config from form
+	configJSON := c.PostForm("config")
+	if configJSON == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	importConfig, err := parseImportConfig(configJSON)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	// Map the provided primary column name to its matching column config.
+	primaryName := c.PostForm("primary_column")
+	if primaryName != "" {
+		if err := setPrimaryColumn(&importConfig, primaryName); err != nil {
+			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "primary_column not found in config columns")
+			return
+		}
+	}
+
+	// Build import request from context values and config
+	title := c.PostForm("title")
+	if title == "" {
+		title = file.Filename
+	}
+
+	req := buildImportRequestFromContext(c, importConfig, title)
+
+	// Use provided title or extract from filename
+	if req.Title == "" {
+		req.Title = file.Filename
+	}
+	if lastDot := strings.LastIndex(req.Title, "."); lastDot != -1 {
+		req.Title = req.Title[:lastDot]
+	}
+
+	// Get schema from context
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	// Call import service with config
+	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, req.Title)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, tableResp)
+}
+
+// parseImportConfig parses the import config JSON into a dto.ImportConfig
+func parseImportConfig(configJSON string) (dto.ImportConfig, error) {
+	var importConfig dto.ImportConfig
+	if err := json.Unmarshal([]byte(configJSON), &importConfig); err != nil {
+		return importConfig, err
+	}
+	return importConfig, nil
+}
+
+// setPrimaryColumn finds the named column in importConfig and sets PrimaryColumn
+func setPrimaryColumn(importConfig *dto.ImportConfig, primaryName string) error {
+	for _, col := range importConfig.Columns {
+		if col.ColumnName == primaryName {
+			copyCol := col
+			importConfig.PrimaryColumn = &copyCol
+			return nil
+		}
+	}
+	return errors.New("primary_column not found in config columns")
+}
+
+// buildImportRequestFromContext builds dto.ImportWithConfigRequest from the gin context and parsed config
+func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig, title string) dto.ImportWithConfigRequest {
+	var req dto.ImportWithConfigRequest
 	req.BaseID = c.PostForm("base_id")
 	req.WorkspaceID = c.PostForm("workspace_id")
-	req.Title = c.PostForm("title")
+	req.Title = title
 	req.Description = c.PostForm("description")
+	req.Config = importConfig
 
 	orderIndexStr := c.PostForm("order_index")
 	if orderIndexStr != "" {
@@ -1213,23 +1301,13 @@ func (h *TableHandler) ImportTable(c *gin.Context) {
 		}
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
-
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
 	}
 
-	table, err := h.importService.Import(c, schemaName, req, file)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, table)
+	return req
 }
 
 // @Summary      Bulk delete rows
