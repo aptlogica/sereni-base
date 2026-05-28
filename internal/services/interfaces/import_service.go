@@ -13,5 +13,5 @@ import (
 )
 
 type ImportService interface {
-	Import(ctx context.Context, schemaName string, req dto.CreateTableRequest, file *multipart.FileHeader) (dto.ImportTableResponse, error)
+	ImportWithConfig(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error)
 }

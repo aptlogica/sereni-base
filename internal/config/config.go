@@ -21,6 +21,7 @@ type Config struct {
 	Storage                    StorageConfig                    `mapstructure:"storage"`
 	Log                        LogConfig                        `mapstructure:"log"`
 	Asset                      AssetConfig                      `mapstructure:"asset"`
+	Import                     ImportConfig                     `mapstructure:"import"`
 	Antivirus                  AntivirusConfig                  `mapstructure:"antivirus"`
 	TemporaryAddedUserPassword TemporaryAddedUserPasswordConfig `mapstructure:"temporary_added_user_password"`
 	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
@@ -92,6 +93,11 @@ type LogConfig struct {
 }
 
 type AssetConfig struct {
+	MaxSize int `mapstructure:"max_size"`
+}
+
+// ImportConfig holds upload limits used by the import endpoints
+type ImportConfig struct {
 	MaxSize int `mapstructure:"max_size"`
 }
 

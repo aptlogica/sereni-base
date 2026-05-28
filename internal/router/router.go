@@ -258,12 +258,12 @@ func setupTableRoutes(private *gin.RouterGroup, handlers Handlers, middlewares M
 			handlers.Table.CreateTable)
 		table.POST("/import",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
-			handlers.Table.ImportTable)
+			handlers.Table.ImportTableWithConfig)
 		table.PATCH("/:id",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.UpdateTable)
 
-		// Read operations (no guard needed - checked at handler level if needed)
+
 		table.GET("/:id", handlers.Table.GetTableByID)
 		table.GET("/", handlers.Table.GetAllTables)
 		table.GET("/:id/columns", handlers.Table.GetColumnsByTable)
@@ -302,6 +302,8 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/reorder",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.ReorderColumn)
+		column.POST("/bulk-update", handlers.Table.BulkUpdateColumns)
+		column.POST("/reset", handlers.Table.ResetColumnValues)
 	}
 }
 
@@ -313,6 +315,11 @@ func setupRowRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mid
 		row.POST(RouteCreate,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Records, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.CreateRow)
+		row.PATCH("/update", handlers.Table.UpdateRow)
+		row.POST("/remove", handlers.Table.DeleteRow)
+		row.POST("/bulk-remove", handlers.Table.BulkDeleteRows)
+		row.POST("/data/insert", handlers.Table.InsertRowData)
+		row.POST("/data/relation", handlers.Table.InsertRowDataForLinks)
 
 		// Delete operations require records.delete permission
 		row.POST("/remove",

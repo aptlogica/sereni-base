@@ -536,4 +536,59 @@ var DefinedFunctions = []Function{
 			$$;
 		`,
 	},
+	{
+		FunctionName:   "bulk_update",
+		FunctionParams: "p_schema_name TEXT, p_table_name TEXT, p_column_name TEXT, p_data JSONB",
+		FunctionSQL: `
+			RETURNS VOID AS $$
+			DECLARE
+				rec JSONB;
+				update_query TEXT;
+				full_table_name TEXT;
+				row_id TEXT;
+				col_value TEXT;
+			BEGIN
+				full_table_name := format('%I.%I', p_schema_name, p_table_name);
+				
+				FOR rec IN SELECT * FROM jsonb_array_elements(p_data)
+				LOOP
+					row_id := rec->>'id';
+					col_value := rec->>'value';
+
+					update_query := format(
+						'UPDATE %s SET %I = %L WHERE id = %L',
+						full_table_name,
+						p_column_name,
+						col_value,
+						row_id
+					);
+
+					EXECUTE update_query;
+				END LOOP;
+			END;
+			$$ LANGUAGE plpgsql;
+		`,
+	},
+	{
+		FunctionName:   "reset_column",
+		FunctionParams: "p_schema_name TEXT, p_table_name TEXT, p_column_name TEXT",
+		FunctionSQL: `
+			RETURNS VOID AS $$
+			DECLARE
+				query TEXT;
+				full_table_name TEXT;
+			BEGIN
+				full_table_name := format('%I.%I', p_schema_name, p_table_name);
+				
+				query := format(
+					'UPDATE %s SET %I = NULL',
+					full_table_name,
+					p_column_name
+				);
+
+				EXECUTE query;
+			END;
+			$$ LANGUAGE plpgsql;
+		`,
+	},
 }
