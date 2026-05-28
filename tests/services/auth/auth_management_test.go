@@ -2492,9 +2492,13 @@ func TestAuthManagement_IsOwnerRole_DoesNotMatchOwner(t *testing.T) {
 	service, _, _, _, rbacSvc, _, _, _, _, tableSvc := setupAuthManagementService()
 	ctx := context.Background()
 	userID := uuid.New().String()
+	coOwnerRoleID := uuid.New()
 
 	rbacSvc.GetUserAccessMembersFn = func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
-		return nil, nil
+		return []dto.AccessMemberDTO{{RoleID: coOwnerRoleID.String()}}, nil
+	}
+	rbacSvc.GetRoleByIDFn = func(ctx context.Context, schemaName string, roleID uuid.UUID) (tenant.AccessRole, error) {
+		return tenant.AccessRole{ID: roleID, Name: appConstant.RBACRoleNames.CoOwner}, nil
 	}
 	tableSvc.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{
 		{
@@ -2505,7 +2509,7 @@ func TestAuthManagement_IsOwnerRole_DoesNotMatchOwner(t *testing.T) {
 	}, nil)
 
 	_, err := service.DeactivateUser(ctx, appConstant.MasterDatabase, userID)
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, app_errors.CoOwnerCannotBeDeactivated)
 }
 
 // TestAuthManagement_ParseRoleData_InvalidJSON tests parseRoleData with invalid data

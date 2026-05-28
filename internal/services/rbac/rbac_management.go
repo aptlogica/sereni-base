@@ -21,6 +21,68 @@ import (
 	"github.com/google/uuid"
 )
 
+// Permission string constants - Workspace permissions
+const (
+	permWorkspaceRead   = "workspace.read"
+	permWorkspaceCreate = "workspace.create"
+	permWorkspaceUpdate = "workspace.update"
+	permWorkspaceDelete = "workspace.delete"
+	permWorkspaceShare  = "workspace.share"
+	permWorkspaceInvite = "workspace.invite"
+
+	// Base permissions
+	permBaseRead   = "base.read"
+	permBaseCreate = "base.create"
+	permBaseUpdate = "base.update"
+	permBaseDelete = "base.delete"
+
+	// Table permissions
+	permTableRead   = "table.read"
+	permTableCreate = "table.create"
+	permTableUpdate = "table.update"
+	permTableDelete = "table.delete"
+
+	// Records permissions
+	permRecordsRead   = "records.read"
+	permRecordsCreate = "records.create"
+	permRecordsUpdate = "records.update"
+	permRecordsDelete = "records.delete"
+	permRecordsExport = "records.export"
+
+	// Members permissions
+	permMembersRead   = "members.read"
+	permMembersInvite = "members.invite"
+	permMembersManage = "members.manage"
+
+	// Views permissions
+	permViewsRead   = "views.read"
+	permViewsCreate = "views.create"
+	permViewsUpdate = "views.update"
+	permViewsDelete = "views.delete"
+
+	// Settings permissions
+	permSettingsRead   = "settings.read"
+	permSettingsUpdate = "settings.update"
+
+	// API Tokens permissions
+	permAPITokensRead   = "api_tokens.read"
+	permAPITokensCreate = "api_tokens.create"
+	permAPITokensDelete = "api_tokens.delete"
+	permAPITokensManage = "api_tokens.manage"
+
+	// Webhooks permissions
+	permWebhooksRead   = "webhooks.read"
+	permWebhooksCreate = "webhooks.create"
+	permWebhooksUpdate = "webhooks.update"
+	permWebhooksDelete = "webhooks.delete"
+
+	// Automations permissions
+	permAutomationsRead   = "automations.read"
+	permAutomationsCreate = "automations.create"
+	permAutomationsUpdate = "automations.update"
+	permAutomationsDelete = "automations.delete"
+)
+
 // RBACManagementServiceDeps holds all RBAC service dependencies
 type RBACManagementServiceDeps struct {
 	RoleService           interfaces.AccessRoleService
@@ -264,40 +326,19 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 	permissionMap map[string]uuid.UUID,
 ) {
 	// // Step 5: Assign permissions to roles
-	// fmt.Println("\nAssigning permissions to roles...")
-
-	// ownerPermissions := []string{
-	// 	"workspace.read", "workspace.create", "workspace.update", "workspace.delete", "workspace.share", "workspace.invite",
-	// 	"base.read", "base.create", "base.update", "base.delete",
-	// 	"records.read", "records.create", "records.update", "records.delete", "records.export",
-	// 	"members.read", "members.invite", "members.manage",
-	// 	"views.read", "views.create", "views.update", "views.delete",
-	// 	"settings.read", "settings.update",
-	// 	"api_tokens.read", "api_tokens.create", "api_tokens.delete", "api_tokens.manage",
-	// 	"webhooks.read", "webhooks.create", "webhooks.update", "webhooks.delete",
-	// }
-
-	// s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.Owner, ownerPermissions, "owner")
-
-	// memberPermissions := []string{
-	// 	"base.read",
-	// 	"records.read", "records.create", "records.update", "records.delete", "records.export",
-	// 	"views.read", "views.create", "views.update", "views.delete",
-	// }
-
 	// s.assignPermissionsToRole(ctx, schema, roleMap, permissionMap, constant.RBACRoleNames.BaseMember, memberPermissions, "member")
 	// Owner - Full Access
 	ownerPermissions := []string{
-		"workspace.read", "workspace.create", "workspace.update", "workspace.delete", "workspace.share", "workspace.invite",
-		"base.read", "base.create", "base.update", "base.delete",
-		"table.read", "table.create", "table.update", "table.delete",
-		"records.read", "records.create", "records.update", "records.delete", "records.export",
-		"members.read", "members.invite", "members.manage",
-		"views.read", "views.create", "views.update", "views.delete",
-		"settings.read", "settings.update",
-		"api_tokens.read", "api_tokens.create", "api_tokens.delete", "api_tokens.manage",
-		"webhooks.read", "webhooks.create", "webhooks.update", "webhooks.delete",
-		"automations.read", "automations.create", "automations.update", "automations.delete",
+		permWorkspaceRead, permWorkspaceCreate, permWorkspaceUpdate, permWorkspaceDelete, permWorkspaceShare, permWorkspaceInvite,
+		permBaseRead, permBaseCreate, permBaseUpdate, permBaseDelete,
+		permTableRead, permTableCreate, permTableUpdate, permTableDelete,
+		permRecordsRead, permRecordsCreate, permRecordsUpdate, permRecordsDelete, permRecordsExport,
+		permMembersRead, permMembersInvite, permMembersManage,
+		permViewsRead, permViewsCreate, permViewsUpdate, permViewsDelete,
+		permSettingsRead, permSettingsUpdate,
+		permAPITokensRead, permAPITokensCreate, permAPITokensDelete, permAPITokensManage,
+		permWebhooksRead, permWebhooksCreate, permWebhooksUpdate, permWebhooksDelete,
+		permAutomationsRead, permAutomationsCreate, permAutomationsUpdate, permAutomationsDelete,
 	}
 
 	s.assignPermissionsToRole(
@@ -323,16 +364,16 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 
 	// Workspace Maintainer
 	workspaceMaintainerPermissions := []string{
-		"workspace.read",
-		"base.read",
+		permWorkspaceRead,
+		permBaseRead,
 
-		"table.read", "table.create", "table.update", "table.delete",
+		permTableRead, permTableCreate, permTableUpdate, permTableDelete,
 
-		"records.read", "records.create", "records.update", "records.delete", "records.export",
+		permRecordsRead, permRecordsCreate, permRecordsUpdate, permRecordsDelete, permRecordsExport,
 
-		"members.read", "members.invite",
+		permMembersRead, permMembersInvite,
 
-		"views.read", "views.create", "views.update", "views.delete",
+		permViewsRead, permViewsCreate, permViewsUpdate, permViewsDelete,
 	}
 
 	s.assignPermissionsToRole(
@@ -347,13 +388,13 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 
 	// Base Member - Limited Access
 	baseMemberPermissions := []string{
-		"base.read",
+		permBaseRead,
 
-		"table.read", "table.create", "table.update", "table.delete",
+		permTableRead, permTableCreate, permTableUpdate, permTableDelete,
 
-		"records.read", "records.create", "records.update", "records.delete", "records.export",
+		permRecordsRead, permRecordsCreate, permRecordsUpdate, permRecordsDelete, permRecordsExport,
 
-		"views.read", "views.create", "views.update", "views.delete",
+		permViewsRead, permViewsCreate, permViewsUpdate, permViewsDelete,
 	}
 
 	s.assignPermissionsToRole(
@@ -368,12 +409,12 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 
 	// Workspace Maintainer Read Only
 	workspaceMaintainerReadOnlyPermissions := []string{
-		"workspace.read",
-		"base.read",
-		"table.read",
-		"records.read",
-		"views.read",
-		"members.read",
+		permWorkspaceRead,
+		permBaseRead,
+		permTableRead,
+		permRecordsRead,
+		permViewsRead,
+		permMembersRead,
 	}
 
 	s.assignPermissionsToRole(
@@ -388,10 +429,10 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 
 	// Base Member Read Only
 	baseMemberReadOnlyPermissions := []string{
-		"base.read",
-		"table.read",
-		"records.read",
-		"views.read",
+		permBaseRead,
+		permTableRead,
+		permRecordsRead,
+		permViewsRead,
 	}
 
 	s.assignPermissionsToRole(

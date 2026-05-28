@@ -16,22 +16,17 @@ import (
 // Guard base authorization interface
 type Guard interface {
 	Check(c *gin.Context) (bool, error)
-	ErrorMessage() string
-	ErrorCode() string
 	Middleware() gin.HandlerFunc
 }
 
 // PermissionGuard checks resource+action permission
 type PermissionGuard interface {
 	Guard
-	ResourceCode() string
-	ActionCode() string
 }
 
 // RoleGuard checks required roles
 type RoleGuard interface {
 	Guard
-	RequiredRoles() []string
 }
 
 // DefaultMiddleware converts Guard to Gin middleware
@@ -183,26 +178,6 @@ func (pg *permissionGuardImpl) Middleware() gin.HandlerFunc {
 	return DefaultMiddleware(pg)
 }
 
-// ResourceCode returns resource being checked
-func (pg *permissionGuardImpl) ResourceCode() string {
-	return pg.resourceCode
-}
-
-// ActionCode returns action being checked
-func (pg *permissionGuardImpl) ActionCode() string {
-	return pg.actionCode
-}
-
-// ErrorMessage returns error message
-func (pg *permissionGuardImpl) ErrorMessage() string {
-	return "Permission denied"
-}
-
-// ErrorCode returns error code
-func (pg *permissionGuardImpl) ErrorCode() string {
-	return "PERMISSION_DENIED"
-}
-
 // roleGuardImpl implements RoleGuard interface
 type roleGuardImpl struct {
 	requiredRoles   []string
@@ -211,19 +186,9 @@ type roleGuardImpl struct {
 }
 
 // NewRoleGuard creates role-based guard middleware
+// If scopeType is empty, checks user role across all scopes (from database)
+// If scopeType is provided, checks user role for that specific scope only
 func NewRoleGuard(
-	requiredRoles []string,
-	accessMemberSvc interfaces.AccessMemberService,
-) RoleGuard {
-	return &roleGuardImpl{
-		requiredRoles:   requiredRoles,
-		accessMemberSvc: accessMemberSvc,
-		scopeType:       "",
-	}
-}
-
-// NewRoleGuardWithScope creates role guard with custom scope
-func NewRoleGuardWithScope(
 	requiredRoles []string,
 	accessMemberSvc interfaces.AccessMemberService,
 	scopeType string,
@@ -272,19 +237,4 @@ func (rg *roleGuardImpl) Check(c *gin.Context) (bool, error) {
 // Middleware returns the Gin handler for this guard
 func (rg *roleGuardImpl) Middleware() gin.HandlerFunc {
 	return DefaultMiddleware(rg)
-}
-
-// RequiredRoles returns roles needed to pass
-func (rg *roleGuardImpl) RequiredRoles() []string {
-	return rg.requiredRoles
-}
-
-// ErrorMessage returns error message
-func (rg *roleGuardImpl) ErrorMessage() string {
-	return "Role required"
-}
-
-// ErrorCode returns error code
-func (rg *roleGuardImpl) ErrorCode() string {
-	return "ROLE_REQUIRED"
 }

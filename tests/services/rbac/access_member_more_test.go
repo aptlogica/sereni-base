@@ -67,6 +67,13 @@ func TestAccessMember_GetUserPermissionsAndCheck(t *testing.T) {
 		}
 	}
 
+	// Mock the GetByFunction for permission checking
+	stubTable.GetByFunctionFn = func(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error) {
+		// Return that the user has the permission
+		// The function name is "get_user_permission_access"
+		return []map[string]interface{}{{"get_user_permission_access": map[string]interface{}{"has_access": true}}}, nil
+	}
+
 	repo := &pkg.DatabaseService{TableService: stubTable}
 	svc := services.NewAccessMemberService(repo)
 

@@ -155,49 +155,49 @@ func setupUserRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		user.POST("/assign",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.AssignUserToWorkspace)
 		user.PUT("/access/update",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.UpdateUserAccess)
 
 		// System-level admin user management endpoints (owner, co-owner only)
 		user.POST(RouteCreate,
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.AddUser)
 		user.POST("/edit",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.EditUser)
 		user.POST("/remove",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.RemoveUser)
 		user.POST("/activate",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.ActivateUser)
 		user.POST("/deactivate",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.DeactivateUser)
 		user.GET("/list",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetUsers)
 		user.GET("/list-for-assign",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetActiveUsersForAssign)
 	}
 }
@@ -243,12 +243,12 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 		workspace.GET("/:id/members",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetWorkspaceMembers)
 		workspace.GET("/:id/members-with-roles",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetWorkspaceMembersWithRole)
 		workspace.POST("/:id/bulk-add-members",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
@@ -278,12 +278,12 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		base.GET("/:id/members",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO, appConstant.RBACRoleNames.BaseMember, appConstant.RBACRoleNames.BaseMemberReadOnly},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetBaseMembers)
 		base.GET("/:id/members-with-roles",
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO, appConstant.RBACRoleNames.BaseMember, appConstant.RBACRoleNames.BaseMemberReadOnly},
-				middlewares.AccessMemberService).Middleware(),
+				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetBaseMembersWithRole)
 		base.POST("/:id/bulk-add-members",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
