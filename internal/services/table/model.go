@@ -128,6 +128,9 @@ func (s *modelService) fetchModels(ctx context.Context, schemaName string, param
 
 // UpdateModels updates a model by its ID
 func (s *modelService) Update(ctx context.Context, schemaName string, id string, req dto.UpdateModelRequest) (tenant.Model, error) {
+	if _, err := s.GetModelByID(ctx, schemaName, id); err != nil {
+		return tenant.Model{}, err
+	}
 
 	// Convert request DTO to map
 	updateData := req.Map()

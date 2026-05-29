@@ -533,6 +533,7 @@ var TableSuccess = struct {
 	RowDataInserted ResponseCode
 	RowDeleted      ResponseCode
 	ColumnReordered ResponseCode
+	RowDataRemoved  ResponseCode
 }{
 	TableCreated:    "TBL_SUCCESS_5001",
 	TableUpdated:    "TBL_SUCCESS_5002",
@@ -551,6 +552,7 @@ var TableSuccess = struct {
 	RowDataInserted: "TBL_SUCCESS_5015",
 	RowDeleted:      "TBL_SUCCESS_5016",
 	ColumnReordered: "TBL_SUCCESS_5017",
+	RowDataRemoved:  "TBL_SUCCESS_5018",
 }
 
 var TableSuccessCodes = map[ResponseCode]MetaResponse{
@@ -638,5 +640,10 @@ var TableSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Column reordered successfully",
 		Description: "The columns have been reordered successfully",
+	},
+	TableSuccess.RowDataRemoved: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Row data removed successfully",
+		Description: "The row data has been removed successfully",
 	},
 }

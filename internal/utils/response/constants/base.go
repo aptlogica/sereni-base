@@ -20,6 +20,7 @@ var BaseError = struct {
 	IdRequired         ResponseCode
 	IdInvalid          ResponseCode
 	BaseNotFound       ResponseCode
+	ImageTooLarge      ResponseCode
 }{
 	ErrNotFound:        "BAS_6001",
 	BaseAlreadyExists:  "BAS_6002",
@@ -33,6 +34,7 @@ var BaseError = struct {
 	IdRequired:         "BAS_6009",
 	IdInvalid:          "BAS_6010",
 	BaseNotFound:       "BAS_6011",
+	ImageTooLarge:      "BAS_6013",
 }
 
 var BaseErrorCodes = map[ResponseCode]MetaResponse{
@@ -95,6 +97,11 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusNotFound,
 		Message:     "Base not found",
 		Description: "The specified Base could not be found",
+	},
+	BaseError.ImageTooLarge: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Image size exceeds maximum allowed limit",
+		Description: "The uploaded image exceeds the maximum allowed size of 5MB",
 	},
 }
 

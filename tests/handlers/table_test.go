@@ -350,6 +350,37 @@ func TestTableHandler_ImportTable_NoConfig(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
+func TestTableHandler_ImportTable_RejectsNonCSVFiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	handler := handlers.NewTableHandler(mocks.NewMockTableManagementService(ctrl), mocks.NewMockImportService(ctrl))
+
+	tests := []string{"data.txt", "data.exe", "data.php", "data.rtf"}
+	for _, fileName := range tests {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", fileName)
+		io.WriteString(part, "not,csv")
+		writer.WriteField("base_id", uuid.New().String())
+		writer.WriteField("config", `{"columns":[]}`)
+		writer.Close()
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/import", body)
+		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+		c.Set("schema", "test")
+		c.Set("user_id", "user123")
+
+		handler.ImportTableWithConfig(c)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "Only CSV files are allowed")
+	}
+}
+
 // ============ Additional Import API Test Cases ============
 
 func TestTableHandler_ImportTable_ServiceError(t *testing.T) {
@@ -931,6 +962,23 @@ func TestTableHandler_UpdateTable_ServiceError(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
+func TestTableHandler_UpdateTable_TitleTooLong(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	title := string(bytes.Repeat([]byte("a"), 260))
+	body, _ := json.Marshal(dto.UpdateTableRequest{Title: &title})
+	tableID := uuid.New().String()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/table/"+tableID, bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: tableID}}
+
+	handler.UpdateTable(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestTableHandler_GetTableByID_InvalidID(t *testing.T) {
 	handler := handlers.NewTableHandler(nil, nil)
 
@@ -1351,6 +1399,21 @@ func TestTableHandler_UpdateView_Success(t *testing.T) {
 
 	handler.UpdateView(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_UpdateView_TitleTooLong(t *testing.T) {
+	handler := handlers.NewTableHandler(nil, nil)
+
+	title := string(bytes.Repeat([]byte("a"), 260))
+	body, _ := json.Marshal(dto.ViewUpdate{Title: &title})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/views/v1", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "v1"}}
+
+	handler.UpdateView(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestTableHandler_DeleteView_Success(t *testing.T) {
@@ -1871,7 +1934,7 @@ func TestTableHandler_RemoveAttachments_Success(t *testing.T) {
 	c.Set("schema", "test")
 
 	handler.RemoveAttachments(c)
-	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestTableHandler_GetAllRecords_Success(t *testing.T) {
@@ -2373,6 +2436,51 @@ func TestTableHandler_UpdateTable_InvalidID_BadUUID(t *testing.T) {
 	c.Request = httptest.NewRequest("PUT", "/table/invalid", bytes.NewBuffer(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: "invalid"}}
+
+	handler.UpdateTable(c)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestTableHandler_UpdateTable_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().UpdateTable(gomock.Any(), gomock.Any(), gomock.Any(), "test").
+		Return(dto.TableResponse{}, app_errors.TableNotFound)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	title := "Updated"
+	body, _ := json.Marshal(dto.UpdateTableRequest{Title: &title})
+	tableID := uuid.New().String()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/table/"+tableID, bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: tableID}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateTable(c)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestTableHandler_UpdateTable_IgnoresClientLastModifiedTime(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewTableHandler(nil, nil)
+
+	body := []byte(`{"title":"Updated","last_modified_time":"string"}`)
+	tableID := uuid.New().String()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/table/"+tableID, bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: tableID}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
 
 	handler.UpdateTable(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)

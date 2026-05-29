@@ -201,6 +201,21 @@ func TestWorkspaceHandler_UpdateWorkspace_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestWorkspaceHandler_UpdateWorkspace_TitleTooLong(t *testing.T) {
+	handler := handlers.NewWorkspaceHandler(nil, nil)
+
+	title := string(bytes.Repeat([]byte("a"), 260))
+	body, _ := json.Marshal(dto.WorkspaceUpdate{Title: &title})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/workspaces/w1", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+
+	handler.UpdateWorkspace(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestWorkspaceHandler_DeleteWorkspace_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)

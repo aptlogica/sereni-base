@@ -209,9 +209,26 @@ func TestFetchModels(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Run("table not found", func(t *testing.T) {
+		db, mockTable := setupMockDB()
+		svc := services.NewModelService(db)
+
+		mockTable.On("GetTableData", tenant.Model{}.TableName("schema"), mock.Anything).
+			Return([]map[string]interface{}{}, nil)
+
+		alias := "a"
+		_, err := svc.Update(context.Background(), "schema", "id", dto.UpdateModelRequest{Alias: &alias})
+
+		assert.ErrorIs(t, err, app_errors.TableNotFound)
+	})
+
 	t.Run("update error", func(t *testing.T) {
 		db, mockTable := setupMockDB()
 		svc := services.NewModelService(db)
+		id := uuid.New().String()
+
+		mockTable.On("GetTableData", tenant.Model{}.TableName("schema"), mock.Anything).
+			Return([]map[string]interface{}{{"id": id, "title": "T"}}, nil)
 
 		mockTable.On("UpdateRecord", tenant.Model{}.TableName("schema"), "id", mock.Anything).
 			Return(nil, errors.New("db error"))
@@ -225,6 +242,10 @@ func TestUpdate(t *testing.T) {
 	t.Run("map error", func(t *testing.T) {
 		db, mockTable := setupMockDB()
 		svc := services.NewModelService(db)
+		id := uuid.New().String()
+
+		mockTable.On("GetTableData", tenant.Model{}.TableName("schema"), mock.Anything).
+			Return([]map[string]interface{}{{"id": id, "title": "T"}}, nil)
 
 		mockTable.On("UpdateRecord", tenant.Model{}.TableName("schema"), "id", mock.Anything).
 			Return(map[string]interface{}{"id": make(chan int)}, nil)
@@ -240,6 +261,8 @@ func TestUpdate(t *testing.T) {
 		svc := services.NewModelService(db)
 
 		id := uuid.New()
+		mockTable.On("GetTableData", tenant.Model{}.TableName("schema"), mock.Anything).
+			Return([]map[string]interface{}{{"id": id.String(), "title": "T"}}, nil)
 		mockTable.On("UpdateRecord", tenant.Model{}.TableName("schema"), id.String(), mock.Anything).
 			Return(map[string]interface{}{"id": id.String(), "title": "T"}, nil)
 
