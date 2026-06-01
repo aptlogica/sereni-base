@@ -34,13 +34,6 @@ type TableHandler struct {
 	importService          interfaces.ImportService
 }
 
-func isTableNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, app_errors.TableNotFound)
-}
-
 func isCSVImportFile(file *multipart.FileHeader) bool {
 	if file == nil {
 		return false
@@ -276,7 +269,7 @@ func (h *TableHandler) AddColumn(c *gin.Context) {
 	userId, _ := userIdVal.(string)
 
 	if _, err := h.tableManagementService.GetTableByID(c, req.ModelID.String(), schemaName); err != nil {
-		if isTableNotFound(err) {
+		if errors.Is(err, app_errors.TableNotFound) {
 			response.SendError(c, responseConst.TableError.TableNotFound)
 			return
 		}
@@ -1265,10 +1258,7 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 	}
 
 	// Build import request from context values and config
-	title := c.PostForm("title")
-	if title == "" {
-		title = file.Filename
-	}
+	title := file.Filename
 
 	req := buildImportRequestFromContext(c, importConfig, title)
 
@@ -1320,8 +1310,6 @@ func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig
 	var req dto.ImportWithConfigRequest
 	req.BaseID = c.PostForm("base_id")
 	req.WorkspaceID = c.PostForm("workspace_id")
-	req.Title = title
-	req.Description = c.PostForm("description")
 	req.Config = importConfig
 
 	orderIndexStr := c.PostForm("order_index")

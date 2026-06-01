@@ -513,9 +513,7 @@ func TestTableHandler_ImportTable_WithDescription(t *testing.T) {
 	mockImportService := mocks.NewMockImportService(ctrl)
 	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			if req.Description != "Table description" {
-				return dto.ImportTableResponse{}, errors.New("description not set correctly")
-			}
+			// Title and description are not used in the new payload; skip assertions for them
 			return dto.ImportTableResponse{}, nil
 		})
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
@@ -621,9 +619,7 @@ func TestTableHandler_ImportTable_SpecialCharactersInTitle(t *testing.T) {
 	mockImportService := mocks.NewMockImportService(ctrl)
 	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			if req.Title != "Table@#$%^&*()" {
-				return dto.ImportTableResponse{}, errors.New("title not set correctly")
-			}
+			// Title is not used from payload anymore; skip assertion
 			return dto.ImportTableResponse{}, nil
 		})
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
@@ -768,7 +764,7 @@ func TestTableHandler_ImportTable_AllFieldsProvided(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), "test_schema", gomock.Any(), gomock.Any(), "Complete Import").
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), "test_schema", gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
 			if req.BaseID != baseID {
 				return dto.ImportTableResponse{}, errors.New("base_id not set correctly")
@@ -776,12 +772,7 @@ func TestTableHandler_ImportTable_AllFieldsProvided(t *testing.T) {
 			if req.WorkspaceID != workspaceID {
 				return dto.ImportTableResponse{}, errors.New("workspace_id not set correctly")
 			}
-			if req.Title != "Complete Import" {
-				return dto.ImportTableResponse{}, errors.New("title not set correctly")
-			}
-			if req.Description != "Detailed description" {
-				return dto.ImportTableResponse{}, errors.New("description not set correctly")
-			}
+			// Title and description are no longer taken from the payload, skip assertions for them
 			if req.OrderIndex != 3.5 {
 				return dto.ImportTableResponse{}, errors.New("order_index not set correctly")
 			}
