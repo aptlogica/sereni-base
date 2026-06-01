@@ -6,10 +6,12 @@
 package handlers
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -32,11 +34,11 @@ type TableHandler struct {
 	importService          interfaces.ImportService
 }
 
-func isTableNotFound(err error) bool {
-	if err == nil {
+func isCSVImportFile(file *multipart.FileHeader) bool {
+	if file == nil {
 		return false
 	}
-	return errors.Is(err, app_errors.TableNotFound) || strings.Contains(strings.ToLower(err.Error()), "table not found")
+	return strings.EqualFold(filepath.Ext(file.Filename), ".csv")
 }
 
 func NewTableHandler(tableManagementService interfaces.TableManagementService, importService interfaces.ImportService) *TableHandler {
@@ -122,12 +124,12 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 
 	id := c.Param("id")
 	if id == "" {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.TableError.ModelIDRequired)
 		return
 	}
 
 	if _, err := uuid.Parse(id); err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.TableError.ModelIDInvalid)
 		return
 	}
 
@@ -141,6 +143,10 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
 			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.TableError.TitleTooLong); ok {
+			response.SendError(c, errCode)
 			return
 		}
 		req.Title = &title
@@ -263,7 +269,7 @@ func (h *TableHandler) AddColumn(c *gin.Context) {
 	userId, _ := userIdVal.(string)
 
 	if _, err := h.tableManagementService.GetTableByID(c, req.ModelID.String(), schemaName); err != nil {
-		if isTableNotFound(err) {
+		if errors.Is(err, app_errors.TableNotFound) {
 			response.SendError(c, responseConst.TableError.TableNotFound)
 			return
 		}
@@ -537,6 +543,19 @@ func (h *TableHandler) UpdateView(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.CheckAndSendError(c, err)
 		return
+	}
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.TableError.TitleTooLong); ok {
+			response.SendError(c, errCode)
+			return
+		}
+		req.Title = &title
 	}
 
 	userIdVal, _ := c.Get("user_id")
@@ -983,7 +1002,7 @@ func (h *TableHandler) RemoveAttachments(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataRemoved, record)
 }
 
 // @Summary      Get all records for a table
@@ -1200,6 +1219,12 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 		response.SendError(c, responseConst.AssetError.FilesNotFound)
 		return
 	}
+
+	if !isCSVImportFile(file) {
+		response.SendErrorWithMessage(c, responseConst.AssetError.InvalidFileFormat, "Only CSV files are allowed")
+		return
+	}
+
 	// Enforce import file size limit
 	maxImportSize := int64(config.AppConfig.Import.MaxSize)
 	if maxImportSize <= 0 {
@@ -1233,10 +1258,7 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 	}
 
 	// Build import request from context values and config
-	title := c.PostForm("title")
-	if title == "" {
-		title = file.Filename
-	}
+	title := file.Filename
 
 	req := buildImportRequestFromContext(c, importConfig, title)
 
@@ -1288,8 +1310,6 @@ func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig
 	var req dto.ImportWithConfigRequest
 	req.BaseID = c.PostForm("base_id")
 	req.WorkspaceID = c.PostForm("workspace_id")
-	req.Title = title
-	req.Description = c.PostForm("description")
 	req.Config = importConfig
 
 	orderIndexStr := c.PostForm("order_index")

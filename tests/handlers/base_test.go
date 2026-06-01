@@ -68,6 +68,25 @@ func TestBaseHandler_CreateBase_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestBaseHandler_CreateBase_TitleTooLong(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	longTitle := string(bytes.Repeat([]byte("a"), 260))
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", longTitle)
+	_ = writer.WriteField("workspace_id", "w1")
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	handler.CreateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestBaseHandler_GetBaseByID_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -153,6 +172,25 @@ func TestBaseHandler_UpdateBase_Success(t *testing.T) {
 
 	handler.UpdateBase(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_TitleTooLong(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	longTitle := string(bytes.Repeat([]byte("a"), 260))
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", longTitle)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestBaseHandler_UpdateBase_WithImage(t *testing.T) {
@@ -455,4 +493,78 @@ func TestBaseHandler_RemoveBaseImage_Success(t *testing.T) {
 
 	handler.RemoveBaseImage(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_CreateBase_ImageTooLarge(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	// Create a large file (6MB) that exceeds the 5MB limit
+	largeFileContent := bytes.Repeat([]byte("x"), 6*1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "Test Base")
+	_ = writer.WriteField("workspace_id", "w1")
+	part, _ := writer.CreateFormFile("image", "large.png")
+	_, _ = part.Write(largeFileContent)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_ImageTooLarge(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	// Create a large file (6MB) that exceeds the 5MB limit
+	largeFileContent := bytes.Repeat([]byte("x"), 6*1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "Updated Base")
+	part, _ := writer.CreateFormFile("image", "large.png")
+	_, _ = part.Write(largeFileContent)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_AddBaseImage_ImageTooLarge(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	// Create a large file (6MB) that exceeds the 5MB limit
+	largeFileContent := bytes.Repeat([]byte("x"), 6*1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("image", "large.png")
+	_, _ = part.Write(largeFileContent)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases/"+testBaseID+"/image", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.AddBaseImage(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }

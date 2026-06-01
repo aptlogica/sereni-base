@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"strings"
 
+	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	_ "github.com/aptlogica/sereni-base/internal/models"
@@ -83,6 +84,15 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 
 	// Get optional image file
 	file, _ := c.FormFile("image")
+
+	// Validate file size if image is provided
+	if file != nil {
+		maxSize := int64(config.AppConfig.Asset.MaxSize)
+		if file.Size > maxSize {
+			response.SendError(c, responseConst.BaseError.ImageTooLarge)
+			return
+		}
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -204,6 +214,27 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 	}
 
 	req, fileHeader, removeImage := h.parseUpdateBaseForm(c)
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.BaseError.NameRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.BaseError.NameTooLong); ok {
+			response.SendError(c, errCode)
+			return
+		}
+		req.Title = &title
+	}
+
+	// Validate file size if image is provided
+	if fileHeader != nil {
+		maxSize := int64(config.AppConfig.Asset.MaxSize)
+		if fileHeader.Size > maxSize {
+			response.SendError(c, responseConst.BaseError.ImageTooLarge)
+			return
+		}
+	}
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -323,6 +354,13 @@ func (h *BaseHandler) AddBaseImage(c *gin.Context) {
 	file, err := c.FormFile("image")
 	if err != nil {
 		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	// Validate file size
+	maxSize := int64(config.AppConfig.Asset.MaxSize)
+	if file.Size > maxSize {
+		response.SendError(c, responseConst.BaseError.ImageTooLarge)
 		return
 	}
 

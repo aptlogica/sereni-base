@@ -238,7 +238,7 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 
 		// Full access operations
 		workspace.POST("/:id/remove",
-			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveUserFromWorkspace)
 		workspace.GET("/:id/members",
 			middleware.NewRoleGuard(
@@ -251,10 +251,10 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetWorkspaceMembersWithRole)
 		workspace.POST("/:id/bulk-add-members",
-			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Invite, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.BulkAddMembers)
 		workspace.DELETE("/access/:id",
-			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveAccessMemberByID)
 		// All access operations
 		workspace.GET("/:id/bases", handlers.Workspace.GetBasesByWorkspaceId)
@@ -273,7 +273,7 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 
 		// Full access operations - member management with specific routes before dynamic :id routes
 		base.POST("/:id/remove",
-			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveUserFromBase)
 		base.GET("/:id/members",
 			middleware.NewRoleGuard(
@@ -286,10 +286,10 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetBaseMembersWithRole)
 		base.POST("/:id/bulk-add-members",
-			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Invite, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.BulkAddBaseMembers)
 		base.DELETE("/access/:id",
-			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveAccessMemberByID)
 
 		// Image operations
