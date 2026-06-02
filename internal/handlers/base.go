@@ -6,7 +6,9 @@
 package handlers
 
 import (
+	"fmt"
 	"mime/multipart"
+	"net/http"
 	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
@@ -23,10 +25,17 @@ import (
 
 type BaseHandler struct {
 	baseManagementService interfaces.BaseManagementService
+	importService         interfaces.ImportService
 }
 
-func NewBaseHandler(baseManagementService interfaces.BaseManagementService) *BaseHandler {
-	return &BaseHandler{baseManagementService: baseManagementService}
+func NewBaseHandler(
+	baseManagementService interfaces.BaseManagementService,
+	importService interfaces.ImportService,
+) *BaseHandler {
+	return &BaseHandler{
+		baseManagementService: baseManagementService,
+		importService:         importService,
+	}
 }
 
 func validateBaseID(c *gin.Context, id string) bool {
@@ -413,4 +422,106 @@ func (h *BaseHandler) RemoveBaseImage(c *gin.Context) {
 	}
 
 	response.SendSuccess(c, "base image removed successfully", updatedBase)
+}
+
+
+func (h *BaseHandler) PreviewAiBase(c *gin.Context) {
+	var body struct {
+		Prompt string `json:"prompt" binding:"required"`
+	}
+
+	// Accept JSON or form; only prompt is required
+	if err := c.ShouldBind(&body); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	req := dto.CreateTableRequest{
+		Prompt:    body.Prompt,
+		CreatedBy: userId,
+	}
+
+	if req.CreatedBy == "" {
+		req.CreatedBy = userId
+	}
+
+	// fmt.Println("PreviewAiTable", req.Prompt)
+
+	aiSchema, err := h.importService.FetchAiBaseSchema(c, req.Prompt)
+	fmt.Println("aiSchema------>", aiSchema)
+	if err != nil {
+		fmt.Println("err===>>>", err)
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// Return raw AI schema so frontend can preview/edit without meta block
+	resp := response.StandardResponse{
+		Success: true,
+		Message: "Base fetched successfully",
+		Data:    aiSchema,
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *BaseHandler) ApplyAiBase(c *gin.Context) {
+	var body struct {
+		dto.AiBaseResponse
+		WorkspaceID string `json:"workspace_id"`
+		SampleData  bool   `json:"sample_data"`
+		Row         int    `json:"row"`
+	}
+
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	aiBaseResp := body.AiBaseResponse
+	// fmt.Println("base response----->", aiBaseResp)
+
+	if aiBaseResp.BaseName == "" || body.WorkspaceID == "" || len(aiBaseResp.Tables) == 0 {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	baseReq := dto.CreateBaseRequest{
+		Title:       aiBaseResp.BaseName,
+		WorkspaceID: body.WorkspaceID,
+		CreatedBy:   userId,
+	}
+	if baseReq.CreatedBy == "" {
+		baseReq.CreatedBy = userId
+	}
+
+	base, err := h.baseManagementService.CreateBase(c.Request.Context(), baseReq, schemaName, userId)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	applyReq := dto.CreateTableRequest{
+		BaseID:      base.ID.String(),
+		WorkspaceID: body.WorkspaceID,
+		CreatedBy:   userId,
+	}
+	if applyReq.CreatedBy == "" {
+		applyReq.CreatedBy = userId
+	}
+
+	if _, err := h.importService.ApplyAiBaseSchema(c, schemaName, applyReq, aiBaseResp, body.SampleData, body.Row); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, "okay")
 }

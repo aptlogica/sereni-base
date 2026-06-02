@@ -311,6 +311,8 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		// All access operations
 		base.GET("/:id", handlers.Base.GetBaseByID)
 		base.GET("/:id/tables", handlers.Base.GetTablesByBaseId)
+		base.POST("/create/ai", handlers.Base.PreviewAiBase) // ai base preview (no create)	
+		base.POST("/create/ai/apply", handlers.Base.ApplyAiBase) // after preview, create base with AI schema - can be added later if needed	
 	}
 }
 

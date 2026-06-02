@@ -116,3 +116,13 @@ type AiTableResponse struct {
 	Tables    []AiTable  `json:"tables"`
 	Relations []Relation `json:"relations"`
 }
+
+type ImportBaseResponse struct {
+	BaseResponse
+}
+
+type AiBaseResponse struct {
+	BaseName  string     `json:"base_name"`
+	Relations []Relation `json:"relations"`
+	Tables    []AiTable  `json:"tables"`
+}

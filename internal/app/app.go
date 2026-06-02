@@ -225,7 +225,8 @@ func New(cfg *config.Config) (*App, error) {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, workspaceManagementService, baseManagementService)
 	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService, authService)
-	baseHandler := handlers.NewBaseHandler(baseManagementService)
+	// baseHandler := handlers.NewBaseHandler(baseManagementService)
+	baseHandler := handlers.NewBaseHandler(baseManagementService, importService)
 	assetHandler := handlers.NewAssetsHandler(assetManagementService)
 	tableHandler := handlers.NewTableHandler(tableManagementService, importService)
 	userHandler := handlers.NewUserHandler(userManagementService)

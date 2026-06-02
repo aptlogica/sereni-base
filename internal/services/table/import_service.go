@@ -50,6 +50,11 @@ type importService struct {
 	httpClient            *http.Client
 }
 
+// ApplyAiBaseSchema implements interfaces.ImportService.
+func (s *importService) ApplyAiBaseSchema(ctx context.Context, schemaName string, req dto.CreateTableRequest, aiResponse dto.AiBaseResponse, sample bool, rows int) (dto.ImportBaseResponse, error) {
+	panic("unimplemented")
+}
+
 func NewImportService(tableService interfaces.TableManagementService, baseManagementService interfaces.BaseManagementService, antivirusProvider antivirusProviderInterface.Provider, aiServiceURL string) interfaces.ImportService {
 	return &importService{
 		tableService:          tableService,
@@ -2078,7 +2083,6 @@ func (s *importService) convertValue(val string, typeName string) interface{} {
 	return val
 }
 
-
 func (s *importService) FetchAiSchema(ctx context.Context, prompt string) (dto.AiTableResponse, error) {
 	if prompt == "" {
 		return dto.AiTableResponse{}, fmt.Errorf("prompt is required")
@@ -2321,4 +2325,137 @@ func (s *importService) ApplyAiSchema(ctx context.Context, schemaName string, re
 	}
 
 	return dto.ImportTableResponse{TableResponse: finalTableResp}, nil
+}
+
+func (s *importService) FetchAiBaseSchema(ctx context.Context, prompt string) (dto.AiBaseResponse, error) {
+	if prompt == "" {
+		return dto.AiBaseResponse{}, fmt.Errorf("prompt is required")
+	}
+	if s.aiServiceURL == "" {
+		return dto.AiBaseResponse{}, fmt.Errorf("AI service URL is not configured")
+	}
+
+	aiURL := s.aiServiceURL + "/extract-schema-multiple"
+	payload := map[string]string{
+		"prompt": prompt,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return dto.AiBaseResponse{}, fmt.Errorf("failed to marshal AI request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, aiURL, bytes.NewBuffer(body))
+	if err != nil {
+		return dto.AiBaseResponse{}, fmt.Errorf("failed to create AI request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(httpReq)
+	if err != nil {
+		return dto.AiBaseResponse{}, fmt.Errorf("failed to call AI service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return dto.AiBaseResponse{}, fmt.Errorf("AI service returned status %d", resp.StatusCode)
+	}
+
+	var aiResponse dto.AiBaseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&aiResponse); err != nil {
+		return dto.AiBaseResponse{}, fmt.Errorf("failed to parse AI response: %w", err)
+	}
+
+	if len(aiResponse.Tables) == 0 {
+		return dto.AiBaseResponse{}, fmt.Errorf("no tables found in AI response")
+	}
+
+	return aiResponse, nil
+}
+func (s *importService) ApplyAiBaseSchema(ctx context.Context, schemaName string, req dto.CreateTableRequest, aiResponse dto.AiBaseResponse, sample bool, rows int) (dto.ImportBaseResponse, error) {
+	if aiResponse.Relations == nil {
+		aiResponse.Relations = []dto.Relation{}
+	}
+
+	if b, err := json.MarshalIndent(aiResponse, "", "  "); err == nil {
+		fmt.Println("aiResponse----->", string(b))
+	} else {
+		fmt.Println("aiResponse----->", aiResponse)
+	}
+
+	if req.BaseID == "" || req.WorkspaceID == "" {
+		return dto.ImportBaseResponse{}, fmt.Errorf("base_id and workspace_id are required")
+	}
+	if len(aiResponse.Tables) == 0 {
+		return dto.ImportBaseResponse{}, fmt.Errorf("no tables found in AI response")
+	}
+
+	for _, t := range aiResponse.Tables {
+		aiTableResp := dto.AiTableResponse{Tables: []dto.AiTable{t}}
+		if _, err := s.ApplyAiSchema(ctx, schemaName, req, aiTableResp, sample, rows); err != nil {
+			return dto.ImportBaseResponse{}, err
+		}
+	}
+
+	if len(aiResponse.Relations) > 0 {
+		baseUUID, err := uuid.Parse(req.BaseID)
+		if err != nil {
+			return dto.ImportBaseResponse{}, fmt.Errorf("invalid base_id: %w", err)
+		}
+
+		models, err := s.tableService.GetModelByBaseID(ctx, schemaName, req.BaseID)
+		if err != nil {
+			return dto.ImportBaseResponse{}, err
+		}
+
+		modelByName := make(map[string]dto.TableResponse, len(models))
+		for _, m := range models {
+			modelByName[strings.ToLower(strings.TrimSpace(m.Model.Title))] = m
+			modelByName[strings.ToLower(strings.TrimSpace(m.Model.Alias))] = m
+		}
+
+		for _, rel := range aiResponse.Relations {
+			srcName := strings.ToLower(strings.TrimSpace(rel.SourceTable))
+			trgName := strings.ToLower(strings.TrimSpace(rel.TargetTable))
+
+			srcTable, ok1 := modelByName[srcName]
+			trgTable, ok2 := modelByName[trgName]
+			if !ok1 || !ok2 {
+				return dto.ImportBaseResponse{}, fmt.Errorf("relation references unknown tables: %s -> %s", rel.SourceTable, rel.TargetTable)
+			}
+
+			existingCols, err := s.tableService.GetColumnsByModelID(ctx, schemaName, srcTable.Model.ID.String())
+			if err != nil {
+				return dto.ImportBaseResponse{}, err
+			}
+			orderIndex := helpers.Float64Ptr(float64(len(existingCols) + 1))
+
+			meta := map[string]interface{}{
+				"relation": map[string]interface{}{
+					"with": trgTable.Model.ID.String(),
+					"type": rel.Type,
+				},
+			}
+
+			linkReq := dto.AddColumnRequest{
+				ModelID:     srcTable.Model.ID,
+				BaseID:      baseUUID,
+				Title:       trgTable.Model.Title,
+				Description: "",
+				Meta:        meta,
+				UIDT:        "links",
+				DT:          "links",
+				OrderIndex:  orderIndex,
+				Virtual:     helpers.BoolPtr(false),
+				System:      helpers.BoolPtr(false),
+				CreatedBy:   req.CreatedBy,
+			}
+
+			if _, err := s.tableService.AddColumn(ctx, schemaName, linkReq); err != nil {
+				return dto.ImportBaseResponse{}, err
+			}
+		}
+	}
+
+	return dto.ImportBaseResponse{}, nil
 }

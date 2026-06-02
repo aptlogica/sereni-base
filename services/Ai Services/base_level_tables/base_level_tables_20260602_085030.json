@@ -1,0 +1,167 @@
+{
+  "base_name": "crm_base",
+  "relations": [
+    {
+      "source_table": "customers",
+      "target_table": "deals",
+      "type": "has-many"
+    },
+    {
+      "source_table": "companies",
+      "target_table": "customers",
+      "type": "has-many"
+    },
+    {
+      "source_table": "deals",
+      "target_table": "tasks",
+      "type": "has-many"
+    }
+  ],
+  "tables": [
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "customer_name",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "email",
+          "type": "email"
+        },
+        {
+          "meta": {},
+          "name": "phone",
+          "type": "phoneNumber"
+        },
+        {
+          "meta": {},
+          "name": "joined_date",
+          "type": "date"
+        }
+      ],
+      "name": "customers"
+    },
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "company_name",
+          "type": "text"
+        },
+        {
+          "meta": {
+            "options": [
+              {
+                "color": "",
+                "option": "technology"
+              },
+              {
+                "color": "",
+                "option": "finance"
+              },
+              {
+                "color": "",
+                "option": "retail"
+              }
+            ]
+          },
+          "name": "industry",
+          "type": "select"
+        },
+        {
+          "meta": {},
+          "name": "website",
+          "type": "url"
+        },
+        {
+          "meta": {},
+          "name": "location",
+          "type": "text"
+        }
+      ],
+      "name": "companies"
+    },
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "deal_name",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "deal_value",
+          "type": "currency"
+        },
+        {
+          "meta": {
+            "options": [
+              {
+                "color": "",
+                "option": "pending"
+              },
+              {
+                "color": "",
+                "option": "closed_won"
+              },
+              {
+                "color": "",
+                "option": "closed_lost"
+              }
+            ]
+          },
+          "name": "status",
+          "type": "select"
+        },
+        {
+          "meta": {},
+          "name": "closing_date",
+          "type": "date"
+        }
+      ],
+      "name": "deals"
+    },
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "task_title",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "assigned_to",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "due_date",
+          "type": "date"
+        },
+        {
+          "meta": {
+            "options": [
+              {
+                "color": "",
+                "option": "low"
+              },
+              {
+                "color": "",
+                "option": "medium"
+              },
+              {
+                "color": "",
+                "option": "high"
+              }
+            ]
+          },
+          "name": "priority",
+          "type": "select"
+        }
+      ],
+      "name": "tasks"
+    }
+  ]
+}
