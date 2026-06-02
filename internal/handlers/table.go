@@ -1540,5 +1540,5 @@ func (h *TableHandler) ApplyAiTable(c *gin.Context) {
 		created = append(created, table)
 	}
 
-	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, created)
+	response.SendSuccess(c, responseConst.BaseSuccess.BaseCreated, created)
 }
