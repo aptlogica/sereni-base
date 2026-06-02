@@ -352,7 +352,7 @@ func setupTableRoutes(private *gin.RouterGroup, handlers Handlers, middlewares M
 		
 		// ai table create and add sample data
 		table.POST("/ai", handlers.Table.PreviewAiTable)      // preview AI schema (no create)
-		// table.POST("/ai/apply", handlers.Table.ApplyAiTable) // create from edited AI schema
+		table.POST("/ai/apply", handlers.Table.ApplyAiTable) // create from edited AI schema
 	}
 }
 

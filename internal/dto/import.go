@@ -44,6 +44,7 @@ type ImportTableRequest struct {
 
 type ImportTableResponse struct {
 	ImportStats *ImportStatistics `json:"import_stats,omitempty"`
+	TableResponse
 	TableModelViewResponse
 }
 
@@ -88,6 +89,10 @@ type BuildRecordsWithConfigAndErrorsParams struct {
 	Headers       []string
 	Settings      ImportSettings
 }
+
+// type ImportTableResponse struct {
+// 	TableResponse
+// }
 
 type Relation struct {
 	Type        string `json:"type"`

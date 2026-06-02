@@ -1492,53 +1492,53 @@ func (h *TableHandler) PreviewAiTable(c *gin.Context) {
 }
 
 // ApplyAiTable creates table/columns from an edited AI schema provided by the client.
-// func (h *TableHandler) ApplyAiTable(c *gin.Context) {
-// 	var body struct {
-// 		BaseID      string        `json:"base_id"`
-// 		WorkspaceID string        `json:"workspace_id"`
-// 		SampleData  bool          `json:"sample_data"`
-// 		Row         int           `json:"row"`
-// 		Tables      []dto.AiTable `json:"tables"`
-// 	}
+func (h *TableHandler) ApplyAiTable(c *gin.Context) {
+	var body struct {
+		BaseID      string        `json:"base_id"`
+		WorkspaceID string        `json:"workspace_id"`
+		SampleData  bool          `json:"sample_data"`
+		Row         int           `json:"row"`
+		Tables      []dto.AiTable `json:"tables"`
+	}
 
-// 	if err := c.ShouldBindJSON(&body); err != nil {
-// 		response.SendError(c, responseConst.Error.InvalidPayload)
-// 		return
-// 	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
 
-// 	if body.BaseID == "" || body.WorkspaceID == "" || len(body.Tables) == 0 {
-// 		response.SendError(c, responseConst.Error.InvalidPayload)
-// 		return
-// 	}
+	if body.BaseID == "" || body.WorkspaceID == "" || len(body.Tables) == 0 {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
 
-// 	schemaNameVal, _ := c.Get("schema")
-// 	schemaName, _ := schemaNameVal.(string)
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
 
-// 	userIdVal, _ := c.Get("user_id")
-// 	userId, _ := userIdVal.(string)
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
 
-// 	req := dto.CreateTableRequest{
-// 		BaseID:      body.BaseID,
-// 		WorkspaceID: body.WorkspaceID,
-// 		CreatedBy:   userId,
-// 	}
-// 	if req.CreatedBy == "" {
-// 		req.CreatedBy = userId
-// 	}
+	req := dto.CreateTableRequest{
+		BaseID:      body.BaseID,
+		WorkspaceID: body.WorkspaceID,
+		CreatedBy:   userId,
+	}
+	if req.CreatedBy == "" {
+		req.CreatedBy = userId
+	}
 
-// 	aiResp := dto.AiTableResponse{Tables: body.Tables}
+	aiResp := dto.AiTableResponse{Tables: body.Tables}
 	
-// 	created := make([]dto.ImportTableResponse, 0, len(aiResp.Tables))
-// 	for _, t := range aiResp.Tables {
-// 		one := dto.AiTableResponse{Tables: []dto.AiTable{t}}
-// 		table, err := h.importService.ApplyAiSchema(c, schemaName, req, one, body.SampleData, body.Row)
-// 		if err != nil {
-// 			fmt.Println("err===>>>", err)
-// 			response.CheckAndSendError(c, err)
-// 			return
-// 		}
-// 		created = append(created, table)
-// 	}
+	created := make([]dto.ImportTableResponse, 0, len(aiResp.Tables))
+	for _, t := range aiResp.Tables {
+		one := dto.AiTableResponse{Tables: []dto.AiTable{t}}
+		table, err := h.importService.ApplyAiSchema(c, schemaName, req, one, body.SampleData, body.Row)
+		if err != nil {
+			fmt.Println("err===>>>", err)
+			response.CheckAndSendError(c, err)
+			return
+		}
+		created = append(created, table)
+	}
 
-// 	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, created)
-// }
+	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, created)
+}

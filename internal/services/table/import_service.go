@@ -11,6 +11,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"mime/multipart"
 	"net/http"
@@ -1982,6 +1983,102 @@ func (s *importService) ValidateEmailConversion(val string) string {
 	return ""
 }
 
+// mapAiTypeToUidt maps AI field types to UIDT/DT types
+func (s *importService) mapAiTypeToUidt(aiType string) string {
+	switch strings.ToLower(aiType) {
+	case "text":
+		return "text"
+
+	case "longtext":
+		return "longText"
+
+	case "number":
+		return "number"
+
+	case "decimal":
+		return "decimal"
+
+	case "boolean", "bool":
+		return "boolean"
+
+	case "currency":
+		return "currency"
+
+	case "percent":
+		return "percent"
+
+	case "duration":
+		return "duration"
+
+	case "year":
+		return "year"
+
+	case "date":
+		return "date"
+
+	case "datetime":
+		return "datetime"
+
+	case "time":
+		return "time"
+
+	case "email":
+		return "email"
+
+	case "phone", "phonenumber":
+		return "phoneNumber"
+
+	case "url":
+		return "url"
+
+	case "rating":
+		return "rating"
+
+	case "select":
+		return "select"
+
+	case "multiselect":
+		return "multiSelect"
+
+	case "json":
+		return "json"
+
+	case "links":
+		return "links"
+
+	default:
+		return "text"
+	}
+}
+
+func (s *importService) convertValue(val string, typeName string) interface{} {
+	switch typeName {
+	case "number":
+		if v, err := strconv.ParseInt(val, 10, 64); err == nil {
+			return v
+		}
+		// fallback to float if somehow an int wasn't parsed, but float would work
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			return v
+		}
+	case "decimal":
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			return v
+		}
+	case "boolean":
+		lower := strings.ToLower(val)
+		if lower == "true" || lower == "1" || lower == "yes" {
+			return true
+		}
+		return false
+	case "date":
+		// Return string for date, as DB usually handles it or expects string
+		return val
+	}
+	return val
+}
+
+
 func (s *importService) FetchAiSchema(ctx context.Context, prompt string) (dto.AiTableResponse, error) {
 	if prompt == "" {
 		return dto.AiTableResponse{}, fmt.Errorf("prompt is required")
@@ -2026,4 +2123,202 @@ func (s *importService) FetchAiSchema(ctx context.Context, prompt string) (dto.A
 	}
 
 	return aiResponse, nil
+}
+
+func (s *importService) ApplyAiSchema(ctx context.Context, schemaName string, req dto.CreateTableRequest, aiResponse dto.AiTableResponse, sample bool, rows int) (dto.ImportTableResponse, error) {
+	if req.BaseID == "" || req.WorkspaceID == "" {
+		return dto.ImportTableResponse{}, fmt.Errorf("base_id and workspace_id are required")
+	}
+
+	if len(aiResponse.Tables) == 0 {
+		return dto.ImportTableResponse{}, fmt.Errorf("no tables found in AI response")
+	}
+
+	// Process the first table
+	aiTable := aiResponse.Tables[0]
+
+	// Create table request with the name from AI response
+	createTableReq := dto.CreateTableRequest{
+		BaseID:      req.BaseID,
+		WorkspaceID: req.WorkspaceID,
+		Title:       aiTable.Name,
+		Description: req.Description,
+		OrderIndex:  req.OrderIndex,
+		CreatedBy:   req.CreatedBy,
+	}
+
+	// Create Table
+	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, createTableReq, schemaName)
+	if err != nil {
+		return dto.ImportTableResponse{}, fmt.Errorf("failed to create table: %w", err)
+	}
+
+	// Add Columns for each field (skip duplicates)
+	for i, field := range aiTable.Fields {
+		if field.Name == "title" {
+			continue
+		}
+		// Map AI type to UIDT/DT
+		colType := s.mapAiTypeToUidt(field.Type)
+
+		// Handle constraints - use empty map if nil
+		meta := field.Meta
+
+		if meta == nil {
+			meta = map[string]interface{}{}
+		}
+
+		addColReq := dto.AddColumnRequest{
+			ModelID:     tableResp.Model.ID,
+			BaseID:      tableResp.Model.BaseID,
+			Title:       field.Name,
+			Description: "",
+			Meta:        meta,
+			UIDT:        colType,
+			DT:          colType,
+			OrderIndex:  helpers.Float64Ptr(float64(i + 6)), // Start after system columns (0-5)
+			Virtual:     helpers.BoolPtr(false),
+			System:      helpers.BoolPtr(false),
+			CreatedBy:   req.CreatedBy,
+		}
+
+		colResp, err := s.tableService.AddColumn(ctx, schemaName, addColReq)
+		if err != nil {
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to add column %s: %w", field.Name, err)
+		}
+		tableResp.Columns = append(tableResp.Columns, colResp)
+	}
+
+	// If sample data requested, call AI CSV service and insert data
+	if sample {
+		if rows <= 0 {
+			rows = 10
+		}
+
+		csvURL := s.aiServiceURL + "/extract-schema-csv"
+
+		payload := map[string]interface{}{
+			"table":     aiTable,
+			"row_count": rows,
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to marshal AI CSV request: %w", err)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, csvURL, bytes.NewBuffer(body))
+		if err != nil {
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to create AI CSV request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := s.httpClient.Do(httpReq)
+		if err != nil {
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to call AI CSV service: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return dto.ImportTableResponse{}, fmt.Errorf("AI CSV service returned status %d", resp.StatusCode)
+		}
+
+		// Read CSV content
+		csvData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to read AI CSV response: %w", err)
+		}
+
+		// Parse CSV and insert rows into the created table
+		reader := csv.NewReader(bytes.NewReader(csvData))
+		records, err := reader.ReadAll()
+		if err != nil {
+			return dto.ImportTableResponse{}, fmt.Errorf("failed to parse AI CSV data: %w", err)
+		}
+
+		if len(records) < 1 {
+			return dto.ImportTableResponse{}, fmt.Errorf("AI CSV returned empty data")
+		}
+
+		headers := records[0]
+		dataRows := records[1:]
+
+		// Map headers to existing columns (trim and compare case-insensitive)
+		columnMap := make(map[int]dto.ColumnResponse)
+
+		// find column by title
+		for i, h := range headers {
+			hh := strings.TrimSpace(h)
+			for _, col := range tableResp.Columns {
+				if strings.EqualFold(strings.TrimSpace(col.Title), hh) {
+					columnMap[i] = col
+					break
+				}
+			}
+		}
+
+		if len(columnMap) == 0 {
+			dataRows = records
+
+			for idx, field := range aiTable.Fields {
+				fname := strings.TrimSpace(field.Name)
+				for _, col := range tableResp.Columns {
+					if strings.EqualFold(strings.TrimSpace(col.Title), fname) {
+						columnMap[idx] = col
+						break
+					}
+				}
+			}
+		}
+
+		newRecords := []map[string]interface{}{}
+		for _, row := range dataRows {
+			record := map[string]interface{}{
+				"created_by":         req.CreatedBy,
+				"last_modified_by":   req.CreatedBy,
+				"created_time":       time.Now().UTC(),
+				"last_modified_time": time.Now().UTC(),
+			}
+
+			for i, cellVal := range row {
+				cellVal = strings.TrimSpace(cellVal)
+				if cellVal == "" {
+					continue
+				}
+				colResp, exists := columnMap[i]
+				if !exists {
+					continue
+				}
+				// Use type from AI table fields
+				typeName := "text"
+				if i < len(aiTable.Fields) {
+					typeName = s.mapAiTypeToUidt(aiTable.Fields[i].Type)
+				}
+				val := s.convertValue(cellVal, typeName)
+				record[fmt.Sprintf("\"%s\"", colResp.ColumnName)] = val
+			}
+			newRecords = append(newRecords, record)
+		}
+
+		batchSize := 50
+		for i := 0; i < len(newRecords); i += batchSize {
+			end := i + batchSize
+			if end > len(newRecords) {
+				end = len(newRecords)
+			}
+			batch := newRecords[i:end]
+			if _, err := s.tableService.CreateRowsWithRecordsBulk(ctx, schemaName, tableResp.Model.Alias, batch); err != nil {
+				return dto.ImportTableResponse{}, fmt.Errorf("failed to insert sample rows: %w", err)
+			}
+		}
+
+	}
+
+	// get table response to include new columns and, if any, records
+	finalTableResp, err := s.tableService.GetTableByID(ctx, tableResp.Model.ID.String(), schemaName)
+	if err != nil {
+		return dto.ImportTableResponse{TableResponse: tableResp}, nil
+	}
+
+	return dto.ImportTableResponse{TableResponse: finalTableResp}, nil
 }
