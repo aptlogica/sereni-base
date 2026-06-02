@@ -27,6 +27,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
+	"github.com/google/uuid"
 
 	"github.com/rs/zerolog"
 )
@@ -51,9 +52,9 @@ type importService struct {
 }
 
 // ApplyAiBaseSchema implements interfaces.ImportService.
-func (s *importService) ApplyAiBaseSchema(ctx context.Context, schemaName string, req dto.CreateTableRequest, aiResponse dto.AiBaseResponse, sample bool, rows int) (dto.ImportBaseResponse, error) {
-	panic("unimplemented")
-}
+// func (s *importService) ApplyAiBaseSchema(ctx context.Context, schemaName string, req dto.CreateTableRequest, aiResponse dto.AiBaseResponse, sample bool, rows int) (dto.ImportBaseResponse, error) {
+// 	panic("unimplemented")
+// }
 
 func NewImportService(tableService interfaces.TableManagementService, baseManagementService interfaces.BaseManagementService, antivirusProvider antivirusProviderInterface.Provider, aiServiceURL string) interfaces.ImportService {
 	return &importService{
@@ -2372,6 +2373,7 @@ func (s *importService) FetchAiBaseSchema(ctx context.Context, prompt string) (d
 
 	return aiResponse, nil
 }
+
 func (s *importService) ApplyAiBaseSchema(ctx context.Context, schemaName string, req dto.CreateTableRequest, aiResponse dto.AiBaseResponse, sample bool, rows int) (dto.ImportBaseResponse, error) {
 	if aiResponse.Relations == nil {
 		aiResponse.Relations = []dto.Relation{}
