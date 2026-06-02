@@ -1,0 +1,161 @@
+{
+  "relations": [
+    {
+      "source_table": "companies",
+      "target_table": "customers",
+      "type": "has-many"
+    },
+    {
+      "source_table": "companies",
+      "target_table": "deals",
+      "type": "has-many"
+    },
+    {
+      "source_table": "companies",
+      "target_table": "contacts",
+      "type": "has-many"
+    },
+    {
+      "source_table": "customers",
+      "target_table": "deals",
+      "type": "has-many"
+    },
+    {
+      "source_table": "customers",
+      "target_table": "contacts",
+      "type": "has-many"
+    }
+  ],
+  "tables": [
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "customer_name",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "customer_email",
+          "type": "email"
+        },
+        {
+          "meta": {},
+          "name": "customer_phone",
+          "type": "phoneNumber"
+        },
+        {
+          "meta": {},
+          "name": "customer_address",
+          "type": "longText"
+        }
+      ],
+      "name": "customers"
+    },
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "company_name",
+          "type": "text"
+        },
+        {
+          "meta": {
+            "options": [
+              {
+                "color": "",
+                "option": "technology"
+              },
+              {
+                "color": "",
+                "option": "finance"
+              },
+              {
+                "color": "",
+                "option": "healthcare"
+              }
+            ]
+          },
+          "name": "industry",
+          "type": "select"
+        },
+        {
+          "meta": {},
+          "name": "company_website",
+          "type": "url"
+        },
+        {
+          "meta": {},
+          "name": "company_location",
+          "type": "text"
+        }
+      ],
+      "name": "companies"
+    },
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "deal_name",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "deal_value",
+          "type": "currency"
+        },
+        {
+          "meta": {
+            "options": [
+              {
+                "color": "",
+                "option": "prospecting"
+              },
+              {
+                "color": "",
+                "option": "negotiation"
+              },
+              {
+                "color": "",
+                "option": "closed"
+              }
+            ]
+          },
+          "name": "deal_status",
+          "type": "select"
+        },
+        {
+          "meta": {},
+          "name": "close_date",
+          "type": "date"
+        }
+      ],
+      "name": "deals"
+    },
+    {
+      "fields": [
+        {
+          "meta": {},
+          "name": "contact_name",
+          "type": "text"
+        },
+        {
+          "meta": {},
+          "name": "contact_email",
+          "type": "email"
+        },
+        {
+          "meta": {},
+          "name": "contact_phone",
+          "type": "phoneNumber"
+        },
+        {
+          "meta": {},
+          "name": "job_title",
+          "type": "text"
+        }
+      ],
+      "name": "contacts"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+services:
+  ai-services:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-services
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: "8888"
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./response_csv:/app/response_csv
+      - ./response_json:/app/response_json
+      - ./base_level_tables:/app/base_level_tables
+    restart: on-failure:5
