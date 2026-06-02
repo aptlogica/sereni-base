@@ -15,6 +15,7 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
@@ -117,6 +118,13 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
+	aiServiceURL := strings.TrimRight(os.Getenv("AI_SERVICE_URL"), "/")
+	if aiServiceURL == "" {
+		aiServiceURL = "http://localhost:8888/"
+	} else if !strings.HasSuffix(aiServiceURL, "/api/v1") {
+		aiServiceURL += "/api/v1"
+	}
+
 	// Initialize services
 	userService := services.NewUserService(dbService)
 	workspaceService := services.NewWorkspaceService(dbService)
@@ -173,7 +181,7 @@ func New(cfg *config.Config) (*App, error) {
 		assetManagementService,
 	)
 
-	importService := services.NewImportService(tableManagementService, baseManagementService, antivirusProvider)
+	importService := services.NewImportService(tableManagementService, baseManagementService, antivirusProvider, aiServiceURL)
 
 	// Create workspaceManagementService first (no circular dependency needed here)
 	workspaceManagementService := services.NewWorkspaceManagementService(

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"mime/multipart"
 	"path/filepath"
 	"strconv"
@@ -1447,3 +1448,97 @@ func (h *TableHandler) ResetColumnValues(c *gin.Context) {
 		"columnId": req.ColumnId,
 	})
 }
+
+
+func (h *TableHandler) PreviewAiTable(c *gin.Context) {
+	var body struct {
+		Prompt string `json:"prompt" binding:"required"`
+	}
+
+	// Accept JSON or form; only prompt is required
+	if err := c.ShouldBind(&body); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	req := dto.CreateTableRequest{
+		Prompt:    body.Prompt,
+		CreatedBy: userId,
+	}
+
+	if req.CreatedBy == "" {
+		req.CreatedBy = userId
+	}
+
+	fmt.Println("PreviewAiTable", req.Prompt)
+
+	aiSchema, err := h.importService.FetchAiSchema(c, req.Prompt)
+	if err != nil {
+		fmt.Println("err===>>>", err)
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// Return raw AI schema so frontend can preview/edit without meta block
+	resp := response.StandardResponse{
+		Success: true,
+		Message: "Table fetched successfully",
+		Data:    aiSchema,
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// ApplyAiTable creates table/columns from an edited AI schema provided by the client.
+// func (h *TableHandler) ApplyAiTable(c *gin.Context) {
+// 	var body struct {
+// 		BaseID      string        `json:"base_id"`
+// 		WorkspaceID string        `json:"workspace_id"`
+// 		SampleData  bool          `json:"sample_data"`
+// 		Row         int           `json:"row"`
+// 		Tables      []dto.AiTable `json:"tables"`
+// 	}
+
+// 	if err := c.ShouldBindJSON(&body); err != nil {
+// 		response.SendError(c, responseConst.Error.InvalidPayload)
+// 		return
+// 	}
+
+// 	if body.BaseID == "" || body.WorkspaceID == "" || len(body.Tables) == 0 {
+// 		response.SendError(c, responseConst.Error.InvalidPayload)
+// 		return
+// 	}
+
+// 	schemaNameVal, _ := c.Get("schema")
+// 	schemaName, _ := schemaNameVal.(string)
+
+// 	userIdVal, _ := c.Get("user_id")
+// 	userId, _ := userIdVal.(string)
+
+// 	req := dto.CreateTableRequest{
+// 		BaseID:      body.BaseID,
+// 		WorkspaceID: body.WorkspaceID,
+// 		CreatedBy:   userId,
+// 	}
+// 	if req.CreatedBy == "" {
+// 		req.CreatedBy = userId
+// 	}
+
+// 	aiResp := dto.AiTableResponse{Tables: body.Tables}
+	
+// 	created := make([]dto.ImportTableResponse, 0, len(aiResp.Tables))
+// 	for _, t := range aiResp.Tables {
+// 		one := dto.AiTableResponse{Tables: []dto.AiTable{t}}
+// 		table, err := h.importService.ApplyAiSchema(c, schemaName, req, one, body.SampleData, body.Row)
+// 		if err != nil {
+// 			fmt.Println("err===>>>", err)
+// 			response.CheckAndSendError(c, err)
+// 			return
+// 		}
+// 		created = append(created, table)
+// 	}
+
+// 	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, created)
+// }

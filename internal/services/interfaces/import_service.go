@@ -14,4 +14,5 @@ import (
 
 type ImportService interface {
 	ImportWithConfig(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error)
+	FetchAiSchema(ctx context.Context, prompt string) (dto.AiTableResponse, error)
 }

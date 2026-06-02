@@ -98,6 +98,26 @@ services:
     networks:
       - serenibase-network
 
+  ai-services:
+    build:
+      context: ./services/Ai Services
+      dockerfile: Dockerfile
+    container_name: ai-services
+    env_file:
+      - .env
+      - ./services/Ai Services/.env
+    environment:
+      SERVER_PORT: ${AI_SERVICE_PORT:-8888}
+    ports:
+      - "${AI_SERVICE_PORT:-8888}:${AI_SERVICE_PORT:-8888}"
+    volumes:
+      - ./services/Ai Services/response_csv:/app/response_csv
+      - ./services/Ai Services/response_json:/app/response_json
+      - ./services/Ai Services/base_level_tables:/app/base_level_tables
+    restart: on-failure:5
+    networks:
+      - serenibase-network
+
   sereni-storage-provider:
     build:
       context: ./services/storage-service

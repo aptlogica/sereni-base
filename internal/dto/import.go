@@ -88,3 +88,26 @@ type BuildRecordsWithConfigAndErrorsParams struct {
 	Headers       []string
 	Settings      ImportSettings
 }
+
+type Relation struct {
+	Type        string `json:"type"`
+	SourceTable string `json:"source_table"`
+	TargetTable string `json:"target_table"`
+}
+
+// AI Table JSON structures
+type AiTableField struct {
+	Name string                 `json:"name"`
+	Type string                 `json:"type"`
+	Meta map[string]interface{} `json:"meta"`
+}
+
+type AiTable struct {
+	Name   string         `json:"name"`
+	Fields []AiTableField `json:"fields"`
+}
+
+type AiTableResponse struct {
+	Tables    []AiTable  `json:"tables"`
+	Relations []Relation `json:"relations"`
+}

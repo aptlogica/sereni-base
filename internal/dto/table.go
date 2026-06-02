@@ -16,6 +16,7 @@ type CreateTableRequest struct {
 	Description string  `json:"description" example:"A description of the table" format:"string"`
 	OrderIndex  float64 `json:"order_index,omitempty" example:"1.0"`
 	CreatedBy   string  `json:"created_by,omitempty"`
+	Prompt      string  `json:"prompt,omitempty" form:"prompt"`	
 }
 
 type TableResponse struct {

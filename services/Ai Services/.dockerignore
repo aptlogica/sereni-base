@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+Dockerfile
+README.md
+response_csv
+response_json
+base_level_tables
+*.log

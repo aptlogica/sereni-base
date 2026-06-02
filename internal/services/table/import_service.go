@@ -6,12 +6,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"math"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
@@ -43,13 +45,19 @@ type importService struct {
 	tableService          interfaces.TableManagementService
 	baseManagementService interfaces.BaseManagementService
 	antivirusProvider     antivirusProviderInterface.Provider
+	aiServiceURL          string
+	httpClient            *http.Client
 }
 
-func NewImportService(tableService interfaces.TableManagementService, baseManagementService interfaces.BaseManagementService, antivirusProvider antivirusProviderInterface.Provider) interfaces.ImportService {
+func NewImportService(tableService interfaces.TableManagementService, baseManagementService interfaces.BaseManagementService, antivirusProvider antivirusProviderInterface.Provider, aiServiceURL string) interfaces.ImportService {
 	return &importService{
 		tableService:          tableService,
 		baseManagementService: baseManagementService,
 		antivirusProvider:     antivirusProvider,
+		aiServiceURL:          strings.TrimRight(aiServiceURL, "/"),
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
 	}
 }
 
@@ -1972,4 +1980,50 @@ func (s *importService) ValidateEmailConversion(val string) string {
 		return fmt.Sprintf("Column type 'email' expects valid email format, got '%s'", val)
 	}
 	return ""
+}
+
+func (s *importService) FetchAiSchema(ctx context.Context, prompt string) (dto.AiTableResponse, error) {
+	if prompt == "" {
+		return dto.AiTableResponse{}, fmt.Errorf("prompt is required")
+	}
+	if s.aiServiceURL == "" {
+		return dto.AiTableResponse{}, fmt.Errorf("AI service URL is not configured")
+	}
+
+	aiURL := s.aiServiceURL + "/extract-schema"
+	payload := map[string]string{
+		"prompt": prompt,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return dto.AiTableResponse{}, fmt.Errorf("failed to marshal AI request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, aiURL, bytes.NewBuffer(body))
+	if err != nil {
+		return dto.AiTableResponse{}, fmt.Errorf("failed to create AI request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(httpReq)
+	if err != nil {
+		return dto.AiTableResponse{}, fmt.Errorf("failed to call AI service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return dto.AiTableResponse{}, fmt.Errorf("AI service returned status %d", resp.StatusCode)
+	}
+
+	var aiResponse dto.AiTableResponse
+	if err := json.NewDecoder(resp.Body).Decode(&aiResponse); err != nil {
+		return dto.AiTableResponse{}, fmt.Errorf("failed to parse AI response: %w", err)
+	}
+
+	if len(aiResponse.Tables) == 0 {
+		return dto.AiTableResponse{}, fmt.Errorf("no tables found in AI response")
+	}
+
+	return aiResponse, nil
 }
