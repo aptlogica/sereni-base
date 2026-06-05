@@ -58,23 +58,23 @@ DATABASE_NAME=<your-database>
 - **Cons**: Data lost if container is removed (use volumes in production)
 - **Use Case**: Development, testing, single-server deployments
 
-#### Option 2: Create New MinIO Instance
-- MinIO S3-compatible storage container will be created
-- Default credentials: `minioadmin/minioadmin`
+#### Option 2: Create New RustFS Instance
+- RustFS S3-compatible storage container will be created
+- Default credentials: `RustFSadmin/RustFSadmin`
 - Console accessible at: `http://PUBLIC_HOST:9001`
 - **Pros**: S3-compatible, scalable, web interface
 - **Cons**: Additional container to manage
 - **Use Case**: Production with multiple servers, cloud-like storage
 
-#### Option 3: Use Existing MinIO Server
-- Connect to your own MinIO deployment
+#### Option 3: Use Existing RustFS Server
+- Connect to your own RustFS deployment
 - **Required Information:**
-  - MinIO Endpoint (host:port)
+  - RustFS Endpoint (host:port)
   - Access Key
   - Secret Key
   - Bucket Name
   - Use SSL (yes/no)
-- **Use Case**: Existing MinIO infrastructure, shared storage
+- **Use Case**: Existing RustFS infrastructure, shared storage
 
 #### Option 4: AWS S3
 - Use Amazon S3 for file storage
@@ -91,13 +91,13 @@ DATABASE_NAME=<your-database>
 STORAGE_DRIVER=local
 STORAGE_DEV_PATH=./uploads
 
-# For MinIO
-STORAGE_DRIVER=minio
-STORAGE_MINIO_ENDPOINT=minio:9000
-STORAGE_MINIO_ACCESS_KEY=minioadmin
-STORAGE_MINIO_SECRET_KEY=minioadmin
-STORAGE_MINIO_BUCKET=serenibase
-STORAGE_MINIO_USE_SSL=false
+# For RustFS
+STORAGE_DRIVER=RustFS
+STORAGE_RustFS_ENDPOINT=RustFS:9000
+STORAGE_RustFS_ACCESS_KEY=RustFSadmin
+STORAGE_RustFS_SECRET_KEY=RustFSadmin
+STORAGE_RustFS_BUCKET=serenibase
+STORAGE_RustFS_USE_SSL=false
 
 # For AWS S3
 STORAGE_DRIVER=aws
@@ -186,8 +186,8 @@ Database: Use existing (2)
   User: serenibase_user
   Password: <db-password>
 
-Storage: Create MinIO (2)
-  (Uses default MinIO container)
+Storage: Create RustFS (2)
+  (Uses default RustFS container)
 
 Antivirus: Create ClamAV (1)
   (Uses default ClamAV container)
@@ -232,7 +232,7 @@ Antivirus: Create ClamAV (1)
 |--------------|-------------------|
 | **Minimal** (All external) | base-ui, serenibase, jwt-provider, email-service, sereni-storage-provider, antivirus-service |
 | **+ New Database** | + postgres |
-| **+ New MinIO** | + minio |
+| **+ New RustFS** | + RustFS |
 | **+ New ClamAV** | + clamav |
 | **Full Stack** | All containers |
 
@@ -240,7 +240,7 @@ Antivirus: Create ClamAV (1)
 
 The setup script automatically scales services to 0 (disabled) based on your choices:
 - External database → postgres=0
-- External MinIO or non-MinIO storage → minio=0
+- External RustFS or non-RustFS storage → RustFS=0
 - External ClamAV → clamav=0
 - Disabled antivirus → clamav=0 + antivirus-service=0
 
@@ -258,8 +258,8 @@ The setup script automatically scales services to 0 (disabled) based on your cho
 
 ### Optional Ports (Based on Configuration)
 - **5432**: PostgreSQL (if using new database)
-- **9000**: MinIO API (if using new MinIO)
-- **9001**: MinIO Console (if using new MinIO)
+- **9000**: RustFS API (if using new RustFS)
+- **9001**: RustFS Console (if using new RustFS)
 - **3310**: ClamAV (if using new ClamAV)
 
 ---
@@ -275,7 +275,7 @@ The setup script automatically scales services to 0 (disabled) based on your cho
 ✅ Use strong, unique passwords for all services
 ✅ Use proper domain name with SSL/TLS
 ✅ Change default database credentials
-✅ Change MinIO credentials if used
+✅ Change RustFS credentials if used
 ✅ Generate strong JWT secret (32+ characters)
 ✅ Use external managed database (RDS, Cloud SQL, etc.)
 ✅ Use cloud storage (S3, Google Cloud Storage)
@@ -295,10 +295,10 @@ The setup script automatically scales services to 0 (disabled) based on your cho
 - Ensure database exists and user has permissions
 - Test connection: `psql -h HOST -p PORT -U USER -d DATABASE`
 
-### Issue: MinIO connection fails
+### Issue: RustFS connection fails
 **Solution:**
 - Verify endpoint format (host:port, no http://)
-- Check SSL setting matches your MinIO setup
+- Check SSL setting matches your RustFS setup
 - Verify access/secret keys are correct
 - Ensure bucket exists
 
@@ -311,7 +311,7 @@ The setup script automatically scales services to 0 (disabled) based on your cho
 ### Issue: Storage service can't write files
 **Solution:**
 - For local: Check volume permissions
-- For MinIO: Verify credentials and bucket exists
+- For RustFS: Verify credentials and bucket exists
 - For S3: Verify IAM permissions for bucket operations
 
 ---
@@ -327,7 +327,7 @@ vi .env
 # Update any configuration
 PUBLIC_HOST=your-domain.com
 DATABASE_HOST=your-db-host
-STORAGE_DRIVER=minio
+STORAGE_DRIVER=RustFS
 # ... etc
 
 # Restart services
@@ -344,3 +344,4 @@ For issues or questions:
 - View running services: `docker ps`
 - Review `.env` configuration
 - Consult documentation at: `docs/`
+

@@ -133,7 +133,7 @@ up:
 	@echo "Services started! Access:"
 	@echo "  Frontend:  http://localhost:5050"
 	@echo "  Backend:   http://localhost:8080"
-	@echo "  MinIO:     http://localhost:9001"
+	@echo "  RustFS:     http://localhost:9001"
 	@echo "  MailHog:   http://localhost:8025"
 	@echo ""
 
@@ -215,3 +215,4 @@ endif
 	@echo ""
 	@echo "To start fresh, run: make setup"
 	@echo ""
+

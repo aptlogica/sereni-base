@@ -126,7 +126,7 @@ openssl rand -base64 32
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `STORAGE_URL` | Internal storage service URL | - | No |
-| `STORAGE_DRIVER` | Storage backend: `local`, `minio`, `aws` | `local` | ✅ Yes |
+| `STORAGE_DRIVER` | Storage backend: `local`, `RustFS`, `aws` | `local` | ✅ Yes |
 | `STORAGE_DEV_PATH` | Local storage path | `./uploads` | For local |
 
 ### Local Storage
@@ -135,14 +135,14 @@ STORAGE_DRIVER=local
 STORAGE_DEV_PATH=./uploads
 ```
 
-### MinIO Storage
+### RustFS Storage
 | Variable | Description |
 |----------|-------------|
-| `STORAGE_MINIO_ENDPOINT` | MinIO server endpoint |
-| `STORAGE_MINIO_ACCESS_KEY` | Access key |
-| `STORAGE_MINIO_SECRET_KEY` | Secret key |
-| `STORAGE_MINIO_BUCKET` | Bucket name |
-| `STORAGE_MINIO_USE_SSL` | Use SSL (true/false) |
+| `STORAGE_RustFS_ENDPOINT` | RustFS server endpoint |
+| `STORAGE_RustFS_ACCESS_KEY` | Access key |
+| `STORAGE_RustFS_SECRET_KEY` | Secret key |
+| `STORAGE_RustFS_BUCKET` | Bucket name |
+| `STORAGE_RustFS_USE_SSL` | Use SSL (true/false) |
 
 ### AWS S3 Storage
 | Variable | Description |
@@ -257,3 +257,4 @@ Before going to production, ensure you have:
 - [ ] Updated `CORS_ALLOWED_ORIGINS` to only include your domains
 - [ ] Enabled `DATABASE_SSL_MODE=require` if using remote database
 - [ ] Set `SERVER_ENV=production`
+

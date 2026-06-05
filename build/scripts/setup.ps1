@@ -265,17 +265,17 @@ STORAGE_URL=http://sereni-storage-provider:8083/api/v1
 STORAGE_SERVER_PORT=8083
 STORAGE_SERVER_HOST=0.0.0.0
 STORAGE_SERVER_SCHEME=http
-STORAGE_DRIVER=minio
+STORAGE_DRIVER=rustfs
 STORAGE_DEV_PATH=./uploads
 STORAGE_AWS_REGION=us-east-1
 STORAGE_AWS_BUCKET=serenibase
 STORAGE_AWS_ACCESS_KEY=your-access-key
 STORAGE_AWS_SECRET_KEY=your-secret-key
-STORAGE_MINIO_ENDPOINT=minio:9000
-STORAGE_MINIO_ACCESS_KEY=minioadmin
-STORAGE_MINIO_SECRET_KEY=minioadmin
-STORAGE_MINIO_BUCKET=serenibase
-STORAGE_MINIO_USE_SSL=false
+RUSTFS_ENDPOINT=http://rustfs-server:9000
+RUSTFS_ACCESS_KEY=rustfsadmin
+RUSTFS_SECRET_KEY=rustfsadmin
+RUSTFS_BUCKET=serenibase
+RUSTFS_USE_SSL=false
 STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
 
 # ------------------------------------------------------------------------------
@@ -752,8 +752,8 @@ Write-Host "====================================================================
 Write-Host ""
 Write-Host "Choose storage driver:"
 Write-Host "  1. Local filesystem (for development only)"
-Write-Host "  2. MinIO (Docker container - recommended)"
-Write-Host "  3. MinIO Custom (external MinIO server)"
+Write-Host "  2. RustFS (Docker container - recommended)"
+Write-Host "  3. RustFS Custom (external RustFS server)"
 Write-Host "  4. AWS S3"
 Write-Host ""
 
@@ -781,62 +781,62 @@ switch ($STORAGE_CHOICE) {
     }
     "2" {
         Write-Host ""
-        Write-Host "Using default MinIO Docker container"
+        Write-Host "Using default RustFS Docker container"
         
         if ($AutoYes) {
-            $STORAGE_MINIO_ACCESS_KEY = "minioadmin"
-            $STORAGE_MINIO_SECRET_KEY = "minioadmin"
-            $STORAGE_MINIO_BUCKET = "serenibase"
+            $RUSTFS_ACCESS_KEY = "rustfsadmin"
+            $RUSTFS_SECRET_KEY = "rustfsadmin"
+            $RUSTFS_BUCKET = "serenibase"
         } else {
-            $STORAGE_MINIO_ACCESS_KEY = Read-HostWithCancel -Prompt "MinIO Access Key" -Default "minioadmin"
-            $STORAGE_MINIO_SECRET_KEY = Read-HostWithCancel -Prompt "MinIO Secret Key" -Default "minioadmin"
-            $STORAGE_MINIO_BUCKET = Read-HostWithCancel -Prompt "Bucket Name" -Default "serenibase"
+            $RUSTFS_ACCESS_KEY = Read-HostWithCancel -Prompt "RustFS Access Key" -Default "rustfsadmin"
+            $RUSTFS_SECRET_KEY = Read-HostWithCancel -Prompt "RustFS Secret Key" -Default "rustfsadmin"
+            $RUSTFS_BUCKET = Read-HostWithCancel -Prompt "Bucket Name" -Default "serenibase"
         }
         
-        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "minio"
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ENDPOINT" -Value "minio:9000"
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ACCESS_KEY" -Value $STORAGE_MINIO_ACCESS_KEY
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_SECRET_KEY" -Value $STORAGE_MINIO_SECRET_KEY
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_BUCKET" -Value $STORAGE_MINIO_BUCKET
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_USE_SSL" -Value "false"
-        Write-Host "[OK] MinIO Docker storage configured" -ForegroundColor Green
+        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "rustfs"
+        Update-EnvVarIfChanged -Key "RUSTFS_ENDPOINT" -Value "http://rustfs-server:9000"
+        Update-EnvVarIfChanged -Key "RUSTFS_ACCESS_KEY" -Value $RUSTFS_ACCESS_KEY
+        Update-EnvVarIfChanged -Key "RUSTFS_SECRET_KEY" -Value $RUSTFS_SECRET_KEY
+        Update-EnvVarIfChanged -Key "RUSTFS_BUCKET" -Value $RUSTFS_BUCKET
+        Update-EnvVarIfChanged -Key "RUSTFS_USE_SSL" -Value "false"
+        Write-Host "[OK] RustFS Docker storage configured" -ForegroundColor Green
     }
     "3" {
         Write-Host ""
-        Write-Host "Enter custom MinIO configuration:"
+        Write-Host "Enter custom RustFS configuration:"
         Write-Host ""
         
-        $STORAGE_MINIO_ENDPOINT = Read-HostWithCancel -Prompt "MinIO Endpoint (host:port)"
-        if ([string]::IsNullOrWhiteSpace($STORAGE_MINIO_ENDPOINT)) {
-            Write-Host "[ERROR] MinIO endpoint is required" -ForegroundColor Red
+        $RUSTFS_ENDPOINT = Read-HostWithCancel -Prompt "RustFS Endpoint (host:port)" -Default "http://rustfs-server:9000"
+        if ([string]::IsNullOrWhiteSpace($RUSTFS_ENDPOINT)) {
+            Write-Host "[ERROR] RustFS endpoint is required" -ForegroundColor Red
             Read-Host "Press Enter to exit"
             exit 1
         }
         
-        $STORAGE_MINIO_ACCESS_KEY = Read-HostWithCancel -Prompt "MinIO Access Key"
-        if ([string]::IsNullOrWhiteSpace($STORAGE_MINIO_ACCESS_KEY)) {
-            Write-Host "[ERROR] MinIO access key is required" -ForegroundColor Red
+        $RUSTFS_ACCESS_KEY = Read-HostWithCancel -Prompt "RustFS Access Key" -Default "rustfsadmin"
+        if ([string]::IsNullOrWhiteSpace($RUSTFS_ACCESS_KEY)) {
+            Write-Host "[ERROR] RustFS access key is required" -ForegroundColor Red
             Read-Host "Press Enter to exit"
             exit 1
         }
         
-        $STORAGE_MINIO_SECRET_KEY = Read-HostWithCancel -Prompt "MinIO Secret Key"
-        if ([string]::IsNullOrWhiteSpace($STORAGE_MINIO_SECRET_KEY)) {
-            Write-Host "[ERROR] MinIO secret key is required" -ForegroundColor Red
+        $RUSTFS_SECRET_KEY = Read-HostWithCancel -Prompt "RustFS Secret Key" -Default "rustfsadmin"
+        if ([string]::IsNullOrWhiteSpace($RUSTFS_SECRET_KEY)) {
+            Write-Host "[ERROR] RustFS secret key is required" -ForegroundColor Red
             Read-Host "Press Enter to exit"
             exit 1
         }
         
-        $STORAGE_MINIO_BUCKET = Read-HostWithCancel -Prompt "Bucket Name" -Default "serenibase"
-        $STORAGE_MINIO_USE_SSL = Read-HostWithCancel -Prompt "Use SSL (true/false)" -Default "false"
+        $RUSTFS_BUCKET = Read-HostWithCancel -Prompt "Bucket Name" -Default "serenibase"
+        $RUSTFS_USE_SSL = Read-HostWithCancel -Prompt "Use SSL (true/false)" -Default "false"
         
-        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "minio"
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ENDPOINT" -Value $STORAGE_MINIO_ENDPOINT
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_ACCESS_KEY" -Value $STORAGE_MINIO_ACCESS_KEY
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_SECRET_KEY" -Value $STORAGE_MINIO_SECRET_KEY
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_BUCKET" -Value $STORAGE_MINIO_BUCKET
-        Update-EnvVarIfChanged -Key "STORAGE_MINIO_USE_SSL" -Value $STORAGE_MINIO_USE_SSL
-        Write-Host "[OK] Custom MinIO storage configured" -ForegroundColor Green
+        Update-EnvVarIfChanged -Key "STORAGE_DRIVER" -Value "rustfs"
+        Update-EnvVarIfChanged -Key "RUSTFS_ENDPOINT" -Value $RUSTFS_ENDPOINT
+        Update-EnvVarIfChanged -Key "RUSTFS_ACCESS_KEY" -Value $RUSTFS_ACCESS_KEY
+        Update-EnvVarIfChanged -Key "RUSTFS_SECRET_KEY" -Value $RUSTFS_SECRET_KEY
+        Update-EnvVarIfChanged -Key "RUSTFS_BUCKET" -Value $RUSTFS_BUCKET
+        Update-EnvVarIfChanged -Key "RUSTFS_USE_SSL" -Value $RUSTFS_USE_SSL
+        Write-Host "[OK] Custom RustFS storage configured" -ForegroundColor Green
     }
     "4" {
         Write-Host ""
@@ -963,19 +963,19 @@ Write-Host "Configure container ports (press Enter to use defaults):"
 Write-Host ""
 
 if ($AutoYes) {
-    $MINIO_API_PORT = "9000"
-    $MINIO_CONSOLE_PORT = "9001"
+    $RUSTFS_API_PORT = "9000"
+    $RUSTFS_CONSOLE_PORT = "9001"
     $BASE_UI_PORT = "5050"
     $ANTIVIRUS_CLAMAV_PORT = "3310"
 } else {
-    $MINIO_API_PORT = Read-HostWithCancel -Prompt "MinIO API Port" -Default "9000"
-    $MINIO_CONSOLE_PORT = Read-HostWithCancel -Prompt "MinIO Console Port" -Default "9001"
+    $RUSTFS_API_PORT = Read-HostWithCancel -Prompt "RustFS API Port" -Default "9000"
+    $RUSTFS_CONSOLE_PORT = Read-HostWithCancel -Prompt "RustFS Console Port" -Default "9001"
     $BASE_UI_PORT = Read-HostWithCancel -Prompt "Base UI Port" -Default "5050"
     $ANTIVIRUS_CLAMAV_PORT = Read-HostWithCancel -Prompt "ClamAV Port" -Default "3310"
 }
 
-Update-EnvVarIfChanged -Key "MINIO_API_PORT" -Value $MINIO_API_PORT
-Update-EnvVarIfChanged -Key "MINIO_CONSOLE_PORT" -Value $MINIO_CONSOLE_PORT
+Update-EnvVarIfChanged -Key "RUSTFS_API_PORT" -Value $RUSTFS_API_PORT
+Update-EnvVarIfChanged -Key "RUSTFS_CONSOLE_PORT" -Value $RUSTFS_CONSOLE_PORT
 Update-EnvVarIfChanged -Key "BASE_UI_PORT" -Value $BASE_UI_PORT
 Update-EnvVarIfChanged -Key "ANTIVIRUS_CLAMAV_PORT" -Value $ANTIVIRUS_CLAMAV_PORT
 
@@ -1057,7 +1057,7 @@ Write-Host ""
 Write-Host "Access your application at:"
 Write-Host "  Frontend:  http://${displayPublicHost}:5050"
 Write-Host "  Backend:   http://${displayPublicHost}:8080"
-Write-Host "  MinIO:     http://${displayPublicHost}:9001"
+Write-Host "  RustFS:     http://${displayPublicHost}:9001"
 Write-Host ""
 Write-Host "Default admin credentials:"
 Write-Host "  Email:    $displayOwnerEmail"
@@ -1076,3 +1076,4 @@ Write-Host ""
 if (-not $AutoYes) {
     Read-Host "Press Enter to exit"
 }
+

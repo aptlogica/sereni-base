@@ -38,8 +38,9 @@ services:
 
 volumes:
   postgres_data:
-  minio_data:
+  RustFS_data:
 
 networks:
   serenibase-network:
     driver: bridge
+

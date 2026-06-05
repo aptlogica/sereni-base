@@ -143,17 +143,17 @@ REM Create a temporary file with all default environment variables
     echo STORAGE_SERVER_PORT=8083
     echo STORAGE_SERVER_HOST=0.0.0.0
     echo STORAGE_SERVER_SCHEME=http
-    echo STORAGE_DRIVER=minio
+    echo STORAGE_DRIVER=rustfs
     echo STORAGE_DEV_PATH=./uploads
     echo STORAGE_AWS_REGION=us-east-1
     echo STORAGE_AWS_BUCKET=serenibase
     echo STORAGE_AWS_ACCESS_KEY=your-access-key
     echo STORAGE_AWS_SECRET_KEY=your-secret-key
-    echo STORAGE_MINIO_ENDPOINT=minio:9000
-    echo STORAGE_MINIO_ACCESS_KEY=minioadmin
-    echo STORAGE_MINIO_SECRET_KEY=minioadmin
-    echo STORAGE_MINIO_BUCKET=serenibase
-    echo STORAGE_MINIO_USE_SSL=false
+    echo RUSTFS_ENDPOINT=http://rustfs-server:9000
+    echo RUSTFS_ACCESS_KEY=rustfsadmin
+    echo RUSTFS_SECRET_KEY=rustfsadmin
+    echo RUSTFS_BUCKET=serenibase
+    echo RUSTFS_USE_SSL=false
     echo STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -385,8 +385,8 @@ echo ========================================================================
 echo.
 echo Choose storage driver:
 echo   1. Local filesystem (for development only)
-echo   2. MinIO (Docker container - recommended)
-echo   3. MinIO Custom (external MinIO server)
+echo   2. RustFS (Docker container - recommended)
+echo   3. RustFS Custom (external RustFS server)
 echo   4. AWS S3
 echo.
 set /p STORAGE_CHOICE="Enter choice [2]: "
@@ -405,65 +405,68 @@ if "!STORAGE_CHOICE!"=="1" (
     
 ) else if "!STORAGE_CHOICE!"=="2" (
     echo.
-    echo Using default MinIO Docker container
-    set STORAGE_DRIVER=minio
+    echo Using default RustFS Docker container
+    set STORAGE_DRIVER=rustfs
     
-    set /p STORAGE_MINIO_ACCESS_KEY="MinIO Access Key [minioadmin]: "
-    if "!STORAGE_MINIO_ACCESS_KEY!"=="" set STORAGE_MINIO_ACCESS_KEY=minioadmin
+    set /p RUSTFS_ACCESS_KEY="RustFS Access Key [rustfsadmin]: "
+    if "!RUSTFS_ACCESS_KEY!"=="" set RUSTFS_ACCESS_KEY=rustfsadmin
     
-    set /p STORAGE_MINIO_SECRET_KEY="MinIO Secret Key [minioadmin]: "
-    if "!STORAGE_MINIO_SECRET_KEY!"=="" set STORAGE_MINIO_SECRET_KEY=minioadmin
+    set /p RUSTFS_SECRET_KEY="RustFS Secret Key [rustfsadmin]: "
+    if "!RUSTFS_SECRET_KEY!"=="" set RUSTFS_SECRET_KEY=rustfsadmin
     
-    set /p STORAGE_MINIO_BUCKET="Bucket Name [serenibase]: "
-    if "!STORAGE_MINIO_BUCKET!"=="" set STORAGE_MINIO_BUCKET=serenibase
+    set /p RUSTFS_BUCKET="Bucket Name [serenibase]: "
+    if "!RUSTFS_BUCKET!"=="" set RUSTFS_BUCKET=serenibase
     
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=minio' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_ENDPOINT=.*', 'STORAGE_MINIO_ENDPOINT=minio:9000' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_ACCESS_KEY=.*', 'STORAGE_MINIO_ACCESS_KEY=%STORAGE_MINIO_ACCESS_KEY%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_SECRET_KEY=.*', 'STORAGE_MINIO_SECRET_KEY=%STORAGE_MINIO_SECRET_KEY%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_BUCKET=.*', 'STORAGE_MINIO_BUCKET=%STORAGE_MINIO_BUCKET%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_USE_SSL=.*', 'STORAGE_MINIO_USE_SSL=false' | Set-Content '.env'"
-    echo [OK] MinIO Docker storage configured
+    powershell -Command "(Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=rustfs' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_ENDPOINT=.*', 'RUSTFS_ENDPOINT=http://rustfs-server:9000' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_ACCESS_KEY=.*', 'RUSTFS_ACCESS_KEY=%RUSTFS_ACCESS_KEY%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_SECRET_KEY=.*', 'RUSTFS_SECRET_KEY=%RUSTFS_SECRET_KEY%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_BUCKET=.*', 'RUSTFS_BUCKET=%RUSTFS_BUCKET%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_USE_SSL=.*', 'RUSTFS_USE_SSL=false' | Set-Content '.env'"
+    echo [OK] RustFS Docker storage configured
     
 ) else if "!STORAGE_CHOICE!"=="3" (
     echo.
-    echo Enter custom MinIO configuration:
+    echo Enter custom RustFS configuration:
     echo.
     
-    set /p STORAGE_MINIO_ENDPOINT="MinIO Endpoint (host:port): "
-    if "!STORAGE_MINIO_ENDPOINT!"=="" (
-        echo [ERROR] MinIO endpoint is required
+    set /p RUSTFS_ENDPOINT="RustFS Endpoint (host:port) [http://rustfs-server:9000]: "
+    if "!RUSTFS_ENDPOINT!"=="" set RUSTFS_ENDPOINT=http://rustfs-server:9000
+    if "!RUSTFS_ENDPOINT!"=="" (
+        echo [ERROR] RustFS endpoint is required
         pause
         exit /b 1
     )
     
-    set /p STORAGE_MINIO_ACCESS_KEY="MinIO Access Key: "
-    if "!STORAGE_MINIO_ACCESS_KEY!"=="" (
-        echo [ERROR] MinIO access key is required
+    set /p RUSTFS_ACCESS_KEY="RustFS Access Key [rustfsadmin]: "
+    if "!RUSTFS_ACCESS_KEY!"=="" set RUSTFS_ACCESS_KEY=rustfsadmin
+    if "!RUSTFS_ACCESS_KEY!"=="" (
+        echo [ERROR] RustFS access key is required
         pause
         exit /b 1
     )
     
-    set /p STORAGE_MINIO_SECRET_KEY="MinIO Secret Key: "
-    if "!STORAGE_MINIO_SECRET_KEY!"=="" (
-        echo [ERROR] MinIO secret key is required
+    set /p RUSTFS_SECRET_KEY="RustFS Secret Key [rustfsadmin]: "
+    if "!RUSTFS_SECRET_KEY!"=="" set RUSTFS_SECRET_KEY=rustfsadmin
+    if "!RUSTFS_SECRET_KEY!"=="" (
+        echo [ERROR] RustFS secret key is required
         pause
         exit /b 1
     )
     
-    set /p STORAGE_MINIO_BUCKET="Bucket Name [serenibase]: "
-    if "!STORAGE_MINIO_BUCKET!"=="" set STORAGE_MINIO_BUCKET=serenibase
+    set /p RUSTFS_BUCKET="Bucket Name [serenibase]: "
+    if "!RUSTFS_BUCKET!"=="" set RUSTFS_BUCKET=serenibase
     
-    set /p STORAGE_MINIO_USE_SSL="Use SSL (true/false) [false]: "
-    if "!STORAGE_MINIO_USE_SSL!"=="" set STORAGE_MINIO_USE_SSL=false
+    set /p RUSTFS_USE_SSL="Use SSL (true/false) [false]: "
+    if "!RUSTFS_USE_SSL!"=="" set RUSTFS_USE_SSL=false
     
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=minio' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_ENDPOINT=.*', 'STORAGE_MINIO_ENDPOINT=%STORAGE_MINIO_ENDPOINT%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_ACCESS_KEY=.*', 'STORAGE_MINIO_ACCESS_KEY=%STORAGE_MINIO_ACCESS_KEY%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_SECRET_KEY=.*', 'STORAGE_MINIO_SECRET_KEY=%STORAGE_MINIO_SECRET_KEY%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_BUCKET=.*', 'STORAGE_MINIO_BUCKET=%STORAGE_MINIO_BUCKET%' | Set-Content '.env'"
-    powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_USE_SSL=.*', 'STORAGE_MINIO_USE_SSL=%STORAGE_MINIO_USE_SSL%' | Set-Content '.env'"
-    echo [OK] Custom MinIO storage configured
+    powershell -Command "(Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=rustfs' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_ENDPOINT=.*', 'RUSTFS_ENDPOINT=%RUSTFS_ENDPOINT%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_ACCESS_KEY=.*', 'RUSTFS_ACCESS_KEY=%RUSTFS_ACCESS_KEY%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_SECRET_KEY=.*', 'RUSTFS_SECRET_KEY=%RUSTFS_SECRET_KEY%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_BUCKET=.*', 'RUSTFS_BUCKET=%RUSTFS_BUCKET%' | Set-Content '.env'"
+    powershell -Command "(Get-Content '.env') -replace '^RUSTFS_USE_SSL=.*', 'RUSTFS_USE_SSL=%RUSTFS_USE_SSL%' | Set-Content '.env'"
+    echo [OK] Custom RustFS storage configured
     
 ) else if "!STORAGE_CHOICE!"=="4" (
     echo.
@@ -596,7 +599,7 @@ echo.
 echo Access your application at:
 echo   Frontend:  http://%PUBLIC_HOST%:5050
 echo   Backend:   http://%PUBLIC_HOST%:8080
-echo   MinIO:     http://%PUBLIC_HOST%:9001
+echo   RustFS:     http://%PUBLIC_HOST%:9001
 echo.
 echo Default admin credentials:
 echo   Email:    %OWNER_EMAIL%
@@ -612,3 +615,4 @@ echo   make down-all  - Stop all services
 echo   make clean     - Remove all data
 echo.
 pause
+
