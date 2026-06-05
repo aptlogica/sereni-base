@@ -160,7 +160,7 @@ REM ========================================================================
     echo Access your application at:
     echo   Frontend:  http://%PUBLIC_HOST%:5050
     echo   Backend:   http://%PUBLIC_HOST%:8080
-    echo   MinIO:     http://%PUBLIC_HOST%:9001
+    echo   RustFS:     http://%PUBLIC_HOST%:9001
     echo.
     echo Default admin credentials:
     echo   Email:    %OWNER_EMAIL%
@@ -175,3 +175,4 @@ REM ========================================================================
     echo.
     
     exit /b 0
+

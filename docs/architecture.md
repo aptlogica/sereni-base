@@ -64,7 +64,7 @@ type Provider interface {
 This allows easy swapping of implementations:
 - **JWT**: HS256, RS256, ES256 algorithms
 - **Email**: Gmail, SendGrid, Mailgun, custom SMTP
-- **Storage**: MinIO, AWS S3, Google Cloud, Azure
+- **Storage**: RustFS, AWS S3, Google Cloud, Azure
 - **Database**: PostgreSQL, MySQL (planned), MongoDB (planned)
 
 ## Key Features
@@ -190,8 +190,8 @@ SMTP_USERNAME=your-email
 SMTP_PASSWORD=your-app-password
 
 # Storage
-STORAGE_PROVIDER=minio
-MINIO_ENDPOINT=localhost:9000
+STORAGE_PROVIDER=RustFS
+RustFS_ENDPOINT=localhost:9000
 ```
 
 ## Deployment

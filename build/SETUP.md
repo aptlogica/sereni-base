@@ -29,7 +29,7 @@ Deploys the complete application stack with all microservices. Ideal for:
 - Feature demonstrations
 - End-to-end testing
 
-**Services**: `serenibase`, `postgres`, `jwt-provider`, `email-service`, `sereni-storage-provider`, `antivirus-service`, `minio`, `base-ui`, `clamav`
+**Services**: `serenibase`, `postgres`, `jwt-provider`, `email-service`, `sereni-storage-provider`, `antivirus-service`, `RustFS`, `base-ui`, `clamav`
 
 ---
 
@@ -68,7 +68,7 @@ The wizard will guide you through:
 1. **Database Configuration**: Default PostgreSQL or custom database credentials
 2. **Authentication**: JWT secret generation
 3. **Email Configuration**: SMTP settings for notifications
-4. **Storage Configuration**: Local, MinIO, or AWS S3
+4. **Storage Configuration**: Local, RustFS, or AWS S3
 5. **Network**: Public host/domain configuration
 6. **Admin Account**: Initial owner credentials
 
@@ -135,13 +135,13 @@ These are prompted and configured when you run `make setup`:
 | `EMAIL_SMTP_USERNAME` | (required) | SMTP username | Email setup |
 | `EMAIL_SMTP_PASSWORD` | (required) | SMTP password | Email setup |
 | `EMAIL_FROM_EMAIL` | Same as username | Sender email | Email setup |
-| `STORAGE_DRIVER` | `minio` | Storage driver (local/minio/s3) | Storage setup |
+| `STORAGE_DRIVER` | `RustFS` | Storage driver (local/RustFS/s3) | Storage setup |
 | `STORAGE_DEV_PATH` | `./uploads` | Local storage path | Storage setup (if local) |
-| `STORAGE_MINIO_ENDPOINT` | `minio:9000` | MinIO endpoint | Storage setup (if MinIO) |
-| `STORAGE_MINIO_ACCESS_KEY` | `minioadmin` | MinIO access key | Storage setup (if MinIO) |
-| `STORAGE_MINIO_SECRET_KEY` | `minioadmin` | MinIO secret key | Storage setup (if MinIO) |
-| `STORAGE_MINIO_BUCKET` | `serenibase` | MinIO bucket name | Storage setup (if MinIO) |
-| `STORAGE_MINIO_USE_SSL` | `false` | Use SSL for MinIO | Storage setup (if MinIO) |
+| `STORAGE_RustFS_ENDPOINT` | `RustFS:9000` | RustFS endpoint | Storage setup (if RustFS) |
+| `STORAGE_RustFS_ACCESS_KEY` | `RustFSadmin` | RustFS access key | Storage setup (if RustFS) |
+| `STORAGE_RustFS_SECRET_KEY` | `RustFSadmin` | RustFS secret key | Storage setup (if RustFS) |
+| `STORAGE_RustFS_BUCKET` | `serenibase` | RustFS bucket name | Storage setup (if RustFS) |
+| `STORAGE_RustFS_USE_SSL` | `false` | Use SSL for RustFS | Storage setup (if RustFS) |
 | `STORAGE_AWS_REGION` | `us-east-1` | AWS region | Storage setup (if S3) |
 | `STORAGE_AWS_BUCKET` | (required) | S3 bucket name | Storage setup (if S3) |
 | `STORAGE_AWS_ACCESS_KEY` | (required) | AWS access key | Storage setup (if S3) |
@@ -244,8 +244,8 @@ From Email [your_email@gmail.com]:
 ```
 Choose storage driver:
   1. Local filesystem (for development only)
-  2. MinIO (Docker container - recommended)
-  3. MinIO Custom (external MinIO server)
+  2. RustFS (Docker container - recommended)
+  3. RustFS Custom (external RustFS server)
   4. AWS S3
 
 Enter choice [2]:
@@ -256,18 +256,18 @@ Enter choice [2]:
 Storage path [./uploads]:
 ```
 
-**Option 2: MinIO Docker** (recommended for local development)
+**Option 2: RustFS Docker** (recommended for local development)
 ```
-MinIO Access Key [minioadmin]:
-MinIO Secret Key [minioadmin]:
+RustFS Access Key [RustFSadmin]:
+RustFS Secret Key [RustFSadmin]:
 Bucket Name [serenibase]:
 ```
 
-**Option 3: MinIO Custom** (external MinIO server)
+**Option 3: RustFS Custom** (external RustFS server)
 ```
-MinIO Endpoint (host:port): minio.example.com:9000
-MinIO Access Key: your_access_key
-MinIO Secret Key: ••••••••••
+RustFS Endpoint (host:port): RustFS.example.com:9000
+RustFS Access Key: your_access_key
+RustFS Secret Key: ••••••••••
 Bucket Name [serenibase]:
 Use SSL (true/false) [false]:
 ```
@@ -297,7 +297,7 @@ Password [Admin@123]:
 ```
 Frontend:  http://localhost:5050
 Backend:   http://localhost:8080
-MinIO:     http://localhost:9001
+RustFS:     http://localhost:9001
 ```
 
 Default login credentials will be displayed at the end of setup.
@@ -343,7 +343,7 @@ Default login credentials will be displayed at the end of setup.
 | Frontend | `http://localhost:5050` | Web application UI |
 | Backend API | `http://localhost:8080` | REST API endpoint |
 | Health Check | `http://localhost:8080/api/v1/health` | API health status |
-| MinIO Console | `http://localhost:9001` | Object storage admin |
+| RustFS Console | `http://localhost:9001` | Object storage admin |
 | Auth Service | `http://localhost:8081` | JWT authentication |
 | Email Service | `http://localhost:8082` | Email notifications |
 | Storage Service | `http://localhost:8083` | File storage API |
@@ -435,3 +435,4 @@ sereni-base/
 - [Environment Setup Guide](../docs/ENVIRONMENT_SETUP_GUIDE.md)
 - [API Response Codes](../docs/API_RESPONSE_CODES.md)
 - [Interactive Setup Guide](../INTERACTIVE_SETUP_README.md)
+

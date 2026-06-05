@@ -1,11 +1,11 @@
-﻿# SereniBase
+# SereniBase
 
 
-### Open-Source Self-Hosted Backend Platform — PostgreSQL + Auto REST APIs + JWT + Storage + ClamAV
+### Open-Source Self-Hosted Backend Platform � PostgreSQL + Auto REST APIs + JWT + Storage + ClamAV
 
 A production-ready, self-hosted backend platform built on PostgreSQL. Every table you create automatically
-generates a documented REST API. JWT authentication, S3/MinIO file storage with ClamAV malware scanning, and
-SMTP email delivery run as independent microservices — deploy together with a single `docker-compose up`, or
+generates a documented REST API. JWT authentication, S3/RustFS file storage with ClamAV malware scanning, and
+SMTP email delivery run as independent microservices � deploy together with a single `docker-compose up`, or
 standalone as needed. Licensed under the Apache License 2.0. Full data sovereignty.
 
 
@@ -18,7 +18,7 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
   <img src="https://img.shields.io/badge/PostgreSQL-15+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <a href="https://gin-gonic.com/"><img src="https://img.shields.io/badge/Gin-Framework-008ECF?style=for-the-badge&logo=gin&logoColor=white" alt="Gin"></a>
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/MinIO-Storage-EF2D5E?style=for-the-badge&logo=minio&logoColor=white" alt="MinIO">
+  <img src="https://img.shields.io/badge/RustFS-Storage-EF2D5E?style=for-the-badge&logo=RustFS&logoColor=white" alt="RustFS">
   <img src="https://img.shields.io/badge/ClamAV-Antivirus-3776AB?style=for-the-badge&logo=clamav&logoColor=white" alt="ClamAV">
   <a href="https://swagger.io/"><img src="https://img.shields.io/badge/Swagger-Documented-85EA2D?style=for-the-badge&logo=swagger&logoColor=black" alt="Swagger"></a>
   
@@ -47,7 +47,7 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 
 
 ---
-## 🚀 Live Demo
+## ?? Live Demo
 
 ![SereniBase Demo](https://assets.aptlogica.com/sereni-base-demo.gif)
 
@@ -64,19 +64,19 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 | Password | Admin@123 |
 | Live Demo (no install) | https://demo.serenibase.com |
 
-⭐ **If this project helps you, please consider giving it a star!**  
-👉 https://github.com/aptlogica/sereni-base
+? **If this project helps you, please consider giving it a star!**  
+?? https://github.com/aptlogica/sereni-base
 
 ---
 
-## 🚀 What is [SereniBase](https://www.aptlogica.com/sereni-base/)?
+## ?? What is [SereniBase](https://www.aptlogica.com/sereni-base/)?
 
 A backend operating system. Not another tool.
 
 Instead of stitching together separate services, developers get a unified backend where database, APIs, auth, storage, email, and security are already designed to work together.
 
-- Create a table → get a REST API. Instantly. No code.
-- JWT auth, S3 storage, SMTP email, ClamAV scanning — all running as microservices.
+- Create a table ? get a REST API. Instantly. No code.
+- JWT auth, S3 storage, SMTP email, ClamAV scanning � all running as microservices.
 - Integrate seamlessly with your existing systems via REST API or TypeScript SDK.
 - Visual UI for teams + TypeScript SDK for developers.
 - Self-hosted or cloud-ready. Full data sovereignty. Zero vendor lock-in.
@@ -86,31 +86,31 @@ Instead of stitching together separate services, developers get a unified backen
 
 ---
 
-## 🔥 Why SereniBase?
+## ?? Why SereniBase?
 
-Most no-code tools work… until they don’t.
+Most no-code tools work� until they don�t.
 
 | Problem | SereniBase Solution |
 |--------|-------------------|
-| Vendor lock-in | ✅ Self-hosted |
-| Limited extensibility | ✅ Open-source & modular |
-| Expensive scaling | ✅ Infrastructure-based cost |
-| Privacy concerns | ✅ Full data ownership |
-| No built-in file security | ✅ ClamAV antivirus scans every upload before storage |
-| Separate email service needed | ✅ SMTP microservice with Redis queue and retry — included |
-| Assembling disconnected tools | ✅ Database + API + Auth + Storage + Email + Security — one stack |
+| Vendor lock-in | ? Self-hosted |
+| Limited extensibility | ? Open-source & modular |
+| Expensive scaling | ? Infrastructure-based cost |
+| Privacy concerns | ? Full data ownership |
+| No built-in file security | ? ClamAV antivirus scans every upload before storage |
+| Separate email service needed | ? SMTP microservice with Redis queue and retry � included |
+| Assembling disconnected tools | ? Database + API + Auth + Storage + Email + Security � one stack |
 
 ---
 
 
-## ⚡ Key Features
+## ? Key Features
 
-- 🗄️ No-Code + Developer Friendly  
-- 🔌 REST API (OpenAPI/Swagger)  
-- 🧩 Microservices Architecture  
-- 🏢 Multi-Tenant Workspaces  
-- ⚡ Dynamic Schema (no migrations)  
-- 🔐 Enterprise Security (RBAC, audit logs)  
+- ??? No-Code + Developer Friendly  
+- ?? REST API (OpenAPI/Swagger)  
+- ?? Microservices Architecture  
+- ?? Multi-Tenant Workspaces  
+- ? Dynamic Schema (no migrations)  
+- ?? Enterprise Security (RBAC, audit logs)  
 
 ---
 ## Services Architecture
@@ -121,9 +121,9 @@ Most no-code tools work… until they don’t.
 | **PostgreSQL** | Primary database | 5432 |
 | **JWT Provider** | Authentication service | 8081 |
 | **Email Service** | SMTP email notifications | 8082 |
-| **Storage Provider** | File storage (MinIO/S3) | 8083 |
+| **Storage Provider** | File storage (RustFS/S3) | 8083 |
 | **Antivirus Service** | ClamAV malware scanning | 8084 |
-| **MinIO** | Object storage | 9000/9001 |
+| **RustFS** | Object storage | 9000/9001 |
 | **Base UI** | Frontend application | 5050 |
 
 ## Quick Start
@@ -165,13 +165,13 @@ The setup wizard will:
 | Frontend | `http://localhost:5050` |
 | Backend API | `http://localhost:8080` |
 | API Documentation | `http://localhost:8080/swagger/index.html` |
-| MinIO Console | `http://localhost:9001` |
+| RustFS Console | `http://localhost:9001` |
 
 ### Default Login
 
 Default credentials are configured via environment variables. See `.env.example` for setup.
 
-> **⚠️ Security:** Never use default credentials in production. Always configure secure values via environment variables.
+> **?? Security:** Never use default credentials in production. Always configure secure values via environment variables.
 
 ## Commands Reference
 
@@ -213,7 +213,7 @@ SereniBase is the core of a full backend platform. All modules are open-source a
 | Module | Purpose | License |
 |--------|---------|---------|
 | [sereni-jwt-provider](https://github.com/aptlogica/sereni-jwt-provider) | JWT auth microservice | Apache 2.0 |
-| [sereni-storage-provider](https://github.com/aptlogica/sereni-storage-provider) | S3/MinIO/local storage | Apache 2.0 |
+| [sereni-storage-provider](https://github.com/aptlogica/sereni-storage-provider) | S3/RustFS/local storage | Apache 2.0 |
 | [sereni-email-smtp](https://github.com/aptlogica/sereni-email-smtp) | SMTP email + Redis queue | Apache 2.0 |
 | [sereni-antivirus-clamav](https://github.com/aptlogica/sereni-antivirus-clamav) | ClamAV file scanning | Apache 2.0 |
 | [go-postgres-rest](https://github.com/aptlogica/go-postgres-rest) | PostgreSQL REST API lib | Apache 2.0 |
@@ -223,3 +223,4 @@ SereniBase is the core of a full backend platform. All modules are open-source a
 ## License
 
 Licensed under the Apache License, Version 2.0. Copyright 2026-2030 Aptlogica Technologies Pvt Ltd.
+
