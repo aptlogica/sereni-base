@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"mime/multipart"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1449,7 +1449,6 @@ func (h *TableHandler) ResetColumnValues(c *gin.Context) {
 	})
 }
 
-
 func (h *TableHandler) PreviewAiTable(c *gin.Context) {
 	var body struct {
 		Prompt string `json:"prompt" binding:"required"`
@@ -1527,7 +1526,7 @@ func (h *TableHandler) ApplyAiTable(c *gin.Context) {
 	}
 
 	aiResp := dto.AiTableResponse{Tables: body.Tables}
-	
+
 	created := make([]dto.ImportTableResponse, 0, len(aiResp.Tables))
 	for _, t := range aiResp.Tables {
 		one := dto.AiTableResponse{Tables: []dto.AiTable{t}}

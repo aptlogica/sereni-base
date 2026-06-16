@@ -7,3 +7,4 @@ response_csv
 response_json
 base_level_tables
 *.log
+.gocache

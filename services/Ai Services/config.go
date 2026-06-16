@@ -10,16 +10,16 @@ import (
 )
 
 // initConfig sets up Viper to read configuration from a .env file and
-// from the real environment. Real environment variables override .env.
+// from the real environment. The .env file is loaded first so local
+// development uses the checked-in configuration by default.
 func initConfig() error {
 	viper.SetConfigFile(".env") // .env file in the project root
 	viper.SetConfigType("env")
 	viper.AddConfigPath(".")
-	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		// If the file doesn't exist, we still allow using system env vars
-		if !os.IsNotExist(err) {
+		// If the file doesn't exist, we still allow using system env vars.
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return fmt.Errorf("error reading .env file: %w", err)
 		}
 	}
@@ -37,9 +37,12 @@ func loadSystemPrompt(path string) (string, error) {
 }
 
 // newOpenAIClientFromEnv creates an OpenAI client using the OPENAI_API_KEY
-// read via Viper from environment or .env file.
+// read from .env first, then from the process environment as a fallback.
 func newOpenAIClientFromEnv() (*openai.Client, error) {
 	apiKey := viper.GetString("OPENAI_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
 	if apiKey == "" {
 		return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
 	}

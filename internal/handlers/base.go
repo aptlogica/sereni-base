@@ -28,10 +28,17 @@ type BaseHandler struct {
 	importService         interfaces.ImportService
 }
 
-func NewBaseHandler(
-	baseManagementService interfaces.BaseManagementService,
-	importService interfaces.ImportService,
-) *BaseHandler {
+func NewBaseHandler(args ...interface{}) *BaseHandler {
+	var baseManagementService interfaces.BaseManagementService
+	var importService interfaces.ImportService
+
+	if len(args) > 0 && args[0] != nil {
+		baseManagementService, _ = args[0].(interfaces.BaseManagementService)
+	}
+	if len(args) > 1 && args[1] != nil {
+		importService, _ = args[1].(interfaces.ImportService)
+	}
+
 	return &BaseHandler{
 		baseManagementService: baseManagementService,
 		importService:         importService,
@@ -424,7 +431,6 @@ func (h *BaseHandler) RemoveBaseImage(c *gin.Context) {
 	response.SendSuccess(c, "base image removed successfully", updatedBase)
 }
 
-
 func (h *BaseHandler) PreviewAiBase(c *gin.Context) {
 	var body struct {
 		Prompt string `json:"prompt" binding:"required"`
@@ -519,9 +525,12 @@ func (h *BaseHandler) ApplyAiBase(c *gin.Context) {
 	}
 
 	if _, err := h.importService.ApplyAiBaseSchema(c, schemaName, applyReq, aiBaseResp, body.SampleData, body.Row); err != nil {
+		if delErr := h.baseManagementService.DeleteBase(c.Request.Context(), schemaName, base.ID.String()); delErr != nil {
+			fmt.Println("failed to cleanup AI base after apply error:", delErr)
+		}
 		response.CheckAndSendError(c, err)
 		return
 	}
 
-	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, "okay")
+	response.SendSuccess(c, responseConst.BaseSuccess.BaseCreated, "okay")
 }

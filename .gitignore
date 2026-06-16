@@ -23,3 +23,7 @@ out/
 node_modules/
 # Go
 vendor/
+.gocache
+response_csv
+response_json
+base_level_tables
