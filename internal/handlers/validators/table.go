@@ -601,3 +601,348 @@ func ResetColumnValuesRequestValidationError(e validator.FieldError) responseCon
 		return responseConst.Error.ValidationFailed
 	}
 }
+
+
+func TrimWhitespaceRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "TrimMode":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func CaseNormalizationRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "CaseFormat":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func FindReplaceRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "FindValue":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	case "MatchType":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func RemoveSpecialCharactersRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "SpecialCharactersType":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	case "CustomCharacter":
+		switch tag {
+		case "required", "required_if":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func RemoveDuplicatesRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "Duplicate", "KeepRule":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func RemoveFormattingRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "Formatting":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	case "CustomPattern":
+		switch tag {
+		case "required", "required_if":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func MergeColumnsRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		switch tag {
+		case "required", "min":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	}
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "MergeFormat":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	case "CustomSeparator":
+		switch tag {
+		case "required", "required_if":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func ExtractSubstringRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnId":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnNameRequired
+		default:
+			return responseConst.TableError.ColumnNameInvalid
+		}
+	case "ExtractionType":
+		switch tag {
+		case "required", "required_if":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	case "ExtractionMethod":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	case "StartAfter", "EndBefore":
+		switch tag {
+		case "required", "required_if":
+			return responseConst.TableError.ValueRequired
+		default:
+			return responseConst.TableError.ValueInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}
+
+func ColumnSplitRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	switch field {
+	case "ModelID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ModelIDRequired
+		default:
+			return responseConst.TableError.ModelIDInvalid
+		}
+	case "ColumnID":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ColumnIdRequired
+		default:
+			return responseConst.TableError.ColumnIdInvalid
+		}
+	case "SplitBy":
+		switch tag {
+		case "required":
+			return responseConst.TableError.MetaRequired
+		default:
+			return responseConst.TableError.MetaInvalid
+		}
+	case "Where":
+		switch tag {
+		case "required":
+			return responseConst.TableError.ActionRequired
+		default:
+			return responseConst.TableError.ActionInvalid
+		}
+	case "Limit":
+		return responseConst.TableError.MetaInvalid
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}

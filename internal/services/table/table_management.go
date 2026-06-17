@@ -7,12 +7,16 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"mime/multipart"
+	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
@@ -38,10 +42,63 @@ type tableManagementService struct {
 }
 
 const (
-	SchemaTableFormat    = "\"%s\".\"%s\""
-	QuotedColumnFormat   = "\"%s\""
-	ErrConvertViewStruct = "Failed to convert view struct"
+	SchemaTableFormat     = "\"%s\".\"%s\""
+	QuotedColumnFormat    = "\"%s\""
+	ErrConvertViewStruct  = "Failed to convert view struct"
+	columnActionBatchSize = 1000
+	dateOutputLayout      = "2006-01-02"
 )
+
+var (
+	symbolCharSet = map[rune]struct{}{
+		'@': {}, '#': {}, '$': {}, '%': {}, '^': {}, '&': {}, '*': {},
+		'!': {}, '~': {}, '`': {}, '|': {}, '\\': {},
+	}
+	currencyCharSet = map[rune]struct{}{
+		'₹': {}, '$': {}, '€': {}, '£': {}, '¥': {},
+	}
+	bracketCharSet = map[rune]struct{}{
+		'(': {}, ')': {}, '[': {}, ']': {}, '{': {}, '}': {}, '<': {}, '>': {},
+	}
+	punctuationCharSet = map[rune]struct{}{
+		'.': {}, ',': {}, ';': {}, ':': {}, '!': {}, '?': {}, '\'': {}, '"': {}, '-': {},
+	}
+	// Collapse only runs of whitespace that occur between two non-space characters
+	multiSpaceBetweenWordsRegex = regexp.MustCompile(`(\S)\s{2,}(\S)`)
+	currencySymbolRegex         = regexp.MustCompile(`[₹$€£¥]`)
+	numericSeparatorRegex       = regexp.MustCompile(`,`)
+	flexibleDateLayouts         = []string{
+		time.RFC3339Nano, time.RFC3339,
+		"2006-01-02 15:04:05", "2006-01-02 15:04:05.999999", "2006-01-02 15:04",
+		"2006-01-02", "20060102", "02-01-2006", "02/01/2006", "02.01.2006",
+		"02 01 2006",
+		"01-02-2006", "01/02/2006", "01.02.2006",
+		"2006/01/02", "2006.01.02",
+		"02 Jan 2006", "02 January 2006", "Jan 02 2006", "January 02 2006",
+	}
+	regexEmail    = regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)
+	regexURL      = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>()]+`)
+	regexHashtag  = regexp.MustCompile(`(?:^|\s)(#[A-Za-z0-9_]+)`)
+	regexMention  = regexp.MustCompile(`(?:^|\s)(@[A-Za-z0-9_.-]+)`)
+	regexKeywords = regexp.MustCompile(`[\p{L}\p{N}]+`)
+	regexEmoji    = regexp.MustCompile(`(?:[\x{1F1E6}-\x{1F1FF}]{2}|[#*0-9]\x{FE0F}?\x{20E3}|[\x{00A9}\x{00AE}\x{203C}\x{2049}\x{2122}\x{2139}\x{2194}-\x{21AA}\x{231A}-\x{231B}\x{2328}\x{23CF}\x{23E9}-\x{23F3}\x{23F8}-\x{23FA}\x{24C2}\x{25AA}-\x{25AB}\x{25B6}\x{25C0}\x{25FB}-\x{25FE}\x{2600}-\x{27BF}\x{2934}-\x{2935}\x{2B05}-\x{2B07}\x{2B1B}-\x{2B1C}\x{2B50}\x{2B55}\x{3030}\x{303D}\x{3297}\x{3299}\x{1F000}-\x{1FAFF}](?:\x{FE0F}|\x{FE0E})?(?:\x{200D}[\x{00A9}\x{00AE}\x{203C}\x{2049}\x{2122}\x{2139}\x{2194}-\x{21AA}\x{231A}-\x{231B}\x{2328}\x{23CF}\x{23E9}-\x{23F3}\x{23F8}-\x{23FA}\x{24C2}\x{25AA}-\x{25AB}\x{25B6}\x{25C0}\x{25FB}-\x{25FE}\x{2600}-\x{27BF}\x{2934}-\x{2935}\x{2B05}-\x{2B07}\x{2B1B}-\x{2B1C}\x{2B50}\x{2B55}\x{3030}\x{303D}\x{3297}\x{3299}\x{1F000}-\x{1FAFF}](?:\x{FE0F}|\x{FE0E})?)*)`)
+	regexPhone    = regexp.MustCompile(`(?:^|[^\d])(\+?\d[\d\s().-]{7,}\d)(?:$|[^\d])`)
+)
+
+type columnSplitStrategy struct {
+	kind      string
+	separator string
+	action    string
+	value     int
+	pattern   string
+	regex     *regexp.Regexp
+}
+
+type splitColumnRow struct {
+	id    interface{}
+	value string
+	parts []string
+}
 
 // targetColumnParams holds parameters for creating target column in relation
 type targetColumnParams struct {
@@ -51,6 +108,219 @@ type targetColumnParams struct {
 	RelationID      uuid.UUID
 	RelationType    string
 	Now             time.Time
+}
+
+// --- extraction helper functions ---
+
+func cleanExtractionMatch(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), ".,;:!?)")
+}
+
+func extractFirstEmail(s string) (string, bool) {
+	m := cleanExtractionMatch(regexEmail.FindString(s))
+	if m != "" {
+		return m, true
+	}
+	return "", false
+}
+
+func extractFirstURL(s string) (string, bool) {
+	m := cleanExtractionMatch(regexURL.FindString(s))
+	if m != "" {
+		return m, true
+	}
+	return "", false
+}
+
+func extractURLsFromText(s string) (string, bool) {
+	matches := regexURL.FindAllString(s, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		cleaned := cleanExtractionMatch(m)
+		if cleaned == "" {
+			continue
+		}
+		out = append(out, cleaned)
+	}
+	if len(out) == 0 {
+		return "", false
+	}
+	return strings.Join(out, ", "), true
+}
+
+func extractDomainFromText(s string) (string, bool) {
+	if email, ok := extractFirstEmail(s); ok {
+		parts := strings.SplitN(email, "@", 2)
+		if len(parts) == 2 {
+			domain := strings.TrimSpace(parts[1])
+			domain = strings.Trim(domain, ",;:)}]")
+			domain = strings.TrimPrefix(domain, "www.")
+			return domain, true
+		}
+	}
+	if uStr, ok := extractFirstURL(s); ok {
+		if u, err := url.Parse(uStr); err == nil {
+			host := u.Hostname()
+			host = strings.TrimPrefix(host, "www.")
+			return host, true
+		}
+	}
+	return "", false
+}
+
+func extractHashtagsFromText(s string) (string, bool) {
+	matches := regexHashtag.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		raw := strings.TrimSpace(m[1])
+		if raw == "" {
+			continue
+		}
+		out = append(out, raw)
+	}
+	if len(out) == 0 {
+		return "", false
+	}
+	return strings.Join(out, ", "), true
+}
+
+func extractMentionsFromText(s string) (string, bool) {
+	matches := regexMention.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		raw := strings.TrimSpace(m[1])
+		if raw == "" {
+			continue
+		}
+		out = append(out, raw)
+	}
+	if len(out) == 0 {
+		return "", false
+	}
+	return strings.Join(out, ", "), true
+}
+
+func extractKeywordsFromText(s string) (string, bool) {
+	matches := regexKeywords.FindAllString(s, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	stopWords := map[string]struct{}{
+		"a": {}, "an": {}, "and": {}, "the": {}, "or": {}, "but": {}, "to": {}, "of": {}, "in": {}, "on": {}, "at": {}, "for": {}, "with": {}, "from": {}, "by": {},
+		"is": {}, "are": {}, "was": {}, "were": {}, "be": {}, "been": {}, "it": {}, "this": {}, "that": {}, "these": {}, "those": {}, "as": {}, "into": {},
+		"over": {}, "under": {}, "about": {}, "after": {}, "before": {}, "between": {}, "through": {}, "during": {}, "without": {}, "within": {},
+	}
+
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(matches))
+	for _, tok := range matches {
+		t := strings.TrimSpace(tok)
+		if t == "" {
+			continue
+		}
+		tl := strings.ToLower(t)
+		if _, ok := stopWords[tl]; ok {
+			continue
+		}
+		if len([]rune(t)) <= 2 {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	if len(out) == 0 {
+		return "", false
+	}
+	// limit to 20 as frontend
+	if len(out) > 20 {
+		out = out[:20]
+	}
+	return strings.Join(out, ", "), true
+}
+
+func extractEmojiFromText(s string) (string, bool) {
+	out := regexEmoji.FindAllString(s, -1)
+	if len(out) == 0 {
+		return "", false
+	}
+	return strings.Join(out, ", "), true
+}
+
+func extractPhoneNumberFromText(s string) (string, bool) {
+	m := regexPhone.FindStringSubmatch(s)
+	if len(m) < 2 {
+		return "", false
+	}
+	phone := strings.TrimSpace(m[1])
+	if phone == "" {
+		return "", false
+	}
+	return phone, true
+}
+
+func extractEmailPrefixFromText(s string) (string, bool) {
+	matches := regexEmail.FindAllString(s, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	prefixes := make([]string, 0, len(matches))
+	for _, email := range matches {
+		parts := strings.SplitN(strings.TrimSpace(email), "@", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		prefix := strings.TrimSpace(parts[0])
+		if prefix == "" {
+			continue
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	if len(prefixes) == 0 {
+		return "", false
+	}
+	return strings.Join(prefixes, ", "), true
+}
+
+func extractBetweenCharactersFromText(s, startAfter, endBefore string) (string, bool) {
+	if startAfter == "" || endBefore == "" {
+		return "", false
+	}
+	startIdx := strings.Index(s, startAfter)
+	if startIdx == -1 {
+		return "", false
+	}
+	startPos := startIdx + len(startAfter)
+	if startPos >= len(s) {
+		return "", false
+	}
+	rest := s[startPos:]
+	endIdx := strings.Index(rest, endBefore)
+	if endIdx == -1 {
+		return "", false
+	}
+	extracted := strings.TrimSpace(rest[:endIdx])
+	if extracted == "" {
+		return "", false
+	}
+	return extracted, true
 }
 
 // relationRecordParams holds parameters for creating relation record
@@ -3316,4 +3586,2764 @@ func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaNam
 	}
 
 	return s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName)
+}
+
+func (s tableManagementService) TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.TrimWhitespaceResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.TrimWhitespaceResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.TrimWhitespaceResponse{}, err
+	}
+
+	selectColumns := make([]string, 0, len(selectedColumns)+1)
+	selectColumns = append(selectColumns, "id")
+	selectColumns = append(selectColumns, selectedColumns...)
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+	rows, err := s.fetchTableRowsForTrim(ctx, tableName, selectColumns)
+	if err != nil {
+		return dto.TrimWhitespaceResponse{}, err
+	}
+
+	updates, result := s.buildTrimUpdates(rows, selectedColumns, req.TrimMode)
+
+	if len(updates) > 0 {
+		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
+			return dto.TrimWhitespaceResponse{}, err
+		}
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int("total_scanned", result.TotalScanned).
+		Int("total_updated", result.TotalUpdated).
+		Int("total_skipped", result.TotalSkipped).
+		Int("total_rows", result.TotalRows).
+		Int("total_rows_updated", result.TotalRowsUpdated).
+		Int("total_rows_skipped", result.TotalRowsSkipped).
+		Msg("Trim whitespace action completed")
+
+	return result, nil
+}
+
+func (s tableManagementService) getSelectedColumnsFromRequest(columnsData []dto.ColumnResponse, requested []string) ([]string, error) {
+	columnSet := make(map[string]string, len(columnsData))
+	for _, col := range columnsData {
+		columnSet[col.ID.String()] = col.ColumnName
+	}
+
+	selectedColumns := make([]string, 0, len(requested))
+	seen := make(map[string]struct{}, len(requested))
+	for _, colID := range requested {
+		columnID := strings.TrimSpace(colID)
+		if columnID == "" {
+			continue
+		}
+		if _, ok := seen[columnID]; ok {
+			continue
+		}
+		columnName, exists := columnSet[columnID]
+		if !exists {
+			return nil, app_errors.ColumnNotFound
+		}
+		seen[columnID] = struct{}{}
+		selectedColumns = append(selectedColumns, columnName)
+	}
+	if len(selectedColumns) == 0 {
+		return nil, app_errors.InvalidPayload
+	}
+	return selectedColumns, nil
+}
+
+func (s tableManagementService) fetchTableRowsForTrim(ctx context.Context, tableName string, selectColumns []string) ([]map[string]interface{}, error) {
+	rows, err := s.repo.TableService.GetTableData(tableName, dbModels.QueryParams{Select: selectColumns})
+	if err != nil {
+		return nil, app_errors.LogDatabaseError(err, "failed to fetch rows for trim whitespace")
+	}
+	return rows, nil
+}
+
+func (s tableManagementService) buildTrimUpdates(rows []map[string]interface{}, selectedColumns []string, trimMode string) ([]dto.UpdateColumnValueRequest, dto.TrimWhitespaceResponse) {
+	result := dto.TrimWhitespaceResponse{
+		TotalScanned: len(rows) * len(selectedColumns),
+		TotalRows:    len(rows),
+	}
+
+	if len(rows) == 0 {
+		return nil, result
+	}
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+
+	for _, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			result.TotalSkipped += len(selectedColumns)
+			result.TotalRowsSkipped++
+			continue
+		}
+		// process columns for this row in a helper to reduce cognitive complexity
+		rowUpdates, skipped, rowUpdated := s.buildTrimUpdatesForRow(rowID, row, selectedColumns, trimMode)
+
+		if skipped > 0 {
+			result.TotalSkipped += skipped
+		}
+		if len(rowUpdates) > 0 {
+			updates = append(updates, rowUpdates...)
+			result.TotalUpdated += len(rowUpdates)
+		}
+		if rowUpdated {
+			result.TotalRowsUpdated++
+		} else {
+			result.TotalRowsSkipped++
+		}
+	}
+
+	return updates, result
+}
+
+// buildTrimUpdatesForRow processes a single row and returns the required updates,
+// the number of skipped cells for that row, and whether any cell in the row was
+// updated. Keeping this as a helper reduces nesting and cognitive load in the
+// parent function without changing behavior.
+func (s tableManagementService) buildTrimUpdatesForRow(rowID interface{}, row map[string]interface{}, selectedColumns []string, trimMode string) ([]dto.UpdateColumnValueRequest, int, bool) {
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	skipped := 0
+	rowUpdated := false
+
+	for _, columnName := range selectedColumns {
+		value, exists := row[columnName]
+		if !exists || value == nil {
+			skipped++
+			continue
+		}
+
+		strValue, ok := value.(string)
+		if !ok {
+			skipped++
+			continue
+		}
+
+		cleaned := cleanWhitespaceValue(strValue, trimMode)
+		if cleaned == strValue {
+			skipped++
+			continue
+		}
+
+		updates = append(updates, dto.UpdateColumnValueRequest{
+			Id:     rowID,
+			Column: columnName,
+			Value:  cleaned,
+		})
+		rowUpdated = true
+	}
+
+	return updates, skipped, rowUpdated
+}
+
+func cleanWhitespaceValue(value, trimMode string) string {
+	cleaned := value
+	switch trimMode {
+	case "trim_both":
+		cleaned = strings.TrimSpace(cleaned)
+	case "trim_leading":
+		cleaned = strings.TrimLeftFunc(cleaned, unicode.IsSpace)
+	case "trim_trailing":
+		cleaned = strings.TrimRightFunc(cleaned, unicode.IsSpace)
+	case "collapse_spaces":
+		cleaned = collapseInternalSpaces(cleaned)
+	default:
+		cleaned = strings.TrimSpace(cleaned)
+	}
+
+	return cleaned
+}
+
+// collapseInternalSpaces collapses runs of 2+ whitespace that occur between
+// non-space characters into a single ASCII space, preserving leading/trailing whitespace.
+func collapseInternalSpaces(s string) string {
+	return multiSpaceBetweenWordsRegex.ReplaceAllString(s, "$1 $2")
+}
+
+func (s tableManagementService) CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.CaseNormalizationResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.CaseNormalizationResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.CaseNormalizationResponse{}, err
+	}
+
+	selectColumns := make([]string, 0, len(selectedColumns)+1)
+	selectColumns = append(selectColumns, "id")
+	selectColumns = append(selectColumns, selectedColumns...)
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+	rows, err := s.fetchTableRowsForTrim(ctx, tableName, selectColumns)
+	if err != nil {
+		return dto.CaseNormalizationResponse{}, err
+	}
+
+	updates, result := s.buildCaseNormalizationUpdates(rows, selectedColumns, req.CaseFormat)
+
+	if len(updates) > 0 {
+		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
+			return dto.CaseNormalizationResponse{}, err
+		}
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int("total_scanned", result.TotalScanned).
+		Int("total_updated", result.TotalUpdated).
+		Int("total_skipped", result.TotalSkipped).
+		Int("total_rows", result.TotalRows).
+		Int("total_rows_updated", result.TotalRowsUpdated).
+		Int("total_rows_skipped", result.TotalRowsSkipped).
+		Str("case_format", req.CaseFormat).
+		Msg("Case normalization action completed")
+
+	return result, nil
+}
+
+func (s tableManagementService) buildCaseNormalizationUpdates(rows []map[string]interface{}, selectedColumns []string, caseFormat string) ([]dto.UpdateColumnValueRequest, dto.CaseNormalizationResponse) {
+	result := dto.CaseNormalizationResponse{
+		TotalScanned: len(rows) * len(selectedColumns),
+		TotalRows:    len(rows),
+	}
+
+	if len(rows) == 0 {
+		return nil, result
+	}
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+
+	for _, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			result.TotalSkipped += len(selectedColumns)
+			result.TotalRowsSkipped++
+			continue
+		}
+		// Delegate per-row processing to helper to reduce nesting and complexity
+		rowUpdates, skipped, rowUpdated := s.buildCaseNormalizationUpdatesForRow(rowID, row, selectedColumns, caseFormat)
+
+		if skipped > 0 {
+			result.TotalSkipped += skipped
+		}
+		if len(rowUpdates) > 0 {
+			updates = append(updates, rowUpdates...)
+			result.TotalUpdated += len(rowUpdates)
+		}
+		if rowUpdated {
+			result.TotalRowsUpdated++
+		} else {
+			result.TotalRowsSkipped++
+		}
+	}
+
+	return updates, result
+}
+
+// buildCaseNormalizationUpdatesForRow processes a single row for case normalization
+// and returns the updates required for that row, the number of skipped cells,
+// and whether any cell in the row was updated. Behavior is identical to the
+// original inline logic but extracted to reduce cognitive complexity.
+func (s tableManagementService) buildCaseNormalizationUpdatesForRow(rowID interface{}, row map[string]interface{}, selectedColumns []string, caseFormat string) ([]dto.UpdateColumnValueRequest, int, bool) {
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	skipped := 0
+	rowUpdated := false
+
+	for _, columnName := range selectedColumns {
+		value, exists := row[columnName]
+		if !exists || value == nil {
+			skipped++
+			continue
+		}
+
+		strValue, ok := value.(string)
+		if !ok {
+			skipped++
+			continue
+		}
+
+		normalized := normalizeValue(strValue, caseFormat)
+		if normalized == strValue {
+			skipped++
+			continue
+		}
+
+		updates = append(updates, dto.UpdateColumnValueRequest{
+			Id:     rowID,
+			Column: columnName,
+			Value:  normalized,
+		})
+		rowUpdated = true
+	}
+
+	return updates, skipped, rowUpdated
+}
+
+func normalizeValue(value, caseFormat string) string {
+	switch caseFormat {
+	case "lowercase":
+		return strings.ToLower(value)
+	case "uppercase":
+		return strings.ToUpper(value)
+	case "title_case":
+		return toTitleCase(value)
+	case "sentence_case":
+		return toSentenceCase(value)
+	default:
+		return value
+	}
+}
+
+// toTitleCase capitalizes the first letter of each word and lowercases the rest.
+func toTitleCase(s string) string {
+	var b strings.Builder
+	prevIsLetter := false
+	for _, r := range s {
+		if !prevIsLetter && unicode.IsLetter(r) {
+			b.WriteRune(unicode.ToUpper(r))
+			prevIsLetter = true
+			continue
+		}
+		if unicode.IsLetter(r) {
+			b.WriteRune(unicode.ToLower(r))
+			prevIsLetter = true
+			continue
+		}
+		// non-letter resets word boundary but preserved as-is
+		b.WriteRune(r)
+		prevIsLetter = false
+	}
+	return b.String()
+}
+
+// toSentenceCase capitalizes the first letter of each sentence and lowercases the rest.
+func toSentenceCase(s string) string {
+	var b strings.Builder
+	startOfSentence := true
+	for _, r := range s {
+		if startOfSentence && unicode.IsLetter(r) {
+			b.WriteRune(unicode.ToUpper(r))
+			startOfSentence = false
+			continue
+		}
+		if unicode.IsLetter(r) {
+			b.WriteRune(unicode.ToLower(r))
+			continue
+		}
+		b.WriteRune(r)
+		// mark start of sentence when we hit terminal punctuation
+		if r == '.' || r == '!' || r == '?' {
+			startOfSentence = true
+		}
+	}
+	return b.String()
+}
+
+// FindReplace searches for `findValue` in selected columns and replaces with `replaceValue`.
+// It processes rows in batches to limit memory usage and uses the existing
+// BulkUpdateByColumns repository function to perform efficient column-level updates.
+func (s tableManagementService) FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.FindReplaceResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.FindReplaceResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.FindReplaceResponse{}, err
+	}
+
+	selectColumns := make([]string, 0, len(selectedColumns)+1)
+	selectColumns = append(selectColumns, "id")
+	selectColumns = append(selectColumns, selectedColumns...)
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+
+	batchSize := 1000
+	limit := batchSize
+	offset := 0
+
+	totalResult := dto.FindReplaceResponse{}
+
+	// Pre-compile regex for ignore_case for performance
+	var ignoreRe *regexp.Regexp
+	if req.MatchType == "ignore_case" {
+		ignoreRe = regexp.MustCompile("(?i)" + regexp.QuoteMeta(req.FindValue))
+	}
+
+	for {
+		params := dbModels.QueryParams{
+			Select: selectColumns,
+			Limit:  &limit,
+			Offset: &offset,
+		}
+		rows, err := s.repo.TableService.GetTableData(tableName, params)
+		if err != nil {
+			return dto.FindReplaceResponse{}, app_errors.LogDatabaseError(err, "failed to fetch rows for find and replace")
+		}
+
+		updates, result := s.buildFindReplaceUpdates(rows, selectedColumns, req.FindValue, req.ReplaceValue, req.MatchType, ignoreRe)
+
+		if len(updates) > 0 {
+			if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
+				return dto.FindReplaceResponse{}, err
+			}
+		}
+
+		totalResult.TotalScanned += result.TotalScanned
+		totalResult.TotalMatched += result.TotalMatched
+		totalResult.TotalUpdated += result.TotalUpdated
+		totalResult.TotalSkipped += result.TotalSkipped
+		totalResult.TotalRows += result.TotalRows
+		totalResult.TotalRowsUpdated += result.TotalRowsUpdated
+		totalResult.TotalRowsSkipped += result.TotalRowsSkipped
+
+		lg.Info().
+			Str("model_id", req.ModelID).
+			Int("batch_offset", offset).
+			Int("batch_rows", len(rows)).
+			Int("batch_updates", len(updates)).
+			Msg("FindReplace batch processed")
+
+		if len(rows) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int("total_scanned", totalResult.TotalScanned).
+		Int("total_matched", totalResult.TotalMatched).
+		Int("total_updated", totalResult.TotalUpdated).
+		Int("total_skipped", totalResult.TotalSkipped).
+		Int("total_rows", totalResult.TotalRows).
+		Int("total_rows_updated", totalResult.TotalRowsUpdated).
+		Int("total_rows_skipped", totalResult.TotalRowsSkipped).
+		Str("match_type", req.MatchType).
+		Str("find_value", req.FindValue).
+		Msg("Find & Replace action completed")
+
+	return totalResult, nil
+}
+
+func (s tableManagementService) buildFindReplaceUpdates(rows []map[string]interface{}, selectedColumns []string, findValue, replaceValue, matchType string, ignoreRe *regexp.Regexp) ([]dto.UpdateColumnValueRequest, dto.FindReplaceResponse) {
+	result := dto.FindReplaceResponse{
+		TotalScanned: len(rows) * len(selectedColumns),
+		TotalRows:    len(rows),
+	}
+
+	if len(rows) == 0 {
+		return nil, result
+	}
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+
+	for _, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			result.TotalSkipped += len(selectedColumns)
+			result.TotalRowsSkipped++
+			continue
+		}
+
+		rowUpdates, skipped, rowUpdated, matchedCount, updatedCount := s.buildFindReplaceUpdatesForRow(rowID, row, selectedColumns, findValue, replaceValue, matchType, ignoreRe)
+
+		if skipped > 0 {
+			result.TotalSkipped += skipped
+		}
+		if matchedCount > 0 {
+			result.TotalMatched += matchedCount
+		}
+		if len(rowUpdates) > 0 {
+			updates = append(updates, rowUpdates...)
+			result.TotalUpdated += updatedCount
+		}
+		if rowUpdated {
+			result.TotalRowsUpdated++
+		} else {
+			result.TotalRowsSkipped++
+		}
+	}
+
+	return updates, result
+}
+
+// computeFindReplace determines whether a string value matches the find criteria
+// according to matchType and returns whether it matched and the replacement
+// value (which may be equal to the original when no effective change occurs).
+func (s tableManagementService) computeFindReplace(strValue, findValue, replaceValue, matchType string, ignoreRe *regexp.Regexp) (bool, string) {
+	switch matchType {
+	case "match_case":
+		if strings.Contains(strValue, findValue) {
+			return true, strings.ReplaceAll(strValue, findValue, replaceValue)
+		}
+	case "ignore_case":
+		if ignoreRe != nil && ignoreRe.MatchString(strValue) {
+			return true, ignoreRe.ReplaceAllString(strValue, replaceValue)
+		}
+	case "match_entire_value":
+		if strValue == findValue {
+			return true, replaceValue
+		}
+	default:
+		if strings.Contains(strValue, findValue) {
+			return true, strings.ReplaceAll(strValue, findValue, replaceValue)
+		}
+	}
+	return false, ""
+}
+
+// buildFindReplaceUpdatesForRow processes a single row and returns the required updates,
+// the number of skipped cells for that row, whether any cell in the row was
+// updated, how many cells matched the find criteria, and how many were updated.
+func (s tableManagementService) buildFindReplaceUpdatesForRow(rowID interface{}, row map[string]interface{}, selectedColumns []string, findValue, replaceValue, matchType string, ignoreRe *regexp.Regexp) ([]dto.UpdateColumnValueRequest, int, bool, int, int) {
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	skipped := 0
+	rowUpdated := false
+	matched := 0
+	updated := 0
+
+	for _, columnName := range selectedColumns {
+		value, exists := row[columnName]
+		if !exists || value == nil {
+			skipped++
+			continue
+		}
+
+		strValue, ok := value.(string)
+		if !ok {
+			skipped++
+			continue
+		}
+
+		// Delegate match and replacement computation to helper to reduce
+		// cognitive complexity in this function.
+		isMatch, newVal := s.computeFindReplace(strValue, findValue, replaceValue, matchType, ignoreRe)
+
+		if !isMatch {
+			skipped++
+			continue
+		}
+
+		matched++
+
+		if newVal == strValue {
+			// matched but no effective change
+			continue
+		}
+
+		updates = append(updates, dto.UpdateColumnValueRequest{
+			Id:     rowID,
+			Column: columnName,
+			Value:  newVal,
+		})
+		updated++
+		rowUpdated = true
+	}
+
+	return updates, skipped, rowUpdated, matched, updated
+}
+
+func removeCharSetForType(removeType string) map[rune]struct{} {
+	switch removeType {
+	case "symbols":
+		return symbolCharSet
+	case "currency_symbols":
+		return currencyCharSet
+	case "brackets":
+		return bracketCharSet
+	case "punctuation":
+		return punctuationCharSet
+	default:
+		return nil
+	}
+}
+
+func computeRemoveSpecialCharacters(
+	strValue, removeType string,
+	customChars []string,
+) (bool, string) {
+
+	if removeType == "custom" {
+		newVal := strValue
+		matched := false
+
+		for _, ch := range customChars {
+			if strings.Contains(newVal, ch) {
+				matched = true
+				newVal = strings.ReplaceAll(newVal, ch, "")
+			}
+		}
+
+		if !matched {
+			return false, ""
+		}
+
+		return true, newVal
+	}
+
+	removeSet := removeCharSetForType(removeType)
+	if removeSet == nil {
+		return false, ""
+	}
+
+	var b strings.Builder
+	b.Grow(len(strValue))
+	matched := false
+
+	for _, r := range strValue {
+		if _, ok := removeSet[r]; ok {
+			matched = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	if !matched {
+		return false, ""
+	}
+
+	return true, b.String()
+}
+
+func stripFormattingByType(value string, formatting string, customPatterns []string) (bool, string, bool) {
+	switch formatting {
+	case "currency":
+		return removeCurrencyFormatting(value)
+	case "percentage":
+		return removePercentageFormatting(value)
+	case "separator":
+		return removeSeparatorFormatting(value)
+	case "phone":
+		return removePhoneFormatting(value)
+	case "date":
+		return normalizeDateFormatting(value)
+	case "custom":
+		return removeCustomFormatting(value, customPatterns)
+	default:
+		return false, "", false
+	}
+}
+
+func removeCurrencyFormatting(value string) (bool, string, bool) {
+	replaced := currencySymbolRegex.ReplaceAllString(value, "")
+	replaced = numericSeparatorRegex.ReplaceAllString(replaced, "")
+	return true, replaced, false
+}
+
+func removePercentageFormatting(value string) (bool, string, bool) {
+	replaced := strings.ReplaceAll(value, "%", "")
+	return replaced != value, replaced, false
+}
+
+func removeSeparatorFormatting(value string) (bool, string, bool) {
+	replaced := numericSeparatorRegex.ReplaceAllString(value, "")
+	return replaced != value, replaced, false
+}
+
+func removePhoneFormatting(value string) (bool, string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false, "", false
+	}
+
+	if _, ok := parseFlexibleDate(trimmed); ok {
+		return false, "", false
+	}
+
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	changed := false
+	plusAllowed := true
+
+	for _, r := range trimmed {
+		switch {
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			plusAllowed = false
+		case r == '+' && plusAllowed:
+			b.WriteRune(r)
+			plusAllowed = false
+		default:
+			changed = true
+		}
+	}
+
+	replaced := b.String()
+	if replaced == trimmed {
+		return false, "", false
+	}
+
+	return changed || replaced != value, replaced, false
+}
+
+func removeCustomFormatting(value string, customPatterns []string) (bool, string, bool) {
+	if len(customPatterns) == 0 {
+		return false, "", false
+	}
+
+	replaced := value
+	for _, p := range customPatterns {
+		if p == "" {
+			continue
+		}
+		replaced = strings.ReplaceAll(replaced, p, "")
+	}
+
+	return replaced != value, replaced, false
+}
+
+func normalizeDateFormatting(value string) (bool, string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false, "", false
+	}
+
+	if parsed, ok := parseFlexibleDate(trimmed); ok {
+		return true, parsed.Format(dateOutputLayout), false
+	}
+	return false, "", false
+}
+
+func parseFlexibleDate(value string) (time.Time, bool) {
+	for _, layout := range flexibleDateLayouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, true
+		}
+		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// processRemoveFormattingCell handles the logic for a single cell when
+// removing formatting. It returns a pointer to an UpdateColumnValueRequest
+// when an update should be applied, and a boolean indicating whether an
+// update was produced.
+func (s tableManagementService) processRemoveFormattingCell(
+	rowID interface{},
+	columnName string,
+	value interface{},
+	formatting string,
+	customPatterns []string,
+) (*dto.UpdateColumnValueRequest, bool) {
+	formatted := toStringValue(value)
+
+	changed, newValue, failed := stripFormattingByType(formatted, formatting, customPatterns)
+	if failed {
+		return nil, false
+	}
+	if !changed {
+		return nil, false
+	}
+
+	// Date formatting: parse and return YYYY-MM-DD string.
+	if strings.EqualFold(strings.TrimSpace(formatting), "date") {
+		if parsed, ok := parseFlexibleDate(formatted); ok {
+			return &dto.UpdateColumnValueRequest{
+				Id:     rowID,
+				Column: columnName,
+				Value:  parsed.Format(dateOutputLayout),
+			}, true
+		}
+		return nil, false
+	}
+
+	// Non-date formatting: infer type (int/float/bool/string)
+	updatedValue, ok := inferFormattedCellValue(newValue)
+	if !ok {
+		return nil, false
+	}
+
+	return &dto.UpdateColumnValueRequest{
+		Id:     rowID,
+		Column: columnName,
+		Value:  updatedValue,
+	}, true
+}
+
+func (s tableManagementService) RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.RemoveFormattingResponse{}, err
+	}
+
+	// Resolve selected columns from the request and only fetch those columns
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.RemoveFormattingResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.RemoveFormattingResponse{}, err
+	}
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+	limit := columnActionBatchSize
+	offset := 0
+	totalResult := dto.RemoveFormattingResponse{}
+
+	// Build select list (always include id)
+	selectColumns := make([]string, 0, len(selectedColumns)+1)
+	selectColumns = append(selectColumns, "id")
+	selectColumns = append(selectColumns, selectedColumns...)
+
+	for {
+		params := dbModels.QueryParams{
+			Select: selectColumns,
+			Limit:  &limit,
+			Offset: &offset,
+		}
+		rows, err := s.repo.TableService.GetTableData(tableName, params)
+		if err != nil {
+			return dto.RemoveFormattingResponse{}, app_errors.LogDatabaseError(err, "failed to fetch rows for remove formatting")
+		}
+
+		updates, result := s.buildRemoveFormattingUpdates(rows, req.Formatting, req.CustomPattern, selectedColumns)
+
+		if len(updates) > 0 {
+			if err := s.applyRemoveFormattingUpdates(ctx, fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias), updates); err != nil {
+				return dto.RemoveFormattingResponse{}, err
+			}
+		}
+
+		totalResult.ScannedRecords += result.ScannedRecords
+		totalResult.UpdatedRecords += result.UpdatedRecords
+		totalResult.SkippedRecords += result.SkippedRecords
+		totalResult.FailedRecords += result.FailedRecords
+
+		lg.Info().
+			Str("model_id", req.ModelID).
+			Int("batch_offset", offset).
+			Int("batch_rows", len(rows)).
+			Int("batch_updates", len(updates)).
+			Str("formatting", req.Formatting).
+			Msg("RemoveFormatting batch processed")
+
+		if len(rows) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", 0).
+		Int("scanned_records", totalResult.ScannedRecords).
+		Int("updated_records", totalResult.UpdatedRecords).
+		Int("skipped_records", totalResult.SkippedRecords).
+		Int("failed_records", totalResult.FailedRecords).
+		Str("formatting", req.Formatting).
+		Msg("Remove formatting action completed")
+
+	return totalResult, nil
+}
+
+func (s tableManagementService) buildRemoveFormattingUpdates(rows []map[string]interface{}, formatting string, customPatterns []string, selectedColumns []string) ([]dto.UpdateColumnValueRequest, dto.RemoveFormattingResponse) {
+	result := dto.RemoveFormattingResponse{ScannedRecords: len(rows) * len(selectedColumns)}
+	if len(rows) == 0 {
+		return nil, result
+	}
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	for _, row := range rows {
+		rowUpdates, rowStatus := s.buildRemoveFormattingUpdatesForRow(row, formatting, customPatterns, selectedColumns)
+		if len(rowUpdates) > 0 {
+			updates = append(updates, rowUpdates...)
+		}
+
+		switch {
+		case rowStatus == removeFormattingRowUpdated:
+			result.UpdatedRecords++
+		case rowStatus == removeFormattingRowSkipped:
+			result.SkippedRecords++
+		}
+	}
+
+	return updates, result
+}
+
+type removeFormattingRowStatus int
+
+const (
+	removeFormattingRowSkipped removeFormattingRowStatus = iota
+	removeFormattingRowUpdated
+)
+
+func (s tableManagementService) buildRemoveFormattingUpdatesForRow(
+	row map[string]interface{},
+	formatting string, customPatterns []string,
+	selectedColumns []string,
+) ([]dto.UpdateColumnValueRequest, removeFormattingRowStatus) {
+	rowID, hasRowID := row["id"]
+	if !hasRowID {
+		return nil, removeFormattingRowSkipped
+	}
+
+	logger.Get().
+		Info().
+		Interface("row_id", rowID).
+		Str("formatting", formatting).
+		Int("selected_columns", len(selectedColumns)).
+		Msg("Processing row for remove formatting")
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	rowUpdated := false
+
+	for _, columnName := range selectedColumns {
+		if strings.EqualFold(strings.TrimSpace(columnName), "id") {
+			continue
+		}
+		value, exists := lookupRowValue(row, columnName)
+		if !exists || value == nil {
+			continue
+		}
+
+		if upd, ok := s.processRemoveFormattingCell(rowID, columnName, value, formatting, customPatterns); ok {
+			updates = append(updates, *upd)
+			rowUpdated = true
+		}
+	}
+
+	if rowUpdated {
+		return updates, removeFormattingRowUpdated
+	}
+	return updates, removeFormattingRowSkipped
+}
+
+func toStringValue(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case time.Time:
+		return v.Format(time.RFC3339Nano)
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func inferFormattedCellValue(value string) (interface{}, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return value, true
+	}
+
+	if parsed, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+		return parsed, true
+	}
+
+	if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		return parsed, true
+	}
+
+	if parsed, err := strconv.ParseBool(trimmed); err == nil {
+		return parsed, true
+	}
+
+	return trimmed, true
+}
+
+func (s tableManagementService) applyRemoveFormattingUpdates(ctx context.Context, tableName string, updates []dto.UpdateColumnValueRequest) error {
+	for _, update := range updates {
+		rowID := update.Id
+		updateData := map[string]interface{}{
+			update.Column: update.Value,
+		}
+		logger.Get().
+			Info().
+			Interface("row_id", rowID).
+			Str("table", tableName).
+			Str("column", update.Column).
+			Interface("value", update.Value).
+			Msg("Applying remove formatting update")
+		if _, err := s.repo.TableService.UpdateRecord(tableName, rowID, updateData); err != nil {
+			logger.Get().
+				Error().
+				Interface("row_id", rowID).
+				Str("table", tableName).
+				Str("column", update.Column).
+				Interface("value", update.Value).
+				Err(err).
+				Msg("Remove formatting update failed")
+			return app_errors.LogDatabaseError(err, "failed to apply remove formatting updates")
+		}
+	}
+
+	return nil
+}
+
+func lookupRowValue(row map[string]interface{}, columnName string) (interface{}, bool) {
+	if value, exists := row[columnName]; exists {
+		return value, true
+	}
+
+	normalizedTarget := strings.ToLower(strings.TrimSpace(columnName))
+	for key, value := range row {
+		if strings.ToLower(strings.TrimSpace(key)) == normalizedTarget {
+			return value, true
+		}
+	}
+
+	return nil, false
+}
+
+// RemoveSpecialCharacters fetches target rows from the database, removes special
+// characters from selected columns, and persists only changed cell values via
+// bulk_update_by_columns. Rows are processed in batches to limit memory usage.
+func (s tableManagementService) RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.RemoveSpecialCharactersResponse{}, err
+	}
+	fmt.Println("model alias: ", model.Alias)
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.RemoveSpecialCharactersResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.RemoveSpecialCharactersResponse{}, err
+	}
+
+	selectColumns := make([]string, 0, len(selectedColumns)+1)
+	selectColumns = append(selectColumns, "id")
+	selectColumns = append(selectColumns, selectedColumns...)
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+
+	limit := columnActionBatchSize
+	offset := 0
+	totalResult := dto.RemoveSpecialCharactersResponse{}
+
+	for {
+		params := dbModels.QueryParams{
+			Select: selectColumns,
+			Limit:  &limit,
+			Offset: &offset,
+		}
+		rows, err := s.repo.TableService.GetTableData(tableName, params)
+		if err != nil {
+			return dto.RemoveSpecialCharactersResponse{}, app_errors.LogDatabaseError(err, "failed to fetch rows for remove special characters")
+		}
+
+		updates, result := s.buildRemoveSpecialCharactersUpdates(rows, selectedColumns, req.SpecialCharactersType, req.CustomCharacter)
+
+		if len(updates) > 0 {
+			if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
+				return dto.RemoveSpecialCharactersResponse{}, err
+			}
+		}
+
+		totalResult.TotalScanned += result.TotalScanned
+		totalResult.TotalMatched += result.TotalMatched
+		totalResult.TotalUpdated += result.TotalUpdated
+		totalResult.TotalSkipped += result.TotalSkipped
+		totalResult.TotalRows += result.TotalRows
+		totalResult.TotalRowsUpdated += result.TotalRowsUpdated
+		totalResult.TotalRowsSkipped += result.TotalRowsSkipped
+
+		lg.Info().
+			Str("model_id", req.ModelID).
+			Int("batch_offset", offset).
+			Int("batch_rows", len(rows)).
+			Int("batch_updates", len(updates)).
+			Msg("RemoveSpecialCharacters batch processed")
+
+		if len(rows) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int("total_scanned", totalResult.TotalScanned).
+		Int("total_matched", totalResult.TotalMatched).
+		Int("total_updated", totalResult.TotalUpdated).
+		Int("total_skipped", totalResult.TotalSkipped).
+		Int("total_rows", totalResult.TotalRows).
+		Int("total_rows_updated", totalResult.TotalRowsUpdated).
+		Int("total_rows_skipped", totalResult.TotalRowsSkipped).
+		Str("special_characters_type", req.SpecialCharactersType).
+		Msg("Remove special characters action completed")
+
+	return totalResult, nil
+}
+
+func (s tableManagementService) RemoveDuplicates(ctx context.Context, schemaName string, req dto.RemoveDuplicatesRequest) (dto.RemoveDuplicatesResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.RemoveDuplicatesResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.RemoveDuplicatesResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.RemoveDuplicatesResponse{}, err
+	}
+
+	if req.KeepRule == "keep_latest_updated" {
+		supported, err := s.hasUpdateTimestampColumn(ctx, schemaName, model.Alias)
+		if err != nil {
+			return dto.RemoveDuplicatesResponse{}, err
+		}
+		if !supported {
+			return dto.RemoveDuplicatesResponse{}, fmt.Errorf("%w: keep_latest_updated requires last_modified_time column on table %s", app_errors.InvalidPayload, model.Alias)
+		}
+	}
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+	affectedRows, totalDuplicateRows, err := s.executeRemoveDuplicates(ctx, tableName, req.Duplicate, req.KeepRule, selectedColumns)
+	if err != nil {
+		return dto.RemoveDuplicatesResponse{}, err
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int64("total_rows_affected", affectedRows).
+		Int64("total_duplicate_rows", totalDuplicateRows).
+		Str("duplicate", req.Duplicate).
+		Str("keep_rule", req.KeepRule).
+		Msg("Remove duplicates action completed")
+
+	return dto.RemoveDuplicatesResponse{
+		TotalRowsAffected:  affectedRows,
+		TotalDuplicateRows: totalDuplicateRows,
+	}, nil
+}
+
+func (s tableManagementService) ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID.String())
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID.String())
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	selectedColumn, selectedIndex, err := s.getColumnByIDFromList(columnsData, req.ColumnID.String())
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	selectedOrder := 0.0
+	if selectedColumn.OrderIndex != nil {
+		selectedOrder = *selectedColumn.OrderIndex
+	}
+
+	strategy, err := s.parseColumnSplitStrategy(req.SplitBy)
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	// Validate fixedLength bounds directly in database (ignoring NULL/empty strings)
+	if strategy.kind == "fixedLength" {
+		query := fmt.Sprintf(
+			`SELECT EXISTS (SELECT 1 FROM %s WHERE %s IS NOT NULL AND %s <> '' AND char_length(%s) < $1)`,
+			fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias),
+			fmt.Sprintf(QuotedColumnFormat, selectedColumn.ColumnName),
+			fmt.Sprintf(QuotedColumnFormat, selectedColumn.ColumnName),
+			fmt.Sprintf(QuotedColumnFormat, selectedColumn.ColumnName),
+		)
+		var exceeds bool
+		rows, queryErr := s.repo.DB.QueryContext(ctx, query, strategy.value)
+		if queryErr != nil {
+			return dto.ColumnSplitResponse{}, app_errors.LogDatabaseError(queryErr, "failed to validate fixed length bounds")
+		}
+		defer rows.Close()
+		if rows.Next() {
+			if scanErr := rows.Scan(&exceeds); scanErr != nil {
+				return dto.ColumnSplitResponse{}, app_errors.LogDatabaseError(scanErr, "failed to scan fixed length bounds")
+			}
+		}
+		if exceeds {
+			return dto.ColumnSplitResponse{}, fmt.Errorf("%w: fixedLength value cannot exceed string length", app_errors.InvalidPayload)
+		}
+	}
+
+	// Calculate maxParts using database-side array split
+	arrayExpr, params := s.getSplitSQLArrayExpr(selectedColumn.ColumnName, strategy)
+	maxPartsQuery := fmt.Sprintf(
+		`SELECT COALESCE(MAX(array_length(%s, 1)), 0) FROM %s`,
+		arrayExpr,
+		fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias),
+	)
+	var maxParts int
+	rows, queryErr := s.repo.DB.QueryContext(ctx, maxPartsQuery, params...)
+	if queryErr != nil {
+		return dto.ColumnSplitResponse{}, app_errors.LogDatabaseError(queryErr, "failed to calculate maximum split parts")
+	}
+	defer rows.Close()
+	if rows.Next() {
+		if scanErr := rows.Scan(&maxParts); scanErr != nil {
+			return dto.ColumnSplitResponse{}, app_errors.LogDatabaseError(scanErr, "failed to scan maximum split parts")
+		}
+	}
+
+	if maxParts <= 0 {
+		return dto.ColumnSplitResponse{}, fmt.Errorf("%w: no values available to split in column %s", app_errors.InvalidPayload, selectedColumn.ColumnName)
+	}
+
+	fmt.Println("maxParts: ", maxParts)
+
+	if err = ensureSplitIsPossible(maxParts, selectedColumn.ColumnName); err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	columnCount, err := resolveSplitColumnCount(maxParts, req.Limit)
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	orderIndexes, err := s.computeSplitOrderIndexes(columnsData, selectedIndex, req.Where, columnCount)
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	// Shift columns if inserting next to the selected column to avoid conflicts
+	if req.Where == "next" {
+		// collect affected columns and sort descending to avoid update collisions
+		affected := make([]dto.ColumnResponse, 0)
+		for _, col := range columnsData {
+			if col.OrderIndex != nil && *col.OrderIndex > selectedOrder {
+				affected = append(affected, col)
+			}
+		}
+		sort.SliceStable(affected, func(i, j int) bool {
+			return *affected[i].OrderIndex > *affected[j].OrderIndex
+		})
+
+		for _, col := range affected {
+			newOrderIndex := *col.OrderIndex + float64(columnCount)
+			orderIndexUpdate := dto.ColumnUpdate{
+				OrderIndex: &newOrderIndex,
+			}
+			_, err = s.UpdateColumn(ctx, schemaName, col.ID.String(), orderIndexUpdate)
+			if err != nil {
+				return dto.ColumnSplitResponse{}, err
+			}
+		}
+	}
+
+	newColumnNames := make([]string, 0, columnCount)
+	createdColumns := make([]tenant.Column, 0, columnCount)
+
+	// Generate deterministic physical column names based on selected column name
+	generatedNames, err := s.buildSplitColumnNames(columnsData, selectedColumn.ColumnName, columnCount)
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	now := time.Now().UTC()
+
+	for idx, orderIndex := range orderIndexes {
+		title := s.buildSplitColumnTitle(selectedColumn.Title, selectedColumn.ColumnName, idx+1)
+
+		// Create column metadata with explicit column_name to ensure deterministic naming
+		colInsert := dto.ColumnInsertion{
+			ID:          uuid.New(),
+			ModelID:     model.ID,
+			BaseID:      model.BaseID,
+			Title:       title,
+			ColumnName:  generatedNames[idx],
+			Description: &selectedColumn.Description,
+			Meta:        map[string]interface{}{},
+			UIDT:        "longText",
+			DT:          helpers.StringPtr("TEXT"),
+			Virtual:     false,
+			System:      false,
+			Deleted:     false,
+			OrderIndex:  &orderIndex,
+			CreatedBy:   "",
+			UpdatedBy:   "",
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+
+		createdCol, createErr := s.columnsService.Create(ctx, colInsert, schemaName)
+		if createErr != nil {
+			// attempt cleanup of any previously created columns
+			for _, c := range createdColumns {
+				var dtoCol dto.ColumnResponse
+				_ = helpers.StructToStruct(c, &dtoCol)
+				_ = s.DeleteColumnAndCleanUp(ctx, schemaName, c.ID.String(), dtoCol)
+			}
+			return dto.ColumnSplitResponse{}, createErr
+		}
+
+		// add physical column in table
+		if addErr := s.addColumnInTableDb(schemaName, model.Alias, createdCol); addErr != nil {
+			// attempt cleanup of this and previous columns
+			var dtoCol dto.ColumnResponse
+			_ = helpers.StructToStruct(createdCol, &dtoCol)
+			_ = s.DeleteColumnAndCleanUp(ctx, schemaName, createdCol.ID.String(), dtoCol)
+			for _, c := range createdColumns {
+				var dc dto.ColumnResponse
+				_ = helpers.StructToStruct(c, &dc)
+				_ = s.DeleteColumnAndCleanUp(ctx, schemaName, c.ID.String(), dc)
+			}
+			return dto.ColumnSplitResponse{}, addErr
+		}
+
+		createdColumns = append(createdColumns, createdCol)
+		newColumnNames = append(newColumnNames, createdCol.ColumnName)
+	}
+
+	if err = s.performBulkSplitUpdate(ctx, schemaName, model.Alias, selectedColumn.ColumnName, newColumnNames, strategy, columnCount); err != nil {
+		// cleanup created columns on failure
+		for _, c := range createdColumns {
+			var dtoCol dto.ColumnResponse
+			_ = helpers.StructToStruct(c, &dtoCol)
+			_ = s.DeleteColumnAndCleanUp(ctx, schemaName, c.ID.String(), dtoCol)
+		}
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	if !req.KeepOriginal {
+		// Use a transaction only for dropping the column to avoid long-lived exclusive table locks during split updates
+		tx, startErr := s.repo.DB.Begin()
+		if startErr != nil {
+			return dto.ColumnSplitResponse{}, app_errors.LogDatabaseError(startErr, "failed to start transaction for column drop")
+		}
+		defer func() {
+			if err != nil {
+				_ = tx.Rollback()
+			}
+		}()
+
+		if err = s.deleteSplitOriginalColumn(tx, schemaName, model.Alias, selectedColumn); err != nil {
+			return dto.ColumnSplitResponse{}, err
+		}
+
+		if err = tx.Commit(); err != nil {
+			return dto.ColumnSplitResponse{}, app_errors.LogDatabaseError(err, "failed to commit column split transaction")
+		}
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID.String()).
+		Str("column_id", req.ColumnID.String()).
+		Str("column_name", selectedColumn.ColumnName).
+		Str("split_type", strategy.kind).
+		Int("created_columns", len(newColumnNames)).
+		Bool("keep_original", req.KeepOriginal).
+		Str("where", req.Where).
+		Msg("Column split completed")
+
+	return dto.ColumnSplitResponse{
+		Message:        "Column split completed successfully",
+		CreatedColumns: newColumnNames,
+	}, nil
+}
+
+func (s tableManagementService) executeRemoveDuplicates(
+	txCtx context.Context,
+	tableName string,
+	Duplicate string,
+	keepRule string,
+	selectedColumns []string,
+) (int64, int64, error) {
+	matchCase := s.determineMatchCase(Duplicate)
+
+	partitionBy, notAllSelectedColsEmpty := s.buildDuplicateKeyExpressions(selectedColumns, matchCase)
+	orderBy := s.buildDuplicateKeepOrderBy(keepRule)
+
+	totalDuplicateRows, err := s.countDuplicateRows(txCtx, tableName, partitionBy, notAllSelectedColsEmpty)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	switch Duplicate {
+	case "remove_row":
+		q := s.buildDeleteDuplicatesQuery(tableName, partitionBy, orderBy, notAllSelectedColsEmpty)
+		affected, err := s.execQueryAndRowsAffected(txCtx, q, "failed to remove duplicate rows")
+		if err != nil {
+			return 0, 0, err
+		}
+		return affected, totalDuplicateRows, nil
+
+	case "remove_duplicates", "remove_duplicates_matchCase":
+		setClauses := make([]string, 0, len(selectedColumns))
+		for _, columnName := range selectedColumns {
+			setClauses = append(setClauses, fmt.Sprintf("%s = NULL", fmt.Sprintf(QuotedColumnFormat, columnName)))
+		}
+
+		q := s.buildUpdateDuplicatesQuery(tableName, partitionBy, orderBy, notAllSelectedColsEmpty, strings.Join(setClauses, ", "))
+		affected, err := s.execQueryAndRowsAffected(txCtx, q, "failed to clear duplicate values")
+		if err != nil {
+			return 0, 0, err
+		}
+		return affected, totalDuplicateRows, nil
+
+	default:
+		return 0, 0, fmt.Errorf("%w: unsupported duplicate handling mode %s", app_errors.InvalidPayload, Duplicate)
+	}
+}
+
+// Helper to determine whether values should be matched case-sensitively
+func (s tableManagementService) determineMatchCase(mode string) bool {
+	switch mode {
+	case "remove_duplicates_matchCase":
+		return true
+	case "remove_row", "remove_duplicates":
+		return false
+	default:
+		return true
+	}
+}
+
+// Helper to count total rows that belong to duplicate groups
+func (s tableManagementService) countDuplicateRows(ctx context.Context, tableName, partitionBy, condition string) (int64, error) {
+	query := fmt.Sprintf(
+		`SELECT COALESCE(SUM(cnt), 0) FROM (SELECT COUNT(*) AS cnt FROM %s WHERE %s GROUP BY %s HAVING COUNT(*) > 1) t;`,
+		tableName,
+		condition,
+		partitionBy,
+	)
+
+	var total int64
+	rows, err := s.repo.DB.QueryContext(ctx, query)
+	if err != nil {
+		return 0, app_errors.LogDatabaseError(err, "failed to count duplicate rows")
+	}
+	defer rows.Close()
+	if rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, app_errors.LogDatabaseError(err, "failed to read duplicate rows count")
+		}
+	}
+	return total, nil
+}
+
+// Helper to execute a query and return rows affected with consistent error wrapping
+func (s tableManagementService) execQueryAndRowsAffected(ctx context.Context, query, errMsg string) (int64, error) {
+	result, err := s.repo.DB.ExecContext(ctx, query)
+	if err != nil {
+		return 0, app_errors.LogDatabaseError(err, errMsg)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, app_errors.LogDatabaseError(err, "failed to get rows affected")
+	}
+	return affected, nil
+}
+
+func (s tableManagementService) buildDeleteDuplicatesQuery(tableName, partitionBy, orderBy, condition string) string {
+	return fmt.Sprintf(
+		`WITH duplicates AS (
+			SELECT id,
+				   ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) AS row_number
+			FROM %s
+			WHERE %s
+		)
+		DELETE FROM %s
+		WHERE id IN (
+			SELECT id FROM duplicates WHERE row_number > 1
+		);`,
+		partitionBy,
+		orderBy,
+		tableName,
+		condition,
+		tableName,
+	)
+}
+
+func (s tableManagementService) buildUpdateDuplicatesQuery(tableName, partitionBy, orderBy, condition, setClause string) string {
+	return fmt.Sprintf(
+		`WITH duplicates AS (
+			SELECT id,
+				   ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) AS row_number
+			FROM %s
+			WHERE %s
+		)
+		UPDATE %s target
+		SET %s
+		FROM duplicates d
+		WHERE target.id = d.id
+		  AND d.row_number > 1;`,
+		partitionBy,
+		orderBy,
+		tableName,
+		condition,
+		tableName,
+		setClause,
+	)
+}
+
+func (s tableManagementService) buildDuplicateKeyExpressions(selectedColumns []string, matchCase bool) (string, string) {
+	expressions := make([]string, 0, len(selectedColumns))
+	nullChecks := make([]string, 0, len(selectedColumns))
+
+	for _, columnName := range selectedColumns {
+		baseExpr := fmt.Sprintf("NULLIF(TRIM(CAST(%s AS TEXT)), '')", fmt.Sprintf(QuotedColumnFormat, columnName))
+		expr := baseExpr
+		if !matchCase {
+			expr = fmt.Sprintf("LOWER(%s)", baseExpr)
+		}
+		expressions = append(expressions, expr)
+		nullChecks = append(nullChecks, fmt.Sprintf("%s IS NULL", expr))
+	}
+
+	return strings.Join(expressions, ", "), fmt.Sprintf("NOT (%s)", strings.Join(nullChecks, " AND "))
+}
+
+func (s tableManagementService) buildDuplicateKeepOrderBy(keepRule string) string {
+	switch keepRule {
+	case "keep_last":
+		return fmt.Sprintf("%s DESC", fmt.Sprintf(QuotedColumnFormat, "id"))
+	case "keep_latest_updated":
+		return fmt.Sprintf("%s DESC, %s DESC", fmt.Sprintf(QuotedColumnFormat, "last_modified_time"), fmt.Sprintf(QuotedColumnFormat, "id"))
+	default:
+		return fmt.Sprintf("%s ASC", fmt.Sprintf(QuotedColumnFormat, "id"))
+	}
+}
+
+func (s tableManagementService) hasUpdateTimestampColumn(ctx context.Context, schemaName, tableName string) (bool, error) {
+	filters := []dbModels.QueryFilter{
+		{Column: "table_schema", Operator: "=", Value: schemaName},
+		{Column: "table_name", Operator: "=", Value: tableName},
+	}
+	params := dbModels.QueryParams{Select: []string{"column_name"}, Filters: filters}
+
+	rows, err := s.repo.TableService.GetTableData("information_schema.columns", params)
+	if err != nil {
+		return false, app_errors.LogDatabaseError(err, "failed to inspect table columns")
+	}
+
+	for _, row := range rows {
+		if colName, ok := row["column_name"].(string); ok && colName == "last_modified_time" {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (s tableManagementService) buildRemoveSpecialCharactersUpdates(
+	rows []map[string]interface{},
+	selectedColumns []string,
+	removeType string, customChars []string,
+) ([]dto.UpdateColumnValueRequest, dto.RemoveSpecialCharactersResponse) {
+	result := dto.RemoveSpecialCharactersResponse{
+		TotalScanned: len(rows) * len(selectedColumns),
+		TotalRows:    len(rows),
+	}
+
+	if len(rows) == 0 {
+		return nil, result
+	}
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+
+	for _, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			result.TotalSkipped += len(selectedColumns)
+			result.TotalRowsSkipped++
+			continue
+		}
+
+		rowUpdates, skipped, rowUpdated, matchedCount, updatedCount := s.buildRemoveSpecialCharactersUpdatesForRow(
+			rowID, row, selectedColumns, removeType, customChars,
+		)
+
+		if skipped > 0 {
+			result.TotalSkipped += skipped
+		}
+		if matchedCount > 0 {
+			result.TotalMatched += matchedCount
+		}
+		if len(rowUpdates) > 0 {
+			updates = append(updates, rowUpdates...)
+			result.TotalUpdated += updatedCount
+		}
+		if rowUpdated {
+			result.TotalRowsUpdated++
+		} else {
+			result.TotalRowsSkipped++
+		}
+	}
+
+	return updates, result
+}
+
+func (s tableManagementService) buildRemoveSpecialCharactersUpdatesForRow(
+	rowID interface{},
+	row map[string]interface{},
+	selectedColumns []string,
+	removeType string, customChars []string,
+) ([]dto.UpdateColumnValueRequest, int, bool, int, int) {
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	skipped := 0
+	rowUpdated := false
+	matched := 0
+	updated := 0
+
+	for _, columnName := range selectedColumns {
+		value, exists := row[columnName]
+		if !exists || value == nil {
+			skipped++
+			continue
+		}
+
+		strValue, ok := value.(string)
+		if !ok {
+			skipped++
+			continue
+		}
+
+		isMatch, newVal := computeRemoveSpecialCharacters(strValue, removeType, customChars)
+		if !isMatch {
+			skipped++
+			continue
+		}
+
+		matched++
+
+		if newVal == strValue {
+			continue
+		}
+
+		updates = append(updates, dto.UpdateColumnValueRequest{
+			Id:     rowID,
+			Column: columnName,
+			Value:  newVal,
+		})
+		updated++
+		rowUpdated = true
+	}
+
+	return updates, skipped, rowUpdated, matched, updated
+}
+
+func (s tableManagementService) parseColumnSplitStrategy(splitBy dto.SplitByRequest) (columnSplitStrategy, error) {
+	kind := strings.TrimSpace(strings.ToLower(splitBy.Type))
+	switch kind {
+	case "separator":
+		separator, _ := splitBy.Config["separator"].(string)
+		if separator == "" {
+			return columnSplitStrategy{}, fmt.Errorf("%w: separator cannot be empty", app_errors.InvalidPayload)
+		}
+		return columnSplitStrategy{
+			kind:      kind,
+			separator: separator,
+		}, nil
+	case "fixedlength":
+		action, _ := splitBy.Config["action"].(string)
+		action = strings.TrimSpace(strings.ToLower(action))
+		if action != "after" && action != "before" {
+			return columnSplitStrategy{}, fmt.Errorf("%w: fixedLength action must be after or before", app_errors.InvalidPayload)
+		}
+
+		value, ok := splitBy.Config["value"]
+		if !ok {
+			return columnSplitStrategy{}, fmt.Errorf("%w: fixedLength value is required", app_errors.InvalidPayload)
+		}
+
+		valueInt, err := parsePositiveSplitInt(value)
+		if err != nil {
+			return columnSplitStrategy{}, err
+		}
+
+		return columnSplitStrategy{
+			kind:   "fixedLength",
+			action: action,
+			value:  valueInt,
+		}, nil
+	case "pattern":
+		pattern, _ := splitBy.Config["pattern"].(string)
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			return columnSplitStrategy{}, fmt.Errorf("%w: pattern cannot be empty", app_errors.InvalidPayload)
+		}
+
+		// Allowed pattern whitelist (aligns with spec supported patterns)
+		allowed := map[string]struct{}{
+			"\\d+":         {},
+			"[A-Z]+":       {},
+			"[a-z]+":       {},
+			"[A-Za-z]+":    {},
+			"\\s+":         {},
+			"[^a-zA-Z0-9]": {},
+			"@(.+)":        {},
+			"\\.":          {},
+		}
+		if _, ok := allowed[pattern]; !ok {
+			return columnSplitStrategy{}, fmt.Errorf("%w: unsupported regex pattern", app_errors.InvalidPayload)
+		}
+
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return columnSplitStrategy{}, fmt.Errorf("%w: invalid regex pattern: %v", app_errors.InvalidPayload, err)
+		}
+		return columnSplitStrategy{
+			kind:    kind,
+			pattern: pattern,
+			regex:   re,
+		}, nil
+	default:
+		return columnSplitStrategy{}, fmt.Errorf("%w: unsupported split type %s", app_errors.InvalidPayload, splitBy.Type)
+	}
+}
+
+func parsePositiveSplitInt(value interface{}) (int, error) {
+	switch v := value.(type) {
+	case int:
+		if v <= 0 {
+			return 0, fmt.Errorf("%w: fixedLength value must be greater than zero", app_errors.InvalidPayload)
+		}
+		return v, nil
+	case int32:
+		if v <= 0 {
+			return 0, fmt.Errorf("%w: fixedLength value must be greater than zero", app_errors.InvalidPayload)
+		}
+		return int(v), nil
+	case int64:
+		if v <= 0 {
+			return 0, fmt.Errorf("%w: fixedLength value must be greater than zero", app_errors.InvalidPayload)
+		}
+		return int(v), nil
+	case float32:
+		if v <= 0 {
+			return 0, fmt.Errorf("%w: fixedLength value must be greater than zero", app_errors.InvalidPayload)
+		}
+		return int(v), nil
+	case float64:
+		if v <= 0 {
+			return 0, fmt.Errorf("%w: fixedLength value must be greater than zero", app_errors.InvalidPayload)
+		}
+		return int(v), nil
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || parsed <= 0 {
+			return 0, fmt.Errorf("%w: fixedLength value must be greater than zero", app_errors.InvalidPayload)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("%w: fixedLength value is invalid", app_errors.InvalidPayload)
+	}
+}
+
+func (s tableManagementService) getColumnByIDFromList(columns []dto.ColumnResponse, id string) (dto.ColumnResponse, int, error) {
+	for idx, col := range columns {
+		if col.ID.String() == id {
+			return col, idx, nil
+		}
+	}
+	return dto.ColumnResponse{}, -1, app_errors.ColumnNotFound
+}
+
+func (s tableManagementService) buildSplitColumnNames(columns []dto.ColumnResponse, baseName string, count int) ([]string, error) {
+	if count <= 0 {
+		return nil, fmt.Errorf("%w: split count must be greater than zero", app_errors.InvalidPayload)
+	}
+
+	existing := make(map[string]struct{}, len(columns))
+	for _, col := range columns {
+		existing[col.ColumnName] = struct{}{}
+	}
+
+	names := make([]string, 0, count)
+	nextSuffix := 1
+	for len(names) < count {
+		name := fmt.Sprintf("%s_%d", baseName, nextSuffix)
+		for {
+			if _, ok := existing[name]; !ok {
+				break
+			}
+			nextSuffix++
+			name = fmt.Sprintf("%s_%d", baseName, nextSuffix)
+		}
+		existing[name] = struct{}{}
+		names = append(names, name)
+		nextSuffix++
+	}
+
+	return names, nil
+}
+
+func (s tableManagementService) buildSplitColumnTitle(baseTitle, baseName string, index int) string {
+	seed := strings.TrimSpace(baseTitle)
+	if seed == "" {
+		seed = baseName
+	}
+	return fmt.Sprintf("%s_%d", seed, index)
+}
+
+func (s tableManagementService) computeSplitOrderIndexes(
+	columns []dto.ColumnResponse,
+	selectedIndex int,
+	where string,
+	count int,
+) ([]float64, error) {
+
+	if count <= 0 {
+		return nil, fmt.Errorf("%w: split count must be greater than zero", app_errors.InvalidPayload)
+	}
+
+	selectedOrder := 0.0
+	if columns[selectedIndex].OrderIndex != nil {
+		selectedOrder = *columns[selectedIndex].OrderIndex
+	}
+
+	orderIndexes := make([]float64, 0, count)
+
+	switch where {
+	case "next":
+		start := selectedOrder + 1
+
+		for i := 0; i < count; i++ {
+			orderIndexes = append(orderIndexes, start+float64(i))
+		}
+
+	case "end":
+		maxOrder := selectedOrder
+
+		for _, col := range columns {
+			if col.OrderIndex != nil && *col.OrderIndex > maxOrder {
+				maxOrder = *col.OrderIndex
+			}
+		}
+
+		start := maxOrder + 1
+
+		for i := 0; i < count; i++ {
+			orderIndexes = append(orderIndexes, start+float64(i))
+		}
+
+	default:
+		return nil, fmt.Errorf(
+			"%w: unsupported column placement %s",
+			app_errors.InvalidPayload,
+			where,
+		)
+	}
+
+	return orderIndexes, nil
+}
+
+func ensureSplitIsPossible(maxParts int, columnName string) error {
+	if maxParts <= 1 {
+		return app_errors.SplitNotPossible
+	}
+	return nil
+}
+
+func resolveSplitColumnCount(maxParts int, limit *int) (int, error) {
+	columnCount := maxParts
+	if limit != nil {
+		if *limit < maxParts {
+			columnCount = *limit
+		}
+	}
+	if columnCount <= 1 {
+		return 0, app_errors.SplitNotPossible
+	}
+	return columnCount, nil
+}
+
+func splitJoinSeparator(strategy columnSplitStrategy) string {
+	if strategy.kind == "separator" {
+		return strategy.separator
+	}
+	return ""
+}
+
+func applySplitColumnLimit(parts []string, columnCount int, joinSeparator string) []string {
+	if columnCount <= 0 || len(parts) <= columnCount {
+		return parts
+	}
+
+	result := make([]string, 0, columnCount)
+	result = append(result, parts[:columnCount-1]...)
+	result = append(result, strings.Join(parts[columnCount-1:], joinSeparator))
+	return result
+}
+
+func (s tableManagementService) insertSplitColumnMetadata(
+	tx *sql.Tx,
+	schemaName string,
+	model tenant.Model,
+	selectedColumn dto.ColumnResponse,
+	columnName string,
+	title string,
+	orderIndex float64,
+	createdBy string,
+	now time.Time,
+) error {
+	query := fmt.Sprintf(
+		`INSERT INTO %s (id, model_id, base_id, column_name, title, uidt, dt, description, meta, virtual, system, deleted, order_index, created_by, last_modified_by, created_time, last_modified_time)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		fmt.Sprintf(`"%s".columns`, schemaName),
+	)
+
+	description := selectedColumn.Description
+	if strings.TrimSpace(description) == "" {
+		description = ""
+	}
+
+	_, err := tx.ExecContext(context.Background(), query,
+		uuid.New().String(),
+		model.ID.String(),
+		selectedColumn.BaseID.String(),
+		columnName,
+		title,
+		"longText",
+		"TEXT",
+		description,
+		helpers.InterfaceToJSONString(map[string]interface{}{}),
+		false,
+		false,
+		false,
+		orderIndex,
+		createdBy,
+		createdBy,
+		now,
+		now,
+	)
+	if err != nil {
+		return app_errors.LogDatabaseError(err, "failed to insert split column metadata")
+	}
+	return nil
+}
+
+func (s tableManagementService) addSplitPhysicalColumn(tx *sql.Tx, schemaName, tableName, columnName string) error {
+	query := fmt.Sprintf(
+		`ALTER TABLE %s ADD COLUMN %s TEXT`,
+		fmt.Sprintf(SchemaTableFormat, schemaName, tableName),
+		fmt.Sprintf(QuotedColumnFormat, columnName),
+	)
+	if _, err := tx.ExecContext(context.Background(), query); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to add split column to table")
+	}
+	return nil
+}
+
+func (s tableManagementService) deleteSplitOriginalColumn(tx *sql.Tx, schemaName, tableName string, column dto.ColumnResponse) error {
+	alterQuery := fmt.Sprintf(
+		`ALTER TABLE %s DROP COLUMN %s`,
+		fmt.Sprintf(SchemaTableFormat, schemaName, tableName),
+		fmt.Sprintf(QuotedColumnFormat, column.ColumnName),
+	)
+	if _, err := tx.ExecContext(context.Background(), alterQuery); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to drop original split column")
+	}
+
+	deleteQuery := fmt.Sprintf(
+		`DELETE FROM %s WHERE id = $1`,
+		fmt.Sprintf(`"%s".columns`, schemaName),
+	)
+	if _, err := tx.ExecContext(context.Background(), deleteQuery, column.ID.String()); err != nil {
+		return app_errors.LogDatabaseError(err, "failed to remove original split column metadata")
+	}
+
+	return nil
+}
+
+func (s tableManagementService) getSplitSQLArrayExpr(columnName string, strategy columnSplitStrategy) (string, []interface{}) {
+	quotedCol := fmt.Sprintf(QuotedColumnFormat, columnName)
+	switch strategy.kind {
+	case "separator":
+		pattern := fmt.Sprintf("(?:%s)+", regexp.QuoteMeta(strategy.separator))
+		return fmt.Sprintf("ARRAY(SELECT x FROM unnest(regexp_split_to_array(COALESCE(%s, ''), $1)) x WHERE TRIM(x) <> '')", quotedCol), []interface{}{pattern}
+	case "fixedLength":
+		var partsExpr string
+		if strategy.action == "after" {
+			partsExpr = fmt.Sprintf("ARRAY[substring(COALESCE(%s, '') from 1 for %d), substring(COALESCE(%s, '') from %d)]", quotedCol, strategy.value, quotedCol, strategy.value+1)
+		} else { // before
+			partsExpr = fmt.Sprintf(
+				`CASE 
+					WHEN char_length(COALESCE(%s, '')) < %d THEN ARRAY[]::text[]
+					ELSE ARRAY[
+						substring(COALESCE(%s, '') from 1 for char_length(COALESCE(%s, '')) - %d), 
+						substring(COALESCE(%s, '') from char_length(COALESCE(%s, '')) - %d + 1)
+					]
+				 END`,
+				quotedCol, strategy.value,
+				quotedCol, quotedCol, strategy.value,
+				quotedCol, quotedCol, strategy.value,
+			)
+		}
+		return fmt.Sprintf("ARRAY(SELECT x FROM unnest(%s) x WHERE TRIM(x) <> '')", partsExpr), nil
+	case "pattern":
+		return fmt.Sprintf("ARRAY(SELECT x FROM unnest(regexp_split_to_array(COALESCE(%s, ''), $1)) x WHERE TRIM(x) <> '')", quotedCol), []interface{}{strategy.pattern}
+	default:
+		return "ARRAY[]::text[]", nil
+	}
+}
+
+func (s tableManagementService) performBulkSplitUpdate(
+	ctx context.Context,
+	schemaName string,
+	tableName string,
+	columnName string,
+	newColumnNames []string,
+	strategy columnSplitStrategy,
+	columnCount int,
+) error {
+	fullTableName := fmt.Sprintf(SchemaTableFormat, schemaName, tableName)
+
+	// Fetch all rows
+	params := dbModels.QueryParams{
+		Select: []string{"id", columnName},
+	}
+	rows, err := s.repo.TableService.GetTableData(fullTableName, params)
+	if err != nil {
+		return app_errors.LogDatabaseError(err, "failed to fetch rows for column split")
+	}
+
+	batchSize := 2000
+	updates := make([]dto.UpdateColumnValueRequest, 0, batchSize*columnCount)
+
+	for idx, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			continue
+		}
+
+		var valStr string
+		if valRaw, ok := row[columnName]; ok && valRaw != nil {
+			if val, ok := valRaw.(string); ok {
+				valStr = val
+			}
+		}
+
+		// Split the string in Go
+		rawParts := splitStringInGo(valStr, strategy)
+
+		// Apply the column limit
+		parts := applySplitColumnLimit(rawParts, columnCount, splitJoinSeparator(strategy))
+
+		// Build updates for each new column
+		for colIdx := 0; colIdx < columnCount; colIdx++ {
+			var valToSet interface{}
+			if colIdx < len(parts) {
+				valToSet = parts[colIdx]
+			} else {
+				valToSet = nil
+			}
+
+			updates = append(updates, dto.UpdateColumnValueRequest{
+				Id:     rowID,
+				Column: newColumnNames[colIdx],
+				Value:  valToSet,
+			})
+		}
+
+		// Update in batches of 2000 rows
+		if (idx+1)%batchSize == 0 {
+			if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, tableName, updates); err != nil {
+				return err
+			}
+			updates = updates[:0] // Clear the slice while retaining capacity
+		}
+	}
+
+	// Flush any remaining updates
+	if len(updates) > 0 {
+		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, tableName, updates); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func splitStringInGo(val string, strategy columnSplitStrategy) []string {
+	var parts []string
+	switch strategy.kind {
+	case "separator":
+		sepPattern := fmt.Sprintf("(?:%s)+", regexp.QuoteMeta(strategy.separator))
+		re := regexp.MustCompile(sepPattern)
+		rawParts := re.Split(val, -1)
+		for _, part := range rawParts {
+			if strings.TrimSpace(part) != "" {
+				parts = append(parts, part)
+			}
+		}
+	case "fixedLength":
+		runes := []rune(val)
+		if len(runes) < strategy.value {
+			if len(runes) > 0 {
+				parts = []string{string(runes)}
+			}
+		} else {
+			if strategy.action == "after" {
+				parts = []string{
+					string(runes[:strategy.value]),
+					string(runes[strategy.value:]),
+				}
+			} else { // before
+				splitIdx := len(runes) - strategy.value
+				parts = []string{
+					string(runes[:splitIdx]),
+					string(runes[splitIdx:]),
+				}
+			}
+		}
+		var filteredParts []string
+		for _, part := range parts {
+			if strings.TrimSpace(part) != "" {
+				filteredParts = append(filteredParts, part)
+			}
+		}
+		parts = filteredParts
+	case "pattern":
+		if strategy.regex != nil {
+			rawParts := strategy.regex.Split(val, -1)
+			for _, part := range rawParts {
+				if strings.TrimSpace(part) != "" {
+					parts = append(parts, part)
+				}
+			}
+		}
+	}
+	return parts
+}
+
+func (s tableManagementService) MergeColumns(ctx context.Context, schemaName string, req dto.MergeColumnsRequest) (dto.MergeColumnsResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	selectedColumns, err := s.getSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	sep := determineMergeSeparator(req.MergeFormat, req.CustomSeparator)
+
+	baseTitle := strings.TrimSpace(req.NewColumnTitle)
+	if baseTitle == "" {
+		baseTitle = combineColumnTitles(selectedColumns, columnsData)
+	}
+	colTitle := uniqueTitleFromBase(baseTitle, columnsData)
+
+	// Generate a slugified name (title + timestamp) and ensure uniqueness.
+	baseName := s.slugify(colTitle)
+	uniqueName := uniqueNameFromBase(baseName, columnsData)
+
+	desiredOrderIndex, err := s.determineDesiredOrderIndex(ctx, schemaName, req, columnsData)
+	if err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	// create column and add to DB (pass explicit title)
+	newCol, err := s.createNewColumnForMerge(ctx, schemaName, model, req, uniqueName, colTitle, desiredOrderIndex)
+	if err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	// fetch rows for merging
+	selectColumns := make([]string, 0, len(selectedColumns)+1)
+	selectColumns = append(selectColumns, "id")
+	selectColumns = append(selectColumns, selectedColumns...)
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+	rows, err := s.fetchTableRowsForTrim(ctx, tableName, selectColumns)
+	if err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	updates, result := s.buildMergeUpdates(rows, selectedColumns, sep, newCol.ColumnName)
+
+	if err := s.applyBulkUpdates(ctx, schemaName, model.Alias, updates); err != nil {
+		return dto.MergeColumnsResponse{}, err
+	}
+
+	// optionally delete original columns
+	if !req.KeepOriginalColumn {
+		if err := s.deleteOriginalColumnsIfNeeded(ctx, schemaName, req, columnsData); err != nil {
+			return dto.MergeColumnsResponse{}, err
+		}
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int("total_scanned", result.TotalScanned).
+		Int("total_updated", result.TotalUpdated).
+		Int("total_skipped", result.TotalSkipped).
+		Int("total_rows", result.TotalRows).
+		Int("total_rows_updated", result.TotalRowsUpdated).
+		Int("total_rows_skipped", result.TotalRowsSkipped).
+		Str("generated_column", newCol.ColumnName).
+		Msg("Merge columns action completed")
+
+	result.GeneratedColumn = newCol.ColumnName
+	return result, nil
+}
+
+func (s tableManagementService) ExtractSubstring(ctx context.Context, schemaName string, req dto.ExtractSubstringRequest) (dto.ExtractSubstringResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.ExtractSubstringResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.ExtractSubstringResponse{}, err
+	}
+
+	selectedCol, found := findColumnByID(columnsData, req.ColumnId)
+	if !found {
+		return dto.ExtractSubstringResponse{}, app_errors.ColumnNotFound
+	}
+
+	effectiveType, err := validateExtractSubstringRequest(req)
+	if err != nil {
+		return dto.ExtractSubstringResponse{}, err
+	}
+
+	sourceColumnName := selectedCol.ColumnName
+
+	// target column base name: <source>_<effective_type>
+	baseName := fmt.Sprintf("%s_%s", sourceColumnName, effectiveType)
+	uniqueName := uniqueNameFromBase(baseName, columnsData)
+
+	// Title
+	baseTitle := strings.TrimSpace(selectedCol.Title + " " + effectiveType)
+	if baseTitle == "" {
+		baseTitle = uniqueName
+	}
+	colTitle := uniqueTitleFromBase(baseTitle, columnsData)
+
+	// determine order index and create column
+	mergeReq := dto.MergeColumnsRequest{ModelID: req.ModelID, Columns: []string{req.ColumnId}, AddAtEnd: req.AddAtEnd}
+	desiredOrderIndex, err := s.determineDesiredOrderIndex(ctx, schemaName, mergeReq, columnsData)
+	if err != nil {
+		return dto.ExtractSubstringResponse{}, err
+	}
+
+	newCol, err := s.createNewColumnForMerge(ctx, schemaName, model, mergeReq, uniqueName, colTitle, desiredOrderIndex)
+	if err != nil {
+		return dto.ExtractSubstringResponse{}, err
+	}
+
+	// Fetch only id and source column
+	selectColumns := []string{"id", sourceColumnName}
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+	rows, err := s.fetchTableRowsForTrim(ctx, tableName, selectColumns)
+	if err != nil {
+		return dto.ExtractSubstringResponse{}, err
+	}
+
+	result := dto.ExtractSubstringResponse{
+		Column:          sourceColumnName,
+		GeneratedColumn: newCol.ColumnName,
+		ExtractionType:  effectiveType,
+		ScannedRecords:  len(rows),
+	}
+
+	updates, updatedCount, skippedCount := s.buildExtractSubstringUpdates(rows, sourceColumnName, newCol.ColumnName, effectiveType, req)
+	result.UpdatedRecords = updatedCount
+	result.SkippedRecords = skippedCount
+
+	if len(updates) > 0 {
+		if err := s.applyBulkUpdates(ctx, schemaName, model.Alias, updates); err != nil {
+			return dto.ExtractSubstringResponse{}, err
+		}
+	}
+
+	if !req.KeepOriginalColumn {
+		if err := s.DeleteColumnAndCleanUp(ctx, schemaName, selectedCol.ID.String(), selectedCol); err != nil {
+			return dto.ExtractSubstringResponse{}, err
+		}
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Str("source_column", sourceColumnName).
+		Str("generated_column", newCol.ColumnName).
+		Int("scanned_records", result.ScannedRecords).
+		Int("updated_records", result.UpdatedRecords).
+		Int("skipped_records", result.SkippedRecords).
+		Msg("Extract substring action completed")
+
+	return result, nil
+}
+
+func findColumnByID(columnsData []dto.ColumnResponse, columnID string) (dto.ColumnResponse, bool) {
+	targetID := strings.TrimSpace(columnID)
+	for _, c := range columnsData {
+		if c.ID.String() == targetID {
+			return c, true
+		}
+	}
+	return dto.ColumnResponse{}, false
+}
+
+func validateExtractSubstringRequest(req dto.ExtractSubstringRequest) (string, error) {
+	method := strings.ToLower(strings.TrimSpace(req.ExtractionMethod))
+	switch method {
+	case "extraction_type":
+		if strings.TrimSpace(req.ExtractionType) == "" {
+			return "", app_errors.InvalidPayload
+		}
+		allowed := map[string]struct{}{
+			"email": {}, "keywords": {}, "mentions": {}, "tags": {}, "url": {}, "domain": {}, "emoji": {}, "phone": {}, "prefix": {},
+		}
+		effectiveType := strings.ToLower(strings.TrimSpace(req.ExtractionType))
+		if _, ok := allowed[effectiveType]; !ok {
+			return "", app_errors.InvalidPayload
+		}
+		return effectiveType, nil
+	case "between_characters":
+		if strings.TrimSpace(req.StartAfter) == "" || strings.TrimSpace(req.EndBefore) == "" {
+			return "", app_errors.InvalidPayload
+		}
+		return "between_characters", nil
+	default:
+		return "", app_errors.InvalidPayload
+	}
+}
+
+func extractSubstringByType(strVal, extractionType, startAfter, endBefore string) (string, bool) {
+	switch extractionType {
+	case "between_characters":
+		return extractBetweenCharactersFromText(strVal, startAfter, endBefore)
+	case "email":
+		return extractFirstEmail(strVal)
+	case "url":
+		return extractURLsFromText(strVal)
+	case "domain":
+		return extractDomainFromText(strVal)
+	case "tags":
+		return extractHashtagsFromText(strVal)
+	case "mentions":
+		return extractMentionsFromText(strVal)
+	case "keywords":
+		return extractKeywordsFromText(strVal)
+	case "emoji":
+		return extractEmojiFromText(strVal)
+	case "phone":
+		return extractPhoneNumberFromText(strVal)
+	case "prefix":
+		return extractEmailPrefixFromText(strVal)
+	default:
+		return "", false
+	}
+}
+
+func (s tableManagementService) buildExtractSubstringUpdates(
+	rows []map[string]interface{},
+	sourceColumnName string,
+	generatedColumnName string,
+	effectiveType string,
+	req dto.ExtractSubstringRequest,
+) ([]dto.UpdateColumnValueRequest, int, int) {
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+	updated := 0
+	skipped := 0
+
+	for _, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			skipped++
+			continue
+		}
+
+		value, ok := row[sourceColumnName]
+		if !ok || value == nil {
+			skipped++
+			continue
+		}
+
+		strVal, ok := value.(string)
+		if !ok {
+			skipped++
+			continue
+		}
+
+		extracted, ok := extractSubstringByType(strVal, effectiveType, req.StartAfter, req.EndBefore)
+		if !ok || strings.TrimSpace(extracted) == "" {
+			skipped++
+			continue
+		}
+
+		updates = append(updates, dto.UpdateColumnValueRequest{
+			Id:     rowID,
+			Column: generatedColumnName,
+			Value:  extracted,
+		})
+		updated++
+	}
+
+	return updates, updated, skipped
+}
+
+// determineMergeSeparator returns the separator string for merge format
+func determineMergeSeparator(format, custom string) string {
+	switch format {
+	case "space":
+		return " "
+	case "comma":
+		return ", "
+	case "dash":
+		return "-"
+	case "custom":
+		return custom
+	default:
+		return " "
+	}
+}
+
+// uniqueNameFromBase appends a numeric suffix when necessary to make the base name unique against existing columns.
+func uniqueNameFromBase(baseName string, columnsData []dto.ColumnResponse) string {
+	uniqueName := baseName
+	suffix := 1
+	for {
+		exists := false
+		for _, c := range columnsData {
+			if c.ColumnName == uniqueName {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			break
+		}
+		uniqueName = fmt.Sprintf("%s_%d", baseName, suffix)
+		suffix++
+	}
+	return uniqueName
+}
+
+func combineColumnTitles(selectedColumns []string, columnsData []dto.ColumnResponse) string {
+	// map column_name -> title
+	titleMap := make(map[string]string, len(columnsData))
+	for _, c := range columnsData {
+		titleMap[c.ColumnName] = c.Title
+	}
+
+	parts := make([]string, 0, len(selectedColumns))
+	for _, col := range selectedColumns {
+		t := strings.TrimSpace(titleMap[col])
+		if t == "" {
+			t = col
+		}
+		parts = append(parts, t)
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func uniqueTitleFromBase(base string, columnsData []dto.ColumnResponse) string {
+	const maxTitleLen = 50
+
+	baseTrim := strings.TrimSpace(base)
+	if baseTrim == "" {
+		return baseTrim
+	}
+
+	// truncateRunes trims the string to at most n runes.
+	truncateRunes := func(s string, n int) string {
+		r := []rune(strings.TrimSpace(s))
+		if len(r) <= n {
+			return string(r)
+		}
+		return string(r[:n])
+	}
+
+	titleExists := func(candidate string) bool {
+		for _, c := range columnsData {
+			if strings.EqualFold(strings.TrimSpace(c.Title), candidate) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// First try using the base title truncated to the max length.
+	candidate := truncateRunes(baseTrim, maxTitleLen)
+	if !titleExists(candidate) {
+		return candidate
+	}
+
+	// Append numeric suffixes (" 2", " 3", ...) ensuring total length <= maxTitleLen.
+	suffix := 2
+	for {
+		suffixStr := fmt.Sprintf(" %d", suffix)
+		// reserve space for the suffix (counted in runes)
+		maxBase := maxTitleLen - len([]rune(suffixStr))
+		if maxBase < 0 {
+			maxBase = 0
+		}
+		basePart := truncateRunes(baseTrim, maxBase)
+		candidate = basePart + suffixStr
+		if !titleExists(candidate) {
+			return candidate
+		}
+		suffix++
+	}
+}
+
+// determineDesiredOrderIndex resolves the order index where the new column should be inserted and shifts existing columns when required.
+func (s tableManagementService) determineDesiredOrderIndex(ctx context.Context, schemaName string, req dto.MergeColumnsRequest, columnsData []dto.ColumnResponse) (float64, error) {
+	// If adding at end, simply return maxOrder + 1
+	if req.AddAtEnd {
+		maxOrder, err := s.columnsService.GetMaxOrderIndexOfColumn(ctx, schemaName, req.ModelID)
+		if err != nil {
+			return 0, err
+		}
+		return maxOrder + 1, nil
+	}
+
+	// Attempt to find the order index of the last selected column
+	lastSel := strings.TrimSpace(req.Columns[len(req.Columns)-1])
+	if idx, ok := findLastSelectedOrderIndex(columnsData, lastSel); ok {
+		desiredOrderIndex := idx + 1
+		// Shift affected columns upward in a single helper
+		if err := s.shiftColumnsStartingFrom(ctx, schemaName, desiredOrderIndex, columnsData); err != nil {
+			return 0, err
+		}
+		return desiredOrderIndex, nil
+	}
+
+	// Fallback to appending at end when last selected not found
+	maxOrder, err := s.columnsService.GetMaxOrderIndexOfColumn(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return 0, err
+	}
+	return maxOrder + 1, nil
+}
+
+// findLastSelectedOrderIndex returns the order index of the column with the given ID string, and whether it was found.
+func findLastSelectedOrderIndex(columnsData []dto.ColumnResponse, lastSel string) (float64, bool) {
+	for _, c := range columnsData {
+		if c.ID.String() == lastSel {
+			if c.OrderIndex != nil {
+				return *c.OrderIndex, true
+			}
+			return 0, true
+		}
+	}
+	return 0, false
+}
+
+// shiftColumnsStartingFrom increments OrderIndex for columns with index >= start
+func (s tableManagementService) shiftColumnsStartingFrom(ctx context.Context, schemaName string, start float64, columnsData []dto.ColumnResponse) error {
+	for _, c := range columnsData {
+		if c.OrderIndex != nil && *c.OrderIndex >= start {
+			upd := dto.ColumnUpdate{
+				OrderIndex: helpers.Float64Ptr(*c.OrderIndex + 1),
+				UpdatedAt:  time.Now().UTC(),
+			}
+			if _, err := s.columnsService.UpdateColumn(ctx, schemaName, c.ID.String(), upd); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// createNewColumnForMerge encapsulates creation of the new column metadata and the actual DB column addition.
+func (s tableManagementService) createNewColumnForMerge(ctx context.Context, schemaName string, model tenant.Model, req dto.MergeColumnsRequest, uniqueName, title string, desiredOrderIndex float64) (tenant.Column, error) {
+	// Use `longText` UIDT so merged values are stored as long text to avoid truncation.
+	dt, err := s.getDataBaseType("longText")
+	if err != nil {
+		return tenant.Column{}, err
+	}
+	columnInsert := dto.ColumnInsertion{
+		ID:          uuid.New(),
+		ModelID:     uuid.MustParse(req.ModelID),
+		BaseID:      model.BaseID,
+		Title:       title,
+		ColumnName:  uniqueName,
+		Description: helpers.StringPtr(""),
+		Meta:        map[string]interface{}{},
+		UIDT:        "longText",
+		DT:          helpers.StringPtr(dt),
+		Virtual:     false,
+		System:      false,
+		Deleted:     false,
+		OrderIndex:  helpers.Float64Ptr(desiredOrderIndex),
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	newCol, err := s.columnsService.Create(ctx, columnInsert, schemaName)
+	if err != nil {
+		return tenant.Column{}, err
+	}
+
+	if err := s.addColumnInTableDb(schemaName, model.Alias, newCol); err != nil {
+		return tenant.Column{}, err
+	}
+
+	return newCol, nil
+}
+
+// buildMergeUpdates processes rows and returns the list of updates and aggregated result counters.
+func (s tableManagementService) buildMergeUpdates(rows []map[string]interface{}, selectedColumns []string, sep, newColumnName string) ([]dto.UpdateColumnValueRequest, dto.MergeColumnsResponse) {
+	result := dto.MergeColumnsResponse{
+		TotalScanned: len(rows) * len(selectedColumns),
+		TotalRows:    len(rows),
+	}
+
+	if len(rows) == 0 {
+		return nil, result
+	}
+
+	updates := make([]dto.UpdateColumnValueRequest, 0)
+
+	for _, row := range rows {
+		rowID, hasRowID := row["id"]
+		if !hasRowID {
+			result.TotalRowsSkipped++
+			result.TotalSkipped += len(selectedColumns)
+			continue
+		}
+
+		tokens, skipped := collectTokensFromRow(row, selectedColumns)
+		result.TotalSkipped += skipped
+
+		if len(tokens) == 0 {
+			result.TotalRowsSkipped++
+			continue
+		}
+
+		merged := strings.TrimSpace(strings.Join(tokens, sep))
+		if merged == "" {
+			result.TotalRowsSkipped++
+			continue
+		}
+
+		updates = append(updates, dto.UpdateColumnValueRequest{
+			Id:     rowID,
+			Column: newColumnName,
+			Value:  merged,
+		})
+		result.TotalUpdated++
+		result.TotalRowsUpdated++
+	}
+
+	return updates, result
+}
+
+// collectTokensFromRow extracts trimmed string tokens from the selected columns in a row and returns them along with how many cells were skipped.
+func collectTokensFromRow(row map[string]interface{}, selectedColumns []string) ([]string, int) {
+	tokens := make([]string, 0, len(selectedColumns))
+	skipped := 0
+	for _, colName := range selectedColumns {
+		value, exists := row[colName]
+		if !exists || value == nil {
+			skipped++
+			continue
+		}
+		var strVal string
+		switch v := value.(type) {
+		case string:
+			strVal = strings.TrimSpace(v)
+		default:
+			strVal = strings.TrimSpace(fmt.Sprintf("%v", v))
+		}
+		if strVal == "" {
+			skipped++
+			continue
+		}
+		tokens = append(tokens, strVal)
+	}
+	return tokens, skipped
+}
+
+// applyBulkUpdates performs batched BulkUpdateByColumns calls.
+func (s tableManagementService) applyBulkUpdates(ctx context.Context, schemaName, modelAlias string, updates []dto.UpdateColumnValueRequest) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	batchSize := columnActionBatchSize
+	for start := 0; start < len(updates); start += batchSize {
+		end := start + batchSize
+		if end > len(updates) {
+			end = len(updates)
+		}
+		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, modelAlias, updates[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteOriginalColumnsIfNeeded removes original columns when KeepOriginalColumn is false.
+func (s tableManagementService) deleteOriginalColumnsIfNeeded(ctx context.Context, schemaName string, req dto.MergeColumnsRequest, columnsData []dto.ColumnResponse) error {
+	for _, colID := range req.Columns {
+		colID = strings.TrimSpace(colID)
+		for _, c := range columnsData {
+			if c.ID.String() == colID {
+				if err := s.DeleteColumnAndCleanUp(ctx, schemaName, c.ID.String(), c); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	return nil
 }

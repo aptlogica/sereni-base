@@ -65,6 +65,7 @@ var TableError = struct {
 	ViewStartDateFieldIDInvalid    ResponseCode
 	ViewEndDateFieldIDRequired     ResponseCode
 	ViewEndDateFieldIDInvalid      ResponseCode
+	SplitNotPossible               ResponseCode
 	RowNotFound                    ResponseCode
 	ActionRequired                 ResponseCode
 	ActionInvalid                  ResponseCode
@@ -138,6 +139,7 @@ var TableError = struct {
 	ViewStartDateFieldIDInvalid:    "TBL_1067",
 	ViewEndDateFieldIDRequired:     "TBL_1068",
 	ViewEndDateFieldIDInvalid:      "TBL_1069",
+	SplitNotPossible:               "TBL_1074",
 	RowNotFound:                    "TBL_1045",
 	ActionRequired:                 "TBL_1046",
 	ActionInvalid:                  "TBL_1047",
@@ -443,6 +445,11 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Invalid end_date_field_id",
 		Description: "The meta.end_date_field_id field must be a valid UUID",
 	},
+	TableError.SplitNotPossible: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Split is not possible",
+		Description: "The selected column cannot be split into multiple parts",
+	},
 	TableError.RowNotFound: {
 		HTTPStatus:  http.StatusNotFound,
 		Message:     "Row not found",
@@ -516,43 +523,101 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 }
 
 var TableSuccess = struct {
-	TableCreated    ResponseCode
-	TableUpdated    ResponseCode
-	TableDeleted    ResponseCode
-	TableFetched    ResponseCode
-	ColumnAdded     ResponseCode
-	ColumnFetched   ResponseCode
-	ColumnUpdated   ResponseCode
-	ViewCreated     ResponseCode
-	ViewFetched     ResponseCode
-	ViewUpdated     ResponseCode
-	ViewDeleted     ResponseCode
-	ColumnDeleted   ResponseCode
-	RecordCreated   ResponseCode
-	RecordsFetched  ResponseCode
-	RowDataInserted ResponseCode
-	RowDeleted      ResponseCode
-	ColumnReordered ResponseCode
-	RowDataRemoved  ResponseCode
+	TableCreated                       ResponseCode
+	TableUpdated                       ResponseCode
+	TableDeleted                       ResponseCode
+	TableFetched                       ResponseCode
+	ColumnAdded                        ResponseCode
+	ColumnFetched                      ResponseCode
+	ColumnUpdated                      ResponseCode
+	TrimWhitespaceBoth                 ResponseCode
+	TrimWhitespaceLeading              ResponseCode
+	TrimWhitespaceTrailing             ResponseCode
+	TrimWhitespaceCollapse             ResponseCode
+	CaseNormalizationLowercase         ResponseCode
+	CaseNormalizationUppercase         ResponseCode
+	CaseNormalizationTitleCase         ResponseCode
+	CaseNormalizationSentenceCase      ResponseCode
+	FindReplace                        ResponseCode
+	FindReplaceMatchCase               ResponseCode
+	FindReplaceIgnoreCase              ResponseCode
+	FindReplaceEntireValue             ResponseCode
+	RemoveSpecialCharacters            ResponseCode
+	RemoveSpecialCharactersSymbols     ResponseCode
+	RemoveSpecialCharactersCurrency    ResponseCode
+	RemoveSpecialCharactersBrackets    ResponseCode
+	RemoveSpecialCharactersPunctuation ResponseCode
+	RemoveSpecialCharactersCustom      ResponseCode
+	RemoveFormatting                   ResponseCode
+	RemoveFormattingCurrency           ResponseCode
+	RemoveFormattingPercentage         ResponseCode
+	RemoveFormattingSeparator          ResponseCode
+	RemoveFormattingPhone              ResponseCode
+	RemoveFormattingDate               ResponseCode
+	RemoveFormattingCustom             ResponseCode
+	RemoveDuplicates                   ResponseCode
+	ColumnSplit                  	   ResponseCode
+	MergeColumns                       ResponseCode
+	ExtractSubstring                   ResponseCode
+	ViewCreated                        ResponseCode
+	ViewFetched                        ResponseCode
+	ViewUpdated                        ResponseCode
+	ViewDeleted                        ResponseCode
+	ColumnDeleted                      ResponseCode
+	RecordCreated                      ResponseCode
+	RecordsFetched                     ResponseCode
+	RowDataInserted                    ResponseCode
+	RowDeleted                         ResponseCode
+	ColumnReordered                    ResponseCode
+	RowDataRemoved                     ResponseCode
 }{
-	TableCreated:    "TBL_SUCCESS_5001",
-	TableUpdated:    "TBL_SUCCESS_5002",
-	TableDeleted:    "TBL_SUCCESS_5003",
-	TableFetched:    "TBL_SUCCESS_5004",
-	ColumnAdded:     "TBL_SUCCESS_5005",
-	ColumnFetched:   "TBL_SUCCESS_5006",
-	ColumnUpdated:   "TBL_SUCCESS_5011",
-	ViewCreated:     "TBL_SUCCESS_5007",
-	ViewFetched:     "TBL_SUCCESS_5008",
-	ViewUpdated:     "TBL_SUCCESS_5009",
-	ViewDeleted:     "TBL_SUCCESS_5010",
-	ColumnDeleted:   "TBL_SUCCESS_5012",
-	RecordCreated:   "TBL_SUCCESS_5013",
-	RecordsFetched:  "TBL_SUCCESS_5014",
-	RowDataInserted: "TBL_SUCCESS_5015",
-	RowDeleted:      "TBL_SUCCESS_5016",
-	ColumnReordered: "TBL_SUCCESS_5017",
-	RowDataRemoved:  "TBL_SUCCESS_5018",
+	TableCreated:                       "TBL_SUCCESS_5001",
+	TableUpdated:                       "TBL_SUCCESS_5002",
+	TableDeleted:                       "TBL_SUCCESS_5003",
+	TableFetched:                       "TBL_SUCCESS_5004",
+	ColumnAdded:                        "TBL_SUCCESS_5005",
+	ColumnFetched:                      "TBL_SUCCESS_5006",
+	ColumnUpdated:                      "TBL_SUCCESS_5011",
+	TrimWhitespaceBoth:                 "TBL_SUCCESS_5019",
+	TrimWhitespaceLeading:              "TBL_SUCCESS_5020",
+	TrimWhitespaceTrailing:             "TBL_SUCCESS_5021",
+	TrimWhitespaceCollapse:             "TBL_SUCCESS_5022",
+	CaseNormalizationLowercase:         "TBL_SUCCESS_5023",
+	CaseNormalizationUppercase:         "TBL_SUCCESS_5024",
+	CaseNormalizationTitleCase:         "TBL_SUCCESS_5025",
+	CaseNormalizationSentenceCase:      "TBL_SUCCESS_5026",
+	FindReplace:                        "TBL_SUCCESS_5027",
+	FindReplaceMatchCase:               "TBL_SUCCESS_5028",
+	FindReplaceIgnoreCase:              "TBL_SUCCESS_5029",
+	FindReplaceEntireValue:             "TBL_SUCCESS_5030",
+	RemoveSpecialCharacters:            "TBL_SUCCESS_5031",
+	RemoveSpecialCharactersSymbols:     "TBL_SUCCESS_5032",
+	RemoveSpecialCharactersCurrency:    "TBL_SUCCESS_5033",
+	RemoveSpecialCharactersBrackets:    "TBL_SUCCESS_5034",
+	RemoveSpecialCharactersPunctuation: "TBL_SUCCESS_5035",
+	RemoveSpecialCharactersCustom:      "TBL_SUCCESS_5036",
+	RemoveFormatting:                   "TBL_SUCCESS_5037",
+	RemoveFormattingCurrency:           "TBL_SUCCESS_5038",
+	RemoveFormattingPercentage:         "TBL_SUCCESS_5039",
+	RemoveFormattingSeparator:          "TBL_SUCCESS_5040",
+	RemoveFormattingPhone:              "TBL_SUCCESS_5041",
+	RemoveFormattingDate:               "TBL_SUCCESS_5042",
+	RemoveFormattingCustom:             "TBL_SUCCESS_5043",
+	RemoveDuplicates:                   "TBL_SUCCESS_5044",
+	ColumnSplit:                        "TBL_SUCCESS_5047",
+	MergeColumns:                       "TBL_SUCCESS_5045",
+	ExtractSubstring:                   "TBL_SUCCESS_5046",
+	ViewCreated:                        "TBL_SUCCESS_5007",
+	ViewFetched:                        "TBL_SUCCESS_5008",
+	ViewUpdated:                        "TBL_SUCCESS_5009",
+	ViewDeleted:                        "TBL_SUCCESS_5010",
+	ColumnDeleted:                      "TBL_SUCCESS_5012",
+	RecordCreated:                      "TBL_SUCCESS_5013",
+	RecordsFetched:                     "TBL_SUCCESS_5014",
+	RowDataInserted:                    "TBL_SUCCESS_5015",
+	RowDeleted:                         "TBL_SUCCESS_5016",
+	ColumnReordered:                    "TBL_SUCCESS_5017",
+	RowDataRemoved:                     "TBL_SUCCESS_5018",
 }
 
 var TableSuccessCodes = map[ResponseCode]MetaResponse{
@@ -645,5 +710,154 @@ var TableSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Row data removed successfully",
 		Description: "The row data has been removed successfully",
+	},
+	TableSuccess.TrimWhitespaceBoth: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Leading and trailing whitespace trimmed successfully",
+		Description: "Leading and trailing whitespace have been removed where applicable; summary included in response data",
+	},
+	TableSuccess.TrimWhitespaceLeading: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Leading whitespace trimmed successfully",
+		Description: "Leading whitespace has been removed where applicable; summary included in response data",
+	},
+	TableSuccess.TrimWhitespaceTrailing: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Trailing whitespace trimmed successfully",
+		Description: "Trailing whitespace has been removed where applicable; summary included in response data",
+	},
+	TableSuccess.TrimWhitespaceCollapse: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Internal spaces collapsed successfully",
+		Description: "Multiple internal spaces collapsed into single spaces where applicable; summary included in response data",
+	},
+	TableSuccess.MergeColumns: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Columns merged successfully",
+		Description: "Selected columns have been merged into a new column; summary included in response data",
+	},
+	TableSuccess.ExtractSubstring: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Substring extracted successfully",
+		Description: "Substring extraction completed successfully; summary included in response data",
+	},
+	TableSuccess.CaseNormalizationLowercase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Converted to lowercase successfully",
+		Description: "Selected columns converted to lowercase where applicable; summary included in response data",
+	},
+	TableSuccess.CaseNormalizationUppercase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Converted to uppercase successfully",
+		Description: "Selected columns converted to uppercase where applicable; summary included in response data",
+	},
+	TableSuccess.CaseNormalizationTitleCase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Converted to title case successfully",
+		Description: "Selected columns converted to title case where applicable; summary included in response data",
+	},
+	TableSuccess.CaseNormalizationSentenceCase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Converted to sentence case successfully",
+		Description: "Selected columns converted to sentence case where applicable; summary included in response data",
+	},
+
+	TableSuccess.FindReplace: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Find and replace completed successfully",
+		Description: "Find & Replace operation completed where applicable; summary included in response data",
+	},
+
+	TableSuccess.FindReplaceMatchCase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Find & replace (case-sensitive) completed successfully",
+		Description: "Case-sensitive find & replace operation completed where applicable; summary included in response data",
+	},
+
+	TableSuccess.FindReplaceIgnoreCase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Find & replace (case-insensitive) completed successfully",
+		Description: "Case-insensitive find & replace operation completed where applicable; summary included in response data",
+	},
+
+	TableSuccess.FindReplaceEntireValue: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Find & replace (entire value match) completed successfully",
+		Description: "Find & replace operation that matched entire cell values completed where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveSpecialCharacters: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Special characters removed successfully",
+		Description: "Special characters have been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveSpecialCharactersSymbols: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Symbol characters removed successfully",
+		Description: "Common symbol characters have been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveSpecialCharactersCurrency: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Currency symbols removed successfully",
+		Description: "Currency symbols have been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveSpecialCharactersBrackets: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Bracket characters removed successfully",
+		Description: "Bracket characters have been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveSpecialCharactersPunctuation: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Punctuation characters removed successfully",
+		Description: "Punctuation characters have been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveSpecialCharactersCustom: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Custom character removed successfully",
+		Description: "The specified custom character has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormatting: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Formatting removed successfully",
+		Description: "Formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormattingCurrency: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Currency formatting removed successfully",
+		Description: "Currency formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormattingPercentage: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Percentage formatting removed successfully",
+		Description: "Percentage formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormattingSeparator: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Separator formatting removed successfully",
+		Description: "Separator formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormattingPhone: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Phone formatting removed successfully",
+		Description: "Phone formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormattingDate: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Date formatting removed successfully",
+		Description: "Date formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveFormattingCustom: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Custom formatting removed successfully",
+		Description: "Custom formatting has been removed from selected columns where applicable; summary included in response data",
+	},
+	TableSuccess.RemoveDuplicates: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Duplicates removed successfully",
+		Description: "Duplicate rows have been processed; summary with total rows affected and duplicate rows identified included in response data",
+	},
+	TableSuccess.ColumnSplit: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Column split completed successfully",
+		Description: "The selected column has been split into new columns successfully",
 	},
 }

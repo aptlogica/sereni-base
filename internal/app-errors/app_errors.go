@@ -174,6 +174,7 @@ var (
 	InvalidColumnMetaForLinkType   = errors.New("invalid column meta for link type")
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
+	SplitNotPossible               = errors.New("split is not possible")
 )
 
 // APIError represents an error response from an external API

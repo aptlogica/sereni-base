@@ -591,4 +591,41 @@ var DefinedFunctions = []Function{
 			$$ LANGUAGE plpgsql;
 		`,
 	},
+	{
+		FunctionName:   "bulk_update_by_columns",
+		FunctionParams: "p_schema_name TEXT, p_table_name TEXT, p_data JSONB",
+		FunctionSQL: `
+			RETURNS VOID AS $$
+			DECLARE
+				full_table_name TEXT;
+				col_name TEXT;
+				update_sql TEXT;
+			BEGIN
+				full_table_name := format('%I.%I', p_schema_name, p_table_name);
+
+				FOR col_name IN
+					SELECT DISTINCT elem->>'column'
+					FROM jsonb_array_elements(p_data) AS elem
+				LOOP
+					update_sql := format(
+						'UPDATE %s AS t
+						 SET %I = u.value
+						 FROM (
+						 	SELECT (elem->>''id'')::INT AS id, elem->>''value'' AS value
+						 	FROM jsonb_array_elements($1) AS elem
+						 	WHERE elem->>''column'' = $2
+						 ) AS u
+						 WHERE t.id = u.id
+						   AND t.%I IS DISTINCT FROM u.value',
+						full_table_name,
+						col_name,
+						col_name
+					);
+
+					EXECUTE update_sql USING p_data, col_name;
+				END LOOP;
+			END;
+			$$ LANGUAGE plpgsql;
+		`,
+	},
 }

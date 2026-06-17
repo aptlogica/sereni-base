@@ -324,6 +324,37 @@ func (s *columnService) BulkUpdate(ctx context.Context, schemaName string, table
 	return nil
 }
 
+func (s *columnService) BulkUpdateByColumns(ctx context.Context, schemaName string, tableName string, updates []dto.UpdateColumnValueRequest) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	functionName := "bulk_update_by_columns"
+	schemaFunctionName := fmt.Sprintf("%s.%s", schemaName, functionName)
+
+	jsonData, err := json.Marshal(updates)
+	if err != nil {
+		return app_errors.LogDatabaseError(err, "failed to marshal multi-column updates to JSON")
+	}
+
+	args := map[string]interface{}{
+		"p_schema_name": schemaName,
+		"p_table_name":  tableName,
+		"p_data":        jsonData,
+	}
+
+	_, err = s.repo.TableService.GetByFunction(
+		ctx,
+		schemaFunctionName,
+		args,
+	)
+	if err != nil {
+		return app_errors.LogDatabaseError(err, "failed to perform multi-column bulk update")
+	}
+
+	return nil
+}
+
 func (s *columnService) ResetColumn(ctx context.Context, schemaName string, tableName string, columnName string) error {
 	functionName := "reset_column"
 	schemaFunctionName := fmt.Sprintf("%s.%s", schemaName, functionName)
