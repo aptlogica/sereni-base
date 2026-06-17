@@ -28,17 +28,11 @@ type BaseHandler struct {
 	importService         interfaces.ImportService
 }
 
-func NewBaseHandler(args ...interface{}) *BaseHandler {
-	var baseManagementService interfaces.BaseManagementService
-	var importService interfaces.ImportService
-
-	if len(args) > 0 && args[0] != nil {
-		baseManagementService, _ = args[0].(interfaces.BaseManagementService)
-	}
-	if len(args) > 1 && args[1] != nil {
-		importService, _ = args[1].(interfaces.ImportService)
-	}
-
+func NewBaseHandler(
+	baseManagementService interfaces.BaseManagementService,
+	importService interfaces.ImportService,
+) *BaseHandler {
+	fmt.Println("Initializing BaseHandler with services:", baseManagementService, importService)
 	return &BaseHandler{
 		baseManagementService: baseManagementService,
 		importService:         importService,
