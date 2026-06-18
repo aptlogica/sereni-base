@@ -970,6 +970,11 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 		}
 	}
 
+	err = a.ensureUserEmailVerifiedForStatusUpdate(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
 	updateFields := map[string]interface{}{
 		"status":             "active",
 		"last_modified_time": time.Now(),
@@ -1015,6 +1020,11 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 		}
 	}
 
+	err = a.ensureUserEmailVerifiedForStatusUpdate(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
 	updateFields := map[string]interface{}{
 		"status":             "deactivated",
 		"last_modified_time": time.Now(),
@@ -1032,6 +1042,19 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 	}
 
 	return userResponse, nil
+}
+
+func (a *authManagementService) ensureUserEmailVerifiedForStatusUpdate(ctx context.Context, schema string, userID string) error {
+	user, err := a.userManagementService.GetUserByID(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+
+	if !user.EmailVerified {
+		return app_errors.EmailVerificationPending
+	}
+
+	return nil
 }
 
 func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) (bool, error) {

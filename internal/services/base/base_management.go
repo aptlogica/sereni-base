@@ -111,6 +111,8 @@ func (s baseManagementService) CreateBaseWithImage(ctx context.Context, req dto.
 			".jpg":  true,
 			".jpeg": true,
 			".png":  true,
+			".svg":  true,
+			".gif":  true,
 		}
 		if !allowedExtensions[ext] {
 			return insertedBase, nil // Return base without image if extension not allowed
@@ -276,6 +278,8 @@ func (s baseManagementService) AddBaseImage(ctx context.Context, schema string, 
 		".jpg":  true,
 		".jpeg": true,
 		".png":  true,
+		".svg":  true,
+		".gif":  true,
 	}
 	if !allowedExtensions[ext] {
 		return tenant.Base{}, app_errors.InvalidPayload
