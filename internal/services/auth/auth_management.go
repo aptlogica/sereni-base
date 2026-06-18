@@ -8,10 +8,10 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"time"
-
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/dto"
@@ -63,6 +63,9 @@ type authManagementService struct {
 	emailProviderService emailProvider.EmailService
 	authProviderService  authProviderInterface.AuthProvider
 }
+
+// sentinel error used to indicate underlying GetTableData failed (table missing)
+var errGetTable = errors.New("get_table_error")
 
 func NewAuthManagementService(
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig,
@@ -1158,8 +1161,11 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 
 	deletedIDs, err := a.deleteAccessMembersByScope(ctx, schema, "workspace", workspaceID, userID)
 	if err != nil {
-		// If RBAC doesn't exist, try legacy workspace_members table
-		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
+		if errors.Is(err, errGetTable) {
+			// If RBAC doesn't exist, try legacy workspace_members table
+			return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
+		}
+		return err
 	}
 	if len(deletedIDs) == 0 {
 		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
@@ -1455,7 +1461,7 @@ func (a *authManagementService) deleteAccessMembersByScope(ctx context.Context, 
 
 	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errGetTable, err)
 	}
 
 	if len(accessRecords) == 0 {
