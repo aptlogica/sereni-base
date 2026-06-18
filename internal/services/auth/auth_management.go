@@ -1321,30 +1321,7 @@ func (a *authManagementService) GetWorkspaceMembers(ctx context.Context, schema 
 		return nil, err
 	}
 
-	userIDs := make([]string, 0, len(members))
-	userAccess := map[string]string{}
-	for _, m := range members {
-		userIDs = append(userIDs, m.UserID)
-		userAccess[m.UserID] = m.AccessLevel
-	}
-
-	users, err := a.userManagementService.GetBulkUsers(ctx, schema, userIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []dto.WorkspaceMemberResponse
-	for _, user := range users {
-		var memberResp dto.WorkspaceMemberResponse
-		err := helpers.StructToStruct(user, &memberResp)
-		if err != nil {
-			return nil, err
-		}
-		memberResp.AccessLevel = userAccess[user.ID.String()]
-		res = append(res, memberResp)
-	}
-
-	return res, nil
+	return a.buildUserResponsesFromMembers(ctx, schema, members)
 }
 
 func (a *authManagementService) GetBaseMembers(ctx context.Context, schema string, baseID string) ([]dto.WorkspaceMemberResponse, error) {
@@ -1356,6 +1333,11 @@ func (a *authManagementService) GetBaseMembers(ctx context.Context, schema strin
 		return nil, err
 	}
 
+	return a.buildUserResponsesFromMembers(ctx, schema, members)
+}
+
+// buildUserResponsesFromMembers maps tenant.WorkspaceMember entries to dto.WorkspaceMemberResponse
+func (a *authManagementService) buildUserResponsesFromMembers(ctx context.Context, schema string, members []tenant.WorkspaceMember) ([]dto.WorkspaceMemberResponse, error) {
 	userIDs := make([]string, 0, len(members))
 	userAccess := map[string]string{}
 	for _, m := range members {
@@ -1371,8 +1353,7 @@ func (a *authManagementService) GetBaseMembers(ctx context.Context, schema strin
 	var res []dto.WorkspaceMemberResponse
 	for _, user := range users {
 		var memberResp dto.WorkspaceMemberResponse
-		err := helpers.StructToStruct(user, &memberResp)
-		if err != nil {
+		if err := helpers.StructToStruct(user, &memberResp); err != nil {
 			return nil, err
 		}
 		memberResp.AccessLevel = userAccess[user.ID.String()]
@@ -1443,41 +1424,24 @@ func (a *authManagementService) UpdatePassword(ctx context.Context, schema strin
 
 // BulkAddMembers adds multiple members to a workspace with their memberships
 func (a *authManagementService) BulkAddMembers(ctx context.Context, schema string, req dto.BulkAddMembersRequest, userID string) (dto.BulkAddMembersResponse, error) {
-	result := dto.BulkAddMembersResponse{
-		Success: []string{},
-		Failed:  []dto.MemberAddFailure{},
-		Total:   len(req.Members),
-	}
-
-	for _, member := range req.Members {
-		createReq := dto.CreateMemberRequest{
-			UserID:     member.UserID,
-			Membership: member.Memberships,
-		}
-
-		err := a.AssignUserToWorkspace(ctx, schema, createReq, userID)
-		if err != nil {
-			result.Failed = append(result.Failed, dto.MemberAddFailure{
-				UserID: member.UserID,
-				Error:  fmt.Sprintf("failed to assign member: %v", err),
-			})
-		} else {
-			result.Success = append(result.Success, member.UserID)
-		}
-	}
-
-	return result, nil
+	return a.bulkAddMembersHelper(ctx, schema, req.Members, userID, "failed to assign member: %v")
 }
 
 // BulkAddBaseMembers adds multiple members to bases with their roles
 func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema string, baseID string, req dto.BulkAddBaseMembersRequest, userID string) (dto.BulkAddMembersResponse, error) {
+	// baseID is unused here but kept for signature compatibility
+	return a.bulkAddMembersHelper(ctx, schema, req.Members, userID, "failed to assign member to base: %v")
+}
+
+// bulkAddMembersHelper performs the shared loop for adding multiple members
+func (a *authManagementService) bulkAddMembersHelper(ctx context.Context, schema string, members []dto.BulkMemberRequest, userID string, errMsgFmt string) (dto.BulkAddMembersResponse, error) {
 	result := dto.BulkAddMembersResponse{
 		Success: []string{},
 		Failed:  []dto.MemberAddFailure{},
-		Total:   len(req.Members),
+		Total:   len(members),
 	}
 
-	for _, member := range req.Members {
+	for _, member := range members {
 		createReq := dto.CreateMemberRequest{
 			UserID:     member.UserID,
 			Membership: member.Memberships,
@@ -1487,7 +1451,7 @@ func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema s
 		if err != nil {
 			result.Failed = append(result.Failed, dto.MemberAddFailure{
 				UserID: member.UserID,
-				Error:  fmt.Sprintf("failed to assign member to base: %v", err),
+				Error:  fmt.Sprintf(errMsgFmt, err),
 			})
 		} else {
 			result.Success = append(result.Success, member.UserID)
@@ -1502,33 +1466,10 @@ func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema s
 // 1. workspace_id in scope_id (workspace-level access)
 // 2. workspace_id as their membership workspace
 func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context, schema string, workspaceID string) ([]dto.UserWithRole, error) {
-	functionName := "get_workspace_members_with_role"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
-
 	args := map[string]interface{}{
 		"p_workspace_id": workspaceID,
 	}
-
-	records, err := a.repo.TableService.GetByFunction(
-		ctx,
-		schemaFunctionName,
-		args,
-	)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to get workspace members with roles")
-	}
-
-	var result []dto.UserWithRole
-	for _, record := range records {
-		if rec, ok := record[functionName].(map[string]interface{}); ok {
-			var user dto.UserWithRole
-			if err := helpers.MapToStruct(rec, &user); err == nil {
-				result = append(result, user)
-			}
-		}
-	}
-
-	return result, nil
+	return a.getMembersWithRole(ctx, "get_workspace_members_with_role", args, "failed to get workspace members with roles")
 }
 
 // GetBaseMembersWithRole retrieves base members with their roles in UserWithRole format
@@ -1536,20 +1477,18 @@ func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context,
 // 1. base_id in scope_id (base-level access)
 // 2. workspace members that have access to this base
 func (a *authManagementService) GetBaseMembersWithRole(ctx context.Context, schema string, baseID string) ([]dto.UserWithRole, error) {
-	functionName := "get_base_members_with_role"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
-
 	args := map[string]interface{}{
 		"p_base_id": baseID,
 	}
+	return a.getMembersWithRole(ctx, "get_base_members_with_role", args, "failed to get base members with roles")
+}
 
-	records, err := a.repo.TableService.GetByFunction(
-		ctx,
-		schemaFunctionName,
-		args,
-	)
+// getMembersWithRole is a helper to call DB functions that return user role maps
+func (a *authManagementService) getMembersWithRole(ctx context.Context, functionName string, args map[string]interface{}, logMsg string) ([]dto.UserWithRole, error) {
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
 	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to get base members with roles")
+		return nil, app_errors.LogDatabaseError(err, logMsg)
 	}
 
 	var result []dto.UserWithRole
@@ -1561,6 +1500,7 @@ func (a *authManagementService) GetBaseMembersWithRole(ctx context.Context, sche
 			}
 		}
 	}
+
 	return result, nil
 }
 
