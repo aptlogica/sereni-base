@@ -1059,16 +1059,14 @@ func (a *authManagementService) ensureUserEmailVerifiedForStatusUpdate(ctx conte
 
 func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) (bool, error) {
 	functionName := "get_user_role_by_id"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
 	args := map[string]interface{}{
 		"p_user_id": userID,
 	}
 
-	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+	records, err := a.getFunctionRecords(ctx, functionName, args)
 	if err != nil {
 		// If we can't verify owner status due to error, assume user is not an owner
-		// This allows the operation to proceed gracefully
 		return false, nil
 	}
 
@@ -1085,16 +1083,14 @@ func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema s
 // checkIfUserIsCoOwner checks if a user has the Co-Owner role
 func (a *authManagementService) checkIfUserIsCoOwner(ctx context.Context, schema string, userID string) (bool, error) {
 	functionName := "get_user_role_by_id"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
 	args := map[string]interface{}{
 		"p_user_id": userID,
 	}
 
-	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+	records, err := a.getFunctionRecords(ctx, functionName, args)
 	if err != nil {
 		// If we can't verify co-owner status due to error, assume user is not a co-owner
-		// This allows the operation to proceed gracefully
 		return false, nil
 	}
 
@@ -1158,56 +1154,15 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
 	// Try to remove from access_members table (RBAC system)
 	// Find all access_members records for this user-workspace combination
-	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
-	params := dbModels.QueryParams{
-		Select: []string{"id"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    "workspace",
-			},
-			{
-				Column:   "scope_id",
-				Operator: "eq",
-				Value:    workspaceID,
-			},
-		},
-	}
+	// NOTE: using helper deleteAccessMembersByScope below
 
-	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	deletedIDs, err := a.deleteAccessMembersByScope(ctx, schema, "workspace", workspaceID, userID)
 	if err != nil {
 		// If RBAC doesn't exist, try legacy workspace_members table
 		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
 	}
-
-	if len(accessRecords) == 0 {
-		// If no RBAC records, try legacy workspace_members table
+	if len(deletedIDs) == 0 {
 		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
-	}
-
-	// Delete all access_members records for this user-workspace combination
-	for _, record := range accessRecords {
-		var accessMemberID string
-		// Handle both string and uuid.UUID types
-		switch v := record["id"].(type) {
-		case string:
-			accessMemberID = v
-		case uuid.UUID:
-			accessMemberID = v.String()
-		default:
-			return fmt.Errorf("unexpected type for id field: %T", v)
-		}
-
-		deleteErr := a.repo.TableService.DeleteRecord(accessMembersTableName, accessMemberID)
-		if deleteErr != nil {
-			return deleteErr
-		}
 	}
 
 	// Send email notification
@@ -1231,52 +1186,15 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 func (a *authManagementService) RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error {
 	// For base removal, we need to find the access_member record and delete it
 	// Find the access_members record for this user-base combination
-	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
-	params := dbModels.QueryParams{
-		Select: []string{"id"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    "base",
-			},
-			{
-				Column:   "scope_id",
-				Operator: "eq",
-				Value:    baseID,
-			},
-		},
-	}
+	// NOTE: using helper deleteAccessMembersByScope below
 
-	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	deletedIDs, err := a.deleteAccessMembersByScope(ctx, schema, "base", baseID, userID)
 	if err != nil {
 		return err
 	}
 
-	if len(accessRecords) == 0 {
+	if len(deletedIDs) == 0 {
 		return app_errors.ErrRecordNotFound
-	}
-
-	// Delete the access_members record
-	var accessMemberID string
-	// Handle both string and uuid.UUID types
-	switch v := accessRecords[0]["id"].(type) {
-	case string:
-		accessMemberID = v
-	case uuid.UUID:
-		accessMemberID = v.String()
-	default:
-		return fmt.Errorf("unexpected type for id field: %T", v)
-	}
-
-	deleteErr := a.repo.TableService.DeleteRecord(accessMembersTableName, accessMemberID)
-	if deleteErr != nil {
-		return deleteErr
 	}
 
 	// Send email notification
@@ -1483,6 +1401,12 @@ func (a *authManagementService) GetBaseMembersWithRole(ctx context.Context, sche
 	return a.getMembersWithRole(ctx, "get_base_members_with_role", args, "failed to get base members with roles")
 }
 
+// getFunctionRecords calls a DB function and returns raw records (no logging/wrapping).
+func (a *authManagementService) getFunctionRecords(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error) {
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+	return a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+}
+
 // getMembersWithRole is a helper to call DB functions that return user role maps
 func (a *authManagementService) getMembersWithRole(ctx context.Context, functionName string, args map[string]interface{}, logMsg string) ([]dto.UserWithRole, error) {
 	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
@@ -1515,4 +1439,46 @@ func (a *authManagementService) RemoveAccessMemberByID(ctx context.Context, sche
 	}
 
 	return nil
+}
+
+// deleteAccessMembersByScope deletes access_members records for a given scope and user, returning deleted IDs
+func (a *authManagementService) deleteAccessMembersByScope(ctx context.Context, schema string, scopeType string, scopeID string, userID string) ([]string, error) {
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
+	params := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "user_id", Operator: "eq", Value: userID},
+			{Column: "scope_type", Operator: "eq", Value: scopeType},
+			{Column: "scope_id", Operator: "eq", Value: scopeID},
+		},
+	}
+
+	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(accessRecords) == 0 {
+		return []string{}, nil
+	}
+
+	deleted := make([]string, 0, len(accessRecords))
+	for _, record := range accessRecords {
+		var accessMemberID string
+		switch v := record["id"].(type) {
+		case string:
+			accessMemberID = v
+		case uuid.UUID:
+			accessMemberID = v.String()
+		default:
+			return nil, fmt.Errorf("unexpected type for id field: %T", v)
+		}
+
+		if err := a.repo.TableService.DeleteRecord(accessMembersTableName, accessMemberID); err != nil {
+			return nil, err
+		}
+		deleted = append(deleted, accessMemberID)
+	}
+
+	return deleted, nil
 }
