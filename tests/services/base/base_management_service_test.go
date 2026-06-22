@@ -488,11 +488,47 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
 		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
 
-		fh := &multipart.FileHeader{Filename: "image.gif"}
+		fh := &multipart.FileHeader{Filename: "image.bmp"}
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.NoError(t, err)
 		assert.Equal(t, inserted.ID, result.ID)
+	})
+
+	t.Run("svg image allowed", func(t *testing.T) {
+		_, _, mockBase, mockTableManagement, _, mockAsset, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
+		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://svg"}}, nil)
+		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
+			Return(tenant.Base{ID: inserted.ID, WorkspaceID: wsID.String(), Title: "Base", Image: "http://svg"}, nil)
+
+		fh := createPNGFileHeader(t, "logo.svg")
+		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "http://svg", result.Image)
+	})
+
+	t.Run("gif image allowed", func(t *testing.T) {
+		_, _, mockBase, mockTableManagement, _, mockAsset, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
+		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://gif"}}, nil)
+		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
+			Return(tenant.Base{ID: inserted.ID, WorkspaceID: wsID.String(), Title: "Base", Image: "http://gif"}, nil)
+
+		fh := createPNGFileHeader(t, "image.gif")
+		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "http://gif", result.Image)
 	})
 
 	t.Run("upload error", func(t *testing.T) {

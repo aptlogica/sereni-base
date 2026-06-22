@@ -52,6 +52,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.EmailAlreadyVerified, UserError.EmailAlreadyVerified},
 	{app_errors.InvalidOldPassword, UserError.InvalidOldPassword},
 	{app_errors.NewPasswordInvalid, UserError.NewPasswordInvalid},
+	{app_errors.EmailVerificationPending, UserError.EmailVerificationPending},
 
 	// role management (aliases point to RBAC codes for consistency)
 	{app_errors.RoleAlreadyExists, RBACError.RoleAlreadyExists},
