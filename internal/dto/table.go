@@ -308,10 +308,10 @@ type RemoveDuplicatesResponse struct {
 }
 
 type ColumnSplitRequest struct {
-	ModelID      uuid.UUID      `json:"modelId" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
-	ColumnID     uuid.UUID      `json:"columnId" binding:"required" example:"223e4567-e89b-12d3-a456-426614174000"`
-	SplitBy      SplitByRequest `json:"splitBy" binding:"required"`
-	KeepOriginal bool           `json:"keepOriginal"`
+	ModelID      uuid.UUID      `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnID     uuid.UUID      `json:"column_id" binding:"required" example:"223e4567-e89b-12d3-a456-426614174000"`
+	SplitBy      SplitByRequest `json:"split_by" binding:"required"`
+	KeepOriginal bool           `json:"keep_original"`
 	Where        string         `json:"where" binding:"required,oneof=next end" example:"next"`
 	Limit        *int           `json:"limit,omitempty" binding:"omitempty,gte=2" example:"3"`
 }
@@ -350,7 +350,7 @@ func (r *ColumnSplitRequest) UnmarshalJSON(data []byte) error {
 }
 
 type SplitByRequest struct {
-	Type   string                 `json:"type" binding:"required,oneof=separator fixedLength pattern" example:"separator"`
+	Type   string                 `json:"type" binding:"required,oneof=separator fixed_length pattern" example:"separator"`
 	Config map[string]interface{} `json:"config" binding:"required"`
 }
 
