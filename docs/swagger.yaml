@@ -223,6 +223,8 @@ definitions:
     - memberships
     - user_id
     type: object
+  dto.BulkUpdateColumnsRequest:
+    type: object
   dto.ColumnResponse:
     properties:
       base_id:
@@ -343,13 +345,20 @@ definitions:
     - email
     - name
     type: object
-  dto.CreateRowRequest:
+  dto.CreateRowOrBulkInsertRequest:
     properties:
       created_by:
+        type: string
+      last_modified_by:
         type: string
       model_id:
         example: 123e4567-e89b-12d3-a456-426614174000
         type: string
+      rows:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
     required:
     - model_id
     type: object
@@ -662,6 +671,18 @@ definitions:
     required:
     - token
     type: object
+  dto.ResetColumnValuesRequest:
+    properties:
+      column_id:
+        example: col-123
+        type: string
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+    required:
+    - column_id
+    - model_id
+    type: object
   dto.ResetPasswordRequest:
     properties:
       new_password:
@@ -787,6 +808,24 @@ definitions:
     - model_id
     - source_row_id
     - target_row_id
+    type: object
+  dto.UpdateRowRequest:
+    properties:
+      last_modified_by:
+        type: string
+      model_id:
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+      row_id:
+        example: 1
+        type: integer
+      values:
+        additionalProperties: true
+        type: object
+    required:
+    - model_id
+    - row_id
+    - values
     type: object
   dto.UpdateTableRequest:
     properties:
@@ -2572,6 +2611,51 @@ paths:
       summary: Update a column
       tags:
       - Admin Table Column
+  /column/bulk-update:
+    post:
+      consumes:
+      - application/json
+      description: Updates multiple columns with the provided metadata and returns
+        success status.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Model ID and array of column updates
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkUpdateColumnsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bulk update completed successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bulk update columns
+      tags:
+      - Admin Table Column
   /column/create:
     post:
       consumes:
@@ -2666,6 +2750,54 @@ paths:
       security:
       - BearerAuth: []
       summary: Reorder columns
+      tags:
+      - Admin Table Column
+  /column/reset:
+    post:
+      consumes:
+      - application/json
+      description: Sets all values in a specified column to NULL across all rows.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Model ID and column ID to reset
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResetColumnValuesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Column values reset successfully
+          schema:
+            $ref: '#/definitions/models.SuccessResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found — column missing
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reset column values
       tags:
       - Admin Table Column
   /health:
@@ -3210,26 +3342,26 @@ paths:
     post:
       consumes:
       - application/json
-      description: Inserts a new row stub for the specified model and returns the
-        created record metadata.
+      description: Creates a single row when only model_id is provided, or creates
+        rows with values when rows[] is provided.
       parameters:
       - description: Optional client-generated request trace ID
         in: header
         name: X-Request-ID
         type: string
-      - description: Row creation payload
+      - description: Row create or bulk insert payload
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/dto.CreateRowRequest'
+          $ref: '#/definitions/dto.CreateRowOrBulkInsertRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: Record stub created
+          description: Single row record or bulk insert summary in data
           schema:
-            $ref: '#/definitions/dto.RecordResponse'
+            $ref: '#/definitions/models.SuccessResponse'
         "400":
           description: Bad Request — invalid payload
           schema:
@@ -3252,7 +3384,7 @@ paths:
             $ref: '#/definitions/models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Create a new row
+      summary: Create row(s)
       tags:
       - Admin Table Column
   /row/data/insert:
@@ -3399,6 +3531,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Delete a row
+      tags:
+      - Admin Table Column
+  /row/update:
+    patch:
+      consumes:
+      - application/json
+      description: Partially patches a single row by applying provided column values
+        in one API call.
+      parameters:
+      - description: Optional client-generated request trace ID
+        in: header
+        name: X-Request-ID
+        type: string
+      - description: Model ID, row ID, and direct column-value map
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateRowRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated row returned
+          schema:
+            $ref: '#/definitions/dto.RecordResponse'
+        "400":
+          description: Bad Request — invalid payload
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity — invalid value
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a row
       tags:
       - Admin Table Column
   /table/:
@@ -3771,14 +3952,14 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: Imports table schema/data from an uploaded file and generates the
-        model along with default configuration.
+      description: Imports table schema/data from an uploaded file with user-provided
+        column configuration and data cleaning settings.
       parameters:
       - description: Optional client-generated request trace ID
         in: header
         name: X-Request-ID
         type: string
-      - description: CSV/definition file
+      - description: CSV file to import
         in: formData
         name: file
         required: true
@@ -3793,11 +3974,12 @@ paths:
         name: workspace_id
         required: true
         type: string
-      - description: Optional name override
+      - description: Table name
         in: formData
         name: title
+        required: true
         type: string
-      - description: Description override
+      - description: Table description
         in: formData
         name: description
         type: string
@@ -3805,15 +3987,20 @@ paths:
         in: formData
         name: order_index
         type: string
+      - description: JSON config with settings and column configurations
+        in: formData
+        name: config
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: Imported table returned
+          description: Table imported with custom config
           schema:
             $ref: '#/definitions/dto.TableResponse'
         "400":
-          description: Bad Request — missing file or required IDs
+          description: Bad Request — missing required fields
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "401":
@@ -3825,7 +4012,7 @@ paths:
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "422":
-          description: Unprocessable Entity — invalid file
+          description: Unprocessable Entity — invalid config or file
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "500":
@@ -3834,7 +4021,7 @@ paths:
             $ref: '#/definitions/models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Import a table via file
+      summary: Import a table via file with configuration
       tags:
       - Admin Table Column
   /user/access-details:

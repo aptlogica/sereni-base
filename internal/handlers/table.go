@@ -1258,16 +1258,12 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 	}
 
 	// Build import request from context values and config
-	title := file.Filename
+	req := buildImportRequestFromContext(c, importConfig)
 
-	req := buildImportRequestFromContext(c, importConfig, title)
-
-	// Use provided title or extract from filename
-	if req.Title == "" {
-		req.Title = file.Filename
-	}
-	if lastDot := strings.LastIndex(req.Title, "."); lastDot != -1 {
-		req.Title = req.Title[:lastDot]
+	// Compute tableTitle from uploaded filename (strip extension).
+	tableTitle := file.Filename
+	if lastDot := strings.LastIndex(tableTitle, "."); lastDot != -1 {
+		tableTitle = tableTitle[:lastDot]
 	}
 
 	// Get schema from context
@@ -1275,7 +1271,8 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 	schemaName, _ := schemaNameVal.(string)
 
 	// Call import service with config
-	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, req.Title)
+	// Pass computed tableTitle to the import service (title/description not accepted from form)
+	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, tableTitle)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -1306,7 +1303,7 @@ func setPrimaryColumn(importConfig *dto.ImportConfig, primaryName string) error 
 }
 
 // buildImportRequestFromContext builds dto.ImportWithConfigRequest from the gin context and parsed config
-func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig, title string) dto.ImportWithConfigRequest {
+func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig) dto.ImportWithConfigRequest {
 	var req dto.ImportWithConfigRequest
 	req.BaseID = c.PostForm("base_id")
 	req.WorkspaceID = c.PostForm("workspace_id")

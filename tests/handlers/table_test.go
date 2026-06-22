@@ -59,9 +59,14 @@ func TestTableHandler_ImportTable_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	// Initialize config for test
+	orig := config.AppConfig
+	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
+	defer func() { config.AppConfig = orig }()
+
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		Return(dto.ImportTableResponse{}, nil)
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
 
@@ -70,7 +75,6 @@ func TestTableHandler_ImportTable_Success(t *testing.T) {
 	part, _ := writer.CreateFormFile("file", "data.csv")
 	io.WriteString(part, "col1,col2\nval1,val2")
 	writer.WriteField("base_id", uuid.New().String())
-	writer.WriteField("tableName", "Imported Table")
 	writer.WriteField("config", `{"columns":[]}`)
 	writer.Close()
 
@@ -79,6 +83,7 @@ func TestTableHandler_ImportTable_Success(t *testing.T) {
 	c.Request = httptest.NewRequest("POST", "/import", body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
 	c.Set("schema", "test")
+	c.Set("user_id", "user123")
 
 	handler.ImportTableWithConfig(c)
 
@@ -87,6 +92,10 @@ func TestTableHandler_ImportTable_Success(t *testing.T) {
 
 func TestTableHandler_ImportTable_NoFile(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	orig := config.AppConfig
+	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
+	defer func() { config.AppConfig = orig }()
+
 	handler := handlers.NewTableHandler(nil, nil)
 
 	body := &bytes.Buffer{}
@@ -108,6 +117,10 @@ func TestTableHandler_ImportTable_NoFile(t *testing.T) {
 
 func TestTableHandler_ImportTable_NoBaseId(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	orig := config.AppConfig
+	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
+	defer func() { config.AppConfig = orig }()
+
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -140,6 +153,10 @@ func TestTableHandler_ImportTable_NoBaseId(t *testing.T) {
 
 func TestTableHandler_ImportTable_InvalidConfigJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	orig := config.AppConfig
+	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
+	defer func() { config.AppConfig = orig }()
+
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -169,6 +186,10 @@ func TestTableHandler_ImportTable_InvalidConfigJSON(t *testing.T) {
 
 func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	orig := config.AppConfig
+	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
+	defer func() { config.AppConfig = orig }()
+
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -511,9 +532,12 @@ func TestTableHandler_ImportTable_WithDescription(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			// Title and description are not used in the new payload; skip assertions for them
+			// tableTitle should be computed from filename (extension stripped), not from form fields
+			if tableTitle != "data" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'data', got " + tableTitle)
+			}
 			return dto.ImportTableResponse{}, nil
 		})
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
@@ -525,6 +549,46 @@ func TestTableHandler_ImportTable_WithDescription(t *testing.T) {
 	writer.WriteField("base_id", uuid.New().String())
 	writer.WriteField("config", `{"columns":[]}`)
 	writer.WriteField("description", "Table description")
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestTableHandler_ImportTable_TitleNotUsedFromFormField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "myfile").
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			// Verify tableTitle comes from filename, not from form field
+			if tableTitle == "CustomTitle" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should not use form field value")
+			}
+			if tableTitle != "myfile" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'myfile' from filename")
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "myfile.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.WriteField("title", "CustomTitle")
 	writer.Close()
 
 	w := httptest.NewRecorder()
@@ -582,10 +646,13 @@ func TestTableHandler_ImportTable_WithMultipleColumns(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
 			if len(req.Config.Columns) != 3 {
 				return dto.ImportTableResponse{}, errors.New("columns count not correct")
+			}
+			if tableTitle != "data" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'data' from filename")
 			}
 			return dto.ImportTableResponse{}, nil
 		})
@@ -617,9 +684,12 @@ func TestTableHandler_ImportTable_SpecialCharactersInTitle(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			// Title is not used from payload anymore; skip assertion
+			// tableTitle is computed from filename (extension stripped), not from form payload
+			if tableTitle != "data" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'data' from filename, not form field")
+			}
 			return dto.ImportTableResponse{}, nil
 		})
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
@@ -651,10 +721,13 @@ func TestTableHandler_ImportTable_IntegerOrderIndex(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
 			if req.OrderIndex != 5.0 {
 				return dto.ImportTableResponse{}, errors.New("order index not set correctly")
+			}
+			if tableTitle != "data" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'data' from filename")
 			}
 			return dto.ImportTableResponse{}, nil
 		})
@@ -687,11 +760,14 @@ func TestTableHandler_ImportTable_InvalidOrderIndexFormat(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
 			// Invalid format should default to 0
 			if req.OrderIndex != 0.0 {
 				return dto.ImportTableResponse{}, errors.New("order index should default to 0 for invalid format")
+			}
+			if tableTitle != "data" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'data' from filename")
 			}
 			return dto.ImportTableResponse{}, nil
 		})
@@ -717,6 +793,42 @@ func TestTableHandler_ImportTable_InvalidOrderIndexFormat(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
+func TestTableHandler_ImportTable_MultipleDotsInFilename(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "archive.backup").
+		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
+			// Only the last extension (.csv) should be stripped
+			if tableTitle != "archive.backup" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'archive.backup', got " + tableTitle)
+			}
+			return dto.ImportTableResponse{}, nil
+		})
+	handler := handlers.NewTableHandler(mockTableService, mockImportService)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "archive.backup.csv")
+	io.WriteString(part, "col1,col2\nval1,val2")
+	writer.WriteField("base_id", uuid.New().String())
+	writer.WriteField("config", `{"columns":[]}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/import", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.ImportTableWithConfig(c)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
 func TestTableHandler_ImportTable_LargeValidFile(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// Set import max size to 10MB to allow test file
@@ -729,7 +841,7 @@ func TestTableHandler_ImportTable_LargeValidFile(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "data").
 		Return(dto.ImportTableResponse{}, nil)
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
 
@@ -764,7 +876,7 @@ func TestTableHandler_ImportTable_AllFieldsProvided(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
-	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), "test_schema", gomock.Any(), gomock.Any(), gomock.Any()).
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), "test_schema", gomock.Any(), gomock.Any(), "data").
 		DoAndReturn(func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
 			if req.BaseID != baseID {
 				return dto.ImportTableResponse{}, errors.New("base_id not set correctly")
@@ -772,7 +884,10 @@ func TestTableHandler_ImportTable_AllFieldsProvided(t *testing.T) {
 			if req.WorkspaceID != workspaceID {
 				return dto.ImportTableResponse{}, errors.New("workspace_id not set correctly")
 			}
-			// Title and description are no longer taken from the payload, skip assertions for them
+			// tableTitle is computed from filename (extension stripped), not from form fields
+			if tableTitle != "data" {
+				return dto.ImportTableResponse{}, errors.New("tableTitle should be 'data' from filename, got " + tableTitle)
+			}
 			if req.OrderIndex != 3.5 {
 				return dto.ImportTableResponse{}, errors.New("order_index not set correctly")
 			}

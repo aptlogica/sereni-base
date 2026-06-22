@@ -94,6 +94,7 @@ var (
 	OwnerCannotBeRemoved         = errors.New("owner cannot be removed")
 	CoOwnerCannotBeRemoved       = errors.New("co-owner cannot be removed")
 	OnlyPendingUsersCanBeDeleted = errors.New("only users with pending status can be deleted")
+	EmailVerificationPending     = errors.New("email verification is pending")
 )
 
 // role management
