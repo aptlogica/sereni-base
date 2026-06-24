@@ -27,6 +27,8 @@ type TableManagementService interface {
 	GetColumnById(ctx context.Context, schemaName string, id string) (dto.ColumnResponse, error)
 	GetAllColumns(ctx context.Context, schemaName string) ([]dto.ColumnResponse, error)
 	GetColumnsByModelID(ctx context.Context, schemaName string, modelID string) ([]dto.ColumnResponse, error)
+	ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columnIDs []string) error
+	ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error
 	UpdateColumn(ctx context.Context, schemaName string, id string, req dto.ColumnUpdate) (dto.ColumnResponse, error)
 	DeleteColumn(ctx context.Context, schemaName string, id string) error
 	ReorderColumn(ctx context.Context, schemaName string, req dto.ReorderColumnRequest) ([]dto.ColumnResponse, error)
@@ -56,6 +58,7 @@ type TableManagementService interface {
 	BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error
 	ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error
 	TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error)
+	CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error)
 	FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error)
 	RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error)
 	RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error)

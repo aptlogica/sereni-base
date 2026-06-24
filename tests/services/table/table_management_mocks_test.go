@@ -101,6 +101,11 @@ func (m *MockColumnService) ResetColumn(ctx context.Context, schemaName string, 
 	return args.Error(0)
 }
 
+func (m *MockColumnService) BulkUpdateByColumns(ctx context.Context, schemaName string, tableName string, updates []dto.UpdateColumnValueRequest) error {
+	args := m.Called(ctx, schemaName, tableName, updates)
+	return args.Error(0)
+}
+
 // MockViewService implements interfaces.ViewService
 type MockViewService struct{ mock.Mock }
 

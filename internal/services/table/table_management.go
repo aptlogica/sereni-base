@@ -557,7 +557,7 @@ func (s tableManagementService) slugify(input string) string {
 	return slug + "_" + fmt.Sprintf("%d", timestamp)
 }
 
-func (s tableManagementService) addColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
+func (s tableManagementService) AddColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
 	schematableName := fmt.Sprintf(SchemaTableFormat, schemaName, tableName)
 
 	addColumnReq := dbModels.AddColumnRequest{
@@ -639,7 +639,7 @@ func (s tableManagementService) validateMetaForLookup(meta map[string]interface{
 	return lookupColumnID, relationID, true
 }
 
-// 	s.addColumnInTableDb(schemaName, trgTable.Alias)
+// 	s.AddColumnInTableDb(schemaName, trgTable.Alias)
 // 	// create column in target table (alter table)
 // 	// entry in columns table
 // 	// entry in relationship table
@@ -700,7 +700,7 @@ func (s tableManagementService) AddColumn(
 		return dto.ColumnResponse{}, err
 	}
 
-	err = s.addColumnInTableDb(schemaName, model.Alias, column)
+	err = s.AddColumnInTableDb(schemaName, model.Alias, column)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
@@ -814,7 +814,7 @@ func (s tableManagementService) createSourceColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	if err := s.addColumnInTableDb(schemaName, sourceModelData.Alias, sourcColumn); err != nil {
+	if err := s.AddColumnInTableDb(schemaName, sourceModelData.Alias, sourcColumn); err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
@@ -874,7 +874,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	if err := s.addColumnInTableDb(schemaName, targetModelData.Alias, targetColumn); err != nil {
+	if err := s.AddColumnInTableDb(schemaName, targetModelData.Alias, targetColumn); err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 

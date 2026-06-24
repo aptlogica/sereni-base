@@ -1445,8 +1445,6 @@ func (h *TableHandler) ResetColumnValues(c *gin.Context) {
 	})
 }
 
-
-
 // @Summary      Trim whitespace in selected columns
 // @Description  Cleans whitespace for selected columns by fetching records directly from the database, skipping NULL/non-string values, and updating only changed cells.
 // @Tags         Admin Table Column
@@ -1475,6 +1473,12 @@ func (h *TableHandler) TrimWhitespace(c *gin.Context) {
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
 	result, err := h.tableManagementService.TrimWhitespace(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1526,6 +1530,11 @@ func (h *TableHandler) FindReplace(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
 	result, err := h.tableManagementService.FindReplace(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1575,6 +1584,11 @@ func (h *TableHandler) CaseNormalization(c *gin.Context) {
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	if svcWithCase, ok := h.tableManagementService.(interface {
 		CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error)
@@ -1635,6 +1649,11 @@ func (h *TableHandler) RemoveSpecialCharacters(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
 	result, err := h.tableManagementService.RemoveSpecialCharacters(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1689,6 +1708,11 @@ func (h *TableHandler) ColumnSplit(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
+	if err := h.tableManagementService.ValidateColumnAllowedForSplit(c, schemaName, req.ModelID.String(), req.ColumnID.String()); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
 	result, err := h.tableManagementService.ColumnSplit(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1726,6 +1750,11 @@ func (h *TableHandler) RemoveFormatting(c *gin.Context) {
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	result, err := h.tableManagementService.RemoveFormatting(c, schemaName, req)
 	if err != nil {
@@ -1784,6 +1813,11 @@ func (h *TableHandler) RemoveDuplicates(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
 	result, err := h.tableManagementService.RemoveDuplicates(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1822,6 +1856,11 @@ func (h *TableHandler) MergeColumns(c *gin.Context) {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
 
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
 	result, err := h.tableManagementService.MergeColumns(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1859,6 +1898,11 @@ func (h *TableHandler) ExtractSubstring(c *gin.Context) {
 
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, []string{req.ColumnId}); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	result, err := h.tableManagementService.ExtractSubstring(c, schemaName, req)
 	if err != nil {

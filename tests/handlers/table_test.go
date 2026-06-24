@@ -29,6 +29,14 @@ type bulkCapableTableService struct {
 	createRowsWithValues func(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
 }
 
+// minimalSvc provides ValidateColumnsAllowed but does NOT implement CaseNormalization,
+// so it can be used to exercise the NotImplemented path in handlers.
+type minimalSvc struct{}
+
+func (m *minimalSvc) ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columns []string) error {
+	return nil
+}
+
 func (s *bulkCapableTableService) CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error) {
 	return s.createRowsWithValues(ctx, schemaName, modelID, rowsInput, createdBy, updatedBy)
 }
@@ -3012,4 +3020,595 @@ func TestTableHandler_BulkDeleteRows_ServiceError(t *testing.T) {
 
 func ptrString(s string) *string {
 	return &s
+}
+
+func postJSONContext(body interface{}) (*httptest.ResponseRecorder, *gin.Context) {
+	gin.SetMode(gin.TestMode)
+	payload, _ := json.Marshal(body)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBuffer(payload))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	return w, c
+}
+
+func enhancementColumnIDs() (modelID, colID, colID2 string) {
+	return uuid.New().String(), uuid.New().String(), uuid.New().String()
+}
+
+func TestTableHandler_TrimWhitespace(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.TrimWhitespaceRequest{ModelID: modelID, Columns: []string{colID}, TrimMode: "trim_both"}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.TrimWhitespace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.TrimWhitespace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.UpdateNotAllowed)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.TrimWhitespace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().TrimWhitespace(gomock.Any(), "test", validReq).Return(dto.TrimWhitespaceResponse{}, errors.New("trim failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.TrimWhitespace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	trimModes := []string{"trim_both", "trim_leading", "trim_trailing", "collapse_spaces"}
+	for _, mode := range trimModes {
+		mode := mode
+		t.Run("success "+mode, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			req := validReq
+			req.TrimMode = mode
+			mockSvc := mocks.NewMockTableManagementService(ctrl)
+			mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+			mockSvc.EXPECT().TrimWhitespace(gomock.Any(), "test", req).Return(dto.TrimWhitespaceResponse{TotalUpdated: 1}, nil)
+			handler := handlers.NewTableHandler(mockSvc, nil)
+			w, c := postJSONContext(req)
+			handler.TrimWhitespace(c)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestTableHandler_FindReplace(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.FindReplaceRequest{
+		ModelID: modelID, Columns: []string{colID},
+		FindValue: "a", ReplaceValue: "b", MatchType: "ignore_case",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.FindReplace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.FindReplace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.ColumnNotFound)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.FindReplace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().FindReplace(gomock.Any(), "test", validReq).Return(dto.FindReplaceResponse{}, errors.New("replace failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.FindReplace(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	for _, matchType := range []string{"match_case", "ignore_case", "match_entire_value"} {
+		matchType := matchType
+		t.Run("success "+matchType, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			req := validReq
+			req.MatchType = matchType
+			mockSvc := mocks.NewMockTableManagementService(ctrl)
+			mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+			mockSvc.EXPECT().FindReplace(gomock.Any(), "test", req).Return(dto.FindReplaceResponse{TotalMatched: 1}, nil)
+			handler := handlers.NewTableHandler(mockSvc, nil)
+			w, c := postJSONContext(req)
+			handler.FindReplace(c)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestTableHandler_CaseNormalization(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.CaseNormalizationRequest{
+		ModelID: modelID, Columns: []string{colID}, CaseFormat: "lowercase",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.CaseNormalization(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.CaseNormalization(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.UpdateNotAllowed)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.CaseNormalization(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().CaseNormalization(gomock.Any(), "test", validReq).Return(dto.CaseNormalizationResponse{}, errors.New("normalize failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.CaseNormalization(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	for _, caseFormat := range []string{"lowercase", "uppercase", "title_case", "sentence_case"} {
+		caseFormat := caseFormat
+		t.Run("success "+caseFormat, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			req := validReq
+			req.CaseFormat = caseFormat
+			mockSvc := mocks.NewMockTableManagementService(ctrl)
+			mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+			mockSvc.EXPECT().CaseNormalization(gomock.Any(), "test", req).Return(dto.CaseNormalizationResponse{TotalUpdated: 1}, nil)
+			handler := handlers.NewTableHandler(mockSvc, nil)
+			w, c := postJSONContext(req)
+			handler.CaseNormalization(c)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestTableHandler_RemoveSpecialCharacters(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.RemoveSpecialCharactersRequest{
+		ModelID: modelID, Columns: []string{colID}, SpecialCharactersType: "symbols",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.RemoveSpecialCharacters(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.RemoveSpecialCharacters(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.ColumnNotFound)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveSpecialCharacters(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().RemoveSpecialCharacters(gomock.Any(), "test", validReq).Return(dto.RemoveSpecialCharactersResponse{}, errors.New("remove failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveSpecialCharacters(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	for _, charType := range []string{"symbols", "currency_symbols", "brackets", "punctuation", "custom"} {
+		charType := charType
+		t.Run("success "+charType, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			req := validReq
+			req.SpecialCharactersType = charType
+			if charType == "custom" {
+				req.CustomCharacter = []string{"#"}
+			}
+			mockSvc := mocks.NewMockTableManagementService(ctrl)
+			mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+			mockSvc.EXPECT().RemoveSpecialCharacters(gomock.Any(), "test", req).Return(dto.RemoveSpecialCharactersResponse{TotalMatched: 1}, nil)
+			handler := handlers.NewTableHandler(mockSvc, nil)
+			w, c := postJSONContext(req)
+			handler.RemoveSpecialCharacters(c)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestTableHandler_ColumnSplit(t *testing.T) {
+	modelUUID := uuid.New()
+	colUUID := uuid.New()
+	validReq := dto.ColumnSplitRequest{
+		ModelID: modelUUID, ColumnID: colUUID,
+		SplitBy: dto.SplitByRequest{Type: "separator", Config: map[string]interface{}{"separator": ","}},
+		Where:   "end",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.ColumnSplit(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.ColumnSplit(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate column error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnAllowedForSplit(gomock.Any(), "test", modelUUID.String(), colUUID.String()).Return(app_errors.SplitNotPossible)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.ColumnSplit(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnAllowedForSplit(gomock.Any(), "test", modelUUID.String(), colUUID.String()).Return(nil)
+		mockSvc.EXPECT().ColumnSplit(gomock.Any(), "test", validReq).Return(dto.ColumnSplitResponse{}, errors.New("split failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.ColumnSplit(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnAllowedForSplit(gomock.Any(), "test", modelUUID.String(), colUUID.String()).Return(nil)
+		mockSvc.EXPECT().ColumnSplit(gomock.Any(), "test", validReq).Return(dto.ColumnSplitResponse{Message: "ok", CreatedColumns: []string{"c1"}}, nil)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.ColumnSplit(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
+
+func TestTableHandler_RemoveFormatting(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.RemoveFormattingRequest{
+		ModelID: modelID, Columns: []string{colID}, Formatting: "currency",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.RemoveFormatting(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.RemoveFormatting(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.UpdateNotAllowed)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveFormatting(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().RemoveFormatting(gomock.Any(), "test", validReq).Return(dto.RemoveFormattingResponse{}, errors.New("format failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveFormatting(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	for _, formatting := range []string{"currency", "percentage", "separator", "phone", "date", "custom"} {
+		formatting := formatting
+		t.Run("success "+formatting, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			req := validReq
+			req.Formatting = formatting
+			if formatting == "custom" {
+				req.CustomPattern = []string{"-"}
+			}
+			mockSvc := mocks.NewMockTableManagementService(ctrl)
+			mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+			mockSvc.EXPECT().RemoveFormatting(gomock.Any(), "test", req).Return(dto.RemoveFormattingResponse{UpdatedRecords: 1}, nil)
+			handler := handlers.NewTableHandler(mockSvc, nil)
+			w, c := postJSONContext(req)
+			handler.RemoveFormatting(c)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestTableHandler_RemoveDuplicates(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.RemoveDuplicatesRequest{
+		ModelID: modelID, Columns: []string{colID},
+		Duplicate: "remove_row", KeepRule: "keep_first",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.RemoveDuplicates(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.RemoveDuplicates(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.ColumnNotFound)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveDuplicates(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().RemoveDuplicates(gomock.Any(), "test", validReq).Return(dto.RemoveDuplicatesResponse{}, errors.New("dedupe failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveDuplicates(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().RemoveDuplicates(gomock.Any(), "test", validReq).Return(dto.RemoveDuplicatesResponse{TotalRowsAffected: 2}, nil)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.RemoveDuplicates(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
+
+func TestTableHandler_MergeColumns(t *testing.T) {
+	modelID, colID, colID2 := enhancementColumnIDs()
+	validReq := dto.MergeColumnsRequest{
+		ModelID: modelID, Columns: []string{colID, colID2}, MergeFormat: "space",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.MergeColumns(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.MergeColumns(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID, colID2}).Return(app_errors.UpdateNotAllowed)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.MergeColumns(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID, colID2}).Return(nil)
+		mockSvc.EXPECT().MergeColumns(gomock.Any(), "test", validReq).Return(dto.MergeColumnsResponse{}, errors.New("merge failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.MergeColumns(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID, colID2}).Return(nil)
+		mockSvc.EXPECT().MergeColumns(gomock.Any(), "test", validReq).Return(dto.MergeColumnsResponse{TotalUpdated: 1}, nil)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.MergeColumns(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
+
+func TestTableHandler_ExtractSubstring(t *testing.T) {
+	modelID, colID, _ := enhancementColumnIDs()
+	validReq := dto.ExtractSubstringRequest{
+		ModelID: modelID, ColumnId: colID,
+		ExtractionMethod: "extraction_type", ExtractionType: "email",
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString("invalid"))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("schema", "test")
+		handler.ExtractSubstring(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validation error", func(t *testing.T) {
+		handler := handlers.NewTableHandler(nil, nil)
+		w, c := postJSONContext(map[string]interface{}{})
+		handler.ExtractSubstring(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("validate columns error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(app_errors.ColumnNotFound)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.ExtractSubstring(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().ExtractSubstring(gomock.Any(), "test", validReq).Return(dto.ExtractSubstringResponse{}, errors.New("extract failed"))
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.ExtractSubstring(c)
+		assert.NotEqual(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := mocks.NewMockTableManagementService(ctrl)
+		mockSvc.EXPECT().ValidateColumnsAllowed(gomock.Any(), "test", modelID, []string{colID}).Return(nil)
+		mockSvc.EXPECT().ExtractSubstring(gomock.Any(), "test", validReq).Return(dto.ExtractSubstringResponse{UpdatedRecords: 1}, nil)
+		handler := handlers.NewTableHandler(mockSvc, nil)
+		w, c := postJSONContext(validReq)
+		handler.ExtractSubstring(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
 }

@@ -141,6 +141,78 @@ func (m *MockTableManagementService) DeleteTable(ctx context.Context, schemaName
 	return args.Error(0)
 }
 
+func (m *MockTableManagementService) ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.ColumnSplitResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.ColumnSplitResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) ExtractSubstring(ctx context.Context, schemaName string, req dto.ExtractSubstringRequest) (dto.ExtractSubstringResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.ExtractSubstringResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.ExtractSubstringResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.FindReplaceResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.FindReplaceResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.CaseNormalizationResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.CaseNormalizationResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) MergeColumns(ctx context.Context, schemaName string, req dto.MergeColumnsRequest) (dto.MergeColumnsResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.MergeColumnsResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.MergeColumnsResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.TrimWhitespaceResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.TrimWhitespaceResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.RemoveSpecialCharactersResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.RemoveSpecialCharactersResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.RemoveFormattingResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.RemoveFormattingResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) RemoveDuplicates(ctx context.Context, schemaName string, req dto.RemoveDuplicatesRequest) (dto.RemoveDuplicatesResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.RemoveDuplicatesResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.RemoveDuplicatesResponse), args.Error(1)
+}
+
 func (m *MockTableManagementService) AddColumn(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 	args := m.Called(ctx, schemaName, columnData)
 	return args.Get(0).(dto.ColumnResponse), args.Error(1)
@@ -268,6 +340,16 @@ func (m *MockTableManagementService) BulkUpdateColumns(ctx context.Context, sche
 }
 
 func (m *MockTableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	args := m.Called(ctx, schemaName, modelID, columnID)
+	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columnIDs []string) error {
+	args := m.Called(ctx, schemaName, modelID, columnIDs)
+	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error {
 	args := m.Called(ctx, schemaName, modelID, columnID)
 	return args.Error(0)
 }
