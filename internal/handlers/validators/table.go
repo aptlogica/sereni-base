@@ -15,18 +15,114 @@ import (
 	"github.com/google/uuid"
 )
 
+// Reusable validation helper functions
+
+func getModelIDValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.ModelIDRequired
+	default:
+		return responseConst.TableError.ModelIDInvalid
+	}
+}
+
+func getBaseIDValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.BaseIDRequired
+	default:
+		return responseConst.TableError.BaseIDInvalid
+	}
+}
+
+func getRowIdValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.RowIdRequired
+	default:
+		return responseConst.TableError.RowIdInvalid
+	}
+}
+
+func getColumnIdValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.ColumnIdRequired
+	default:
+		return responseConst.TableError.ColumnIdInvalid
+	}
+}
+
+func getColumnsValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required", "min":
+		return responseConst.TableError.ColumnNameRequired
+	default:
+		return responseConst.TableError.ColumnNameInvalid
+	}
+}
+
+func getTitleValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.TitleRequired
+	default:
+		return responseConst.TableError.TitleInvalid
+	}
+}
+
+func getDescriptionValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.DescriptionRequired
+	default:
+		return responseConst.TableError.DescriptionInvalid
+	}
+}
+
+func getOrderIndexValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.OrderIndexRequired
+	default:
+		return responseConst.TableError.OrderIndexInvalid
+	}
+}
+
+func getActionValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required", "required_if":
+		return responseConst.TableError.ActionRequired
+	default:
+		return responseConst.TableError.ActionInvalid
+	}
+}
+
+func getValueValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required", "required_if":
+		return responseConst.TableError.ValueRequired
+	default:
+		return responseConst.TableError.ValueInvalid
+	}
+}
+
+func getMetaValidationError(tag string) responseConst.ResponseCode {
+	switch tag {
+	case "required":
+		return responseConst.TableError.MetaRequired
+	default:
+		return responseConst.TableError.MetaInvalid
+	}
+}
+
 func CreateTableValidationErrors(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()
 
 	switch field {
 	case "BaseID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.BaseIDRequired
-		default:
-			return responseConst.TableError.BaseIDInvalid
-		}
+		return getBaseIDValidationError(tag)
 	case "WorkspaceID":
 		switch tag {
 		case "required":
@@ -35,26 +131,11 @@ func CreateTableValidationErrors(e validator.FieldError) responseConst.ResponseC
 			return responseConst.TableError.WorkspaceIDInvalid
 		}
 	case "Title":
-		switch tag {
-		case "required":
-			return responseConst.TableError.TitleRequired
-		default:
-			return responseConst.TableError.TitleInvalid
-		}
+		return getTitleValidationError(tag)
 	case "Description":
-		switch tag {
-		case "required":
-			return responseConst.TableError.DescriptionRequired
-		default:
-			return responseConst.TableError.DescriptionInvalid
-		}
+		return getDescriptionValidationError(tag)
 	case "OrderIndex":
-		switch tag {
-		case "required":
-			return responseConst.TableError.OrderIndexRequired
-		default:
-			return responseConst.TableError.OrderIndexInvalid
-		}
+		return getOrderIndexValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -64,60 +145,49 @@ func AddColumnValidator(e validator.FieldError) responseConst.ResponseCode {
 	return getAddColumnValidationError(e.Field(), e.Tag())
 }
 
-// fieldErrorCodes holds the required and invalid error codes for each field
-type fieldErrorCodes struct {
-	required responseConst.ResponseCode
-	invalid  responseConst.ResponseCode
-}
-
 func getAddColumnValidationError(field, tag string) responseConst.ResponseCode {
-	fieldErrors := map[string]fieldErrorCodes{
-		"ModelID": {
-			required: responseConst.TableError.ModelIDRequired,
-			invalid:  responseConst.TableError.ModelIDInvalid,
-		},
-		"BaseID": {
-			required: responseConst.TableError.BaseIDRequired,
-			invalid:  responseConst.TableError.BaseIDInvalid,
-		},
-		"Title": {
-			required: responseConst.TableError.TitleRequired,
-			invalid:  responseConst.TableError.TitleInvalid,
-		},
-		"Description": {
-			required: responseConst.TableError.DescriptionRequired,
-			invalid:  responseConst.TableError.DescriptionInvalid,
-		},
-		"UIDT": {
-			required: responseConst.TableError.UIDTRequired,
-			invalid:  responseConst.TableError.UIDTInvalid,
-		},
-		"Meta": {
-			required: responseConst.TableError.DTRequired,
-			invalid:  responseConst.TableError.DTInvalid,
-		},
-		"OrderIndex": {
-			required: responseConst.TableError.OrderIndexRequired,
-			invalid:  responseConst.TableError.OrderIndexInvalid,
-		},
-		"Virtual": {
-			required: responseConst.TableError.VirtualRequired,
-			invalid:  responseConst.TableError.VirtualInvalid,
-		},
-		"System": {
-			required: responseConst.TableError.SystemRequired,
-			invalid:  responseConst.TableError.SystemInvalid,
-		},
-	}
-
-	if errors, exists := fieldErrors[field]; exists {
-		if tag == "required" {
-			return errors.required
+	switch field {
+	case "ModelID":
+		return getModelIDValidationError(tag)
+	case "BaseID":
+		return getBaseIDValidationError(tag)
+	case "Title":
+		return getTitleValidationError(tag)
+	case "Description":
+		return getDescriptionValidationError(tag)
+	case "UIDT":
+		switch tag {
+		case "required":
+			return responseConst.TableError.UIDTRequired
+		default:
+			return responseConst.TableError.UIDTInvalid
 		}
-		return errors.invalid
+	case "Meta":
+		switch tag {
+		case "required":
+			return responseConst.TableError.DTRequired
+		default:
+			return responseConst.TableError.DTInvalid
+		}
+	case "OrderIndex":
+		return getOrderIndexValidationError(tag)
+	case "Virtual":
+		switch tag {
+		case "required":
+			return responseConst.TableError.VirtualRequired
+		default:
+			return responseConst.TableError.VirtualInvalid
+		}
+	case "System":
+		switch tag {
+		case "required":
+			return responseConst.TableError.SystemRequired
+		default:
+			return responseConst.TableError.SystemInvalid
+		}
+	default:
+		return responseConst.Error.ValidationFailed
 	}
-
-	return responseConst.Error.ValidationFailed
 }
 
 func CreateViewValidationError(e validator.FieldError) responseConst.ResponseCode {
@@ -126,40 +196,15 @@ func CreateViewValidationError(e validator.FieldError) responseConst.ResponseCod
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "Meta":
-		switch tag {
-		case "required":
-			return responseConst.TableError.MetaRequired
-		default:
-			return responseConst.TableError.MetaInvalid
-		}
+		return getMetaValidationError(tag)
 	case "BaseID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.BaseIDRequired
-		default:
-			return responseConst.TableError.BaseIDInvalid
-		}
+		return getBaseIDValidationError(tag)
 	case "Title":
-		switch tag {
-		case "required":
-			return responseConst.TableError.TitleRequired
-		default:
-			return responseConst.TableError.TitleInvalid
-		}
+		return getTitleValidationError(tag)
 	case "Description":
-		switch tag {
-		case "required":
-			return responseConst.TableError.DescriptionRequired
-		default:
-			return responseConst.TableError.DescriptionInvalid
-		}
+		return getDescriptionValidationError(tag)
 	case "Type":
 		switch tag {
 		case "required":
@@ -168,12 +213,7 @@ func CreateViewValidationError(e validator.FieldError) responseConst.ResponseCod
 			return responseConst.TableError.TypeInvalid
 		}
 	case "OrderIndex":
-		switch tag {
-		case "required":
-			return responseConst.TableError.OrderIndexRequired
-		default:
-			return responseConst.TableError.OrderIndexInvalid
-		}
+		return getOrderIndexValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -240,12 +280,7 @@ func CreateRowRequestValidationError(e validator.FieldError) responseConst.Respo
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -256,33 +291,13 @@ func InsertRowDataRequestValidationError(e validator.FieldError) responseConst.R
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
+		return getColumnIdValidationError(tag)
 	case "RowId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		default:
-			return responseConst.TableError.RowIdInvalid
-		}
+		return getRowIdValidationError(tag)
 	case "Value":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -293,26 +308,11 @@ func UpdateRowRequestValidationError(e validator.FieldError) responseConst.Respo
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "RowId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		default:
-			return responseConst.TableError.RowIdInvalid
-		}
+		return getRowIdValidationError(tag)
 	case "Values":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -323,19 +323,9 @@ func DeleteRowDataRequestValidationError(e validator.FieldError) responseConst.R
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "RowId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		default:
-			return responseConst.TableError.RowIdInvalid
-		}
+		return getRowIdValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -346,17 +336,10 @@ func BulkDeleteRowsRequestValidationError(e validator.FieldError) responseConst.
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "RowIds":
 		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		case "min":
+		case "required", "min":
 			return responseConst.TableError.RowIdRequired
 		default:
 			return responseConst.TableError.RowIdInvalid
@@ -371,43 +354,15 @@ func UpdateRowDataLinksRequestValidationError(e validator.FieldError) responseCo
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
-	case "SourceRowId":
-		return getRowIdValidationError(tag)
-	case "TargetRowId":
+		return getColumnIdValidationError(tag)
+	case "SourceRowId", "TargetRowId":
 		return getRowIdValidationError(tag)
 	case "Action":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		case "oneof":
-			return responseConst.TableError.ActionInvalid
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
-	}
-}
-
-func getRowIdValidationError(tag string) responseConst.ResponseCode {
-	switch tag {
-	case "required":
-		return responseConst.TableError.RowIdRequired
-	default:
-		return responseConst.TableError.RowIdInvalid
 	}
 }
 
@@ -416,26 +371,11 @@ func RemoveAttachmentsRequestValidationError(e validator.FieldError) responseCon
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
+		return getColumnIdValidationError(tag)
 	case "RowId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		default:
-			return responseConst.TableError.RowIdInvalid
-		}
+		return getRowIdValidationError(tag)
 	case "Attachments":
 		switch tag {
 		case "required":
@@ -454,12 +394,7 @@ func PaginationRequestValidationError(e validator.FieldError) responseConst.Resp
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "PageSize":
 		switch tag {
 		case "required":
@@ -484,21 +419,10 @@ func ReorderColumnRequestValidationError(e validator.FieldError) responseConst.R
 	tag := e.Tag()
 
 	switch field {
-	case "SourceColumnID":
-		return getColumnIdValidationError(tag)
-	case "TargetColumnID":
+	case "SourceColumnID", "TargetColumnID":
 		return getColumnIdValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
-	}
-}
-
-func getColumnIdValidationError(tag string) responseConst.ResponseCode {
-	switch tag {
-	case "required":
-		return responseConst.TableError.ColumnIdRequired
-	default:
-		return responseConst.TableError.ColumnIdInvalid
 	}
 }
 
@@ -507,26 +431,11 @@ func UpdateAttachmentRequestValidationError(e validator.FieldError) responseCons
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
+		return getColumnIdValidationError(tag)
 	case "RowId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.RowIdRequired
-		default:
-			return responseConst.TableError.RowIdInvalid
-		}
+		return getRowIdValidationError(tag)
 	case "AssetId":
 		switch tag {
 		case "required":
@@ -541,7 +450,6 @@ func UpdateAttachmentRequestValidationError(e validator.FieldError) responseCons
 		default:
 			return responseConst.TableError.ContentInvalid
 		}
-
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -552,24 +460,12 @@ func BulkUpdateColumnsRequestValidationError(e validator.FieldError) responseCon
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
+		return getColumnIdValidationError(tag)
 	case "Updates":
 		switch tag {
-		case "required":
-			return responseConst.TableError.UpdatesRequired
-		case "min":
+		case "required", "min":
 			return responseConst.TableError.UpdatesRequired
 		default:
 			return responseConst.TableError.UpdatesInvalid
@@ -584,53 +480,27 @@ func ResetColumnValuesRequestValidationError(e validator.FieldError) responseCon
 	tag := e.Tag()
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
+		return getColumnIdValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
 }
-
 
 func TrimWhitespaceRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "TrimMode":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -641,29 +511,14 @@ func CaseNormalizationRequestValidationError(e validator.FieldError) responseCon
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "CaseFormat":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -674,36 +529,16 @@ func FindReplaceRequestValidationError(e validator.FieldError) responseConst.Res
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "FindValue":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	case "MatchType":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -714,36 +549,16 @@ func RemoveSpecialCharactersRequestValidationError(e validator.FieldError) respo
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "SpecialCharactersType":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	case "CustomCharacter":
-		switch tag {
-		case "required", "required_if":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -754,29 +569,14 @@ func RemoveDuplicatesRequestValidationError(e validator.FieldError) responseCons
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "Duplicate", "KeepRule":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -787,36 +587,16 @@ func RemoveFormattingRequestValidationError(e validator.FieldError) responseCons
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "Formatting":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	case "CustomPattern":
-		switch tag {
-		case "required", "required_if":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -827,36 +607,16 @@ func MergeColumnsRequestValidationError(e validator.FieldError) responseConst.Re
 	tag := e.Tag()
 
 	if strings.HasPrefix(field, "Columns") {
-		switch tag {
-		case "required", "min":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	}
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "MergeFormat":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	case "CustomSeparator":
-		switch tag {
-		case "required", "required_if":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -868,40 +628,15 @@ func ExtractSubstringRequestValidationError(e validator.FieldError) responseCons
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnId":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnNameRequired
-		default:
-			return responseConst.TableError.ColumnNameInvalid
-		}
+		return getColumnsValidationError(tag)
 	case "ExtractionType":
-		switch tag {
-		case "required", "required_if":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	case "ExtractionMethod":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	case "StartAfter", "EndBefore":
-		switch tag {
-		case "required", "required_if":
-			return responseConst.TableError.ValueRequired
-		default:
-			return responseConst.TableError.ValueInvalid
-		}
+		return getValueValidationError(tag)
 	default:
 		return responseConst.Error.ValidationFailed
 	}
@@ -913,33 +648,13 @@ func ColumnSplitRequestValidationError(e validator.FieldError) responseConst.Res
 
 	switch field {
 	case "ModelID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ModelIDRequired
-		default:
-			return responseConst.TableError.ModelIDInvalid
-		}
+		return getModelIDValidationError(tag)
 	case "ColumnID":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ColumnIdRequired
-		default:
-			return responseConst.TableError.ColumnIdInvalid
-		}
+		return getColumnIdValidationError(tag)
 	case "SplitBy":
-		switch tag {
-		case "required":
-			return responseConst.TableError.MetaRequired
-		default:
-			return responseConst.TableError.MetaInvalid
-		}
+		return getMetaValidationError(tag)
 	case "Where":
-		switch tag {
-		case "required":
-			return responseConst.TableError.ActionRequired
-		default:
-			return responseConst.TableError.ActionInvalid
-		}
+		return getActionValidationError(tag)
 	case "Limit":
 		return responseConst.TableError.MetaInvalid
 	default:
