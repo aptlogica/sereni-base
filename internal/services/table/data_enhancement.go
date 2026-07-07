@@ -25,7 +25,6 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 type columnSplitStrategy struct {
@@ -43,6 +42,14 @@ const (
 	errFixedLengthPositive = "fixed_length value must be greater than zero"
 	errFixedLengthInvalid  = "fixed_length value is invalid"
 )
+
+func quoteIdentifier(identifier string) string {
+	return fmt.Sprintf("\"%s\"", strings.ReplaceAll(identifier, "\"", "\"\""))
+}
+
+func formatQualifiedTable(schemaName, tableName string) string {
+	return fmt.Sprintf("%s.%s", quoteIdentifier(schemaName), quoteIdentifier(tableName))
+}
 
 var (
 	symbolCharSet = map[rune]struct{}{
@@ -2201,13 +2208,11 @@ func DeleteOriginalColumnsIfNeededPublic(svc interfaces.TableManagementService, 
 }
 
 func (s tableManagementService) DeleteSplitOriginalColumn(tx *sql.Tx, schemaName, tableName string, column dto.ColumnResponse) error {
-	// #nosec G201 - schemaName, tableName, and columnName are database metadata identifiers and cannot be parameterized. They are safely escaped using pq.QuoteIdentifier.
-	alterQuery := fmt.Sprintf(`ALTER TABLE %s.%s DROP COLUMN %s`, pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName), pq.QuoteIdentifier(column.ColumnName))
+	alterQuery := fmt.Sprintf(`ALTER TABLE %s DROP COLUMN %s`, formatQualifiedTable(schemaName, tableName), quoteIdentifier(column.ColumnName))
 	if _, err := tx.ExecContext(context.Background(), alterQuery); err != nil {
 		return app_errors.LogDatabaseError(err, "failed to drop original split column")
 	}
-	// #nosec G201 - schemaName is a database metadata identifier and cannot be parameterized. It is safely escaped using pq.QuoteIdentifier.
-	deleteQuery := fmt.Sprintf(`DELETE FROM %s.%s WHERE id = $1`, pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier("columns"))
+	deleteQuery := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, formatQualifiedTable(schemaName, "columns"))
 	if _, err := tx.ExecContext(context.Background(), deleteQuery, column.ID.String()); err != nil {
 		return app_errors.LogDatabaseError(err, "failed to remove original split column metadata")
 	}
