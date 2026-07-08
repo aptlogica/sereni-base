@@ -2213,8 +2213,11 @@ func DeleteOriginalColumnsIfNeededPublic(svc interfaces.TableManagementService, 
 }
 
 func (s tableManagementService) DeleteSplitOriginalColumn(tx *sql.Tx, schemaName, tableName string, column dto.ColumnResponse) error {
+	// Identifiers are safely quoted via quoteIdentifier (escapes embedded double
+	// quotes by doubling). database/sql doesn't support parameterized identifiers
+	// in DDL, so safe quoting is the correct mitigation here, not bind parameters.
 	alterQuery := buildAlterTableDropColumnQuery(schemaName, tableName, column.ColumnName)
-	if _, err := tx.ExecContext(context.Background(), alterQuery); err != nil {
+	if _, err := tx.ExecContext(context.Background(), alterQuery); err != nil { // NOSONAR
 		return app_errors.LogDatabaseError(err, "failed to drop original split column")
 	}
 	if _, err := tx.ExecContext(context.Background(), deleteOriginalSplitColumnMetadataQuery, column.ID.String()); err != nil {
