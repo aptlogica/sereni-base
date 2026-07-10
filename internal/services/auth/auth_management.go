@@ -8,10 +8,10 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"time"
-
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/dto"
@@ -63,6 +63,9 @@ type authManagementService struct {
 	emailProviderService emailProvider.EmailService
 	authProviderService  authProviderInterface.AuthProvider
 }
+
+// sentinel error used to indicate underlying GetTableData failed (table missing)
+var errGetTable = errors.New("get_table_error")
 
 func NewAuthManagementService(
 	userDefaultPassword appConfig.TemporaryAddedUserPasswordConfig,
@@ -970,6 +973,11 @@ func (a *authManagementService) ActivateUser(ctx context.Context, schema string,
 		}
 	}
 
+	err = a.ensureUserEmailVerifiedForStatusUpdate(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
 	updateFields := map[string]interface{}{
 		"status":             "active",
 		"last_modified_time": time.Now(),
@@ -1015,6 +1023,11 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 		}
 	}
 
+	err = a.ensureUserEmailVerifiedForStatusUpdate(ctx, schema, userID)
+	if err != nil {
+		return dto.UserResponse{}, err
+	}
+
 	updateFields := map[string]interface{}{
 		"status":             "deactivated",
 		"last_modified_time": time.Now(),
@@ -1034,18 +1047,29 @@ func (a *authManagementService) DeactivateUser(ctx context.Context, schema strin
 	return userResponse, nil
 }
 
+func (a *authManagementService) ensureUserEmailVerifiedForStatusUpdate(ctx context.Context, schema string, userID string) error {
+	user, err := a.userManagementService.GetUserByID(ctx, schema, userID)
+	if err != nil {
+		return err
+	}
+
+	if !user.EmailVerified {
+		return app_errors.EmailVerificationPending
+	}
+
+	return nil
+}
+
 func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema string, userID string) (bool, error) {
 	functionName := "get_user_role_by_id"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
 	args := map[string]interface{}{
 		"p_user_id": userID,
 	}
 
-	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+	records, err := a.getFunctionRecords(ctx, functionName, args)
 	if err != nil {
 		// If we can't verify owner status due to error, assume user is not an owner
-		// This allows the operation to proceed gracefully
 		return false, nil
 	}
 
@@ -1062,16 +1086,14 @@ func (a *authManagementService) checkIfUserIsOwner(ctx context.Context, schema s
 // checkIfUserIsCoOwner checks if a user has the Co-Owner role
 func (a *authManagementService) checkIfUserIsCoOwner(ctx context.Context, schema string, userID string) (bool, error) {
 	functionName := "get_user_role_by_id"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
 
 	args := map[string]interface{}{
 		"p_user_id": userID,
 	}
 
-	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+	records, err := a.getFunctionRecords(ctx, functionName, args)
 	if err != nil {
 		// If we can't verify co-owner status due to error, assume user is not a co-owner
-		// This allows the operation to proceed gracefully
 		return false, nil
 	}
 
@@ -1135,56 +1157,18 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
 	// Try to remove from access_members table (RBAC system)
 	// Find all access_members records for this user-workspace combination
-	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
-	params := dbModels.QueryParams{
-		Select: []string{"id"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    "workspace",
-			},
-			{
-				Column:   "scope_id",
-				Operator: "eq",
-				Value:    workspaceID,
-			},
-		},
-	}
+	// NOTE: using helper deleteAccessMembersByScope below
 
-	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	deletedIDs, err := a.deleteAccessMembersByScope(ctx, schema, "workspace", workspaceID, userID)
 	if err != nil {
-		// If RBAC doesn't exist, try legacy workspace_members table
-		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
-	}
-
-	if len(accessRecords) == 0 {
-		// If no RBAC records, try legacy workspace_members table
-		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
-	}
-
-	// Delete all access_members records for this user-workspace combination
-	for _, record := range accessRecords {
-		var accessMemberID string
-		// Handle both string and uuid.UUID types
-		switch v := record["id"].(type) {
-		case string:
-			accessMemberID = v
-		case uuid.UUID:
-			accessMemberID = v.String()
-		default:
-			return fmt.Errorf("unexpected type for id field: %T", v)
+		if errors.Is(err, errGetTable) {
+			// If RBAC doesn't exist, try legacy workspace_members table
+			return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
 		}
-
-		deleteErr := a.repo.TableService.DeleteRecord(accessMembersTableName, accessMemberID)
-		if deleteErr != nil {
-			return deleteErr
-		}
+		return err
+	}
+	if len(deletedIDs) == 0 {
+		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
 	}
 
 	// Send email notification
@@ -1208,52 +1192,15 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 func (a *authManagementService) RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error {
 	// For base removal, we need to find the access_member record and delete it
 	// Find the access_members record for this user-base combination
-	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
-	params := dbModels.QueryParams{
-		Select: []string{"id"},
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   "user_id",
-				Operator: "eq",
-				Value:    userID,
-			},
-			{
-				Column:   "scope_type",
-				Operator: "eq",
-				Value:    "base",
-			},
-			{
-				Column:   "scope_id",
-				Operator: "eq",
-				Value:    baseID,
-			},
-		},
-	}
+	// NOTE: using helper deleteAccessMembersByScope below
 
-	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	deletedIDs, err := a.deleteAccessMembersByScope(ctx, schema, "base", baseID, userID)
 	if err != nil {
 		return err
 	}
 
-	if len(accessRecords) == 0 {
+	if len(deletedIDs) == 0 {
 		return app_errors.ErrRecordNotFound
-	}
-
-	// Delete the access_members record
-	var accessMemberID string
-	// Handle both string and uuid.UUID types
-	switch v := accessRecords[0]["id"].(type) {
-	case string:
-		accessMemberID = v
-	case uuid.UUID:
-		accessMemberID = v.String()
-	default:
-		return fmt.Errorf("unexpected type for id field: %T", v)
-	}
-
-	deleteErr := a.repo.TableService.DeleteRecord(accessMembersTableName, accessMemberID)
-	if deleteErr != nil {
-		return deleteErr
 	}
 
 	// Send email notification
@@ -1298,30 +1245,7 @@ func (a *authManagementService) GetWorkspaceMembers(ctx context.Context, schema 
 		return nil, err
 	}
 
-	userIDs := make([]string, 0, len(members))
-	userAccess := map[string]string{}
-	for _, m := range members {
-		userIDs = append(userIDs, m.UserID)
-		userAccess[m.UserID] = m.AccessLevel
-	}
-
-	users, err := a.userManagementService.GetBulkUsers(ctx, schema, userIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []dto.WorkspaceMemberResponse
-	for _, user := range users {
-		var memberResp dto.WorkspaceMemberResponse
-		err := helpers.StructToStruct(user, &memberResp)
-		if err != nil {
-			return nil, err
-		}
-		memberResp.AccessLevel = userAccess[user.ID.String()]
-		res = append(res, memberResp)
-	}
-
-	return res, nil
+	return a.buildUserResponsesFromMembers(ctx, schema, members)
 }
 
 func (a *authManagementService) GetBaseMembers(ctx context.Context, schema string, baseID string) ([]dto.WorkspaceMemberResponse, error) {
@@ -1333,6 +1257,11 @@ func (a *authManagementService) GetBaseMembers(ctx context.Context, schema strin
 		return nil, err
 	}
 
+	return a.buildUserResponsesFromMembers(ctx, schema, members)
+}
+
+// buildUserResponsesFromMembers maps tenant.WorkspaceMember entries to dto.WorkspaceMemberResponse
+func (a *authManagementService) buildUserResponsesFromMembers(ctx context.Context, schema string, members []tenant.WorkspaceMember) ([]dto.WorkspaceMemberResponse, error) {
 	userIDs := make([]string, 0, len(members))
 	userAccess := map[string]string{}
 	for _, m := range members {
@@ -1348,8 +1277,7 @@ func (a *authManagementService) GetBaseMembers(ctx context.Context, schema strin
 	var res []dto.WorkspaceMemberResponse
 	for _, user := range users {
 		var memberResp dto.WorkspaceMemberResponse
-		err := helpers.StructToStruct(user, &memberResp)
-		if err != nil {
+		if err := helpers.StructToStruct(user, &memberResp); err != nil {
 			return nil, err
 		}
 		memberResp.AccessLevel = userAccess[user.ID.String()]
@@ -1420,41 +1348,24 @@ func (a *authManagementService) UpdatePassword(ctx context.Context, schema strin
 
 // BulkAddMembers adds multiple members to a workspace with their memberships
 func (a *authManagementService) BulkAddMembers(ctx context.Context, schema string, req dto.BulkAddMembersRequest, userID string) (dto.BulkAddMembersResponse, error) {
-	result := dto.BulkAddMembersResponse{
-		Success: []string{},
-		Failed:  []dto.MemberAddFailure{},
-		Total:   len(req.Members),
-	}
-
-	for _, member := range req.Members {
-		createReq := dto.CreateMemberRequest{
-			UserID:     member.UserID,
-			Membership: member.Memberships,
-		}
-
-		err := a.AssignUserToWorkspace(ctx, schema, createReq, userID)
-		if err != nil {
-			result.Failed = append(result.Failed, dto.MemberAddFailure{
-				UserID: member.UserID,
-				Error:  fmt.Sprintf("failed to assign member: %v", err),
-			})
-		} else {
-			result.Success = append(result.Success, member.UserID)
-		}
-	}
-
-	return result, nil
+	return a.bulkAddMembersHelper(ctx, schema, req.Members, userID, "failed to assign member: %v")
 }
 
 // BulkAddBaseMembers adds multiple members to bases with their roles
 func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema string, baseID string, req dto.BulkAddBaseMembersRequest, userID string) (dto.BulkAddMembersResponse, error) {
+	// baseID is unused here but kept for signature compatibility
+	return a.bulkAddMembersHelper(ctx, schema, req.Members, userID, "failed to assign member to base: %v")
+}
+
+// bulkAddMembersHelper performs the shared loop for adding multiple members
+func (a *authManagementService) bulkAddMembersHelper(ctx context.Context, schema string, members []dto.BulkMemberRequest, userID string, errMsgFmt string) (dto.BulkAddMembersResponse, error) {
 	result := dto.BulkAddMembersResponse{
 		Success: []string{},
 		Failed:  []dto.MemberAddFailure{},
-		Total:   len(req.Members),
+		Total:   len(members),
 	}
 
-	for _, member := range req.Members {
+	for _, member := range members {
 		createReq := dto.CreateMemberRequest{
 			UserID:     member.UserID,
 			Membership: member.Memberships,
@@ -1464,7 +1375,7 @@ func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema s
 		if err != nil {
 			result.Failed = append(result.Failed, dto.MemberAddFailure{
 				UserID: member.UserID,
-				Error:  fmt.Sprintf("failed to assign member to base: %v", err),
+				Error:  fmt.Sprintf(errMsgFmt, err),
 			})
 		} else {
 			result.Success = append(result.Success, member.UserID)
@@ -1479,33 +1390,10 @@ func (a *authManagementService) BulkAddBaseMembers(ctx context.Context, schema s
 // 1. workspace_id in scope_id (workspace-level access)
 // 2. workspace_id as their membership workspace
 func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context, schema string, workspaceID string) ([]dto.UserWithRole, error) {
-	functionName := "get_workspace_members_with_role"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
-
 	args := map[string]interface{}{
 		"p_workspace_id": workspaceID,
 	}
-
-	records, err := a.repo.TableService.GetByFunction(
-		ctx,
-		schemaFunctionName,
-		args,
-	)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to get workspace members with roles")
-	}
-
-	var result []dto.UserWithRole
-	for _, record := range records {
-		if rec, ok := record[functionName].(map[string]interface{}); ok {
-			var user dto.UserWithRole
-			if err := helpers.MapToStruct(rec, &user); err == nil {
-				result = append(result, user)
-			}
-		}
-	}
-
-	return result, nil
+	return a.getMembersWithRole(ctx, "get_workspace_members_with_role", args, "failed to get workspace members with roles")
 }
 
 // GetBaseMembersWithRole retrieves base members with their roles in UserWithRole format
@@ -1513,20 +1401,24 @@ func (a *authManagementService) GetWorkspaceMembersWithRole(ctx context.Context,
 // 1. base_id in scope_id (base-level access)
 // 2. workspace members that have access to this base
 func (a *authManagementService) GetBaseMembersWithRole(ctx context.Context, schema string, baseID string) ([]dto.UserWithRole, error) {
-	functionName := "get_base_members_with_role"
-	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
-
 	args := map[string]interface{}{
 		"p_base_id": baseID,
 	}
+	return a.getMembersWithRole(ctx, "get_base_members_with_role", args, "failed to get base members with roles")
+}
 
-	records, err := a.repo.TableService.GetByFunction(
-		ctx,
-		schemaFunctionName,
-		args,
-	)
+// getFunctionRecords calls a DB function and returns raw records (no logging/wrapping).
+func (a *authManagementService) getFunctionRecords(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error) {
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+	return a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
+}
+
+// getMembersWithRole is a helper to call DB functions that return user role maps
+func (a *authManagementService) getMembersWithRole(ctx context.Context, functionName string, args map[string]interface{}, logMsg string) ([]dto.UserWithRole, error) {
+	schemaFunctionName := fmt.Sprintf("%s.%s", appConstant.MasterDatabase, functionName)
+	records, err := a.repo.TableService.GetByFunction(ctx, schemaFunctionName, args)
 	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to get base members with roles")
+		return nil, app_errors.LogDatabaseError(err, logMsg)
 	}
 
 	var result []dto.UserWithRole
@@ -1538,6 +1430,7 @@ func (a *authManagementService) GetBaseMembersWithRole(ctx context.Context, sche
 			}
 		}
 	}
+
 	return result, nil
 }
 
@@ -1552,4 +1445,46 @@ func (a *authManagementService) RemoveAccessMemberByID(ctx context.Context, sche
 	}
 
 	return nil
+}
+
+// deleteAccessMembersByScope deletes access_members records for a given scope and user, returning deleted IDs
+func (a *authManagementService) deleteAccessMembersByScope(ctx context.Context, schema string, scopeType string, scopeID string, userID string) ([]string, error) {
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
+	params := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "user_id", Operator: "eq", Value: userID},
+			{Column: "scope_type", Operator: "eq", Value: scopeType},
+			{Column: "scope_id", Operator: "eq", Value: scopeID},
+		},
+	}
+
+	accessRecords, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errGetTable, err)
+	}
+
+	if len(accessRecords) == 0 {
+		return []string{}, nil
+	}
+
+	deleted := make([]string, 0, len(accessRecords))
+	for _, record := range accessRecords {
+		var accessMemberID string
+		switch v := record["id"].(type) {
+		case string:
+			accessMemberID = v
+		case uuid.UUID:
+			accessMemberID = v.String()
+		default:
+			return nil, fmt.Errorf("unexpected type for id field: %T", v)
+		}
+
+		if err := a.repo.TableService.DeleteRecord(accessMembersTableName, accessMemberID); err != nil {
+			return nil, err
+		}
+		deleted = append(deleted, accessMemberID)
+	}
+
+	return deleted, nil
 }

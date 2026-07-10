@@ -8,27 +8,28 @@ package constants
 import "net/http"
 
 var UserError = struct {
-	ErrNotFound          ResponseCode
-	UserAlreadyExists    ResponseCode
-	UserNotCreated       ResponseCode
-	UserNotUpdated       ResponseCode
-	UserNotDeleted       ResponseCode
-	EmailAlreadyVerified ResponseCode
-	InvalidOldPassword   ResponseCode
-	OldPasswordRequired  ResponseCode
-	OldPasswordInvalid   ResponseCode
-	NewPasswordRequired  ResponseCode
-	NewPasswordInvalid   ResponseCode
-	EmailRequired        ResponseCode
-	EmailInvalid         ResponseCode
-	FirstNameRequired    ResponseCode
-	FirstNameInvalid     ResponseCode
-	LastNameRequired     ResponseCode
-	LastNameInvalid      ResponseCode
-	RoleIDRequired       ResponseCode
-	RoleIDInvalid        ResponseCode
-	UserIDRequired       ResponseCode
-	UserIDInvalid        ResponseCode
+	ErrNotFound              ResponseCode
+	UserAlreadyExists        ResponseCode
+	UserNotCreated           ResponseCode
+	UserNotUpdated           ResponseCode
+	UserNotDeleted           ResponseCode
+	EmailAlreadyVerified     ResponseCode
+	InvalidOldPassword       ResponseCode
+	OldPasswordRequired      ResponseCode
+	OldPasswordInvalid       ResponseCode
+	NewPasswordRequired      ResponseCode
+	NewPasswordInvalid       ResponseCode
+	EmailRequired            ResponseCode
+	EmailInvalid             ResponseCode
+	FirstNameRequired        ResponseCode
+	FirstNameInvalid         ResponseCode
+	LastNameRequired         ResponseCode
+	LastNameInvalid          ResponseCode
+	RoleIDRequired           ResponseCode
+	RoleIDInvalid            ResponseCode
+	UserIDRequired           ResponseCode
+	UserIDInvalid            ResponseCode
+	EmailVerificationPending ResponseCode
 }{
 	ErrNotFound:          "USR_2006",
 	UserAlreadyExists:    "USR_2005",
@@ -42,16 +43,17 @@ var UserError = struct {
 	NewPasswordRequired:  "USR_2014",
 	NewPasswordInvalid:   "USR_2015",
 	// AddUserRequest validation error codes
-	EmailRequired:     "USR_2016",
-	EmailInvalid:      "USR_2017",
-	FirstNameRequired: "USR_2018",
-	FirstNameInvalid:  "USR_2019",
-	LastNameRequired:  "USR_2020",
-	LastNameInvalid:   "USR_2021",
-	RoleIDRequired:    "USR_2022",
-	RoleIDInvalid:     "USR_2023",
-	UserIDRequired:    "USR_2024",
-	UserIDInvalid:     "USR_2025",
+	EmailRequired:            "USR_2016",
+	EmailInvalid:             "USR_2017",
+	FirstNameRequired:        "USR_2018",
+	FirstNameInvalid:         "USR_2019",
+	LastNameRequired:         "USR_2020",
+	LastNameInvalid:          "USR_2021",
+	RoleIDRequired:           "USR_2022",
+	RoleIDInvalid:            "USR_2023",
+	UserIDRequired:           "USR_2024",
+	UserIDInvalid:            "USR_2025",
+	EmailVerificationPending: "USR_2026",
 }
 
 var UserErrorCodes = map[ResponseCode]MetaResponse{
@@ -159,6 +161,11 @@ var UserErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Invalid user ID",
 		Description: "The provided user identifier is not valid or not a proper UUID",
+	},
+	UserError.EmailVerificationPending: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Email verification is pending. User status cannot be updated.",
+		Description: "Email verification is pending. User status cannot be updated.",
 	},
 }
 
