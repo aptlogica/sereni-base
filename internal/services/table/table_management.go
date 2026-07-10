@@ -38,20 +38,12 @@ type tableManagementService struct {
 }
 
 const (
-	SchemaTableFormat    = "\"%s\".\"%s\""
-	QuotedColumnFormat   = "\"%s\""
-	ErrConvertViewStruct = "Failed to convert view struct"
+	SchemaTableFormat     = "\"%s\".\"%s\""
+	QuotedColumnFormat    = "\"%s\""
+	ErrConvertViewStruct  = "Failed to convert view struct"
+	columnActionBatchSize = 1000
+	dateOutputLayout      = "2006-01-02"
 )
-
-// targetColumnParams holds parameters for creating target column in relation
-type targetColumnParams struct {
-	ColumnData      dto.AddColumnRequest
-	SourceModelData tenant.Model
-	RelationWith    string
-	RelationID      uuid.UUID
-	RelationType    string
-	Now             time.Time
-}
 
 // relationRecordParams holds parameters for creating relation record
 type relationRecordParams struct {
@@ -61,6 +53,16 @@ type relationRecordParams struct {
 	SourceColumn    tenant.Column
 	TargetModelData tenant.Model
 	TargetColumn    tenant.Column
+	RelationType    string
+	Now             time.Time
+}
+
+// targetColumnParams holds parameters for creating target column in relation
+type targetColumnParams struct {
+	ColumnData      dto.AddColumnRequest
+	SourceModelData tenant.Model
+	RelationWith    string
+	RelationID      uuid.UUID
 	RelationType    string
 	Now             time.Time
 }
@@ -555,7 +557,7 @@ func (s tableManagementService) slugify(input string) string {
 	return slug + "_" + fmt.Sprintf("%d", timestamp)
 }
 
-func (s tableManagementService) addColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
+func (s tableManagementService) AddColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
 	schematableName := fmt.Sprintf(SchemaTableFormat, schemaName, tableName)
 
 	addColumnReq := dbModels.AddColumnRequest{
@@ -637,7 +639,7 @@ func (s tableManagementService) validateMetaForLookup(meta map[string]interface{
 	return lookupColumnID, relationID, true
 }
 
-// 	s.addColumnInTableDb(schemaName, trgTable.Alias)
+// 	s.AddColumnInTableDb(schemaName, trgTable.Alias)
 // 	// create column in target table (alter table)
 // 	// entry in columns table
 // 	// entry in relationship table
@@ -698,7 +700,7 @@ func (s tableManagementService) AddColumn(
 		return dto.ColumnResponse{}, err
 	}
 
-	err = s.addColumnInTableDb(schemaName, model.Alias, column)
+	err = s.AddColumnInTableDb(schemaName, model.Alias, column)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
@@ -812,7 +814,7 @@ func (s tableManagementService) createSourceColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	if err := s.addColumnInTableDb(schemaName, sourceModelData.Alias, sourcColumn); err != nil {
+	if err := s.AddColumnInTableDb(schemaName, sourceModelData.Alias, sourcColumn); err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
@@ -872,7 +874,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	if err := s.addColumnInTableDb(schemaName, targetModelData.Alias, targetColumn); err != nil {
+	if err := s.AddColumnInTableDb(schemaName, targetModelData.Alias, targetColumn); err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 

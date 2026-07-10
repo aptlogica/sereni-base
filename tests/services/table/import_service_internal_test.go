@@ -199,6 +199,39 @@ func (s importTableServiceStub) BulkUpdateColumns(ctx context.Context, schemaNam
 func (s importTableServiceStub) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
 	return nil
 }
+func (s importTableServiceStub) ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error) {
+	return dto.ColumnSplitResponse{}, nil
+}
+func (s importTableServiceStub) ExtractSubstring(ctx context.Context, schemaName string, req dto.ExtractSubstringRequest) (dto.ExtractSubstringResponse, error) {
+	return dto.ExtractSubstringResponse{}, nil
+}
+func (s importTableServiceStub) FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error) {
+	return dto.FindReplaceResponse{}, nil
+}
+func (s importTableServiceStub) CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error) {
+	return dto.CaseNormalizationResponse{}, nil
+}
+func (s importTableServiceStub) MergeColumns(ctx context.Context, schemaName string, req dto.MergeColumnsRequest) (dto.MergeColumnsResponse, error) {
+	return dto.MergeColumnsResponse{}, nil
+}
+func (s importTableServiceStub) RemoveDuplicates(ctx context.Context, schemaName string, req dto.RemoveDuplicatesRequest) (dto.RemoveDuplicatesResponse, error) {
+	return dto.RemoveDuplicatesResponse{}, nil
+}
+func (s importTableServiceStub) RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error) {
+	return dto.RemoveFormattingResponse{}, nil
+}
+func (s importTableServiceStub) RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error) {
+	return dto.RemoveSpecialCharactersResponse{}, nil
+}
+func (s importTableServiceStub) TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error) {
+	return dto.TrimWhitespaceResponse{}, nil
+}
+func (s importTableServiceStub) ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columnIDs []string) error {
+	return nil
+}
+func (s importTableServiceStub) ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	return nil
+}
 
 type importBaseServiceStub struct {
 	createBaseWithoutTable func(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userID string) (tenant.Base, error)
