@@ -141,7 +141,8 @@ type CreateMemberRequest struct {
 }
 
 type RemoveMemberRequest struct {
-	UserID string `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
+	UserID         string  `db:"user_id" json:"user_id,omitempty" mapstructure:"user_id"`
+	AccessMemberID *string `json:"access_member_id,omitempty" mapstructure:"access_member_id"`
 }
 
 // WorkspaceMemberResponse embeds UserResponse, so all UserResponse fields are included.

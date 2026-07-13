@@ -139,14 +139,16 @@ var (
 
 // workspace management
 var (
-	ErrWorkspaceInsertion     = errors.New("failed to insert workspace")
-	WorkspaceMemberNotFound   = errors.New("workspace member not found")
-	ErrUserAlreadyInWorkspace = errors.New("user already in workspace")
+	ErrWorkspaceInsertion          = errors.New("failed to insert workspace")
+	WorkspaceMemberNotFound        = errors.New("workspace member not found")
+	ErrUserAlreadyInWorkspace      = errors.New("user already in workspace")
+	ErrWorkspaceTitleAlreadyExists = errors.New("workspace title already exists")
 )
 
 // base management
 var (
-	BaseNotFound = errors.New("base not found")
+	BaseNotFound              = errors.New("base not found")
+	ErrBaseTitleAlreadyExists = errors.New("base title already exists")
 )
 
 // asset management
@@ -176,6 +178,8 @@ var (
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
 	SplitNotPossible               = errors.New("split is not possible")
+	ErrTableTitleAlreadyExists     = errors.New("table title already exists")
+	ErrViewTitleAlreadyExists      = errors.New("view title already exists")
 )
 
 // APIError represents an error response from an external API

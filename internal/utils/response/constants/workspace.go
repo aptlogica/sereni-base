@@ -23,6 +23,8 @@ var WorkspaceError = struct {
 	ErrWorkspaceInsertion     ResponseCode
 	WorkspaceMemberNotFound   ResponseCode
 	ErrUserAlreadyInWorkspace ResponseCode
+	NameTooShort              ResponseCode
+	TitleAlreadyExists        ResponseCode
 }{
 	ErrNotFound:               "WSP_3006",
 	WorkspaceAlreadyExists:    "WSP_3005",
@@ -38,6 +40,8 @@ var WorkspaceError = struct {
 	ErrWorkspaceInsertion:     "WSP_3017",
 	WorkspaceMemberNotFound:   "WSP_3015",
 	ErrUserAlreadyInWorkspace: "WSP_3016",
+	NameTooShort:              "WSP_3019",
+	TitleAlreadyExists:        "WSP_3020",
 }
 
 var WorkspaceErrorCodes = map[ResponseCode]MetaResponse{
@@ -70,6 +74,11 @@ var WorkspaceErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Workspace name is required",
 		Description: "The workspace name field is required and was not provided",
+	},
+	WorkspaceError.NameTooShort: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Workspace name must be at least 3 characters. Please lengthen the name and try again",
+		Description: "The workspace name is less than the required 3 characters limit. Use a longer workspace name",
 	},
 	WorkspaceError.NameTooLong: {
 		HTTPStatus:  http.StatusBadRequest,
@@ -110,6 +119,11 @@ var WorkspaceErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "User already in workspace",
 		Description: "The user is already a member of the specified workspace",
+	},
+	WorkspaceError.TitleAlreadyExists: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Title already exists",
+		Description: "A workspace with the given title already exists",
 	},
 }
 

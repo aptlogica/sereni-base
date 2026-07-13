@@ -58,6 +58,21 @@ func (s baseManagementService) insertBase(ctx context.Context, req dto.CreateBas
 	if err != nil {
 		return tenant.Base{}, app_errors.InvalidPayload
 	}
+
+	// Check for duplicate title within the workspace
+	tableName := fmt.Sprintf("\"%s\".bases", schemaName)
+	query := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "title", Operator: "eq", Value: req.Title},
+			{Column: "workspace_id", Operator: "eq", Value: req.WorkspaceID},
+		},
+	}
+	records, checkErr := s.repo.TableService.GetTableData(tableName, query)
+	if checkErr == nil && len(records) > 0 {
+		return tenant.Base{}, app_errors.ErrBaseTitleAlreadyExists
+	}
+
 	insertionReq := dto.BaseInsertion{
 		WorkspaceID: id,
 		Title:       req.Title,
@@ -177,6 +192,27 @@ func (s baseManagementService) GetAllBases(ctx context.Context, schemaName strin
 }
 
 func (s baseManagementService) UpdateBase(ctx context.Context, schemaName string, id string, req dto.BaseUpdate, userId string, fileHeader *multipart.FileHeader, removeImage string) (tenant.Base, error) {
+	if req.Title != nil {
+		currentBase, err := s.baseService.GetBaseByID(ctx, schemaName, id)
+		if err != nil {
+			return tenant.Base{}, err
+		}
+
+		tableName := fmt.Sprintf("\"%s\".bases", schemaName)
+		query := dbModels.QueryParams{
+			Select: []string{"id"},
+			Filters: []dbModels.QueryFilter{
+				{Column: "title", Operator: "eq", Value: *req.Title},
+				{Column: "workspace_id", Operator: "eq", Value: currentBase.WorkspaceID},
+				{Column: "id", Operator: "neq", Value: id},
+			},
+		}
+		records, checkErr := s.repo.TableService.GetTableData(tableName, query)
+		if checkErr == nil && len(records) > 0 {
+			return tenant.Base{}, app_errors.ErrBaseTitleAlreadyExists
+		}
+	}
+
 	if req.UpdatedBy == "" {
 		req.UpdatedBy = userId
 	}

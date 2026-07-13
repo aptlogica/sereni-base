@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"time"
+
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/dto"
@@ -1154,16 +1155,27 @@ func (a *authManagementService) AssignUserToWorkspace(ctx context.Context, schem
 	return nil
 }
 
-func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error {
-	// Try to remove from access_members table (RBAC system)
-	// Find all access_members records for this user-workspace combination
-	// NOTE: using helper deleteAccessMembersByScope below
+func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, accessMemberID *string, reqBy string) error {
+	var deletedIDs []string
+	var err error
 
-	deletedIDs, err := a.deleteAccessMembersByScope(ctx, schema, "workspace", workspaceID, userID)
-	if err != nil {
-		if errors.Is(err, errGetTable) {
-			// If RBAC doesn't exist, try legacy workspace_members table
-			return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
+	if accessMemberID != nil && *accessMemberID != "" {
+		deletedIDs, err = a.removeSpecificWorkspaceAccess(ctx, schema, userID, *accessMemberID, reqBy)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Try to remove from access_members table (RBAC system)
+		// Find all access_members records for this user-workspace combination
+		// NOTE: using helper deleteAccessMembersByScope below
+
+		deletedIDs, err = a.deleteAccessMembersByScope(ctx, schema, "workspace", workspaceID, userID)
+		if err != nil {
+			if errors.Is(err, errGetTable) {
+				// If RBAC doesn't exist, try legacy workspace_members table
+				return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
+			}
+			return err
 		}
 		return err
 	}
@@ -1171,20 +1183,11 @@ func (a *authManagementService) RemoveUserFromWorkspace(ctx context.Context, sch
 		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
 	}
 
-	// Send email notification
-	user, userErr := a.userManagementService.GetUserByID(ctx, schema, userID)
-	if userErr != nil {
-		return nil
+	if len(deletedIDs) == 0 {
+		return a.workspaceManagementService.RemoveUserFromWorkspace(ctx, schema, workspaceID, userID)
 	}
 
-	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, workspaceID)
-	workspaceLabel := workspaceID
-	if workspaceErr == nil {
-		workspaceLabel = workspace.Title
-	}
-
-	emailData := a.emailTemplateService.RemovedFromWorkspaceBody(workspaceLabel)
-	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
+	a.sendWorkspaceRemovalEmail(ctx, schema, workspaceID, userID)
 
 	return nil
 }
@@ -1487,4 +1490,44 @@ func (a *authManagementService) deleteAccessMembersByScope(ctx context.Context, 
 	}
 
 	return deleted, nil
+}
+
+// removeSpecificWorkspaceAccess verifies and removes a specific access record for a user
+func (a *authManagementService) removeSpecificWorkspaceAccess(ctx context.Context, schema string, userID string, accessMemberID string, reqBy string) ([]string, error) {
+	accessMembersTableName := fmt.Sprintf(rbac.AccessMembersTableFormat, schema)
+	params := dbModels.QueryParams{
+		Select: []string{"id", "scope_type", "scope_id", "workspace_id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "id", Operator: "eq", Value: accessMemberID},
+			{Column: "user_id", Operator: "eq", Value: userID},
+		},
+	}
+
+	records, err := a.repo.TableService.GetTableData(accessMembersTableName, params)
+	if err != nil || len(records) == 0 {
+		return nil, app_errors.WorkspaceMemberNotFound
+	}
+
+	if err = a.RemoveAccessMemberByID(ctx, schema, accessMemberID, reqBy); err != nil {
+		return nil, err
+	}
+
+	return []string{accessMemberID}, nil
+}
+
+// sendWorkspaceRemovalEmail handles sending the email notification for workspace removal
+func (a *authManagementService) sendWorkspaceRemovalEmail(ctx context.Context, schema string, workspaceID string, userID string) {
+	user, userErr := a.userManagementService.GetUserByID(ctx, schema, userID)
+	if userErr != nil {
+		return
+	}
+
+	workspaceLabel := workspaceID
+	workspace, workspaceErr := a.workspaceManagementService.GetByID(ctx, schema, workspaceID)
+	if workspaceErr == nil {
+		workspaceLabel = workspace.Title
+	}
+
+	emailData := a.emailTemplateService.RemovedFromWorkspaceBody(workspaceLabel)
+	a.emailProviderService.Enqueue(emailProvider.EmailJob{To: user.Email, Subject: emailData.Subject, Body: emailData.Body})
 }

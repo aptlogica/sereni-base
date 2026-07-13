@@ -752,7 +752,7 @@ func (h *AuthHandler) RemoveUserFromWorkspace(c *gin.Context) {
 	schemaName := getSchema(c)
 	reqBy := getReqBy(c)
 
-	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, workspaceID, req.UserID, reqBy)
+	err := h.authManagementService.RemoveUserFromWorkspace(c.Request.Context(), schemaName, workspaceID, req.UserID, req.AccessMemberID, reqBy)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return

@@ -301,6 +301,20 @@ func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tab
 }
 
 func (s tableManagementService) createModel(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (tenant.Model, error) {
+	// Check for duplicate title within the base
+	tableName := fmt.Sprintf("\"%s\".models", schemaName)
+	query := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "title", Operator: "eq", Value: tableData.Title},
+			{Column: "base_id", Operator: "eq", Value: tableData.BaseID},
+		},
+	}
+	records, checkErr := s.repo.TableService.GetTableData(tableName, query)
+	if checkErr == nil && len(records) > 0 {
+		return tenant.Model{}, app_errors.ErrTableTitleAlreadyExists
+	}
+
 	modelInsertionData := dto.ModelInsertion{
 		ID:               uuid.New().String(),
 		BaseID:           tableData.BaseID,
@@ -348,6 +362,26 @@ func (s tableManagementService) convertModelToResponse(model tenant.Model) dto.M
 }
 
 func (s tableManagementService) UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error) {
+	if tableData.Title != nil {
+		currentModel, err := s.modelService.GetModelByID(ctx, schemaName, id)
+		if err != nil {
+			return dto.TableResponse{}, err
+		}
+
+		tableName := fmt.Sprintf("\"%s\".models", schemaName)
+		query := dbModels.QueryParams{
+			Select: []string{"id"},
+			Filters: []dbModels.QueryFilter{
+				{Column: "title", Operator: "eq", Value: *tableData.Title},
+				{Column: "base_id", Operator: "eq", Value: currentModel.BaseID.String()},
+				{Column: "id", Operator: "neq", Value: id},
+			},
+		}
+		records, checkErr := s.repo.TableService.GetTableData(tableName, query)
+		if checkErr == nil && len(records) > 0 {
+			return dto.TableResponse{}, app_errors.ErrTableTitleAlreadyExists
+		}
+	}
 
 	var modelData dto.UpdateModelRequest
 	if err := helpers.StructToStruct(tableData, &modelData); err != nil {
@@ -1141,6 +1175,20 @@ func (s tableManagementService) CreateView(
 	schemaName string,
 	viewData dto.CreateViewRequest,
 ) (dto.ViewResponse, error) {
+	// Check for duplicate view title within the model
+	tableName := fmt.Sprintf("\"%s\".views", schemaName)
+	query := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "title", Operator: "eq", Value: viewData.Title},
+			{Column: "model_id", Operator: "eq", Value: viewData.ModelID},
+		},
+	}
+	records, checkErr := s.repo.TableService.GetTableData(tableName, query)
+	if checkErr == nil && len(records) > 0 {
+		return dto.ViewResponse{}, app_errors.ErrViewTitleAlreadyExists
+	}
+
 	lg := logger.Get()
 
 	viewInserionData := dto.ViewInsertion{
@@ -1257,9 +1305,25 @@ func (s tableManagementService) UpdateView(
 		req.UpdatedAt = time.Now().UTC()
 	}
 
-	_, err := s.viewService.GetViewByID(ctx, schemaName, id)
+	currentView, err := s.viewService.GetViewByID(ctx, schemaName, id)
 	if err != nil {
 		return dto.ViewResponse{}, err
+	}
+
+	if req.Title != nil {
+		tableName := fmt.Sprintf("\"%s\".views", schemaName)
+		query := dbModels.QueryParams{
+			Select: []string{"id"},
+			Filters: []dbModels.QueryFilter{
+				{Column: "title", Operator: "eq", Value: *req.Title},
+				{Column: "model_id", Operator: "eq", Value: currentView.ModelID},
+				{Column: "id", Operator: "neq", Value: id},
+			},
+		}
+		records, checkErr := s.repo.TableService.GetTableData(tableName, query)
+		if checkErr == nil && len(records) > 0 {
+			return dto.ViewResponse{}, app_errors.ErrViewTitleAlreadyExists
+		}
 	}
 
 	view, err := s.viewService.UpdateView(ctx, schemaName, id, req)

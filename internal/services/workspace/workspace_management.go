@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -49,6 +50,19 @@ func NewWorkspaceManagementService(
 }
 
 func (s workspaceManagementService) Create(ctx context.Context, req dto.CreateWorkspaceRequest, schemaName string, userId string) (dto.WorkspaceResponse, error) {
+	// Check for duplicate title
+	tableName := fmt.Sprintf("\"%s\".workspaces", schemaName)
+	query := dbModels.QueryParams{
+		Select: []string{"id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "title", Operator: "eq", Value: req.Title},
+		},
+	}
+	records, err := s.repo.TableService.GetTableData(tableName, query)
+	if err == nil && len(records) > 0 {
+		return dto.WorkspaceResponse{}, app_errors.ErrWorkspaceTitleAlreadyExists
+	}
+
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
 	}
@@ -94,6 +108,21 @@ func (s workspaceManagementService) GetAll(ctx context.Context, schemaName strin
 }
 
 func (s workspaceManagementService) Update(ctx context.Context, schemaName string, id string, req dto.WorkspaceUpdate, userId string) (tenant.Workspace, error) {
+	if req.Title != nil {
+		tableName := fmt.Sprintf("\"%s\".workspaces", schemaName)
+		query := dbModels.QueryParams{
+			Select: []string{"id"},
+			Filters: []dbModels.QueryFilter{
+				{Column: "title", Operator: "eq", Value: *req.Title},
+				{Column: "id", Operator: "neq", Value: id},
+			},
+		}
+		records, err := s.repo.TableService.GetTableData(tableName, query)
+		if err == nil && len(records) > 0 {
+			return tenant.Workspace{}, app_errors.ErrWorkspaceTitleAlreadyExists
+		}
+	}
+
 	if req.UpdatedBy == "" {
 		req.UpdatedBy = userId
 	}

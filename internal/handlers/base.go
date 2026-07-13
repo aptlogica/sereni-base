@@ -71,6 +71,10 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 		response.SendError(c, responseConst.BaseError.NameRequired)
 		return
 	}
+	if errCode, ok := validators.ValidateMinNameOrTitleLength(title, responseConst.BaseError.NameTooShort); ok {
+		response.SendError(c, errCode)
+		return
+	}
 	if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.BaseError.NameTooLong); ok {
 		response.SendError(c, errCode)
 		return
@@ -218,6 +222,10 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
 			response.SendError(c, responseConst.BaseError.NameRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMinNameOrTitleLength(title, responseConst.BaseError.NameTooShort); ok {
+			response.SendError(c, errCode)
 			return
 		}
 		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.BaseError.NameTooLong); ok {

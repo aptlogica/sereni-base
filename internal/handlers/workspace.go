@@ -70,6 +70,11 @@ func (h *WorkspaceHandler) CreateWorkspace(c *gin.Context) {
 		return
 	}
 
+	if errCode, ok := validators.ValidateMinNameOrTitleLength(req.Title, responseConst.WorkspaceError.NameTooShort); ok {
+		response.SendError(c, errCode)
+		return
+	}
+
 	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.WorkspaceError.NameTooLong); ok {
 		response.SendError(c, errCode)
 		return
@@ -178,6 +183,10 @@ func (h *WorkspaceHandler) UpdateWorkspace(c *gin.Context) {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
 			response.SendError(c, responseConst.WorkspaceError.NameRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMinNameOrTitleLength(title, responseConst.WorkspaceError.NameTooShort); ok {
+			response.SendError(c, errCode)
 			return
 		}
 		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.WorkspaceError.NameTooLong); ok {

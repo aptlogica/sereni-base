@@ -23,6 +23,16 @@ func ValidateMaxNameOrTitleLength(value string, tooLongErr responseConst.Respons
 	return "", false
 }
 
+const minNameOrTitleLength = 3
+
+// ValidateMinNameOrTitleLength ensures names/titles have at least 3 characters.
+func ValidateMinNameOrTitleLength(value string, tooShortErr responseConst.ResponseCode) (responseConst.ResponseCode, bool) {
+	if utf8.RuneCountInString(value) < minNameOrTitleLength {
+		return tooShortErr, true
+	}
+	return "", false
+}
+
 // WorkspaceCreationValidationError maps validation errors for dto.CreateWorkspaceRequest to response codes.
 func BaseCreationValidationError(e validator.FieldError) responseConst.ResponseCode {
 	field := e.Field()

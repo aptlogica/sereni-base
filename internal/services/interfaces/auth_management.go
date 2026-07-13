@@ -41,7 +41,7 @@ type AuthManagementService interface {
 	GetAuthProviderUrl(provider string) string
 
 	AssignUserToWorkspace(ctx context.Context, schema string, req dto.CreateMemberRequest, reqBy string) error
-	RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, reqBy string) error
+	RemoveUserFromWorkspace(ctx context.Context, schema string, workspaceID string, userID string, accessMemberID *string, reqBy string) error
 	RemoveUserFromBase(ctx context.Context, schema string, baseID string, userID string, reqBy string) error
 	RemoveAccessMemberByID(ctx context.Context, schema string, accessMemberID string, reqBy string) error
 	GetWorkspaceMembers(ctx context.Context, schema string, workspaceID string) ([]dto.WorkspaceMemberResponse, error)

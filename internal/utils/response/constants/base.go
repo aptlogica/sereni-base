@@ -21,6 +21,8 @@ var BaseError = struct {
 	IdInvalid          ResponseCode
 	BaseNotFound       ResponseCode
 	ImageTooLarge      ResponseCode
+	NameTooShort       ResponseCode
+	TitleAlreadyExists ResponseCode
 }{
 	ErrNotFound:        "BAS_6001",
 	BaseAlreadyExists:  "BAS_6002",
@@ -35,6 +37,8 @@ var BaseError = struct {
 	IdInvalid:          "BAS_6010",
 	BaseNotFound:       "BAS_6011",
 	ImageTooLarge:      "BAS_6013",
+	NameTooShort:       "BAS_6014",
+	TitleAlreadyExists: "BAS_6015",
 }
 
 var BaseErrorCodes = map[ResponseCode]MetaResponse{
@@ -67,6 +71,11 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Base name is required",
 		Description: "The Base name field is required and was not provided",
+	},
+	BaseError.NameTooShort: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Base name must be at least 3 characters. Please lengthen the name and try again",
+		Description: "The base name is less than the required 3 characters limit. Use a longer base name",
 	},
 	BaseError.NameTooLong: {
 		HTTPStatus:  http.StatusBadRequest,
@@ -102,6 +111,11 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Image size exceeds maximum allowed limit",
 		Description: "The uploaded image exceeds the maximum allowed size of 5MB",
+	},
+	BaseError.TitleAlreadyExists: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Title already exists",
+		Description: "A Base with the given title already exists in this workspace",
 	},
 }
 

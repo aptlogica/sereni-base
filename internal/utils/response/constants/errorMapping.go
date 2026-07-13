@@ -54,6 +54,11 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.NewPasswordInvalid, UserError.NewPasswordInvalid},
 	{app_errors.EmailVerificationPending, UserError.EmailVerificationPending},
 
+	{app_errors.ErrWorkspaceTitleAlreadyExists, WorkspaceError.TitleAlreadyExists},
+	{app_errors.ErrBaseTitleAlreadyExists, BaseError.TitleAlreadyExists},
+	{app_errors.ErrTableTitleAlreadyExists, TableError.TitleAlreadyExists},
+	{app_errors.ErrViewTitleAlreadyExists, TableError.ViewTitleAlreadyExists},
+
 	// role management (aliases point to RBAC codes for consistency)
 	{app_errors.RoleAlreadyExists, RBACError.RoleAlreadyExists},
 	{app_errors.RoleNotFound, RBACError.RoleNotFound},

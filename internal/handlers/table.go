@@ -80,7 +80,11 @@ func (h *TableHandler) CreateTable(c *gin.Context) {
 		response.SendError(c, responseConst.TableError.TitleRequired)
 		return
 	}
-	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.ViewTitleTooLong); ok {
+	if errCode, ok := validators.ValidateMinNameOrTitleLength(req.Title, responseConst.TableError.ViewTitleTooShort); ok {
+		response.SendError(c, errCode)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.TitleTooLong); ok {
 		response.SendError(c, errCode)
 		return
 	}
@@ -143,6 +147,10 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
 			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMinNameOrTitleLength(title, responseConst.TableError.TitleTooShort); ok {
+			response.SendError(c, errCode)
 			return
 		}
 		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.TableError.TitleTooLong); ok {
@@ -404,6 +412,10 @@ func (h *TableHandler) CreateView(c *gin.Context) {
 		response.SendError(c, responseConst.TableError.TitleRequired)
 		return
 	}
+	if errCode, ok := validators.ValidateMinNameOrTitleLength(req.Title, responseConst.TableError.TitleTooShort); ok {
+		response.SendError(c, errCode)
+		return
+	}
 	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.TitleTooLong); ok {
 		response.SendError(c, errCode)
 		return
@@ -549,6 +561,10 @@ func (h *TableHandler) UpdateView(c *gin.Context) {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
 			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMinNameOrTitleLength(title, responseConst.TableError.TitleTooShort); ok {
+			response.SendError(c, errCode)
 			return
 		}
 		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.TableError.TitleTooLong); ok {

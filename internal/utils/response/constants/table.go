@@ -14,7 +14,9 @@ var TableError = struct {
 	WorkspaceIDInvalid             ResponseCode
 	TitleRequired                  ResponseCode
 	TitleTooLong                   ResponseCode
+	TitleTooShort                  ResponseCode
 	ViewTitleTooLong               ResponseCode
+	ViewTitleTooShort              ResponseCode
 	TitleInvalid                   ResponseCode
 	DescriptionRequired            ResponseCode
 	DescriptionInvalid             ResponseCode
@@ -82,6 +84,8 @@ var TableError = struct {
 	ContentInvalid                 ResponseCode
 	UpdatesRequired                ResponseCode
 	UpdatesInvalid                 ResponseCode
+	TitleAlreadyExists             ResponseCode
+	ViewTitleAlreadyExists         ResponseCode
 }{
 	BaseIDRequired:                 "TBL_1001",
 	BaseIDInvalid:                  "TBL_1002",
@@ -89,7 +93,9 @@ var TableError = struct {
 	WorkspaceIDInvalid:             "TBL_1004",
 	TitleRequired:                  "TBL_1005",
 	TitleTooLong:                   "TBL_1070",
+	TitleTooShort:                  "TBL_1072",
 	ViewTitleTooLong:               "TBL_1071",
+	ViewTitleTooShort:              "TBL_1073",
 	TitleInvalid:                   "TBL_1006",
 	DescriptionRequired:            "TBL_1007",
 	DescriptionInvalid:             "TBL_1008",
@@ -157,6 +163,8 @@ var TableError = struct {
 	ContentInvalid:                 "TBL_1059",
 	UpdatesRequired:                "TBL_1060",
 	UpdatesInvalid:                 "TBL_1061",
+	TitleAlreadyExists:             "TBL_1080",
+	ViewTitleAlreadyExists:         "TBL_1081",
 }
 
 var TableErrorCodes = map[ResponseCode]MetaResponse{
@@ -190,10 +198,20 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Title must be 50 characters or fewer. Please shorten the title and try again",
 		Description: "The title exceeds the allowed limit of 50 characters. Use a shorter title with 50 characters or fewer",
 	},
+	TableError.TitleTooShort: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Title must be at least 3 characters. Please lengthen the title and try again",
+		Description: "The title is less than the required 3 characters limit. Use a longer title",
+	},
 	TableError.ViewTitleTooLong: {
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "View title must be 50 characters or fewer. Please shorten the title and try again",
 		Description: "The view title exceeds the allowed limit of 50 characters. Use a shorter view title with 50 characters or fewer",
+	},
+	TableError.ViewTitleTooShort: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "View title must be at least 3 characters. Please lengthen the title and try again",
+		Description: "The view title is less than the required 3 characters limit. Use a longer view title",
 	},
 	TableError.TitleInvalid: {
 		HTTPStatus:  http.StatusBadRequest,
@@ -520,6 +538,16 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Invalid content",
 		Description: "The provided content is invalid or malformed",
 	},
+	TableError.TitleAlreadyExists: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Title already exists",
+		Description: "A Table with the given title already exists in this base",
+	},
+	TableError.ViewTitleAlreadyExists: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "View title already exists",
+		Description: "A View with the given title already exists in this table",
+	},
 }
 
 var TableSuccess = struct {
@@ -556,7 +584,7 @@ var TableSuccess = struct {
 	RemoveFormattingDate               ResponseCode
 	RemoveFormattingCustom             ResponseCode
 	RemoveDuplicates                   ResponseCode
-	ColumnSplit                  	   ResponseCode
+	ColumnSplit                        ResponseCode
 	MergeColumns                       ResponseCode
 	ExtractSubstring                   ResponseCode
 	ViewCreated                        ResponseCode
