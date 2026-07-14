@@ -24,4 +24,5 @@ type ColumnService interface {
 	GetMaxOrderIndexOfColumn(ctx context.Context, schemaName string, modelId string) (float64, error)
 	BulkUpdate(ctx context.Context, schemaName string, tableName string, columnName string, updates []dto.UpdateColumnsRequest) error
 	ResetColumn(ctx context.Context, schemaName string, tableName string, columnName string) error
+	BulkUpdateByColumns(ctx context.Context, schemaName string, tableName string, updates []dto.UpdateColumnValueRequest) error
 }

@@ -387,6 +387,33 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/reset",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.ResetColumnValues)
+		column.POST("/trim-whitespace",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.TrimWhitespace)
+		column.POST("/find-replace",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.FindReplace)
+		column.POST("/case-normalize",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.CaseNormalization)
+		column.POST("/remove-special-characters",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.RemoveSpecialCharacters)
+		column.POST("/split",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.ColumnSplit)
+		column.POST("/remove-formatting",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.RemoveFormatting)
+		column.POST("/remove-duplicates",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.RemoveDuplicates)
+		column.POST("/merge-columns",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.MergeColumns)
+		column.POST("/extract-substring",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.ExtractSubstring)
 	}
 }
 
