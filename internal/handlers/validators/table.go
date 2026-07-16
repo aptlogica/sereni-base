@@ -661,3 +661,23 @@ func ColumnSplitRequestValidationError(e validator.FieldError) responseConst.Res
 		return responseConst.Error.ValidationFailed
 	}
 }
+
+func FuzzyDuplicatesRequestValidationError(e validator.FieldError) responseConst.ResponseCode {
+	field := e.Field()
+	tag := e.Tag()
+
+	if strings.HasPrefix(field, "Columns") {
+		return getColumnsValidationError(tag)
+	}
+
+	switch field {
+	case "ModelID":
+		return getModelIDValidationError(tag)
+	case "Duplicate", "KeepRule":
+		return getActionValidationError(tag)
+	case "Threshold":
+		return responseConst.TableError.ActionInvalid
+	default:
+		return responseConst.Error.ValidationFailed
+	}
+}

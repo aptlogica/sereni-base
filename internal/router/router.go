@@ -414,6 +414,9 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/extract-substring",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Table.ExtractSubstring)
+		column.POST("/fuzzy-duplicates",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Table.FuzzyDuplicates)
 	}
 }
 

@@ -1827,6 +1827,49 @@ func (h *TableHandler) RemoveDuplicates(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.RemoveDuplicates, result)
 }
 
+// @Summary      Remove duplicate rows or clear duplicate values using fuzzy logic in selected columns
+// @Description  Deduplicates rows using fuzzy similarity matching. Supports removing duplicate rows or keeping duplicate rows while clearing duplicate values in selected columns.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.FuzzyDuplicatesRequest  true  "Model ID, target column IDs, duplicate handling, keep rule, and threshold"
+// @Success      200      {object}  models.SuccessResponse     "Deduplication summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/fuzzy-duplicates [post]
+func (h *TableHandler) FuzzyDuplicates(c *gin.Context) {
+	var req dto.FuzzyDuplicatesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.FuzzyDuplicatesRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.FuzzyDuplicates(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RemoveDuplicates, result)
+}
+
 // @Summary      Merge selected columns into a new column
 // @Description  Merges values from selected columns into a new generated column using the requested separator. Skips NULL/empty values and updates only changed cells.
 // @Tags         Admin Table Column

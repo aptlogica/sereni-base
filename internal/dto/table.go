@@ -358,3 +358,17 @@ type ColumnSplitResponse struct {
 	Message        string   `json:"message"`
 	CreatedColumns []string `json:"createdColumns"`
 }
+
+type FuzzyDuplicatesRequest struct {
+	ModelID   string   `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	Columns   []string `json:"columns" binding:"required,min=1,dive,required" example:"col-123"`
+	Threshold string   `json:"threshold" binding:"required,oneof=low medium high" example:"medium"`
+	Duplicate string   `json:"duplicate" binding:"required,oneof=remove_row remove_duplicates" example:"remove_row"`
+	KeepRule  string   `json:"keep_rule" binding:"required,oneof=keep_first keep_last keep_latest_updated" example:"keep_first"`
+}
+
+type FuzzyDuplicatesResponse struct {
+	TotalRowsAffected  int64 `json:"total_rows_affected"`
+	TotalDuplicateRows int64 `json:"total_duplicate_rows"`
+}
+
