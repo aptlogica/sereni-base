@@ -518,7 +518,8 @@ func (h *BaseHandler) ApplyAiBase(c *gin.Context) {
 		applyReq.CreatedBy = userId
 	}
 
-	if _, err := h.importService.ApplyAiBaseSchema(c, schemaName, applyReq, aiBaseResp, body.SampleData, body.Row); err != nil {
+	importBaseResp, err := h.importService.ApplyAiBaseSchema(c, schemaName, applyReq, aiBaseResp, body.SampleData, body.Row)
+	if err != nil {
 		if delErr := h.baseManagementService.DeleteBase(c.Request.Context(), schemaName, base.ID.String()); delErr != nil {
 			fmt.Println("failed to cleanup AI base after apply error:", delErr)
 		}
@@ -526,5 +527,10 @@ func (h *BaseHandler) ApplyAiBase(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.BaseSuccess.BaseCreated, "okay")
+	resp := response.StandardResponse{
+		Success: true,
+		Message: responseConst.BaseSuccessCodes[responseConst.BaseSuccess.BaseCreated].Message,
+		Data:    importBaseResp,
+	}
+	c.JSON(http.StatusCreated, resp)
 }

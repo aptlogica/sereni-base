@@ -224,6 +224,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, workspaceManagementService, baseManagementService)
+	chatHandler := handlers.NewChatHandler(aiServiceURL)
 	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService, authService)
 	// baseHandler := handlers.NewBaseHandler(baseManagementService)
 	baseHandler := handlers.NewBaseHandler(baseManagementService, importService)
@@ -234,6 +235,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	handlerGroups := router.Handlers{
 		Auth:         authHandler,
+		Chat:         chatHandler,
 		Workspace:    workspaceHandler,
 		Base:         baseHandler,
 		Asset:        assetHandler,

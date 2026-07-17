@@ -9,6 +9,7 @@ The service converts natural-language descriptions of database tables into a nor
 ## Base URL
 
 - **Local development**: `http://localhost:8080`
+- The service also exposes the chat proxy at `POST /api/chat` and `POST /api/v1/chat`.
 
 All endpoints documented below are relative to this base URL.
 
@@ -161,6 +162,45 @@ If the OpenAI response is **not** valid JSON but still succeeds, the service wra
 
 ---
 
+## Endpoint: Chat Proxy
+
+- **URL**: `/api/chat`
+- **Alias**: `/api/v1/chat`
+- **Method**: `POST`
+- **Content-Type**: `application/json`
+- **Description**:
+  Proxies a chat transcript to OpenAI and returns the assistant reply as plain text wrapped in JSON.
+
+### Request
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "Write a short welcome message." }
+  ],
+  "model": "gpt-4o-mini",
+  "temperature": 0.7
+}
+```
+
+### Successful Response
+
+```json
+{
+  "reply": "Welcome to SereniBase."
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Missing OPENAI_API_KEY"
+}
+```
+
+---
+
 ## Data Models (Go Types)
 
 These structs represent the JSON schema when the response is valid JSON:
@@ -215,6 +255,7 @@ These structs represent the JSON schema when the response is valid JSON:
   This API does **not** require client-side authentication, but the server must be started with a valid `OPENAI_API_KEY` configured via:
   - `.env` file with `OPENAI_API_KEY=your-api-key`, or
   - Environment variable `OPENAI_API_KEY` on the host.
+  - Optional model override: `OPENAI_MODEL=gpt-4o-mini`
 
 - **Model & Prompting**:
   - Uses OpenAI Chat Completions with model `gpt-4.1` (via the `openai-go` client and `ChatModelGPT4o` constant).
@@ -222,5 +263,4 @@ These structs represent the JSON schema when the response is valid JSON:
   - The prompt uses semantic data types (e.g., `text`, `email`, `uuid`, `datetime`) rather than SQL-specific types.
   - Field names are preserved exactly as provided by the user, and table/field names use lowercase snake_case format.
   - Fields named `id` automatically use type `uuid`.
-
 

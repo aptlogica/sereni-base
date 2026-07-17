@@ -27,7 +27,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-// 
+	//
 	// systemPromptMultipleTables, err := loadSystemPrompt("prompts/create_multiple_tables.prompt")
 	// systemPromptMultipleTables, err := loadSystemPrompt("prompts/relation_between_tables.prompt")
 	// if err != nil {
@@ -48,6 +48,8 @@ func main() {
 	}
 
 	// HTTP handlers exposed under /api/v1 prefix
+	http.Handle("/api/chat", withCORS(http.HandlerFunc(chatHandler)))
+	http.Handle("/api/v1/chat", withCORS(http.HandlerFunc(chatHandler)))
 	http.Handle("/api/v1/extract-schema", withCORS(newExtractSchemaHandler(client, systemPromptMeta)))
 	http.Handle("/api/v1/extract-schema-csv", withCORS(newExtractCSVHandler(client, systemPromptCSV)))
 	http.Handle("/api/v1/extract-schema-multiple", withCORS(newExtractBaseSchemaHandler(client, systemPromptMeta)))
@@ -57,7 +59,7 @@ func main() {
 	if port == "" {
 		port = os.Getenv("PORT")
 	}
-	
+
 	if port == "" {
 		port = "8888"
 	}

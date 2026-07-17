@@ -23,6 +23,7 @@ import (
 
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	antivirusProviderInterface "github.com/aptlogica/sereni-base/internal/providers/antivirus/interfaces"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -41,6 +42,8 @@ const (
 	descAutoCreatedBase       = "Auto-created base for table import"
 	errFailedCreateBase       = "Failed to create base for import"
 	colNameFmt                = "\"%s\""
+	contentTypeHeader         = "Content-Type"
+	contentTypeJSON           = "application/json"
 )
 
 type importService struct {
@@ -2106,7 +2109,7 @@ func (s *importService) FetchAiSchema(ctx context.Context, prompt string) (dto.A
 	if err != nil {
 		return dto.AiTableResponse{}, fmt.Errorf("failed to create AI request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set(contentTypeHeader, contentTypeJSON)
 
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
@@ -2216,7 +2219,7 @@ func (s *importService) ApplyAiSchema(ctx context.Context, schemaName string, re
 		if err != nil {
 			return dto.ImportTableResponse{}, fmt.Errorf("failed to create AI CSV request: %w", err)
 		}
-		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set(contentTypeHeader, contentTypeJSON)
 
 		resp, err := s.httpClient.Do(httpReq)
 		if err != nil {
@@ -2350,7 +2353,7 @@ func (s *importService) FetchAiBaseSchema(ctx context.Context, prompt string) (d
 	if err != nil {
 		return dto.AiBaseResponse{}, fmt.Errorf("failed to create AI request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set(contentTypeHeader, contentTypeJSON)
 
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
@@ -2459,5 +2462,47 @@ func (s *importService) ApplyAiBaseSchema(ctx context.Context, schemaName string
 		}
 	}
 
-	return dto.ImportBaseResponse{}, nil
+	// Fetch the base with all tables to include in response
+	baseModel, err := s.baseManagementService.GetBaseByID(ctx, req.BaseID, schemaName)
+	if err != nil {
+		// Log the error but don't fail - we can still return the tables
+		fmt.Printf("Warning: failed to fetch base with tables: %v\n", err)
+		// Create a minimal base response with just the ID
+		baseUUID, _ := uuid.Parse(req.BaseID)
+		baseModel = tenant.Base{
+			ID:          baseUUID,
+			WorkspaceID: req.WorkspaceID,
+		}
+	}
+
+	// Fetch tables for the base
+	tables, err := s.baseManagementService.GetTablesByBaseId(ctx, schemaName, req.BaseID)
+	if err != nil {
+		return dto.ImportBaseResponse{}, fmt.Errorf("failed to fetch base tables: %w", err)
+	}
+
+	// Convert tenant.Base to dto.BaseResponse
+	baseResp := dto.BaseResponse{
+		ID:               baseModel.ID,
+		WorkspaceID:      baseModel.WorkspaceID,
+		Title:            baseModel.Title,
+		Description:      baseModel.Description,
+		Image:            baseModel.Image,
+		Type:             baseModel.Type,
+		Config:           baseModel.Config,
+		Settings:         baseModel.Settings,
+		Meta:             baseModel.Meta,
+		Status:           baseModel.Status,
+		Visibility:       baseModel.Visibility,
+		TableCount:       baseModel.TableCount,
+		RowCount:         baseModel.RowCount,
+		StorageUsedBytes: baseModel.StorageUsedBytes,
+		CreatedBy:        baseModel.CreatedBy,
+		UpdatedBy:        baseModel.UpdatedBy,
+		CreatedAt:        baseModel.CreatedAt,
+		UpdatedAt:        baseModel.UpdatedAt,
+		Tables:           tables,
+	}
+
+	return dto.ImportBaseResponse{BaseResponse: baseResp}, nil
 }

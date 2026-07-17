@@ -39,6 +39,7 @@ type Middlewares struct {
 
 type Handlers struct {
 	Auth         *handlers.AuthHandler
+	Chat         *handlers.ChatHandler
 	Workspace    *handlers.WorkspaceHandler
 	Base         *handlers.BaseHandler
 	Asset        *handlers.AssetsHandler
@@ -104,6 +105,7 @@ func Setup(cfg *config.Config,
 	private.Use(middlewareGroups.AuthMiddleware())
 	{
 		setupUserRoutes(private, handlerGroups, middlewareGroups)
+		setupChatRoutes(private, handlerGroups)
 		setupOrganizationRoutes(private, handlerGroups, middlewareGroups)
 		setupWorkspaceRoutes(private, handlerGroups, middlewareGroups)
 		setupBaseRoutes(private, handlerGroups, middlewareGroups)
@@ -115,6 +117,13 @@ func Setup(cfg *config.Config,
 	}
 
 	return r
+}
+
+func setupChatRoutes(private *gin.RouterGroup, handlers Handlers) {
+	chat := private.Group("/chat")
+	{
+		chat.POST("", handlers.Chat.ProxyChat)
+	}
 }
 
 // setupAuthRoutes configures public authentication endpoints

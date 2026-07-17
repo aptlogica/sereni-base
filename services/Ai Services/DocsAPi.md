@@ -99,6 +99,33 @@ If the model returns plain text, the service wraps it as:
 
 Same response shape as `/extract-schema`, but intended for multi-table base generation.
 
+### 1.4 Chat Proxy
+
+- **Method:** `POST`
+- **URL:** `/api/chat`
+- **Alias:** `/api/v1/chat`
+- **Content-Type:** `application/json`
+
+#### Request
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "Summarize this project in one sentence." }
+  ],
+  "model": "gpt-4o-mini",
+  "temperature": 0.7
+}
+```
+
+#### Response
+
+```json
+{
+  "reply": "..."
+}
+```
+
 ---
 
 ## 2. Newly Added Main API Routes

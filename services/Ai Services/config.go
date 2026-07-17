@@ -17,12 +17,7 @@ func initConfig() error {
 	viper.SetConfigType("env")
 	viper.AddConfigPath(".")
 
-	if err := viper.ReadInConfig(); err != nil {
-		// If the file doesn't exist, we still allow using system env vars.
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return fmt.Errorf("error reading .env file: %w", err)
-		}
-	}
+	viper.ReadInConfig()
 
 	return nil
 }
