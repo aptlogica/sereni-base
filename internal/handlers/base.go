@@ -123,7 +123,37 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, "base created successfully", base)
+	// Convert to BaseResponse
+	baseResponse := dto.BaseResponse{
+		ID:               base.ID,
+		WorkspaceID:      base.WorkspaceID,
+		Title:            base.Title,
+		Description:      base.Description,
+		Image:            base.Image,
+		Type:             base.Type,
+		Config:           base.Config,
+		Settings:         base.Settings,
+		Status:           base.Status,
+		Visibility:       base.Visibility,
+		TableCount:       base.TableCount,
+		RowCount:         base.RowCount,
+		StorageUsedBytes: base.StorageUsedBytes,
+		CreatedBy:        base.CreatedBy,
+		UpdatedBy:        base.UpdatedBy,
+		CreatedAt:        base.CreatedAt,
+		UpdatedAt:        base.UpdatedAt,
+		AccessLevel:      "",
+		Tables:           []dto.TableResponse{},
+	}
+
+	// Extract default_table_id from meta if present
+	if base.Meta != nil {
+		if defaultTableID, ok := base.Meta["default_table_id"].(string); ok {
+			baseResponse.DefaultTableID = &defaultTableID
+		}
+	}
+
+	response.SendSuccess(c, "base created successfully", baseResponse)
 }
 
 // @Summary      Get base details

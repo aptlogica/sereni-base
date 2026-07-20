@@ -84,11 +84,16 @@ func (s baseManagementService) CreateBase(ctx context.Context, req dto.CreateBas
 		CreatedBy:   req.CreatedBy,
 	}
 
-	_, err = s.tableManagementService.CreateTableWithDefaults(ctx, tableInsertionData, schemaName)
+	tableResponse, err := s.tableManagementService.CreateTableWithDefaults(ctx, tableInsertionData, schemaName)
 	if err != nil {
 		return tenant.Base{}, err
 	}
 
+	// Add default table ID to base meta (no schema change required)
+	if insertedBase.Meta == nil {
+		insertedBase.Meta = make(map[string]interface{})
+	}
+	insertedBase.Meta["default_table_id"] = tableResponse.Model.ID.String()
 	return insertedBase, nil
 }
 
