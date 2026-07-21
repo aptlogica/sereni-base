@@ -75,6 +75,54 @@ func TestWorkspaceHandler_CreateWorkspace_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestWorkspaceHandler_CreateWorkspace_EmptyTrimmedTitle(t *testing.T) {
+	handler := handlers.NewWorkspaceHandler(nil, nil)
+
+	body, _ := json.Marshal(dto.CreateWorkspaceRequest{Title: "   "})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/workspaces", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateWorkspace(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_CreateWorkspace_TitleTooLong(t *testing.T) {
+	handler := handlers.NewWorkspaceHandler(nil, nil)
+
+	longTitle := string(bytes.Repeat([]byte("a"), 300))
+	body, _ := json.Marshal(dto.CreateWorkspaceRequest{Title: longTitle})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/workspaces", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateWorkspace(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_CreateWorkspace_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().Create(gomock.Any(), gomock.Any(), "test", "user123").Return(dto.WorkspaceResponse{}, errors.New("create failed"))
+	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
+
+	body, _ := json.Marshal(dto.CreateWorkspaceRequest{Title: "Workspace"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/workspaces", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateWorkspace(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestWorkspaceHandler_GetWorkspaceByID_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -153,6 +201,21 @@ func TestWorkspaceHandler_UpdateWorkspace_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestWorkspaceHandler_UpdateWorkspace_TitleTooLong(t *testing.T) {
+	handler := handlers.NewWorkspaceHandler(nil, nil)
+
+	title := string(bytes.Repeat([]byte("a"), 260))
+	body, _ := json.Marshal(dto.WorkspaceUpdate{Title: &title})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/workspaces/w1", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+
+	handler.UpdateWorkspace(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestWorkspaceHandler_DeleteWorkspace_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -197,6 +260,7 @@ func TestWorkspaceHandler_GetTablesByWorkspaceId_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().GetByID(gomock.Any(), "test", "w1").Return(tenant.Workspace{}, nil)
 	mockWorkspace.EXPECT().GetTablesByWorkspaceId(gomock.Any(), "test", "w1").Return([]dto.TableResponse{}, nil)
 	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
 
@@ -210,12 +274,64 @@ func TestWorkspaceHandler_GetTablesByWorkspaceId_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestWorkspaceHandler_GetTablesByWorkspaceId_MissingID(t *testing.T) {
+	handler := handlers.NewWorkspaceHandler(nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces//tables", nil)
+	c.Params = gin.Params{{Key: "id", Value: ""}}
+
+	handler.GetTablesByWorkspaceId(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_GetTablesByWorkspaceId_WorkspaceNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().GetByID(gomock.Any(), "test", "w1").Return(tenant.Workspace{}, errors.New("workspace not found"))
+	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/w1/tables", nil)
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Set("schema", "test")
+
+	handler.GetTablesByWorkspaceId(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_GetTablesByWorkspaceId_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().GetByID(gomock.Any(), "test", "w1").Return(tenant.Workspace{}, nil)
+	mockWorkspace.EXPECT().GetTablesByWorkspaceId(gomock.Any(), "test", "w1").Return(nil, errors.New("fetch failed"))
+	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/w1/tables", nil)
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Set("schema", "test")
+
+	handler.GetTablesByWorkspaceId(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestWorkspaceHandler_GetBasesByWorkspaceId_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().GetByID(gomock.Any(), "test", "w1").Return(tenant.Workspace{}, nil)
 	mockWorkspace.EXPECT().GetAllBasesByWorkspaceId(gomock.Any(), "test", "w1", "Admin", "user123").Return([]dto.BaseResponse{}, nil)
 	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
 
@@ -229,6 +345,61 @@ func TestWorkspaceHandler_GetBasesByWorkspaceId_Success(t *testing.T) {
 
 	handler.GetBasesByWorkspaceId(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_GetBasesByWorkspaceId_MissingID(t *testing.T) {
+	handler := handlers.NewWorkspaceHandler(nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces//bases", nil)
+	c.Params = gin.Params{{Key: "id", Value: ""}}
+
+	handler.GetBasesByWorkspaceId(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_GetBasesByWorkspaceId_WorkspaceNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().GetByID(gomock.Any(), "test", "w1").Return(tenant.Workspace{}, errors.New("workspace not found"))
+	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/w1/bases", nil)
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Set("schema", "test")
+	c.Set("roles", "Admin")
+	c.Set("user_id", "user123")
+
+	handler.GetBasesByWorkspaceId(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestWorkspaceHandler_GetBasesByWorkspaceId_ServiceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWorkspace := mocks.NewMockWorkspaceManagementService(ctrl)
+	mockWorkspace.EXPECT().GetByID(gomock.Any(), "test", "w1").Return(tenant.Workspace{}, nil)
+	mockWorkspace.EXPECT().GetAllBasesByWorkspaceId(gomock.Any(), "test", "w1", "Admin", "user123").Return(nil, errors.New("fetch failed"))
+	handler := handlers.NewWorkspaceHandler(mockWorkspace, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/workspaces/w1/bases", nil)
+	c.Params = gin.Params{{Key: "id", Value: "w1"}}
+	c.Set("schema", "test")
+	c.Set("roles", "Admin")
+	c.Set("user_id", "user123")
+
+	handler.GetBasesByWorkspaceId(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestWorkspaceHandler_BulkAddMembers_Success(t *testing.T) {

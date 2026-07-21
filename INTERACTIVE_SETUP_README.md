@@ -1,4 +1,4 @@
-﻿# Interactive Setup Guide
+# Interactive Setup Guide
 
 This guide explains the interactive setup scripts used to configure SereniBase.
 
@@ -148,7 +148,7 @@ The setup uses `build/config/.env.example` as the base template.
 | Frontend | `http://localhost:5050` |
 | Backend API | `http://localhost:8080` |
 | Health Check | `http://localhost:8080/api/v1/health` |
-| MinIO Console | `http://localhost:9001` |
+| RustFS Console | `http://localhost:9001` |
 
 ### Backend Only Mode
 
@@ -174,3 +174,4 @@ The setup uses `build/config/.env.example` as the base template.
 - [Environment Setup Guide](docs/ENVIRONMENT_SETUP_GUIDE.md) - Environment configuration
 - [Environment Variables Reference](docs/ENVIRONMENT_VARIABLES.md) - Complete variable list
 - [Quick Reference Card](docs/ENV_QUICK_REFERENCE_CARD.md) - Common configurations
+

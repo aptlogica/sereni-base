@@ -9,15 +9,7 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "http://swagger.io/terms/",
-        "contact": {
-            "name": "API Support Team",
-            "email": "support@serenibase.com"
-        },
-        "license": {
-            "name": "Apache 2.0",
-            "url": "https://www.apache.org/licenses/LICENSE-2.0"
-        },
+        "contact": {},
         "version": "{{.Version}}"
     },
     "host": "{{.Host}}",
@@ -950,7 +942,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Persists a base associated with a workspace and optional description, returning the stored base data.",
+                "description": "Persists a base associated with a workspace and optional description, returning the stored base data. Optional image dimensions must not exceed 800x400 pixels.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -986,7 +978,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "Optional base image",
+                        "description": "Optional base image (max 800x400 pixels)",
                         "name": "image",
                         "in": "formData"
                     }
@@ -999,7 +991,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request — missing title or workspace",
+                        "description": "Bad Request — missing title, workspace, or invalid image dimensions",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1103,7 +1095,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Applies the form fields and optional uploaded image to update a base record.",
+                "description": "Applies the form fields and optional uploaded image to update a base record. Image dimensions must not exceed 800x400 pixels.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1139,7 +1131,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "New base image",
+                        "description": "New base image (max 800x400 pixels)",
                         "name": "image",
                         "in": "formData"
                     },
@@ -1158,7 +1150,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request — invalid payload",
+                        "description": "Bad Request — invalid payload or invalid image dimensions",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1344,7 +1336,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Attaches an image file to the base metadata and returns the updated base record.",
+                "description": "Attaches an image file to the base metadata and returns the updated base record. Image dimensions must not exceed 800x400 pixels.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1371,7 +1363,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "Image to upload",
+                        "description": "Image to upload (max 800x400 pixels)",
                         "name": "image",
                         "in": "formData",
                         "required": true
@@ -1385,7 +1377,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request — invalid id or missing image",
+                        "description": "Bad Request — invalid id, missing image, or invalid dimensions",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1531,6 +1523,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request — invalid base ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
@@ -1599,6 +1597,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.UserWithRole"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid base ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -1837,6 +1841,75 @@ const docTemplate = `{
                 }
             }
         },
+        "/column/bulk-update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates multiple columns with the provided metadata and returns success status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin Table Column"
+                ],
+                "summary": "Bulk update columns",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-generated request trace ID",
+                        "name": "X-Request-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Model ID and array of column updates",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BulkUpdateColumnsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Bulk update completed successfully",
+                        "schema": {
+                            "$ref": "#/definitions/models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid payload",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/column/create": {
             "post": {
                 "security": [
@@ -1971,6 +2044,81 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/column/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets all values in a specified column to NULL across all rows.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin Table Column"
+                ],
+                "summary": "Reset column values",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-generated request trace ID",
+                        "name": "X-Request-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Model ID and column ID to reset",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ResetColumnValuesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Column values reset successfully",
+                        "schema": {
+                            "$ref": "#/definitions/models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid payload",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found — column missing",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -2888,6 +3036,81 @@ const docTemplate = `{
                 }
             }
         },
+        "/row/attachment/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates attachment metadata (such as filename, description, etc.) for a given attachment reference in a row.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin Table Column"
+                ],
+                "summary": "Update attachment metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-generated request trace ID",
+                        "name": "X-Request-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Attachment update payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateAttachmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Row updated with new attachment metadata",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RecordResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid payload",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found — attachment missing",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/row/bulk-remove": {
             "post": {
                 "security": [
@@ -2964,7 +3187,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Inserts a new row stub for the specified model and returns the created record metadata.",
+                "description": "Creates a single row when only model_id is provided, or creates rows with values when rows[] is provided.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2974,7 +3197,7 @@ const docTemplate = `{
                 "tags": [
                     "Admin Table Column"
                 ],
-                "summary": "Create a new row",
+                "summary": "Create row(s)",
                 "parameters": [
                     {
                         "type": "string",
@@ -2983,20 +3206,20 @@ const docTemplate = `{
                         "in": "header"
                     },
                     {
-                        "description": "Row creation payload",
+                        "description": "Row create or bulk insert payload",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.CreateRowRequest"
+                            "$ref": "#/definitions/dto.CreateRowOrBulkInsertRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Record stub created",
+                        "description": "Single row record or bulk insert summary in data",
                         "schema": {
-                            "$ref": "#/definitions/dto.RecordResponse"
+                            "$ref": "#/definitions/models.SuccessResponse"
                         }
                     },
                     "400": {
@@ -3257,6 +3480,81 @@ const docTemplate = `{
                 }
             }
         },
+        "/row/update": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Partially patches a single row by applying provided column values in one API call.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin Table Column"
+                ],
+                "summary": "Update a row",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Optional client-generated request trace ID",
+                        "name": "X-Request-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Model ID, row ID, and direct column-value map",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateRowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated row returned",
+                        "schema": {
+                            "$ref": "#/definitions/dto.RecordResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid payload",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity — invalid value",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/table/": {
             "get": {
                 "security": [
@@ -3272,7 +3570,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "List all tables",
                 "parameters": [
@@ -3329,7 +3627,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "Create a table",
                 "parameters": [
@@ -3396,7 +3694,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Imports table schema/data from an uploaded file and generates the model along with default configuration.",
+                "description": "Imports table schema/data from an uploaded file with user-provided column configuration and data cleaning settings.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -3406,7 +3704,7 @@ const docTemplate = `{
                 "tags": [
                     "Admin Table Column"
                 ],
-                "summary": "Import a table via file",
+                "summary": "Import a table via file with configuration",
                 "parameters": [
                     {
                         "type": "string",
@@ -3416,7 +3714,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "CSV/definition file",
+                        "description": "CSV file to import",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -3437,13 +3735,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Optional name override",
+                        "description": "Table name",
                         "name": "title",
-                        "in": "formData"
+                        "in": "formData",
+                        "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Description override",
+                        "description": "Table description",
                         "name": "description",
                         "in": "formData"
                     },
@@ -3452,17 +3751,24 @@ const docTemplate = `{
                         "description": "Numeric order index",
                         "name": "order_index",
                         "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON config with settings and column configurations",
+                        "name": "config",
+                        "in": "formData",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Imported table returned",
+                        "description": "Table imported with custom config",
                         "schema": {
                             "$ref": "#/definitions/dto.TableResponse"
                         }
                     },
                     "400": {
-                        "description": "Bad Request — missing file or required IDs",
+                        "description": "Bad Request — missing required fields",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -3480,7 +3786,7 @@ const docTemplate = `{
                         }
                     },
                     "422": {
-                        "description": "Unprocessable Entity — invalid file",
+                        "description": "Unprocessable Entity — invalid config or file",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -3509,7 +3815,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "Get table by ID",
                 "parameters": [
@@ -3651,7 +3957,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin Table Column"
+                    "Admin Table Column Row"
                 ],
                 "summary": "Update a table",
                 "parameters": [
@@ -5981,6 +6287,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized — invalid authentication",
                         "schema": {
@@ -6127,6 +6439,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
@@ -6195,6 +6513,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.UserWithRole"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -6347,6 +6671,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.TableResponse"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request — invalid workspace ID",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -6711,6 +7041,9 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.BulkUpdateColumnsRequest": {
+            "type": "object"
+        },
         "dto.ColumnResponse": {
             "type": "object",
             "properties": {
@@ -6771,6 +7104,9 @@ const docTemplate = `{
         "dto.ColumnUpdate": {
             "type": "object",
             "properties": {
+                "column_name": {
+                    "type": "string"
+                },
                 "deleted": {
                     "type": "boolean"
                 },
@@ -6888,7 +7224,7 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.CreateRowRequest": {
+        "dto.CreateRowOrBulkInsertRequest": {
             "type": "object",
             "required": [
                 "model_id"
@@ -6897,9 +7233,19 @@ const docTemplate = `{
                 "created_by": {
                     "type": "string"
                 },
+                "last_modified_by": {
+                    "type": "string"
+                },
                 "model_id": {
                     "type": "string",
                     "example": "123e4567-e89b-12d3-a456-426614174000"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
                 }
             }
         },
@@ -6940,6 +7286,13 @@ const docTemplate = `{
         },
         "dto.CreateViewRequest": {
             "type": "object",
+            "required": [
+                "base_id",
+                "meta",
+                "model_id",
+                "title",
+                "type"
+            ],
             "properties": {
                 "base_id": {
                     "type": "string"
@@ -7080,7 +7433,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "token": {
-                    "description": "Tenant    *TenantResponse    ` + "`" + `json:\"tenant,omitempty\" format:\"object\"` + "`" + `",
+                    "description": "Tenant    *TenantResponse    ` + "`" + `json:\"tenant,\" format:\"object\"` + "`" + `",
                     "format": "object",
                     "allOf": [
                         {
@@ -7351,6 +7704,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ResetColumnValuesRequest": {
+            "type": "object",
+            "required": [
+                "column_id",
+                "model_id"
+            ],
+            "properties": {
+                "column_id": {
+                    "type": "string",
+                    "example": "col-123"
+                },
+                "model_id": {
+                    "type": "string",
+                    "example": "123e4567-e89b-12d3-a456-426614174000"
+                }
+            }
+        },
         "dto.ResetPasswordRequest": {
             "type": "object",
             "required": [
@@ -7441,6 +7811,9 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateAttachmentRequest": {
+            "type": "object"
+        },
         "dto.UpdateOrganizationRequest": {
             "type": "object",
             "properties": {
@@ -7526,6 +7899,31 @@ const docTemplate = `{
                 "target_row_id": {
                     "type": "integer",
                     "example": 2
+                }
+            }
+        },
+        "dto.UpdateRowRequest": {
+            "type": "object",
+            "required": [
+                "model_id",
+                "row_id",
+                "values"
+            ],
+            "properties": {
+                "last_modified_by": {
+                    "type": "string"
+                },
+                "model_id": {
+                    "type": "string",
+                    "example": "123e4567-e89b-12d3-a456-426614174000"
+                },
+                "row_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "values": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             }
         },
@@ -7702,10 +8100,10 @@ const docTemplate = `{
                 "avatar": {
                     "type": "string"
                 },
-                "created_time": {
+                "country": {
                     "type": "string"
                 },
-                "deleted_at": {
+                "created_time": {
                     "type": "string"
                 },
                 "display_name": {
@@ -7717,21 +8115,11 @@ const docTemplate = `{
                 "email_verified": {
                     "type": "boolean"
                 },
-                "external_id": {
-                    "type": "string"
-                },
-                "failed_login_attempts": {
-                    "description": "Security",
-                    "type": "integer"
-                },
                 "first_name": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
-                },
-                "is_deleted": {
-                    "type": "boolean"
                 },
                 "last_active_at": {
                     "type": "string"
@@ -7748,16 +8136,8 @@ const docTemplate = `{
                 "locale": {
                     "type": "string"
                 },
-                "locked_until": {
-                    "type": "string"
-                },
-                "mfa_enabled": {
-                    "type": "boolean"
-                },
-                "mfa_secret": {
-                    "type": "string"
-                },
                 "password_changed_at": {
+                    "description": "Security",
                     "type": "string"
                 },
                 "phone": {
@@ -8185,60 +8565,22 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Enter your Bearer token in the format: Bearer \u003ctoken\u003e",
+            "description": "Bearer token for authentication",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
         }
-    },
-    "tags": [
-        {
-            "description": "Authentication, login, and token lifecycle operations.",
-            "name": "Auth"
-        },
-        {
-            "description": "User profile, workspace access, and avatar management.",
-            "name": "Users"
-        },
-        {
-            "description": "Workspace, base, table, column, row, and asset management requiring elevated privileges and RBAC validations.",
-            "name": "Admin"
-        },
-        {
-            "description": "Workspace-level CRUD, membership, and metadata operations.",
-            "name": "Workspace"
-        },
-        {
-            "description": "Base creation, image handling, membership, and visibility controls.",
-            "name": "Base"
-        },
-        {
-            "description": "Table/model creation plus row, column, and view workflows.",
-            "name": "Table"
-        },
-        {
-            "description": "Column lifecycle (add/update/delete/reorder) and attachment helpers.",
-            "name": "Column"
-        },
-        {
-            "description": "Asset/image uploads and related metadata endpoints.",
-            "name": "Asset"
-        },
-        {
-            "description": "Health checks for readiness, liveliness, and general status.",
-            "name": "System"
-        }
-    ]
+    }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
-	Host:             "localhost:8080",
-	BasePath:         "/api/v1",
-	Schemes:          []string{"http", "https"},
-	Title:            "Serenibase API",
-	Description:      "Serenibase is a workspace management platform that layers guardrails on PostgreSQL tables and permissions.\nIt centralizes workspace/base/table creation, membership, and asset/connectivity workflows along with RBAC controls.",
+	Version:          "",
+	Host:             "",
+	BasePath:         "",
+	Schemes:          []string{},
+	Title:            "",
+	Description:      "",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

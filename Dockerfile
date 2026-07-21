@@ -1,13 +1,16 @@
 # ==============================================================================
 # Build Stage
 # ==============================================================================
-FROM golang:1.26.2-alpine@sha256:c2a1f7b2095d046ae14b286b18413a05bb82c9bca9b25fe7ff5efef0f0826166 AS builder
+FROM golang:1.26.5-alpine3.24 AS builder
 RUN go version
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
 ARG VERSION=dev
+
+# Force module mode so builds are not affected by any stale vendor directory.
+ENV GOFLAGS=-mod=mod
 
 WORKDIR /app
 
@@ -19,6 +22,9 @@ RUN go mod download
 
 # Copy the rest of application source code (including docs)
 COPY . .
+
+# Ensure module graph is in sync with imports on fresh machines/clean Docker caches.
+RUN go mod tidy && go mod download
 
 # Build the application with optimizations
 # Note: Swagger docs in /docs are embedded in the binary at compile time
@@ -37,6 +43,7 @@ WORKDIR /app
 
 # Copy binary and required files from builder
 COPY --from=builder /app/main .
+COPY --from=builder /app/docs ./docs
 COPY wait-for-postgres.sh .
 
 # Create assets directory and non-root user for security

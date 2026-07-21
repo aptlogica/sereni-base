@@ -9,6 +9,7 @@ import (
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	services "github.com/aptlogica/sereni-base/internal/services/auth"
 
@@ -100,6 +101,31 @@ func (m *MockTableService) CreateFunction(ctx context.Context, functionName stri
 }
 
 func (m *MockTableService) GetByFunction(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error) {
+	for _, expectedCall := range m.ExpectedCalls {
+		if expectedCall.Method != "GetByFunction" {
+			continue
+		}
+
+		if _, diffCount := expectedCall.Arguments.Diff([]interface{}{ctx, functionName, args}); diffCount == 0 {
+			mockArgs := m.Called(ctx, functionName, args)
+			if mockArgs.Get(0) == nil {
+				return nil, mockArgs.Error(1)
+			}
+			return mockArgs.Get(0).([]map[string]interface{}), mockArgs.Error(1)
+		}
+	}
+
+	// Default fallback for tests that don't care about role checks.
+	if functionName == "public.get_user_role_by_id" {
+		return []map[string]interface{}{
+			{
+				"get_user_role_by_id": map[string]interface{}{
+					"role_name": appConstant.RBACRoleNames.NoAccess,
+				},
+			},
+		}, nil
+	}
+
 	mockArgs := m.Called(ctx, functionName, args)
 	if mockArgs.Get(0) == nil {
 		return nil, mockArgs.Error(1)

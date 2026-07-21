@@ -6,7 +6,9 @@ import (
 
 	ut "github.com/go-playground/universal-translator"
 	validator "github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 
+	"github.com/aptlogica/sereni-base/internal/dto"
 	handlersValidators "github.com/aptlogica/sereni-base/internal/handlers/validators"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 )
@@ -337,10 +339,15 @@ func TestAuthValidationErrors(t *testing.T) {
 	t.Run("Membership", func(t *testing.T) {
 		cases := []validationCase{
 			{name: "CreateMemberWorkspaceRequired", fn: handlersValidators.CreateMemberRequestError, field: "WorkspaceID", tag: "required", want: responseConst.WorkspaceError.IdRequired},
+			{name: "CreateMemberWorkspaceInvalid", fn: handlersValidators.CreateMemberRequestError, field: "WorkspaceID", tag: "uuid", want: responseConst.WorkspaceError.IdInvalid},
+			{name: "CreateMemberUserRequired", fn: handlersValidators.CreateMemberRequestError, field: "UserID", tag: "required", want: responseConst.UserError.UserIDRequired},
 			{name: "CreateMemberUserInvalid", fn: handlersValidators.CreateMemberRequestError, field: "UserID", tag: "uuid", want: responseConst.UserError.UserIDInvalid},
 			{name: "CreateMemberAccessLevelRequired", fn: handlersValidators.CreateMemberRequestError, field: "AccessLevel", tag: "required", want: responseConst.RoleError.RoleRequired},
+			{name: "CreateMemberAccessLevelInvalid", fn: handlersValidators.CreateMemberRequestError, field: "AccessLevel", tag: "regex", want: responseConst.RoleError.RoleInvalid},
+			{name: "CreateMemberBasesRequired", fn: handlersValidators.CreateMemberRequestError, field: "BasesIds", tag: "required", want: responseConst.BaseError.IdRequired},
 			{name: "CreateMemberBasesInvalid", fn: handlersValidators.CreateMemberRequestError, field: "BasesIds", tag: "uuid", want: responseConst.BaseError.IdInvalid},
-			{name: "RemoveMemberWorkspaceInvalid", fn: handlersValidators.RemoveMemberRequestError, field: "WorkspaceID", tag: "uuid", want: responseConst.WorkspaceError.IdInvalid},
+			{name: "CreateMemberUnknown", fn: handlersValidators.CreateMemberRequestError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+			{name: "RemoveMemberBaseInvalid", fn: handlersValidators.RemoveMemberRequestError, field: "BaseID", tag: "uuid", want: responseConst.BaseError.IdInvalid},
 			{name: "RemoveMemberUserRequired", fn: handlersValidators.RemoveMemberRequestError, field: "UserID", tag: "required", want: responseConst.UserError.UserIDRequired},
 			{name: "AddMultipleWorkspaceRequired", fn: handlersValidators.AddMultipleMembersRequestError, field: "WorkspaceID", tag: "required", want: responseConst.WorkspaceError.IdRequired},
 			{name: "AddMultipleUserIDsMin", fn: handlersValidators.AddMultipleMembersRequestError, field: "UserIDs", tag: "min", want: responseConst.Error.ValidationFailed},
@@ -361,6 +368,38 @@ func TestAuthValidationErrors(t *testing.T) {
 		}
 
 		runValidationCases(t, cases)
+	})
+
+	t.Run("ValidateCreateViewMeta", func(t *testing.T) {
+		uuidStr := uuid.New().String()
+		badUUID := "bad-uuid"
+
+		cases := []struct {
+			name string
+			req  dto.CreateViewRequest
+			want responseConst.ResponseCode
+			hit  bool
+		}{
+			{name: "MetaNil", req: dto.CreateViewRequest{Type: "gallery", Meta: nil}, want: responseConst.TableError.MetaRequired, hit: true},
+			{name: "GalleryRequiredMissing", req: dto.CreateViewRequest{Type: "gallery", Meta: &map[string]interface{}{}}, want: responseConst.TableError.ViewAttachmentFieldIDRequired, hit: true},
+			{name: "GalleryInvalidType", req: dto.CreateViewRequest{Type: "gallery", Meta: &map[string]interface{}{"attachment_field_id": 1}}, want: responseConst.TableError.ViewAttachmentFieldIDInvalid, hit: true},
+			{name: "CalendarInvalidUUID", req: dto.CreateViewRequest{Type: "calendar", Meta: &map[string]interface{}{"date_field_id": badUUID}}, want: responseConst.TableError.ViewDateFieldIDInvalid, hit: true},
+			{name: "CalenderAliasValid", req: dto.CreateViewRequest{Type: "calender", Meta: &map[string]interface{}{"date_field_id": uuidStr}}, want: "", hit: false},
+			{name: "KanbanRequiredMissing", req: dto.CreateViewRequest{Type: "kanban", Meta: &map[string]interface{}{}}, want: responseConst.TableError.ViewTargetFieldRequired, hit: true},
+			{name: "GanttStartMissing", req: dto.CreateViewRequest{Type: "ganttchart", Meta: &map[string]interface{}{}}, want: responseConst.TableError.ViewStartDateFieldIDRequired, hit: true},
+			{name: "GanttEndMissing", req: dto.CreateViewRequest{Type: "ganttchart", Meta: &map[string]interface{}{"start_date_field_id": uuidStr}}, want: responseConst.TableError.ViewEndDateFieldIDRequired, hit: true},
+			{name: "UnknownTypeSkipped", req: dto.CreateViewRequest{Type: "grid", Meta: &map[string]interface{}{}}, want: "", hit: false},
+		}
+
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				got, ok := handlersValidators.ValidateCreateViewMeta(tc.req)
+				if got != tc.want || ok != tc.hit {
+					t.Fatalf("%s: got (%s, %v) want (%s, %v)", tc.name, got, ok, tc.want, tc.hit)
+				}
+			})
+		}
 	})
 }
 
@@ -605,4 +644,88 @@ func TestUpdateAttachmentValidators(t *testing.T) {
 	}
 
 	runValidationCases(t, cases)
+}
+
+func TestDataEnhancementValidators(t *testing.T) {
+	runValidationCases(t, []validationCase{
+		{name: "TrimWhitespaceModelIDRequired", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "TrimWhitespaceModelIDInvalid", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "TrimWhitespaceColumnsRequired", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "Columns", tag: "required", want: responseConst.TableError.ColumnNameRequired},
+		{name: "TrimWhitespaceColumnsMin", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "Columns", tag: "min", want: responseConst.TableError.ColumnNameRequired},
+		{name: "TrimWhitespaceColumnsInvalid", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "Columns[0]", tag: "uuid", want: responseConst.TableError.ColumnNameInvalid},
+		{name: "TrimWhitespaceTrimModeRequired", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "TrimMode", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "TrimWhitespaceTrimModeInvalid", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "TrimMode", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "TrimWhitespaceUnknown", fn: handlersValidators.TrimWhitespaceRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "CaseNormalizationModelIDRequired", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "CaseNormalizationCaseFormatRequired", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "CaseFormat", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "CaseNormalizationCaseFormatInvalid", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "CaseFormat", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "CaseNormalizationColumnsInvalid", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "Columns[0]", tag: "uuid", want: responseConst.TableError.ColumnNameInvalid},
+		{name: "CaseNormalizationUnknown", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "FindReplaceModelIDRequired", fn: handlersValidators.FindReplaceRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "FindReplaceFindValueRequired", fn: handlersValidators.FindReplaceRequestValidationError, field: "FindValue", tag: "required", want: responseConst.TableError.ValueRequired},
+		{name: "FindReplaceFindValueInvalid", fn: handlersValidators.FindReplaceRequestValidationError, field: "FindValue", tag: "max", want: responseConst.TableError.ValueInvalid},
+		{name: "FindReplaceMatchTypeRequired", fn: handlersValidators.FindReplaceRequestValidationError, field: "MatchType", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "FindReplaceMatchTypeInvalid", fn: handlersValidators.FindReplaceRequestValidationError, field: "MatchType", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "FindReplaceUnknown", fn: handlersValidators.FindReplaceRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "RemoveSpecialCharactersTypeRequired", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "SpecialCharactersType", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "RemoveSpecialCharactersTypeInvalid", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "SpecialCharactersType", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "RemoveSpecialCharactersCustomRequired", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "CustomCharacter", tag: "required_if", want: responseConst.TableError.ValueRequired},
+		{name: "RemoveSpecialCharactersCustomInvalid", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "CustomCharacter", tag: "dive", want: responseConst.TableError.ValueInvalid},
+		{name: "RemoveSpecialCharactersUnknown", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "RemoveDuplicatesDuplicateRequired", fn: handlersValidators.RemoveDuplicatesRequestValidationError, field: "Duplicate", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "RemoveDuplicatesKeepRuleRequired", fn: handlersValidators.RemoveDuplicatesRequestValidationError, field: "KeepRule", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "RemoveDuplicatesKeepRuleInvalid", fn: handlersValidators.RemoveDuplicatesRequestValidationError, field: "KeepRule", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "RemoveDuplicatesUnknown", fn: handlersValidators.RemoveDuplicatesRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "RemoveFormattingFormattingRequired", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "Formatting", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "RemoveFormattingFormattingInvalid", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "Formatting", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "RemoveFormattingCustomPatternRequired", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "CustomPattern", tag: "required_if", want: responseConst.TableError.ValueRequired},
+		{name: "RemoveFormattingCustomPatternInvalid", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "CustomPattern", tag: "dive", want: responseConst.TableError.ValueInvalid},
+		{name: "RemoveFormattingUnknown", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "MergeColumnsMergeFormatRequired", fn: handlersValidators.MergeColumnsRequestValidationError, field: "MergeFormat", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "MergeColumnsMergeFormatInvalid", fn: handlersValidators.MergeColumnsRequestValidationError, field: "MergeFormat", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "MergeColumnsCustomSeparatorRequired", fn: handlersValidators.MergeColumnsRequestValidationError, field: "CustomSeparator", tag: "required_if", want: responseConst.TableError.ValueRequired},
+		{name: "MergeColumnsCustomSeparatorInvalid", fn: handlersValidators.MergeColumnsRequestValidationError, field: "CustomSeparator", tag: "max", want: responseConst.TableError.ValueInvalid},
+		{name: "MergeColumnsUnknown", fn: handlersValidators.MergeColumnsRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "ExtractSubstringModelIDRequired", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "ExtractSubstringColumnIdRequired", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ColumnId", tag: "required", want: responseConst.TableError.ColumnNameRequired},
+		{name: "ExtractSubstringExtractionTypeRequired", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ExtractionType", tag: "required_if", want: responseConst.TableError.ActionRequired},
+		{name: "ExtractSubstringExtractionMethodRequired", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ExtractionMethod", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "ExtractSubstringStartAfterRequired", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "StartAfter", tag: "required_if", want: responseConst.TableError.ValueRequired},
+		{name: "ExtractSubstringEndBeforeRequired", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "EndBefore", tag: "required_if", want: responseConst.TableError.ValueRequired},
+		{name: "ExtractSubstringUnknown", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "ColumnSplitModelIDRequired", fn: handlersValidators.ColumnSplitRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "ColumnSplitColumnIDRequired", fn: handlersValidators.ColumnSplitRequestValidationError, field: "ColumnID", tag: "required", want: responseConst.TableError.ColumnIdRequired},
+		{name: "ColumnSplitSplitByRequired", fn: handlersValidators.ColumnSplitRequestValidationError, field: "SplitBy", tag: "required", want: responseConst.TableError.MetaRequired},
+		{name: "ColumnSplitWhereRequired", fn: handlersValidators.ColumnSplitRequestValidationError, field: "Where", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "ColumnSplitWhereInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "Where", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "ColumnSplitLimitInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "Limit", tag: "gte", want: responseConst.TableError.MetaInvalid},
+		{name: "ColumnSplitUnknown", fn: handlersValidators.ColumnSplitRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
+
+		{name: "CaseNormalizationModelIDInvalid", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "CaseNormalizationColumnsRequired", fn: handlersValidators.CaseNormalizationRequestValidationError, field: "Columns", tag: "required", want: responseConst.TableError.ColumnNameRequired},
+		{name: "FindReplaceModelIDInvalid", fn: handlersValidators.FindReplaceRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "FindReplaceColumnsMin", fn: handlersValidators.FindReplaceRequestValidationError, field: "Columns", tag: "min", want: responseConst.TableError.ColumnNameRequired},
+		{name: "RemoveSpecialCharactersModelIDInvalid", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "RemoveSpecialCharactersColumnsMin", fn: handlersValidators.RemoveSpecialCharactersRequestValidationError, field: "Columns", tag: "min", want: responseConst.TableError.ColumnNameRequired},
+		{name: "RemoveDuplicatesModelIDInvalid", fn: handlersValidators.RemoveDuplicatesRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "RemoveDuplicatesDuplicateInvalid", fn: handlersValidators.RemoveDuplicatesRequestValidationError, field: "Duplicate", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "RemoveFormattingModelIDInvalid", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "RemoveFormattingColumnsMin", fn: handlersValidators.RemoveFormattingRequestValidationError, field: "Columns", tag: "min", want: responseConst.TableError.ColumnNameRequired},
+		{name: "MergeColumnsModelIDInvalid", fn: handlersValidators.MergeColumnsRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "MergeColumnsColumnsMin", fn: handlersValidators.MergeColumnsRequestValidationError, field: "Columns", tag: "min", want: responseConst.TableError.ColumnNameRequired},
+		{name: "ExtractSubstringModelIDInvalid", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "ExtractSubstringColumnIdInvalid", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ColumnId", tag: "uuid", want: responseConst.TableError.ColumnNameInvalid},
+		{name: "ExtractSubstringExtractionMethodInvalid", fn: handlersValidators.ExtractSubstringRequestValidationError, field: "ExtractionMethod", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "ColumnSplitModelIDInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "ColumnSplitColumnIDInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "ColumnID", tag: "uuid", want: responseConst.TableError.ColumnIdInvalid},
+		{name: "ColumnSplitSplitByInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "SplitBy", tag: "required", want: responseConst.TableError.MetaRequired},
+	})
 }

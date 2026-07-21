@@ -283,6 +283,56 @@ func (s *StubTableManagementService) BulkDeleteRows(ctx context.Context, schemaN
 func (s *StubTableManagementService) RemoveAttachments(ctx context.Context, schemaName string, req dto.RemoveAttachmentsRequest) (dto.RecordResponse, error) {
 	return dto.RecordResponse{}, nil
 }
+func (s *StubTableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	return nil
+}
+func (s *StubTableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	return nil
+}
+
+func (s *StubTableManagementService) ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error) {
+	return dto.ColumnSplitResponse{}, nil
+}
+
+func (s *StubTableManagementService) MergeColumns(ctx context.Context, schemaName string, req dto.MergeColumnsRequest) (dto.MergeColumnsResponse, error) {
+	return dto.MergeColumnsResponse{}, nil
+}
+
+func (s *StubTableManagementService) ExtractSubstring(ctx context.Context, schemaName string, req dto.ExtractSubstringRequest) (dto.ExtractSubstringResponse, error) {
+	return dto.ExtractSubstringResponse{}, nil
+}
+
+func (s *StubTableManagementService) TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error) {
+	return dto.TrimWhitespaceResponse{}, nil
+}
+
+func (s *StubTableManagementService) CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error) {
+	return dto.CaseNormalizationResponse{}, nil
+}
+
+func (s *StubTableManagementService) FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error) {
+	return dto.FindReplaceResponse{}, nil
+}
+
+func (s *StubTableManagementService) RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error) {
+	return dto.RemoveSpecialCharactersResponse{}, nil
+}
+
+func (s *StubTableManagementService) RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error) {
+	return dto.RemoveFormattingResponse{}, nil
+}
+
+func (s *StubTableManagementService) RemoveDuplicates(ctx context.Context, schemaName string, req dto.RemoveDuplicatesRequest) (dto.RemoveDuplicatesResponse, error) {
+	return dto.RemoveDuplicatesResponse{}, nil
+}
+
+func (s *StubTableManagementService) ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columnIDs []string) error {
+	return nil
+}
+
+func (s *StubTableManagementService) ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	return nil
+}
 
 // StubRBACManagementService provides optional function overrides for RBACManagementService.
 type StubRBACManagementService struct {

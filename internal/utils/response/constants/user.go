@@ -8,27 +8,28 @@ package constants
 import "net/http"
 
 var UserError = struct {
-	ErrNotFound          ResponseCode
-	UserAlreadyExists    ResponseCode
-	UserNotCreated       ResponseCode
-	UserNotUpdated       ResponseCode
-	UserNotDeleted       ResponseCode
-	EmailAlreadyVerified ResponseCode
-	InvalidOldPassword   ResponseCode
-	OldPasswordRequired  ResponseCode
-	OldPasswordInvalid   ResponseCode
-	NewPasswordRequired  ResponseCode
-	NewPasswordInvalid   ResponseCode
-	EmailRequired        ResponseCode
-	EmailInvalid         ResponseCode
-	FirstNameRequired    ResponseCode
-	FirstNameInvalid     ResponseCode
-	LastNameRequired     ResponseCode
-	LastNameInvalid      ResponseCode
-	RoleIDRequired       ResponseCode
-	RoleIDInvalid        ResponseCode
-	UserIDRequired       ResponseCode
-	UserIDInvalid        ResponseCode
+	ErrNotFound              ResponseCode
+	UserAlreadyExists        ResponseCode
+	UserNotCreated           ResponseCode
+	UserNotUpdated           ResponseCode
+	UserNotDeleted           ResponseCode
+	EmailAlreadyVerified     ResponseCode
+	InvalidOldPassword       ResponseCode
+	OldPasswordRequired      ResponseCode
+	OldPasswordInvalid       ResponseCode
+	NewPasswordRequired      ResponseCode
+	NewPasswordInvalid       ResponseCode
+	EmailRequired            ResponseCode
+	EmailInvalid             ResponseCode
+	FirstNameRequired        ResponseCode
+	FirstNameInvalid         ResponseCode
+	LastNameRequired         ResponseCode
+	LastNameInvalid          ResponseCode
+	RoleIDRequired           ResponseCode
+	RoleIDInvalid            ResponseCode
+	UserIDRequired           ResponseCode
+	UserIDInvalid            ResponseCode
+	EmailVerificationPending ResponseCode
 }{
 	ErrNotFound:          "USR_2006",
 	UserAlreadyExists:    "USR_2005",
@@ -42,16 +43,17 @@ var UserError = struct {
 	NewPasswordRequired:  "USR_2014",
 	NewPasswordInvalid:   "USR_2015",
 	// AddUserRequest validation error codes
-	EmailRequired:     "USR_2016",
-	EmailInvalid:      "USR_2017",
-	FirstNameRequired: "USR_2018",
-	FirstNameInvalid:  "USR_2019",
-	LastNameRequired:  "USR_2020",
-	LastNameInvalid:   "USR_2021",
-	RoleIDRequired:    "USR_2022",
-	RoleIDInvalid:     "USR_2023",
-	UserIDRequired:    "USR_2024",
-	UserIDInvalid:     "USR_2025",
+	EmailRequired:            "USR_2016",
+	EmailInvalid:             "USR_2017",
+	FirstNameRequired:        "USR_2018",
+	FirstNameInvalid:         "USR_2019",
+	LastNameRequired:         "USR_2020",
+	LastNameInvalid:          "USR_2021",
+	RoleIDRequired:           "USR_2022",
+	RoleIDInvalid:            "USR_2023",
+	UserIDRequired:           "USR_2024",
+	UserIDInvalid:            "USR_2025",
+	EmailVerificationPending: "USR_2026",
 }
 
 var UserErrorCodes = map[ResponseCode]MetaResponse{
@@ -160,6 +162,11 @@ var UserErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Invalid user ID",
 		Description: "The provided user identifier is not valid or not a proper UUID",
 	},
+	UserError.EmailVerificationPending: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Email verification is pending. User status cannot be updated.",
+		Description: "Email verification is pending. User status cannot be updated.",
+	},
 }
 
 var UserSuccess = struct {
@@ -177,6 +184,9 @@ var UserSuccess = struct {
 	WorkspaceFetched         ResponseCode
 	UserRemovedFromWorkspace ResponseCode
 	UserAccessDetailsFetched ResponseCode
+	UserDeactivated          ResponseCode
+	UserActivated            ResponseCode
+	UserRemovedFromBase      ResponseCode
 }{
 	UserCreated:              "USR_SUCCESS_2001",
 	UserUpdated:              "USR_SUCCESS_2002",
@@ -192,6 +202,9 @@ var UserSuccess = struct {
 	WorkspaceFetched:         "USR_SUCCESS_2012",
 	UserRemovedFromWorkspace: "USR_SUCCESS_2013",
 	UserAccessDetailsFetched: "USR_SUCCESS_2014",
+	UserDeactivated:          "USR_SUCCESS_2015",
+	UserActivated:            "USR_SUCCESS_2016",
+	UserRemovedFromBase:      "USR_SUCCESS_2017",
 }
 
 var UserSuccessCodes = map[ResponseCode]MetaResponse{
@@ -264,5 +277,20 @@ var UserSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "User access details fetched successfully",
 		Description: "The user's workspace and base access details have been fetched successfully",
+	},
+	UserSuccess.UserDeactivated: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "User deactivated successfully",
+		Description: "The user has been deactivated successfully",
+	},
+	UserSuccess.UserActivated: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "User activated successfully",
+		Description: "The user has been activated successfully",
+	},
+	UserSuccess.UserRemovedFromBase: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "User removed from base successfully",
+		Description: "The user has been removed from the base successfully",
 	},
 }

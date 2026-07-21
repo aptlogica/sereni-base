@@ -19,6 +19,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+const testBaseID = "11111111-1111-1111-1111-111111111111"
+
 func TestNewBaseHandler(t *testing.T) {
 	handler := handlers.NewBaseHandler(nil)
 	assert.NotNil(t, handler)
@@ -66,19 +68,38 @@ func TestBaseHandler_CreateBase_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestBaseHandler_CreateBase_TitleTooLong(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	longTitle := string(bytes.Repeat([]byte("a"), 260))
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", longTitle)
+	_ = writer.WriteField("workspace_id", "w1")
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	handler.CreateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
 func TestBaseHandler_GetBaseByID_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", "b1").Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/bases/b1", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("GET", "/bases/"+testBaseID, nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 
 	handler.GetBaseByID(c)
@@ -91,14 +112,40 @@ func TestBaseHandler_GetBaseByID_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", "b1").Return(tenant.Base{}, errors.New("not found"))
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, errors.New("not found"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/bases/b1", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("GET", "/bases/"+testBaseID, nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
+
+	handler.GetBaseByID(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_GetBaseByID_InvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewBaseHandler(nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/invalid", nil)
+	c.Params = gin.Params{{Key: "id", Value: "invalid"}}
+
+	handler.GetBaseByID(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_GetBaseByID_MissingID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := handlers.NewBaseHandler(nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/bases/", nil)
+	c.Params = gin.Params{{Key: "id", Value: ""}}
 
 	handler.GetBaseByID(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)
@@ -110,20 +157,40 @@ func TestBaseHandler_UpdateBase_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	body := strings.NewReader("title=New+Title&description=desc")
-	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
 	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
 	handler.UpdateBase(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_TitleTooLong(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	longTitle := string(bytes.Repeat([]byte("a"), 260))
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", longTitle)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
 func TestBaseHandler_UpdateBase_WithImage(t *testing.T) {
@@ -132,7 +199,8 @@ func TestBaseHandler_UpdateBase_WithImage(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -144,9 +212,9 @@ func TestBaseHandler_UpdateBase_WithImage(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
@@ -160,7 +228,8 @@ func TestBaseHandler_UpdateBase_RemoveImage(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -171,9 +240,9 @@ func TestBaseHandler_UpdateBase_RemoveImage(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
@@ -187,7 +256,8 @@ func TestBaseHandler_UpdateBase_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("update failed"))
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("update failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -197,9 +267,9 @@ func TestBaseHandler_UpdateBase_ServiceError(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
@@ -213,7 +283,8 @@ func TestBaseHandler_UpdateBase_AddImageError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("add image failed"))
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("add image failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -225,9 +296,9 @@ func TestBaseHandler_UpdateBase_AddImageError(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
@@ -241,7 +312,8 @@ func TestBaseHandler_UpdateBase_RemoveImageError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().UpdateBase(gomock.Any(), "test", "b1", gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("remove image failed"))
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).Return(tenant.Base{}, errors.New("remove image failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -252,9 +324,9 @@ func TestBaseHandler_UpdateBase_RemoveImageError(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("PUT", "/bases/b1", body)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
@@ -268,13 +340,13 @@ func TestBaseHandler_DeleteBase_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().DeleteBase(gomock.Any(), "test", "b1").Return(nil)
+	mockService.EXPECT().DeleteBase(gomock.Any(), "test", testBaseID).Return(nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("DELETE", "/bases/b1", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("DELETE", "/bases/"+testBaseID, nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 
 	handler.DeleteBase(c)
@@ -287,13 +359,13 @@ func TestBaseHandler_DeleteBase_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().DeleteBase(gomock.Any(), "test", "b1").Return(errors.New("delete failed"))
+	mockService.EXPECT().DeleteBase(gomock.Any(), "test", testBaseID).Return(errors.New("delete failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("DELETE", "/bases/b1", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("DELETE", "/bases/"+testBaseID, nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 
 	handler.DeleteBase(c)
@@ -306,13 +378,14 @@ func TestBaseHandler_GetTablesByBaseId_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().GetTablesByBaseId(gomock.Any(), "test", "b1").Return([]dto.TableResponse{}, nil)
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetTablesByBaseId(gomock.Any(), "test", testBaseID).Return([]dto.TableResponse{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/bases/b1/tables", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("GET", "/bases/"+testBaseID+"/tables", nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 
 	handler.GetTablesByBaseId(c)
@@ -325,13 +398,14 @@ func TestBaseHandler_GetTablesByBaseId_ServiceError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().GetTablesByBaseId(gomock.Any(), "test", "b1").Return(nil, errors.New("fetch failed"))
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().GetTablesByBaseId(gomock.Any(), "test", testBaseID).Return(nil, errors.New("fetch failed"))
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/bases/b1/tables", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("GET", "/bases/"+testBaseID+"/tables", nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 
 	handler.GetTablesByBaseId(c)
@@ -355,8 +429,8 @@ func TestBaseHandler_AddBaseImage_MissingFile(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/bases/b1/image", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("POST", "/bases/"+testBaseID+"/image", nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 
 	handler.AddBaseImage(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)
@@ -368,7 +442,7 @@ func TestBaseHandler_AddBaseImage_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().AddBaseImage(gomock.Any(), "test", "b1", gomock.Any(), "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().AddBaseImage(gomock.Any(), "test", testBaseID, gomock.Any(), "user123").Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	body := &bytes.Buffer{}
@@ -379,9 +453,9 @@ func TestBaseHandler_AddBaseImage_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/bases/b1/image", body)
+	c.Request = httptest.NewRequest("POST", "/bases/"+testBaseID+"/image", body)
 	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
@@ -407,16 +481,90 @@ func TestBaseHandler_RemoveBaseImage_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockService := mocks.NewMockBaseManagementService(ctrl)
-	mockService.EXPECT().RemoveBaseImage(gomock.Any(), "test", "b1", "user123").Return(tenant.Base{}, nil)
+	mockService.EXPECT().RemoveBaseImage(gomock.Any(), "test", testBaseID, "user123").Return(tenant.Base{}, nil)
 	handler := handlers.NewBaseHandler(mockService)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("DELETE", "/bases/b1/image", nil)
-	c.Params = gin.Params{{Key: "id", Value: "b1"}}
+	c.Request = httptest.NewRequest("DELETE", "/bases/"+testBaseID+"/image", nil)
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
 	c.Set("schema", "test")
 	c.Set("user_id", "user123")
 
 	handler.RemoveBaseImage(c)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_CreateBase_ImageTooLarge(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	// Create a large file (6MB) that exceeds the 5MB limit
+	largeFileContent := bytes.Repeat([]byte("x"), 6*1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "Test Base")
+	_ = writer.WriteField("workspace_id", "w1")
+	part, _ := writer.CreateFormFile("image", "large.png")
+	_, _ = part.Write(largeFileContent)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.CreateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_ImageTooLarge(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	// Create a large file (6MB) that exceeds the 5MB limit
+	largeFileContent := bytes.Repeat([]byte("x"), 6*1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("title", "Updated Base")
+	part, _ := writer.CreateFormFile("image", "large.png")
+	_, _ = part.Write(largeFileContent)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/bases/"+testBaseID, body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_AddBaseImage_ImageTooLarge(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+
+	// Create a large file (6MB) that exceeds the 5MB limit
+	largeFileContent := bytes.Repeat([]byte("x"), 6*1024*1024)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("image", "large.png")
+	_, _ = part.Write(largeFileContent)
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/bases/"+testBaseID+"/image", body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+
+	handler.AddBaseImage(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
 }

@@ -102,18 +102,18 @@ TEMPORARY_USER_PASSWORD=random_temp_password_456
 | Variable | Type | Default | Notes |
 |----------|------|---------|-------|
 | `STORAGE_URL` | ⚙️ | Auto-configured | Internal service URL |
-| `STORAGE_DRIVER` | 🟢 | `local` | `local`, `minio`, or `aws` |
+| `STORAGE_DRIVER` | 🟢 | `local` | `local`, `RustFS`, or `aws` |
 | `STORAGE_DEV_PATH` | 🟢 | `./uploads` | Local storage path |
 
-### If STORAGE_DRIVER=minio
+### If STORAGE_DRIVER=RustFS
 
 | Variable | Type | Default | Notes |
 |----------|------|---------|-------|
-| `STORAGE_MINIO_ENDPOINT` | 🔵 | `minio:9000` | MinIO server |
-| `STORAGE_MINIO_ACCESS_KEY` | 🔵 | `minioadmin` | Access key |
-| `STORAGE_MINIO_SECRET_KEY` | 🔵 | `minioadmin` | Secret key |
-| `STORAGE_MINIO_BUCKET` | 🔵 | `serenibase` | Bucket name |
-| `STORAGE_MINIO_USE_SSL` | 🔵 | `false` | SSL/TLS |
+| `STORAGE_RustFS_ENDPOINT` | 🔵 | `RustFS:9000` | RustFS server |
+| `STORAGE_RustFS_ACCESS_KEY` | 🔵 | `RustFSadmin` | Access key |
+| `STORAGE_RustFS_SECRET_KEY` | 🔵 | `RustFSadmin` | Secret key |
+| `STORAGE_RustFS_BUCKET` | 🔵 | `serenibase` | Bucket name |
+| `STORAGE_RustFS_USE_SSL` | 🔵 | `false` | SSL/TLS |
 
 ### If STORAGE_DRIVER=aws
 
@@ -226,7 +226,7 @@ Do you need to change this variable?
 **Additionally set:**
 - 🟡 All security variables (strong passwords)
 - 🔵 Email configuration (SMTP)
-- 🔵 Storage (AWS S3 or MinIO)
+- 🔵 Storage (AWS S3 or RustFS)
 - 🟢 `SERVER_ENV=production`
 - 🟢 `LOG_LEVEL=warn`
 - 🟢 `DATABASE_SSL_MODE=require`
@@ -324,3 +324,4 @@ rm .env
 ---
 
 **Last Updated:** February 4, 2026
+

@@ -6,15 +6,24 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"mime/multipart"
+	"path/filepath"
 	"strconv"
+	"strings"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
+	_ "github.com/aptlogica/sereni-base/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -23,6 +32,13 @@ import (
 type TableHandler struct {
 	tableManagementService interfaces.TableManagementService
 	importService          interfaces.ImportService
+}
+
+func isCSVImportFile(file *multipart.FileHeader) bool {
+	if file == nil {
+		return false
+	}
+	return strings.EqualFold(filepath.Ext(file.Filename), ".csv")
 }
 
 func NewTableHandler(tableManagementService interfaces.TableManagementService, importService interfaces.ImportService) *TableHandler {
@@ -56,6 +72,16 @@ func (h *TableHandler) CreateTable(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.TableError.TitleRequired)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.ViewTitleTooLong); ok {
+		response.SendError(c, errCode)
 		return
 	}
 
@@ -98,12 +124,12 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 
 	id := c.Param("id")
 	if id == "" {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.TableError.ModelIDRequired)
 		return
 	}
 
 	if _, err := uuid.Parse(id); err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
+		response.SendError(c, responseConst.TableError.ModelIDInvalid)
 		return
 	}
 
@@ -111,6 +137,19 @@ func (h *TableHandler) UpdateTable(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.CheckAndSendError(c, err)
 		return
+	}
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.TableError.TitleTooLong); ok {
+			response.SendError(c, errCode)
+			return
+		}
+		req.Title = &title
 	}
 
 	schemaNameVal, _ := c.Get("schema")
@@ -228,6 +267,15 @@ func (h *TableHandler) AddColumn(c *gin.Context) {
 
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
+
+	if _, err := h.tableManagementService.GetTableByID(c, req.ModelID.String(), schemaName); err != nil {
+		if errors.Is(err, app_errors.TableNotFound) {
+			response.SendError(c, responseConst.TableError.TableNotFound)
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
 
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
@@ -348,6 +396,21 @@ func (h *TableHandler) CreateView(c *gin.Context) {
 			return
 		}
 		response.CheckAndSendError(c, err)
+		return
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		response.SendError(c, responseConst.TableError.TitleRequired)
+		return
+	}
+	if errCode, ok := validators.ValidateMaxNameOrTitleLength(req.Title, responseConst.TableError.TitleTooLong); ok {
+		response.SendError(c, errCode)
+		return
+	}
+
+	if errCode, ok := validators.ValidateCreateViewMeta(req); ok {
+		response.SendError(c, errCode)
 		return
 	}
 
@@ -482,6 +545,19 @@ func (h *TableHandler) UpdateView(c *gin.Context) {
 		return
 	}
 
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			response.SendError(c, responseConst.TableError.TitleRequired)
+			return
+		}
+		if errCode, ok := validators.ValidateMaxNameOrTitleLength(title, responseConst.TableError.TitleTooLong); ok {
+			response.SendError(c, errCode)
+			return
+		}
+		req.Title = &title
+	}
+
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
 
@@ -602,14 +678,14 @@ func (h *TableHandler) DeleteColumn(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.ColumnDeleted, nil)
 }
 
-// @Summary      Create a new row
-// @Description  Inserts a new row stub for the specified model and returns the created record metadata.
+// @Summary      Create row(s)
+// @Description  Creates a single row when only model_id is provided, or creates rows with values when rows[] is provided.
 // @Tags         Admin Table Column
 // @Accept       json
 // @Produce      json
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
-// @Param        request  body      dto.CreateRowRequest  true  "Row creation payload"
-// @Success      200      {object}  dto.RecordResponse     "Record stub created"
+// @Param        request  body      dto.CreateRowOrBulkInsertRequest  true  "Row create or bulk insert payload"
+// @Success      200      {object}  models.SuccessResponse  "Single row record or bulk insert summary in data"
 // @Failure      400      {object}  models.ErrorResponse   "Bad Request — invalid payload"
 // @Failure      401      {object}  models.ErrorResponse   "Unauthorized"
 // @Failure      403      {object}  models.ErrorResponse   "Forbidden"
@@ -618,7 +694,7 @@ func (h *TableHandler) DeleteColumn(c *gin.Context) {
 // @Security     BearerAuth
 // @Router       /row/create [post]
 func (h *TableHandler) CreateRow(c *gin.Context) {
-	var req dto.CreateRowRequest
+	var req dto.CreateRowOrBulkInsertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if ve, ok := err.(validator.ValidationErrors); ok {
 			response.SendError(c, validators.CreateRowRequestValidationError(ve[0]))
@@ -637,14 +713,103 @@ func (h *TableHandler) CreateRow(c *gin.Context) {
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
 	}
+	if req.UpdatedBy == "" {
+		req.UpdatedBy = userId
+	}
 
-	record, err := h.tableManagementService.CreateRow(c, schemaName, req)
+	if len(req.Rows) > 0 {
+		bulkInsertService, ok := h.tableManagementService.(interface {
+			CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
+		})
+		if !ok {
+			response.CheckAndSendError(c, fmt.Errorf("table service does not support CreateRowsWithValues"))
+			return
+		}
+
+		rows, err := bulkInsertService.CreateRowsWithValues(c, schemaName, req.ModelID, req.Rows, req.CreatedBy, req.UpdatedBy)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+
+		response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, gin.H{
+			"inserted_count": len(rows),
+			"rows":           rows,
+		})
+		return
+	}
+
+	record, err := h.tableManagementService.CreateRow(c, schemaName, dto.CreateRowRequest{
+		ModelID:   req.ModelID,
+		CreatedBy: req.CreatedBy,
+	})
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
 	}
 
 	response.SendSuccess(c, responseConst.TableSuccess.RecordCreated, record)
+}
+
+// @Summary      Update a row
+// @Description  Partially patches a single row by applying provided column values in one API call.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.UpdateRowRequest  true  "Model ID, row ID, and direct column-value map"
+// @Success      200      {object}  dto.RecordResponse    "Updated row returned"
+// @Failure      400      {object}  models.ErrorResponse  "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse  "Forbidden"
+// @Failure      422      {object}  models.ErrorResponse  "Unprocessable Entity — invalid value"
+// @Failure      500      {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /row/update [patch]
+func (h *TableHandler) UpdateRow(c *gin.Context) {
+	var req dto.UpdateRowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.UpdateRowRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	userIdVal, _ := c.Get("user_id")
+	userId, _ := userIdVal.(string)
+
+	if req.UpdatedBy == "" {
+		req.UpdatedBy = userId
+	}
+
+	updatedRow := dto.RecordResponse{}
+	for columnID, rawValue := range req.Values {
+		var valuePtr *interface{}
+		if rawValue != nil {
+			value := rawValue
+			valuePtr = &value
+		}
+
+		record, err := h.tableManagementService.InsertRowData(c, schemaName, dto.InsertRowDataRequest{
+			ModelID:   req.ModelID,
+			ColumnId:  columnID,
+			RowId:     req.RowId,
+			Value:     valuePtr,
+			UpdatedBy: req.UpdatedBy,
+		})
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		updatedRow = record
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, updatedRow)
 }
 
 // @Summary      Update link data for rows
@@ -837,7 +1002,7 @@ func (h *TableHandler) RemoveAttachments(c *gin.Context) {
 		return
 	}
 
-	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataRemoved, record)
 }
 
 // @Summary      Get all records for a table
@@ -1026,39 +1191,123 @@ func (h *TableHandler) ReorderColumn(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.ColumnReordered, updatedColumns)
 }
 
-// @Summary      Import a table via file
-// @Description  Imports table schema/data from an uploaded file and generates the model along with default configuration.
+// @Summary      Import a table via file with configuration
+// @Description  Imports table schema/data from an uploaded file with user-provided column configuration and data cleaning settings.
 // @Tags         Admin Table Column
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
-// @Param        file         formData  file    true   "CSV/definition file"
+// @Param        file         formData  file    true   "CSV file to import"
 // @Param        base_id      formData  string  true   "Base ID to associate"
 // @Param        workspace_id formData  string  true   "Workspace ID"
-// @Param        title        formData  string  false  "Optional name override"
-// @Param        description  formData  string  false  "Description override"
+// @Param        title        formData  string  true   "Table name"
+// @Param        description  formData  string  false  "Table description"
 // @Param        order_index  formData  string  false  "Numeric order index"
-// @Success      200          {object}  dto.TableResponse  "Imported table returned"
-// @Failure      400          {object}  models.ErrorResponse  "Bad Request — missing file or required IDs"
+// @Param        config       formData  string  true   "JSON config with settings and column configurations"
+// @Success      200          {object}  dto.TableResponse  "Table imported with custom config"
+// @Failure      400          {object}  models.ErrorResponse  "Bad Request — missing required fields"
 // @Failure      401          {object}  models.ErrorResponse  "Unauthorized"
 // @Failure      403          {object}  models.ErrorResponse  "Forbidden"
-// @Failure      422          {object}  models.ErrorResponse  "Unprocessable Entity — invalid file"
+// @Failure      422          {object}  models.ErrorResponse  "Unprocessable Entity — invalid config or file"
 // @Failure      500          {object}  models.ErrorResponse  "Internal Server Error"
 // @Security     BearerAuth
 // @Router       /table/import [post]
-func (h *TableHandler) ImportTable(c *gin.Context) {
-	// Expect multipart form with both file and fields
+func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
+	// Get and validate file
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.SendError(c, responseConst.AssetError.FilesNotFound)
 		return
 	}
 
-	var req dto.CreateTableRequest
+	if !isCSVImportFile(file) {
+		response.SendErrorWithMessage(c, responseConst.AssetError.InvalidFileFormat, "Only CSV files are allowed")
+		return
+	}
+
+	// Enforce import file size limit
+	maxImportSize := int64(config.AppConfig.Import.MaxSize)
+	if maxImportSize <= 0 {
+		maxImportSize = 2097152 // 2MB fallback
+	}
+	if file.Size > maxImportSize {
+		response.SendError(c, responseConst.AssetError.FileTooLargeError)
+		return
+	}
+
+	// Parse JSON config from form
+	configJSON := c.PostForm("config")
+	if configJSON == "" {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	importConfig, err := parseImportConfig(configJSON)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	// Map the provided primary column name to its matching column config.
+	primaryName := c.PostForm("primary_column")
+	if primaryName != "" {
+		if err := setPrimaryColumn(&importConfig, primaryName); err != nil {
+			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "primary_column not found in config columns")
+			return
+		}
+	}
+
+	// Build import request from context values and config
+	req := buildImportRequestFromContext(c, importConfig)
+
+	// Compute tableTitle from uploaded filename (strip extension).
+	tableTitle := file.Filename
+	if lastDot := strings.LastIndex(tableTitle, "."); lastDot != -1 {
+		tableTitle = tableTitle[:lastDot]
+	}
+
+	// Get schema from context
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	// Call import service with config
+	// Pass computed tableTitle to the import service (title/description not accepted from form)
+	tableResp, err := h.importService.ImportWithConfig(c.Request.Context(), schemaName, req, file, tableTitle)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, tableResp)
+}
+
+// parseImportConfig parses the import config JSON into a dto.ImportConfig
+func parseImportConfig(configJSON string) (dto.ImportConfig, error) {
+	var importConfig dto.ImportConfig
+	if err := json.Unmarshal([]byte(configJSON), &importConfig); err != nil {
+		return importConfig, err
+	}
+	return importConfig, nil
+}
+
+// setPrimaryColumn finds the named column in importConfig and sets PrimaryColumn
+func setPrimaryColumn(importConfig *dto.ImportConfig, primaryName string) error {
+	for _, col := range importConfig.Columns {
+		if col.ColumnName == primaryName {
+			copyCol := col
+			importConfig.PrimaryColumn = &copyCol
+			return nil
+		}
+	}
+	return errors.New("primary_column not found in config columns")
+}
+
+// buildImportRequestFromContext builds dto.ImportWithConfigRequest from the gin context and parsed config
+func buildImportRequestFromContext(c *gin.Context, importConfig dto.ImportConfig) dto.ImportWithConfigRequest {
+	var req dto.ImportWithConfigRequest
 	req.BaseID = c.PostForm("base_id")
 	req.WorkspaceID = c.PostForm("workspace_id")
-	req.Title = c.PostForm("title")
-	req.Description = c.PostForm("description")
+	req.Config = importConfig
 
 	orderIndexStr := c.PostForm("order_index")
 	if orderIndexStr != "" {
@@ -1069,23 +1318,13 @@ func (h *TableHandler) ImportTable(c *gin.Context) {
 		}
 	}
 
-	schemaNameVal, _ := c.Get("schema")
-	schemaName, _ := schemaNameVal.(string)
-
 	userIdVal, _ := c.Get("user_id")
 	userId, _ := userIdVal.(string)
-
 	if req.CreatedBy == "" {
 		req.CreatedBy = userId
 	}
 
-	table, err := h.importService.Import(c, schemaName, req, file)
-	if err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-
-	response.SendSuccess(c, responseConst.TableSuccess.TableCreated, table)
+	return req
 }
 
 // @Summary      Bulk delete rows
@@ -1123,4 +1362,553 @@ func (h *TableHandler) BulkDeleteRows(c *gin.Context) {
 		"deleted_count": deletedCount,
 		"message":       fmt.Sprintf("Successfully deleted %d rows", deletedCount),
 	})
+}
+
+// @Summary      Bulk update columns
+// @Description  Updates multiple columns with the provided metadata and returns success status.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.BulkUpdateColumnsRequest  true  "Model ID and array of column updates"
+// @Success      200      {object}  models.SuccessResponse      "Bulk update completed successfully"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/bulk-update [post]
+func (h *TableHandler) BulkUpdateColumns(c *gin.Context) {
+	var req dto.BulkUpdateColumnsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.BulkUpdateColumnsRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.tableManagementService.BulkUpdateColumns(c, schemaName, req.ModelID, req.ColumnID, req.Updates)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnUpdated, gin.H{
+		"message": "Columns updated successfully",
+		"count":   len(req.Updates),
+	})
+}
+
+// @Summary      Reset column values
+// @Description  Sets all values in a specified column to NULL across all rows.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.ResetColumnValuesRequest  true  "Model ID and column ID to reset"
+// @Success      200      {object}  models.SuccessResponse        "Column values reset successfully"
+// @Failure      400      {object}  models.ErrorResponse         "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse         "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse         "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse         "Not Found — column missing"
+// @Failure      500      {object}  models.ErrorResponse         "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/reset [post]
+func (h *TableHandler) ResetColumnValues(c *gin.Context) {
+	var req dto.ResetColumnValuesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ResetColumnValuesRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	err := h.tableManagementService.ResetColumnValues(c, schemaName, req.ModelID, req.ColumnId)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnUpdated, gin.H{
+		"message":  "Column values reset to NULL successfully",
+		"columnId": req.ColumnId,
+	})
+}
+
+// @Summary      Trim whitespace in selected columns
+// @Description  Cleans whitespace for selected columns by fetching records directly from the database, skipping NULL/non-string values, and updating only changed cells.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.TrimWhitespaceRequest  true  "Model ID, target column IDs, trim mode, and optional extra-space cleanup"
+// @Success      200      {object}  models.SuccessResponse     "Whitespace cleanup summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/trim-whitespace [post]
+func (h *TableHandler) TrimWhitespace(c *gin.Context) {
+	var req dto.TrimWhitespaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.TrimWhitespaceRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.TrimWhitespace(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	var successCode responseConst.ResponseCode
+	switch req.TrimMode {
+	case "trim_both":
+		successCode = responseConst.TableSuccess.TrimWhitespaceBoth
+	case "trim_leading":
+		successCode = responseConst.TableSuccess.TrimWhitespaceLeading
+	case "trim_trailing":
+		successCode = responseConst.TableSuccess.TrimWhitespaceTrailing
+	case "collapse_spaces":
+		successCode = responseConst.TableSuccess.TrimWhitespaceCollapse
+	default:
+		successCode = responseConst.TableSuccess.TrimWhitespaceBoth
+	}
+	response.SendSuccess(c, successCode, result)
+}
+
+// @Summary      Find and replace values in selected columns
+// @Description  Finds occurrences of `find_value` in the selected columns and replaces them with `replace_value`. The backend fetches target records directly from the DB, skips NULL/non-string values, and updates only changed cells.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.FindReplaceRequest  true  "Model ID, target column IDs, find value, replace value, and matching preference"
+// @Success      200      {object}  models.SuccessResponse     "Find & Replace summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/find-replace [post]
+func (h *TableHandler) FindReplace(c *gin.Context) {
+	var req dto.FindReplaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.FindReplaceRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.FindReplace(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	var successCode responseConst.ResponseCode
+	switch req.MatchType {
+	case "match_case":
+		successCode = responseConst.TableSuccess.FindReplaceMatchCase
+	case "ignore_case":
+		successCode = responseConst.TableSuccess.FindReplaceIgnoreCase
+	case "match_entire_value":
+		successCode = responseConst.TableSuccess.FindReplaceEntireValue
+	default:
+		successCode = responseConst.TableSuccess.FindReplace
+	}
+
+	response.SendSuccess(c, successCode, result)
+}
+
+// @Summary      Normalize case in selected columns
+// @Description  Normalizes text case for selected columns by fetching records directly from the database, skipping NULL/non-string values, and updating only changed cells.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.CaseNormalizationRequest  true  "Model ID, target column IDs, and desired case format"
+// @Success      200      {object}  models.SuccessResponse     "Normalization summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/case-normalize [post]
+func (h *TableHandler) CaseNormalization(c *gin.Context) {
+	var req dto.CaseNormalizationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.CaseNormalizationRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	if svcWithCase, ok := h.tableManagementService.(interface {
+		CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error)
+	}); ok {
+		result, err := svcWithCase.CaseNormalization(c, schemaName, req)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+
+		var successCode responseConst.ResponseCode
+		switch req.CaseFormat {
+		case "lowercase":
+			successCode = responseConst.TableSuccess.CaseNormalizationLowercase
+		case "uppercase":
+			successCode = responseConst.TableSuccess.CaseNormalizationUppercase
+		case "title_case":
+			successCode = responseConst.TableSuccess.CaseNormalizationTitleCase
+		case "sentence_case":
+			successCode = responseConst.TableSuccess.CaseNormalizationSentenceCase
+		default:
+			successCode = responseConst.TableSuccess.ColumnUpdated
+		}
+
+		response.SendSuccess(c, successCode, result)
+		return
+	}
+
+	response.SendError(c, responseConst.Error.NotImplemented)
+}
+
+// @Summary      Remove special characters from selected columns
+// @Description  Removes special characters from selected columns by fetching records directly from the database, skipping NULL/non-string values, and updating only changed cells.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.RemoveSpecialCharactersRequest  true  "Model ID, target column IDs, remove type, and optional custom character"
+// @Success      200      {object}  models.SuccessResponse     "Special character removal summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/remove-special-characters [post]
+func (h *TableHandler) RemoveSpecialCharacters(c *gin.Context) {
+	var req dto.RemoveSpecialCharactersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RemoveSpecialCharactersRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.RemoveSpecialCharacters(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	var successCode responseConst.ResponseCode
+	switch req.SpecialCharactersType {
+	case "symbols":
+		successCode = responseConst.TableSuccess.RemoveSpecialCharactersSymbols
+	case "currency_symbols":
+		successCode = responseConst.TableSuccess.RemoveSpecialCharactersCurrency
+	case "brackets":
+		successCode = responseConst.TableSuccess.RemoveSpecialCharactersBrackets
+	case "punctuation":
+		successCode = responseConst.TableSuccess.RemoveSpecialCharactersPunctuation
+	case "custom":
+		successCode = responseConst.TableSuccess.RemoveSpecialCharactersCustom
+	default:
+		successCode = responseConst.TableSuccess.RemoveSpecialCharacters
+	}
+
+	response.SendSuccess(c, successCode, result)
+}
+
+// @Summary      Split a column into multiple columns
+// @Description  Splits the selected column using separator, fixed-length, or regex rules, creates new columns, and optionally removes the original column.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.ColumnSplitRequest  true  "Model ID, column ID, split strategy, keep original flag, and placement"
+// @Success      200      {object}  dto.ColumnSplitResponse  "Split summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse     "Bad Request â€” invalid payload"
+// @Failure      401      {object}  models.ErrorResponse     "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse     "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse     "Not Found â€” model/column missing"
+// @Failure      500      {object}  models.ErrorResponse     "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/split [post]
+func (h *TableHandler) ColumnSplit(c *gin.Context) {
+	var req dto.ColumnSplitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ColumnSplitRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnAllowedForSplit(c, schemaName, req.ModelID.String(), req.ColumnID.String()); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.ColumnSplit(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnSplit, result)
+}
+
+// @Summary      Remove formatting from selected columns
+// @Description  Removes formatting from selected columns by fetching records directly from the database, skipping NULL values, updating only changed cells, and preserving column-level updates only.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.RemoveFormattingRequest  true  "Model ID, target column IDs, formatting type, and optional custom pattern"
+// @Success      200      {object}  models.SuccessResponse      "Formatting removal summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse        "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse        "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse        "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse        "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse        "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/remove-formatting [post]
+func (h *TableHandler) RemoveFormatting(c *gin.Context) {
+	var req dto.RemoveFormattingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RemoveFormattingRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.RemoveFormatting(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, removeFormattingSuccessCode(req.Formatting), result)
+}
+
+func removeFormattingSuccessCode(formatting string) responseConst.ResponseCode {
+	switch formatting {
+	case "currency":
+		return responseConst.TableSuccess.RemoveFormattingCurrency
+	case "percentage":
+		return responseConst.TableSuccess.RemoveFormattingPercentage
+	case "separator":
+		return responseConst.TableSuccess.RemoveFormattingSeparator
+	case "phone":
+		return responseConst.TableSuccess.RemoveFormattingPhone
+	case "date":
+		return responseConst.TableSuccess.RemoveFormattingDate
+	case "custom":
+		return responseConst.TableSuccess.RemoveFormattingCustom
+	default:
+		return responseConst.TableSuccess.RemoveFormatting
+	}
+}
+
+// @Summary      Remove duplicate rows or clear duplicate values in selected columns
+// @Description  Deduplicates rows using database-side grouping and batching. Supports removing duplicate rows or keeping duplicate rows while clearing duplicate values in selected columns. Rows where all selected columns are empty/null are excluded from duplicate detection.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.RemoveDuplicatesRequest  true  "Model ID, target column IDs, duplicate handling, and keep rule"
+// @Success      200      {object}  models.SuccessResponse     "Deduplication summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/remove-duplicates [post]
+func (h *TableHandler) RemoveDuplicates(c *gin.Context) {
+	var req dto.RemoveDuplicatesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.RemoveDuplicatesRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.RemoveDuplicates(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RemoveDuplicates, result)
+}
+
+// @Summary      Merge selected columns into a new column
+// @Description  Merges values from selected columns into a new generated column using the requested separator. Skips NULL/empty values and updates only changed cells.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.MergeColumnsRequest  true  "Model ID, target column IDs, merge format, and options"
+// @Success      200      {object}  models.SuccessResponse     "Merge summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/merge-columns [post]
+func (h *TableHandler) MergeColumns(c *gin.Context) {
+	var req dto.MergeColumnsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.MergeColumnsRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.MergeColumns(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.MergeColumns, result)
+}
+
+// @Summary      Extract substring from a column
+// @Description  Extracts substring from a single selected column between two delimiters and creates a new generated column populated with extracted values.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.ExtractSubstringRequest  true  "Model ID, column_id (column ID only), extraction_method, extraction_type (when using extraction_type), start_after and end_before (when using between_characters), keep_original_column, add_at_end"
+// @Success      200      {object}  models.SuccessResponse     "Extraction summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/extract-substring [post]
+func (h *TableHandler) ExtractSubstring(c *gin.Context) {
+	var req dto.ExtractSubstringRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.ExtractSubstringRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, []string{req.ColumnId}); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.ExtractSubstring(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ExtractSubstring, result)
 }

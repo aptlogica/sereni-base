@@ -52,6 +52,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.EmailAlreadyVerified, UserError.EmailAlreadyVerified},
 	{app_errors.InvalidOldPassword, UserError.InvalidOldPassword},
 	{app_errors.NewPasswordInvalid, UserError.NewPasswordInvalid},
+	{app_errors.EmailVerificationPending, UserError.EmailVerificationPending},
 
 	// role management (aliases point to RBAC codes for consistency)
 	{app_errors.RoleAlreadyExists, RBACError.RoleAlreadyExists},
@@ -117,6 +118,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.InvalidColumnMetaForLinkType, TableError.InvalidColumnMetaForLinkType},
 	{app_errors.RowNotFound, TableError.RowNotFound},
 	{app_errors.InvalidColumnMetaForLookupType, TableError.InvalidColumnMetaForLookupType},
+	{app_errors.SplitNotPossible, TableError.SplitNotPossible},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},

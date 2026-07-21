@@ -78,7 +78,7 @@ Required only when using specific features:
 |---------|-------------------|---------|
 | **Email** | `EMAIL_SMTP_*` | Password reset, notifications |
 | **AWS S3** | `STORAGE_AWS_*` | When `STORAGE_DRIVER=aws` |
-| **MinIO** | `STORAGE_MINIO_*` | When `STORAGE_DRIVER=minio` |
+| **RustFS** | `STORAGE_RustFS_*` | When `STORAGE_DRIVER=RustFS` |
 | **Antivirus** | `ANTIVIRUS_URL`, `ANTIVIRUS_CLAMAV_*` | File scanning enabled |
 
 ---
@@ -361,15 +361,15 @@ LOG_COMPRESS=true           # Compress rotated logs
 ```bash
 # Choose storage backend
 
-STORAGE_DRIVER=local        # Options: local, minio, aws
+STORAGE_DRIVER=local        # Options: local, RustFS, aws
 STORAGE_DEV_PATH=./uploads  # Local storage path
 
-# MinIO Configuration (if STORAGE_DRIVER=minio)
-STORAGE_MINIO_ENDPOINT=minio:9000
-STORAGE_MINIO_ACCESS_KEY=minioadmin
-STORAGE_MINIO_SECRET_KEY=minioadmin
-STORAGE_MINIO_BUCKET=serenibase
-STORAGE_MINIO_USE_SSL=false
+# RustFS Configuration (if STORAGE_DRIVER=RustFS)
+STORAGE_RustFS_ENDPOINT=RustFS:9000
+STORAGE_RustFS_ACCESS_KEY=RustFSadmin
+STORAGE_RustFS_SECRET_KEY=RustFSadmin
+STORAGE_RustFS_BUCKET=serenibase
+STORAGE_RustFS_USE_SSL=false
 
 # AWS S3 Configuration (if STORAGE_DRIVER=aws)
 STORAGE_AWS_REGION=us-east-1
@@ -381,7 +381,7 @@ STORAGE_AWS_SECRET_KEY=your-secret-key
 **Application Defaults (from code):**
 - `STORAGE_DRIVER`: `local`
 - `STORAGE_DEV_PATH`: `./assets`
-- All MinIO/AWS settings have placeholder defaults
+- All RustFS/AWS settings have placeholder defaults
 
 </details>
 
@@ -531,7 +531,7 @@ LOG_MAX_AGE=90
 - [ ] CORS restricted to your domains
 - [ ] DATABASE_SSL_MODE=require
 - [ ] External database with backups
-- [ ] Cloud storage (S3/MinIO)
+- [ ] Cloud storage (S3/RustFS)
 - [ ] HTTPS enabled (SERVER_SCHEME=https)
 - [ ] LOG_LEVEL=warn or error
 - [ ] Firewall rules configured
@@ -562,13 +562,13 @@ EMAIL_URL=http://email-service:8082/api/v1/email
 STORAGE_URL=http://sereni-storage-provider:8083/api/v1
 ANTIVIRUS_URL=http://antivirus-service:8084
 
-# Storage (MinIO in Docker)
-STORAGE_DRIVER=minio
-STORAGE_MINIO_ENDPOINT=minio:9000
-STORAGE_MINIO_ACCESS_KEY=minioadmin
-STORAGE_MINIO_SECRET_KEY=minioadmin
-STORAGE_MINIO_BUCKET=serenibase
-STORAGE_MINIO_USE_SSL=false
+# Storage (RustFS in Docker)
+STORAGE_DRIVER=RustFS
+STORAGE_RustFS_ENDPOINT=RustFS:9000
+STORAGE_RustFS_ACCESS_KEY=RustFSadmin
+STORAGE_RustFS_SECRET_KEY=RustFSadmin
+STORAGE_RustFS_BUCKET=serenibase
+STORAGE_RustFS_USE_SSL=false
 
 # Email (configure your SMTP)
 EMAIL_SMTP_HOST=smtp.gmail.com
@@ -659,3 +659,4 @@ docker-compose restart
 ---
 
 **Last Updated:** February 4, 2026
+

@@ -27,6 +27,8 @@ type TableManagementService interface {
 	GetColumnById(ctx context.Context, schemaName string, id string) (dto.ColumnResponse, error)
 	GetAllColumns(ctx context.Context, schemaName string) ([]dto.ColumnResponse, error)
 	GetColumnsByModelID(ctx context.Context, schemaName string, modelID string) ([]dto.ColumnResponse, error)
+	ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columnIDs []string) error
+	ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error
 	UpdateColumn(ctx context.Context, schemaName string, id string, req dto.ColumnUpdate) (dto.ColumnResponse, error)
 	DeleteColumn(ctx context.Context, schemaName string, id string) error
 	ReorderColumn(ctx context.Context, schemaName string, req dto.ReorderColumnRequest) ([]dto.ColumnResponse, error)
@@ -51,4 +53,17 @@ type TableManagementService interface {
 	UpdateAttachment(ctx context.Context, schemaName string, req dto.UpdateAttachmentRequest) (dto.RecordResponse, error)
 	BulkDeleteRows(ctx context.Context, schemaName string, req dto.BulkDeleteRowsRequest) (int, error)
 	RemoveAttachments(ctx context.Context, schemaName string, req dto.RemoveAttachmentsRequest) (dto.RecordResponse, error)
+
+	// bulk operations on columns
+	BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error
+	ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error
+	TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error)
+	CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error)
+	FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error)
+	RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error)
+	RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error)
+	RemoveDuplicates(ctx context.Context, schemaName string, req dto.RemoveDuplicatesRequest) (dto.RemoveDuplicatesResponse, error)
+	ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error)
+	MergeColumns(ctx context.Context, schemaName string, req dto.MergeColumnsRequest) (dto.MergeColumnsResponse, error)
+	ExtractSubstring(ctx context.Context, schemaName string, req dto.ExtractSubstringRequest) (dto.ExtractSubstringResponse, error)
 }

@@ -185,7 +185,7 @@ print_completion() {
     echo -e "Access your application at:"
     echo -e "  ${GREEN}Frontend:${NC}  http://$public_host:5050"
     echo -e "  ${GREEN}Backend:${NC}   http://$public_host:8080"
-    echo -e "  ${GREEN}MinIO:${NC}     http://$public_host:9001"
+    echo -e "  ${GREEN}RustFS:${NC}     http://$public_host:9001"
     echo ""
     echo -e "Default admin credentials:"
     echo -e "  ${YELLOW}Email:${NC}    $owner_email"
@@ -220,3 +220,4 @@ setup_cleanup_handler() {
     # Trap Ctrl+C (SIGINT) and other termination signals
     trap cleanup SIGINT SIGTERM
 }
+

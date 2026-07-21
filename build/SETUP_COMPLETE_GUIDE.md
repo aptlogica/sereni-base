@@ -39,7 +39,7 @@ SereniBase supports **two deployment configurations**:
 | JWT Authentication | ✗ | ✓ |
 | Email Service | ✗ | ✓ |
 | Storage Service | ✗ | ✓ |
-| MinIO Object Storage | ✗ | ✓ |
+| RustFS Object Storage | ✗ | ✓ |
 | Antivirus (ClamAV) | ✗ | ✓ |
 | Frontend UI | ✗ | ✓ |
 
@@ -172,7 +172,7 @@ make setup-y
 | Frontend | `http://localhost:5050` | Web application interface |
 | Backend API | `http://localhost:8080` | REST API endpoint |
 | Health Check | `http://localhost:8080/api/v1/health` | API health status |
-| MinIO Console | `http://localhost:9001` | Object storage administration |
+| RustFS Console | `http://localhost:9001` | Object storage administration |
 
 ### Backend Only Mode
 
@@ -366,4 +366,5 @@ docker compose -f docker-compose.yaml up -d
 - [Interactive Setup](../INTERACTIVE_SETUP_README.md) - Detailed wizard documentation
 - [Environment Variables](../docs/ENVIRONMENT_VARIABLES.md) - Complete variable reference
 - [Quick Reference Card](../docs/ENV_QUICK_REFERENCE_CARD.md) - Common configurations
+
 

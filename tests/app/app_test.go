@@ -22,12 +22,12 @@ import (
 
 type fakeDB struct{}
 
-func (f *fakeDB) Exec(query string, args ...any) (sql.Result, error)        { return nil, errors.New("fake") }
-func (f *fakeDB) Query(query string, args ...any) (*sql.Rows, error)        { return nil, errors.New("fake") }
-func (f *fakeDB) QueryRow(query string, args ...any) *sql.Row               { return &sql.Row{} }
-func (f *fakeDB) Close() error                                              { return nil }
-func (f *fakeDB) Ping() error                                               { return nil }
-func (f *fakeDB) Begin() (*sql.Tx, error)                                   { return nil, errors.New("fake") }
+func (f *fakeDB) Exec(query string, args ...any) (sql.Result, error) { return nil, errors.New("fake") }
+func (f *fakeDB) Query(query string, args ...any) (*sql.Rows, error) { return nil, errors.New("fake") }
+func (f *fakeDB) QueryRow(query string, args ...any) *sql.Row        { return &sql.Row{} }
+func (f *fakeDB) Close() error                                       { return nil }
+func (f *fakeDB) Ping() error                                        { return nil }
+func (f *fakeDB) Begin() (*sql.Tx, error)                            { return nil, errors.New("fake") }
 func (f *fakeDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return nil, errors.New("fake")
 }
@@ -49,7 +49,7 @@ func (f *fakeRepo) ExecuteQuery(name string, params models.QueryParams) (any, er
 func (f *fakeRepo) ExecuteFunction(ctx context.Context, name string, args map[string]interface{}) (any, error) {
 	return nil, errors.New("fake")
 }
-func (f *fakeRepo) ExecuteRawSQL(ctx context.Context, sql string) error { return errors.New("fake") }
+func (f *fakeRepo) ExecuteRawSQL(ctx context.Context, sql string) error  { return errors.New("fake") }
 func (f *fakeRepo) CreateCollection(req models.CreateTableRequest) error { return errors.New("fake") }
 func (f *fakeRepo) AddField(collection string, req models.AddColumnRequest) error {
 	return errors.New("fake")
@@ -113,8 +113,10 @@ func (f *fakeRepo) GetPerformanceMetrics() (map[string]interface{}, error) {
 	return nil, errors.New("fake")
 }
 func (f *fakeRepo) AnalyzeQuery(query string) ([]string, error) { return nil, errors.New("fake") }
-func (f *fakeRepo) GetMigrationHistory() ([]map[string]interface{}, error) { return nil, errors.New("fake") }
-func (f *fakeRepo) RecordMigration(name, sql, checksum string) error       { return errors.New("fake") }
+func (f *fakeRepo) GetMigrationHistory() ([]map[string]interface{}, error) {
+	return nil, errors.New("fake")
+}
+func (f *fakeRepo) RecordMigration(name, sql, checksum string) error { return errors.New("fake") }
 
 var _ interfaces.DB = (*fakeDB)(nil)
 var _ interfaces.DatabaseRepo = (*fakeRepo)(nil)
@@ -199,6 +201,9 @@ func TestAppNew_Success(t *testing.T) {
 	if appInstance == nil {
 		t.Fatal("expected app instance, got nil")
 	}
+	if appInstance.Router() == nil {
+		t.Fatal("expected router to be initialized")
+	}
 }
 
 func TestAppNew_DatabaseInitError(t *testing.T) {
@@ -263,7 +268,7 @@ func TestAppRun_ExecutesRunBeforeServer(t *testing.T) {
 	defer cleanup()
 
 	cfg := validConfig()
-	cfg.Server.Port = "bad" // force ListenAndServe to fail fast
+	cfg.Server.Port = "bad"          // force ListenAndServe to fail fast
 	cfg.OwnerRegistration.Email = "" // skip owner registration in scripts
 
 	appInstance, err := appPkg.New(cfg)

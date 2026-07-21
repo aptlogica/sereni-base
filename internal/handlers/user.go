@@ -13,6 +13,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
+	_ "github.com/aptlogica/sereni-base/internal/models"
 	"github.com/gin-gonic/gin"
 )
 

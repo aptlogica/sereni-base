@@ -143,17 +143,17 @@ REM Create a temporary file with all default environment variables
     echo STORAGE_SERVER_PORT=8083
     echo STORAGE_SERVER_HOST=0.0.0.0
     echo STORAGE_SERVER_SCHEME=http
-    echo STORAGE_DRIVER=minio
+    echo STORAGE_DRIVER=rustfs
     echo STORAGE_DEV_PATH=./uploads
     echo STORAGE_AWS_REGION=us-east-1
     echo STORAGE_AWS_BUCKET=serenibase
     echo STORAGE_AWS_ACCESS_KEY=your-access-key
     echo STORAGE_AWS_SECRET_KEY=your-secret-key
-    echo STORAGE_MINIO_ENDPOINT=minio:9000
-    echo STORAGE_MINIO_ACCESS_KEY=minioadmin
-    echo STORAGE_MINIO_SECRET_KEY=minioadmin
-    echo STORAGE_MINIO_BUCKET=serenibase
-    echo STORAGE_MINIO_USE_SSL=false
+    echo RUSTFS_ENDPOINT=http://rustfs-server:9000
+    echo RUSTFS_ACCESS_KEY=rustfsadmin
+    echo RUSTFS_SECRET_KEY=rustfsadmin
+    echo RUSTFS_BUCKET=serenibase
+    echo RUSTFS_USE_SSL=false
     echo STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -254,15 +254,15 @@ echo                      STORAGE CONFIGURATION
 echo ========================================================================
 echo.
 
-echo Using default MinIO Docker container
+echo Using default RustFS Docker container
 
-REM Set default MinIO storage if not already configured
-powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^STORAGE_DRIVER=(.*)$') { $val = $matches[1]; if ($val -eq '' -or $val -eq 'minio') { (Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=minio' | Set-Content '.env' } } else { (Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=minio' | Set-Content '.env' }"
-powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_ENDPOINT=.*', 'STORAGE_MINIO_ENDPOINT=minio:9000' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_ACCESS_KEY=.*', 'STORAGE_MINIO_ACCESS_KEY=minioadmin' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_SECRET_KEY=.*', 'STORAGE_MINIO_SECRET_KEY=minioadmin' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_BUCKET=.*', 'STORAGE_MINIO_BUCKET=serenibase' | Set-Content '.env'"
-powershell -Command "(Get-Content '.env') -replace '^STORAGE_MINIO_USE_SSL=.*', 'STORAGE_MINIO_USE_SSL=false' | Set-Content '.env'"
+REM Set default RustFS storage if not already configured
+powershell -Command "$content = Get-Content '.env' -Raw; if ($content -match '(?m)^STORAGE_DRIVER=(.*)$') { $val = $matches[1]; if ($val -eq '' -or $val -eq 'rustfs') { (Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=rustfs' | Set-Content '.env' } } else { (Get-Content '.env') -replace '^STORAGE_DRIVER=.*', 'STORAGE_DRIVER=rustfs' | Set-Content '.env' }"
+powershell -Command "(Get-Content '.env') -replace '^RUSTFS_ENDPOINT=.*', 'RUSTFS_ENDPOINT=http://rustfs-server:9000' | Set-Content '.env'"
+powershell -Command "(Get-Content '.env') -replace '^RUSTFS_ACCESS_KEY=.*', 'RUSTFS_ACCESS_KEY=rustfsadmin' | Set-Content '.env'"
+powershell -Command "(Get-Content '.env') -replace '^RUSTFS_SECRET_KEY=.*', 'RUSTFS_SECRET_KEY=rustfsadmin' | Set-Content '.env'"
+powershell -Command "(Get-Content '.env') -replace '^RUSTFS_BUCKET=.*', 'RUSTFS_BUCKET=serenibase' | Set-Content '.env'"
+powershell -Command "(Get-Content '.env') -replace '^RUSTFS_USE_SSL=.*', 'RUSTFS_USE_SSL=false' | Set-Content '.env'"
 
 echo [OK] Storage configuration set to defaults
 
@@ -353,7 +353,7 @@ echo.
 echo Access your application at:
 echo   Frontend:  http://%PUBLIC_HOST%:5050
 echo   Backend:   http://%PUBLIC_HOST%:8080
-echo   MinIO:     http://%PUBLIC_HOST%:9001
+echo   RustFS:     http://%PUBLIC_HOST%:9001
 echo.
 echo Default admin credentials:
 echo   Email:    %OWNER_EMAIL%
@@ -369,3 +369,4 @@ echo   make down-all  - Stop all services
 echo   make clean     - Remove all data
 echo.
 pause
+

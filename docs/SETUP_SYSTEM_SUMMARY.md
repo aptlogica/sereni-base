@@ -424,7 +424,7 @@ Classification System:
 🔵 FEATURE-SPECIFIC (conditional)
    ├─ EMAIL_SMTP_* (if email needed)
    ├─ STORAGE_AWS_* (if using AWS)
-   ├─ STORAGE_MINIO_* (if using MinIO)
+   ├─ STORAGE_RustFS_* (if using RustFS)
    └─ ANTIVIRUS_* (if scanning enabled)
 
 ⚙️ AUTO-CONFIGURED (7+ variables)
@@ -485,3 +485,4 @@ http://localhost:8080
 ---
 
 **Created:** February 4, 2026
+

@@ -38,20 +38,12 @@ type tableManagementService struct {
 }
 
 const (
-	SchemaTableFormat    = "\"%s\".\"%s\""
-	QuotedColumnFormat   = "\"%s\""
-	ErrConvertViewStruct = "Failed to convert view struct"
+	SchemaTableFormat     = "\"%s\".\"%s\""
+	QuotedColumnFormat    = "\"%s\""
+	ErrConvertViewStruct  = "Failed to convert view struct"
+	columnActionBatchSize = 1000
+	dateOutputLayout      = "2006-01-02"
 )
-
-// targetColumnParams holds parameters for creating target column in relation
-type targetColumnParams struct {
-	ColumnData      dto.AddColumnRequest
-	SourceModelData tenant.Model
-	RelationWith    string
-	RelationID      uuid.UUID
-	RelationType    string
-	Now             time.Time
-}
 
 // relationRecordParams holds parameters for creating relation record
 type relationRecordParams struct {
@@ -61,6 +53,16 @@ type relationRecordParams struct {
 	SourceColumn    tenant.Column
 	TargetModelData tenant.Model
 	TargetColumn    tenant.Column
+	RelationType    string
+	Now             time.Time
+}
+
+// targetColumnParams holds parameters for creating target column in relation
+type targetColumnParams struct {
+	ColumnData      dto.AddColumnRequest
+	SourceModelData tenant.Model
+	RelationWith    string
+	RelationID      uuid.UUID
 	RelationType    string
 	Now             time.Time
 }
@@ -555,7 +557,7 @@ func (s tableManagementService) slugify(input string) string {
 	return slug + "_" + fmt.Sprintf("%d", timestamp)
 }
 
-func (s tableManagementService) addColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
+func (s tableManagementService) AddColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
 	schematableName := fmt.Sprintf(SchemaTableFormat, schemaName, tableName)
 
 	addColumnReq := dbModels.AddColumnRequest{
@@ -637,7 +639,7 @@ func (s tableManagementService) validateMetaForLookup(meta map[string]interface{
 	return lookupColumnID, relationID, true
 }
 
-// 	s.addColumnInTableDb(schemaName, trgTable.Alias)
+// 	s.AddColumnInTableDb(schemaName, trgTable.Alias)
 // 	// create column in target table (alter table)
 // 	// entry in columns table
 // 	// entry in relationship table
@@ -698,7 +700,7 @@ func (s tableManagementService) AddColumn(
 		return dto.ColumnResponse{}, err
 	}
 
-	err = s.addColumnInTableDb(schemaName, model.Alias, column)
+	err = s.AddColumnInTableDb(schemaName, model.Alias, column)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
@@ -812,7 +814,7 @@ func (s tableManagementService) createSourceColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	if err := s.addColumnInTableDb(schemaName, sourceModelData.Alias, sourcColumn); err != nil {
+	if err := s.AddColumnInTableDb(schemaName, sourceModelData.Alias, sourcColumn); err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
@@ -872,7 +874,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
-	if err := s.addColumnInTableDb(schemaName, targetModelData.Alias, targetColumn); err != nil {
+	if err := s.AddColumnInTableDb(schemaName, targetModelData.Alias, targetColumn); err != nil {
 		return tenant.Column{}, tenant.Model{}, err
 	}
 
@@ -1782,13 +1784,13 @@ func (s tableManagementService) DeleteUsedLookupColumn(ctx context.Context, sche
 	}
 	for _, col := range columns {
 		if col.UIDT == "links" {
-			s.handleLinkedColumnDeletion(ctx, schemaName, col, columnData)
+			s.HandleLinkedColumnDeletion(ctx, schemaName, col, columnData)
 		}
 	}
 	return nil
 }
 
-func (s tableManagementService) handleLinkedColumnDeletion(ctx context.Context, schemaName string, col dto.ColumnResponse, columnData dto.ColumnResponse) {
+func (s tableManagementService) HandleLinkedColumnDeletion(ctx context.Context, schemaName string, col dto.ColumnResponse, columnData dto.ColumnResponse) {
 	relation, ok := col.Meta["relation"].(map[string]interface{})
 	if !ok {
 		return
@@ -1805,13 +1807,13 @@ func (s tableManagementService) handleLinkedColumnDeletion(ctx context.Context, 
 		if linkedCol.UIDT == "lookup" {
 			lookupColumnID, ok := linkedCol.Meta["lookup_column_id"].(string)
 			if ok && lookupColumnID == columnData.ID.String() {
-				s.deleteLookupColumnAndReorder(ctx, schemaName, linkedCol)
+				s.DeleteLookupColumnAndReorder(ctx, schemaName, linkedCol)
 			}
 		}
 	}
 }
 
-func (s tableManagementService) deleteLookupColumnAndReorder(ctx context.Context, schemaName string, linkedCol dto.ColumnResponse) {
+func (s tableManagementService) DeleteLookupColumnAndReorder(ctx context.Context, schemaName string, linkedCol dto.ColumnResponse) {
 	_ = s.DeleteUsedLookupColumnForRelation(ctx, schemaName, linkedCol)
 	_ = s.reorderColumnsAfterDelete(ctx, schemaName, linkedCol.ModelID.String(), linkedCol)
 }
@@ -2720,6 +2722,83 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 	return response, nil
 }
 
+func (s tableManagementService) CreateRowsWithValues(
+	ctx context.Context,
+	schemaName string,
+	modelID string,
+	rowsInput []map[string]interface{},
+	createdBy string,
+	updatedBy string,
+) ([]dto.RecordResponse, error) {
+	rows := make([]dto.RecordResponse, 0, len(rowsInput))
+	for _, row := range rowsInput {
+		createdRow, err := s.CreateRow(ctx, schemaName, dto.CreateRowRequest{
+			ModelID:   modelID,
+			CreatedBy: createdBy,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		rowID, err := ExtractCreatedRowID(createdRow.Record)
+		if err != nil {
+			return nil, err
+		}
+
+		updatedRow := createdRow
+		for columnID, rawValue := range row {
+			var valuePtr *interface{}
+			if rawValue != nil {
+				value := rawValue
+				valuePtr = &value
+			}
+
+			updatedRow, err = s.InsertRowData(ctx, schemaName, dto.InsertRowDataRequest{
+				ModelID:   modelID,
+				ColumnId:  columnID,
+				RowId:     rowID,
+				Value:     valuePtr,
+				UpdatedBy: updatedBy,
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		rows = append(rows, updatedRow)
+	}
+
+	return rows, nil
+}
+
+func ExtractCreatedRowID(record map[string]interface{}) (int, error) {
+	id, ok := record["id"]
+	if !ok {
+		return 0, fmt.Errorf("created row id is missing")
+	}
+
+	switch v := id.(type) {
+	case int:
+		return v, nil
+	case int32:
+		return int(v), nil
+	case int64:
+		return int(v), nil
+	case float32:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case string:
+		rowID, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, err
+		}
+		return rowID, nil
+	default:
+		return 0, fmt.Errorf("created row id has unsupported type: %T", id)
+	}
+}
+
 func (s tableManagementService) handleDeleteRowForLinks(ctx context.Context, sourceModel tenant.Model, rowData map[string]interface{}, schemaName string, req dto.DeleteRowDataRequest) error {
 	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())
 	if err != nil {
@@ -3206,4 +3285,37 @@ func (s tableManagementService) mergeAttachmentValues(existing interface{}, asse
 		attachmentValue = append(attachmentValue, asset)
 	}
 	return attachmentValue
+}
+
+func (s tableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	fetchedModel, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return err
+	}
+
+	// Get column details to extract the actual column name from the database
+	fetchedColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, columnID) // Validate column exists before reset
+	if err != nil {
+		return err
+	}
+
+	return s.columnsService.BulkUpdate(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName, updates)
+}
+
+func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	fetchedModel, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return err
+	}
+
+	fetchedColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, columnID) // Validate column exists before reset
+	if err != nil {
+		return err
+	}
+
+	return s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName)
 }

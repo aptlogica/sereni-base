@@ -1,9 +1,13 @@
 package base_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/png"
 	"mime/multipart"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -19,6 +23,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func createPNGFileHeader(t *testing.T, filename string) *multipart.FileHeader {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("image", filename)
+	assert.NoError(t, err)
+
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	err = png.Encode(part, img)
+	assert.NoError(t, err)
+
+	err = writer.Close()
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	err = req.ParseMultipartForm(1024 * 1024)
+	assert.NoError(t, err)
+
+	files := req.MultipartForm.File["image"]
+	if assert.NotEmpty(t, files) {
+		return files[0]
+	}
+
+	return nil
+}
 
 // MockBaseService is a mock implementation of BaseService interface
 type MockBaseService struct {
@@ -106,6 +139,78 @@ func (m *MockTableManagementService) GetModelByWorkspaceID(ctx context.Context, 
 func (m *MockTableManagementService) DeleteTable(ctx context.Context, schemaName string, modelID string) error {
 	args := m.Called(ctx, schemaName, modelID)
 	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.ColumnSplitResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.ColumnSplitResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) ExtractSubstring(ctx context.Context, schemaName string, req dto.ExtractSubstringRequest) (dto.ExtractSubstringResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.ExtractSubstringResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.ExtractSubstringResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) FindReplace(ctx context.Context, schemaName string, req dto.FindReplaceRequest) (dto.FindReplaceResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.FindReplaceResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.FindReplaceResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) CaseNormalization(ctx context.Context, schemaName string, req dto.CaseNormalizationRequest) (dto.CaseNormalizationResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.CaseNormalizationResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.CaseNormalizationResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) MergeColumns(ctx context.Context, schemaName string, req dto.MergeColumnsRequest) (dto.MergeColumnsResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.MergeColumnsResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.MergeColumnsResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) TrimWhitespace(ctx context.Context, schemaName string, req dto.TrimWhitespaceRequest) (dto.TrimWhitespaceResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.TrimWhitespaceResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.TrimWhitespaceResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) RemoveSpecialCharacters(ctx context.Context, schemaName string, req dto.RemoveSpecialCharactersRequest) (dto.RemoveSpecialCharactersResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.RemoveSpecialCharactersResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.RemoveSpecialCharactersResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) RemoveFormatting(ctx context.Context, schemaName string, req dto.RemoveFormattingRequest) (dto.RemoveFormattingResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.RemoveFormattingResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.RemoveFormattingResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) RemoveDuplicates(ctx context.Context, schemaName string, req dto.RemoveDuplicatesRequest) (dto.RemoveDuplicatesResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.RemoveDuplicatesResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.RemoveDuplicatesResponse), args.Error(1)
 }
 
 func (m *MockTableManagementService) AddColumn(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -227,6 +332,26 @@ func (m *MockTableManagementService) BulkDeleteRows(ctx context.Context, schemaN
 func (m *MockTableManagementService) RemoveAttachments(ctx context.Context, schemaName string, req dto.RemoveAttachmentsRequest) (dto.RecordResponse, error) {
 	args := m.Called(ctx, schemaName, req)
 	return args.Get(0).(dto.RecordResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) BulkUpdateColumns(ctx context.Context, schemaName string, modelID string, columnID string, updates []dto.UpdateColumnsRequest) error {
+	args := m.Called(ctx, schemaName, modelID, columnID, updates)
+	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	args := m.Called(ctx, schemaName, modelID, columnID)
+	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ValidateColumnsAllowed(ctx context.Context, schemaName string, modelID string, columnIDs []string) error {
+	args := m.Called(ctx, schemaName, modelID, columnIDs)
+	return args.Error(0)
+}
+
+func (m *MockTableManagementService) ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error {
+	args := m.Called(ctx, schemaName, modelID, columnID)
+	return args.Error(0)
 }
 
 // MockModelService is a mock implementation of ModelService interface
@@ -445,11 +570,47 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
 		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
 
-		fh := &multipart.FileHeader{Filename: "image.gif"}
+		fh := &multipart.FileHeader{Filename: "image.bmp"}
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.NoError(t, err)
 		assert.Equal(t, inserted.ID, result.ID)
+	})
+
+	t.Run("svg image allowed", func(t *testing.T) {
+		_, _, mockBase, mockTableManagement, _, mockAsset, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
+		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://svg"}}, nil)
+		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
+			Return(tenant.Base{ID: inserted.ID, WorkspaceID: wsID.String(), Title: "Base", Image: "http://svg"}, nil)
+
+		fh := createPNGFileHeader(t, "logo.svg")
+		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "http://svg", result.Image)
+	})
+
+	t.Run("gif image allowed", func(t *testing.T) {
+		_, _, mockBase, mockTableManagement, _, mockAsset, service := setupBaseManagementService()
+
+		wsID := uuid.New()
+		inserted := tenant.Base{ID: uuid.New(), WorkspaceID: wsID.String(), Title: "Base"}
+		mockBase.On("BaseInsertion", mock.Anything, mock.Anything, "schema").Return(inserted, nil)
+		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
+		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://gif"}}, nil)
+		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
+			Return(tenant.Base{ID: inserted.ID, WorkspaceID: wsID.String(), Title: "Base", Image: "http://gif"}, nil)
+
+		fh := createPNGFileHeader(t, "image.gif")
+		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "http://gif", result.Image)
 	})
 
 	t.Run("upload error", func(t *testing.T) {
@@ -461,7 +622,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockTableManagement.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(dto.TableResponse{}, nil)
 		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return(nil, errors.New("upload failed"))
 
-		fh := &multipart.FileHeader{Filename: "image.png"}
+		fh := createPNGFileHeader(t, "image.png")
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.Error(t, err)
@@ -479,7 +640,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
 			Return(tenant.Base{}, errors.New("update fail"))
 
-		fh := &multipart.FileHeader{Filename: "image.png"}
+		fh := createPNGFileHeader(t, "image.png")
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.NoError(t, err)
@@ -498,7 +659,7 @@ func TestCreateBaseWithImage(t *testing.T) {
 		mockBase.On("UpdateBase", mock.Anything, "schema", inserted.ID.String(), mock.Anything).
 			Return(updated, nil)
 
-		fh := &multipart.FileHeader{Filename: "image.png"}
+		fh := createPNGFileHeader(t, "image.png")
 		result, err := service.CreateBaseWithImage(context.Background(), dto.CreateBaseRequest{WorkspaceID: wsID.String(), Title: "Base"}, "schema", "user", fh)
 
 		assert.NoError(t, err)
@@ -629,7 +790,7 @@ func TestAddBaseImage(t *testing.T) {
 
 		mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, errors.New("fail"))
 
-		_, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		_, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.Error(t, err)
 	})
@@ -641,7 +802,7 @@ func TestAddBaseImage(t *testing.T) {
 		mockAsset.On("GetAssetByURL", mock.Anything, "schema", "http://old").Return(tenant.Assets{Url: "http://old", ID: uuid.New()}, nil)
 		mockAsset.On("DeleteAsset", mock.Anything, mock.Anything, "schema").Return(errors.New("delete failed"))
 
-		_, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		_, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.Error(t, err)
 	})
@@ -672,7 +833,7 @@ func TestAddBaseImage(t *testing.T) {
 		mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, nil)
 		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return(nil, errors.New("upload failed"))
 
-		_, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		_, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.Error(t, err)
 	})
@@ -709,7 +870,7 @@ func TestAddBaseImage(t *testing.T) {
 		mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://img"}}, nil)
 		mockBase.On("UpdateBase", mock.Anything, "schema", "base", mock.Anything).Return(updated, nil)
 
-		result, err := service.AddBaseImage(context.Background(), "schema", "base", &multipart.FileHeader{Filename: "image.png"}, "user")
+		result, err := service.AddBaseImage(context.Background(), "schema", "base", createPNGFileHeader(t, "image.png"), "user")
 
 		assert.NoError(t, err)
 		assert.Equal(t, "http://img", result.Image)
@@ -773,7 +934,7 @@ func TestUpdateBaseWithFileHeader(t *testing.T) {
 	mockBase.On("GetBaseByID", mock.Anything, "schema", "base").Return(tenant.Base{}, nil)
 	mockAsset.On("Upload", mock.Anything, mock.Anything, "schema").Return([]tenant.Assets{{Url: "http://img"}}, nil)
 
-	result, err := service.UpdateBase(context.Background(), "schema", "base", dto.BaseUpdate{}, "user", &multipart.FileHeader{Filename: "image.png"}, "")
+	result, err := service.UpdateBase(context.Background(), "schema", "base", dto.BaseUpdate{}, "user", createPNGFileHeader(t, "image.png"), "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, "http://img", result.Image)

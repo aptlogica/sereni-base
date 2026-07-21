@@ -101,7 +101,6 @@ services:
   sereni-storage-provider:
     build:
       context: ./services/storage-service
-
     environment:
       SERVER_PORT: ${STORAGE_SERVER_PORT}
       SERVER_IP: ${STORAGE_SERVER_IP}
@@ -113,60 +112,84 @@ services:
       AWS_BUCKET: ${STORAGE_AWS_BUCKET}
       AWS_ACCESS_KEY: ${STORAGE_AWS_ACCESS_KEY}
       AWS_SECRET_KEY: ${STORAGE_AWS_SECRET_KEY}
-      MINIO_ENDPOINT: ${STORAGE_MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${STORAGE_MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${STORAGE_MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${STORAGE_MINIO_BUCKET}
-      MINIO_USE_SSL: ${STORAGE_MINIO_USE_SSL}
+      STORAGE_REGION: ${STORAGE_AWS_REGION}
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_USE_SSL: "false"
       ALLOWED_ORIGINS: ${STORAGE_ALLOWED_ORIGINS}
     ports:
       - "${STORAGE_SERVER_PORT}:${STORAGE_SERVER_PORT}"
     volumes:
       - ./services/storage-service/uploads:/app/uploads:cached
     depends_on:
-      - minio-init
+      rustfs:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
     networks:
       - serenibase-network
+    restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest
+  rustfs:
+    image: rustfs/rustfs:latest
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: ${STORAGE_MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${STORAGE_MINIO_SECRET_KEY}
-    command: server /data --console-address ":9001"
+      RUSTFS_VOLUMES: /data/rustfs{0..3}
+      RUSTFS_UNSAFE_BYPASS_DISK_CHECK: true
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: true
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
     volumes:
-      - minio_data:/data
+      - rustfs_data:/data
     networks:
       - serenibase-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health"
+        ]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
       start_period: 40s
 
-  minio-init:
-    image: minio/mc:latest
+  rustfs-init:
+    image: amazon/aws-cli:2.17.34
     environment:
-      MINIO_ACCESS_KEY: ${STORAGE_MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${STORAGE_MINIO_SECRET_KEY}
-      MINIO_BUCKET: ${STORAGE_MINIO_BUCKET}
-    volumes:
-      - ./cors.json:/cors.json  # Mount CORS config
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY}
+      AWS_DEFAULT_REGION: ${STORAGE_AWS_REGION:-us-east-1}
+      AWS_EC2_METADATA_DISABLED: "true"
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET}
     entrypoint: >
       sh -c '
-        /usr/bin/mc alias set myminio http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY;
-        /usr/bin/mc mb -p myminio/$$MINIO_BUCKET;
-        /usr/bin/mc anonymous set download myminio/$$MINIO_BUCKET;
-        /usr/bin/mc cors set /cors.json myminio/$$MINIO_BUCKET;
-        echo "Bucket $$MINIO_BUCKET ready with CORS";
+        set -e;
+        echo "Waiting for RustFS S3 API...";
+        until aws --endpoint-url http://rustfs:9000 s3api list-buckets >/dev/null 2>&1; do
+          sleep 2;
+        done;
+        echo "RustFS is ready";
+        if aws --endpoint-url http://rustfs:9000 s3api head-bucket --bucket "$$RUSTFS_BUCKET" >/dev/null 2>&1; then
+          echo "Bucket $$RUSTFS_BUCKET already exists";
+        else
+          aws --endpoint-url http://rustfs:9000 s3api create-bucket --bucket "$$RUSTFS_BUCKET";
+          echo "Bucket $$RUSTFS_BUCKET created";
+        fi;
+        POLICY=$$(printf "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"AllowAllActions\",\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:*\"],\"Resource\":[\"arn:aws:s3:::%s\",\"arn:aws:s3:::%s/*\"]}]}" "$$RUSTFS_BUCKET" "$$RUSTFS_BUCKET");
+        aws --endpoint-url http://rustfs:9000 s3api put-bucket-policy --bucket "$$RUSTFS_BUCKET" --policy "$$POLICY";
+        echo "Full access policy applied to $$RUSTFS_BUCKET";
       '
     depends_on:
-      minio:
-        condition: service_healthy
+      - rustfs
+    restart: "no"
     networks:
       - serenibase-network
 
@@ -193,7 +216,7 @@ services:
     ports:
       - "${ANTIVIRUS_CLAMAV_PORT:-3310}:3310"
     volumes:
-      - clamav-db:/var/lib/clamav  # Persistent virus signature database (500MB+)
+      - ./clamav-db:/var/lib/clamav  # Persistent virus signature database (500MB+)
       - ./data:/data:cached
     environment:
       - CLAMD_STARTUP_TIMEOUT=180
@@ -214,7 +237,7 @@ services:
 
 volumes:
   postgres_data:
-  minio_data:
+  rustfs_data:
   clamav-db:
     driver: local
     driver_opts:

@@ -21,6 +21,7 @@ type Config struct {
 	Storage                    StorageConfig                    `mapstructure:"storage"`
 	Log                        LogConfig                        `mapstructure:"log"`
 	Asset                      AssetConfig                      `mapstructure:"asset"`
+	Import                     ImportConfig                     `mapstructure:"import"`
 	Antivirus                  AntivirusConfig                  `mapstructure:"antivirus"`
 	TemporaryAddedUserPassword TemporaryAddedUserPasswordConfig `mapstructure:"temporary_added_user_password"`
 	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
@@ -92,6 +93,11 @@ type LogConfig struct {
 }
 
 type AssetConfig struct {
+	MaxSize int `mapstructure:"max_size"`
+}
+
+// ImportConfig holds upload limits used by the import endpoints
+type ImportConfig struct {
 	MaxSize int `mapstructure:"max_size"`
 }
 
@@ -220,12 +226,12 @@ func Load() (*Config, error) {
 
 	viper.SetDefault("storage.driver", "dev")
 	viper.SetDefault("storage.dev.path", "./assets")
-	viper.SetDefault("storage.minio.endpoint", "192.170.1.29:9000")
-	viper.SetDefault("storage.minio.access_key", "minioadmin")
-	viper.SetDefault("storage.minio.secret_key", "minioadmin")
-	viper.SetDefault("storage.minio.bucket", "serenibase")
-	viper.SetDefault("storage.minio.use_ssl", false)
-	viper.SetDefault("storage.minio.region", "us-east-1")
+	viper.SetDefault("storage.RustFS.endpoint", "192.170.1.29:9000")
+	viper.SetDefault("storage.RustFS.access_key", "RustFSadmin")
+	viper.SetDefault("storage.RustFS.secret_key", "RustFSadmin")
+	viper.SetDefault("storage.RustFS.bucket", "serenibase")
+	viper.SetDefault("storage.RustFS.use_ssl", false)
+	viper.SetDefault("storage.RustFS.region", "us-east-1")
 	viper.SetDefault("storage.aws.access_key", "YOUR_AWS_ACCESS_KEY")
 	viper.SetDefault("storage.aws.secret_key", "YOUR_AWS_SECRET_KEY")
 	viper.SetDefault("storage.aws.bucket", "your-s3-bucket-name")
@@ -264,3 +270,4 @@ func Load() (*Config, error) {
 
 	return &config, nil
 }
+

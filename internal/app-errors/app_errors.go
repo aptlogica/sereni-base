@@ -90,7 +90,11 @@ var (
 	EmailAlreadyVerified         = errors.New("email already verified")
 	NewPasswordInvalid           = errors.New("new password is invalid")
 	OwnerCannotBeDeactivated     = errors.New("owner cannot be deactivated")
+	CoOwnerCannotBeDeactivated   = errors.New("co-owner cannot be deactivated")
+	OwnerCannotBeRemoved         = errors.New("owner cannot be removed")
+	CoOwnerCannotBeRemoved       = errors.New("co-owner cannot be removed")
 	OnlyPendingUsersCanBeDeleted = errors.New("only users with pending status can be deleted")
+	EmailVerificationPending     = errors.New("email verification is pending")
 )
 
 // role management
@@ -155,6 +159,7 @@ var (
 	MultipleFilesTooLargeError = errors.New("One or more files exceed the 5MB size limit.")
 	TooManyFilesError          = errors.New("Too many files uploaded. Only 5 files are allowed.")
 	MultipartFormNotFound      = errors.New("multipart form not found")
+	InvalidImageDimensions     = errors.New("image dimensions must be max 800 x 400px")
 )
 
 // table management
@@ -170,6 +175,7 @@ var (
 	InvalidColumnMetaForLinkType   = errors.New("invalid column meta for link type")
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
+	SplitNotPossible               = errors.New("split is not possible")
 )
 
 // APIError represents an error response from an external API

@@ -55,7 +55,7 @@ This project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participatin
 
 3. Start dependencies:
    ```bash
-   docker-compose up -d postgres minio
+   docker-compose up -d postgres RustFS
    ```
 
 4. Run the application:
@@ -251,3 +251,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to SereniBase!
 ainer must approve before merging.
+

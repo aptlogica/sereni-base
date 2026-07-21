@@ -66,7 +66,7 @@ These variables should NOT be prompted - they are automatically configured based
 - `STORAGE_URL=http://sereni-storage-provider:8083/api/v1`
 - `STORAGE_DRIVER=local` - Local filesystem by default
 - `STORAGE_DEV_PATH=./uploads`
-- All cloud storage settings (AWS, MinIO) - Not needed unless user selects cloud storage
+- All cloud storage settings (AWS, RustFS) - Not needed unless user selects cloud storage
 
 ### Antivirus Service (Internal)
 - `ANTIVIRUS_URL=http://antivirus-service:8084`
@@ -157,3 +157,4 @@ Starting services...
 ```
 
 This keeps the setup simple while still allowing advanced users to configure optional features!
+

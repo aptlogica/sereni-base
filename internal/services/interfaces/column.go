@@ -22,4 +22,7 @@ type ColumnService interface {
 	DeleteColumn(ctx context.Context, schemaName string, id string) error
 	BulkInsert(reqs []dto.ColumnInsertion, schemaName string) ([]tenant.Column, error)
 	GetMaxOrderIndexOfColumn(ctx context.Context, schemaName string, modelId string) (float64, error)
+	BulkUpdate(ctx context.Context, schemaName string, tableName string, columnName string, updates []dto.UpdateColumnsRequest) error
+	ResetColumn(ctx context.Context, schemaName string, tableName string, columnName string) error
+	BulkUpdateByColumns(ctx context.Context, schemaName string, tableName string, updates []dto.UpdateColumnValueRequest) error
 }

@@ -15,6 +15,7 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/handlers"
@@ -32,7 +33,7 @@ import (
 
 	"time"
 
-	// _ "github.com/aptlogica/sereni-base/docs"
+	docs "github.com/aptlogica/sereni-base/docs"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbConfig "github.com/aptlogica/go-postgres-rest/pkg/config"
@@ -49,6 +50,23 @@ type App struct {
 }
 
 func New(cfg *config.Config) (*App, error) {
+	// Keep Swagger runtime metadata aligned with active server config.
+	host := cfg.Server.Host
+	if host == "" || host == "0.0.0.0" {
+		host = "localhost"
+	}
+
+	scheme := strings.ToLower(strings.TrimSpace(cfg.Server.Scheme))
+	if scheme != "https" {
+		scheme = "http"
+	}
+
+	docs.SwaggerInfo.Title = "SereniBase API"
+	docs.SwaggerInfo.Description = "SereniBase REST API documentation"
+	docs.SwaggerInfo.Version = cfg.Server.Version
+	docs.SwaggerInfo.Host = fmt.Sprintf("%s:%s", host, cfg.Server.Port)
+	docs.SwaggerInfo.BasePath = "/api/v1"
+	docs.SwaggerInfo.Schemes = []string{scheme}
 
 	logger.Init(cfg)
 
@@ -197,7 +215,7 @@ func New(cfg *config.Config) (*App, error) {
 	organizationService := services.NewOrganizationService(dbService)
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(authService)
+	authHandler := handlers.NewAuthHandler(authService, workspaceManagementService, baseManagementService)
 	workspaceHandler := handlers.NewWorkspaceHandler(workspaceManagementService, authService)
 	baseHandler := handlers.NewBaseHandler(baseManagementService)
 	assetHandler := handlers.NewAssetsHandler(assetManagementService)
@@ -226,6 +244,7 @@ func New(cfg *config.Config) (*App, error) {
 		WorkspaceAndBaseAccessValidationMiddleware: func(allowedAccess []string) gin.HandlerFunc {
 			return middleware.WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService, allowedAccess)
 		},
+		AccessMemberService: accessMemberService,
 	}
 
 	r := router.Setup(cfg, handlerGroups, middlewareGroups)

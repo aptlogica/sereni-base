@@ -493,17 +493,17 @@ STORAGE_URL=http://sereni-storage-provider:8083/api/v1
 STORAGE_SERVER_PORT=8083
 STORAGE_SERVER_HOST=0.0.0.0
 STORAGE_SERVER_SCHEME=http
-STORAGE_DRIVER=minio
+STORAGE_DRIVER=rustfs
 STORAGE_DEV_PATH=./uploads
 STORAGE_AWS_REGION=us-east-1
 STORAGE_AWS_BUCKET=serenibase
 STORAGE_AWS_ACCESS_KEY=your-access-key
 STORAGE_AWS_SECRET_KEY=your-secret-key
-STORAGE_MINIO_ENDPOINT=minio:9000
-STORAGE_MINIO_ACCESS_KEY=minioadmin
-STORAGE_MINIO_SECRET_KEY=minioadmin
-STORAGE_MINIO_BUCKET=serenibase
-STORAGE_MINIO_USE_SSL=false
+RUSTFS_ENDPOINT=http://rustfs-server:9000
+RUSTFS_ACCESS_KEY=rustfsadmin
+RUSTFS_SECRET_KEY=rustfsadmin
+RUSTFS_BUCKET=serenibase
+RUSTFS_USE_SSL=false
 STORAGE_ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5050,http://serenibase:8080,http://base-ui:5050
 
 # ------------------------------------------------------------------------------
@@ -826,8 +826,8 @@ configure_storage() {
     
     echo "Choose storage driver:"
     echo "  1. Local filesystem (for development only)"
-    echo "  2. MinIO (Docker container - recommended)"
-    echo "  3. MinIO Custom (external MinIO server)"
+    echo "  2. RustFS (Docker container - recommended)"
+    echo "  3. RustFS Custom (external RustFS server)"
     echo "  4. AWS S3"
     echo ""
     
@@ -851,55 +851,55 @@ configure_storage() {
         
     elif [ "$STORAGE_CHOICE" = "2" ]; then
         echo ""
-        echo "Using default MinIO Docker container"
+        echo "Using default RustFS Docker container"
         
-        STORAGE_MINIO_ACCESS_KEY=$(prompt_env_var "STORAGE_MINIO_ACCESS_KEY" "minioadmin" "MinIO Access Key")
-        STORAGE_MINIO_SECRET_KEY=$(prompt_env_var "STORAGE_MINIO_SECRET_KEY" "minioadmin" "MinIO Secret Key" "true")
-        STORAGE_MINIO_BUCKET=$(prompt_env_var "STORAGE_MINIO_BUCKET" "serenibase" "Bucket Name")
+        RUSTFS_ACCESS_KEY=$(prompt_env_var "RUSTFS_ACCESS_KEY" "rustfsadmin" "RustFS Access Key")
+        RUSTFS_SECRET_KEY=$(prompt_env_var "RUSTFS_SECRET_KEY" "rustfsadmin" "RustFS Secret Key" "true")
+        RUSTFS_BUCKET=$(prompt_env_var "RUSTFS_BUCKET" "serenibase" "Bucket Name")
         
-        update_env_var_if_changed "STORAGE_DRIVER" "minio"
-        update_env_var_if_changed "STORAGE_MINIO_ENDPOINT" "minio:9000"
-        update_env_var_if_changed "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
-        update_env_var_if_changed "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
-        update_env_var_if_changed "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
-        update_env_var_if_changed "STORAGE_MINIO_USE_SSL" "false"
+        update_env_var_if_changed "STORAGE_DRIVER" "rustfs"
+        update_env_var_if_changed "RUSTFS_ENDPOINT" "http://rustfs-server:9000"
+        update_env_var_if_changed "RUSTFS_ACCESS_KEY" "$RUSTFS_ACCESS_KEY"
+        update_env_var_if_changed "RUSTFS_SECRET_KEY" "$RUSTFS_SECRET_KEY"
+        update_env_var_if_changed "RUSTFS_BUCKET" "$RUSTFS_BUCKET"
+        update_env_var_if_changed "RUSTFS_USE_SSL" "false"
         
-        print_step "MinIO Docker storage configured"
+        print_step "RustFS Docker storage configured"
         
     elif [ "$STORAGE_CHOICE" = "3" ]; then
         echo ""
-        echo "Enter custom MinIO configuration:"
+        echo "Enter custom RustFS configuration:"
         echo ""
         
-        STORAGE_MINIO_ENDPOINT=$(prompt_env_var "STORAGE_MINIO_ENDPOINT" "" "MinIO Endpoint (host:port)")
-        if [ -z "$STORAGE_MINIO_ENDPOINT" ]; then
-            print_error "MinIO endpoint is required"
+        RUSTFS_ENDPOINT=$(prompt_env_var "RUSTFS_ENDPOINT" "http://rustfs-server:9000" "RustFS Endpoint (host:port)")
+        if [ -z "$RUSTFS_ENDPOINT" ]; then
+            print_error "RustFS endpoint is required"
             exit 1
         fi
         
-        STORAGE_MINIO_ACCESS_KEY=$(prompt_env_var "STORAGE_MINIO_ACCESS_KEY" "" "MinIO Access Key")
-        if [ -z "$STORAGE_MINIO_ACCESS_KEY" ]; then
-            print_error "MinIO access key is required"
+        RUSTFS_ACCESS_KEY=$(prompt_env_var "RUSTFS_ACCESS_KEY" "rustfsadmin" "RustFS Access Key")
+        if [ -z "$RUSTFS_ACCESS_KEY" ]; then
+            print_error "RustFS access key is required"
             exit 1
         fi
         
-        STORAGE_MINIO_SECRET_KEY=$(prompt_env_var "STORAGE_MINIO_SECRET_KEY" "" "MinIO Secret Key" "true")
-        if [ -z "$STORAGE_MINIO_SECRET_KEY" ]; then
-            print_error "MinIO secret key is required"
+        RUSTFS_SECRET_KEY=$(prompt_env_var "RUSTFS_SECRET_KEY" "rustfsadmin" "RustFS Secret Key" "true")
+        if [ -z "$RUSTFS_SECRET_KEY" ]; then
+            print_error "RustFS secret key is required"
             exit 1
         fi
         
-        STORAGE_MINIO_BUCKET=$(prompt_env_var "STORAGE_MINIO_BUCKET" "serenibase" "Bucket Name")
-        STORAGE_MINIO_USE_SSL=$(prompt_env_var "STORAGE_MINIO_USE_SSL" "false" "Use SSL (true/false)")
+        RUSTFS_BUCKET=$(prompt_env_var "RUSTFS_BUCKET" "serenibase" "Bucket Name")
+        RUSTFS_USE_SSL=$(prompt_env_var "RUSTFS_USE_SSL" "false" "Use SSL (true/false)")
         
-        update_env_var_if_changed "STORAGE_DRIVER" "minio"
-        update_env_var_if_changed "STORAGE_MINIO_ENDPOINT" "$STORAGE_MINIO_ENDPOINT"
-        update_env_var_if_changed "STORAGE_MINIO_ACCESS_KEY" "$STORAGE_MINIO_ACCESS_KEY"
-        update_env_var_if_changed "STORAGE_MINIO_SECRET_KEY" "$STORAGE_MINIO_SECRET_KEY"
-        update_env_var_if_changed "STORAGE_MINIO_BUCKET" "$STORAGE_MINIO_BUCKET"
-        update_env_var_if_changed "STORAGE_MINIO_USE_SSL" "$STORAGE_MINIO_USE_SSL"
+        update_env_var_if_changed "STORAGE_DRIVER" "rustfs"
+        update_env_var_if_changed "RUSTFS_ENDPOINT" "$RUSTFS_ENDPOINT"
+        update_env_var_if_changed "RUSTFS_ACCESS_KEY" "$RUSTFS_ACCESS_KEY"
+        update_env_var_if_changed "RUSTFS_SECRET_KEY" "$RUSTFS_SECRET_KEY"
+        update_env_var_if_changed "RUSTFS_BUCKET" "$RUSTFS_BUCKET"
+        update_env_var_if_changed "RUSTFS_USE_SSL" "$RUSTFS_USE_SSL"
         
-        print_step "Custom MinIO storage configured"
+        print_step "Custom RustFS storage configured"
         
     elif [ "$STORAGE_CHOICE" = "4" ]; then
         echo ""
@@ -1021,7 +1021,7 @@ configure_owner() {
 configure_ports() {
     # Check if ALL port variables already exist in .env
     # If they do, skip this entire section (NEVER override)
-    if all_vars_exist_in_env "MINIO_API_PORT" "MINIO_CONSOLE_PORT" "BASE_UI_PORT" "ANTIVIRUS_CLAMAV_PORT"; then
+    if all_vars_exist_in_env "RUSTFS_API_PORT" "RUSTFS_CONSOLE_PORT" "BASE_UI_PORT" "ANTIVIRUS_CLAMAV_PORT"; then
         print_step "Port configuration already set in .env (skipping)"
         return
     fi
@@ -1034,14 +1034,14 @@ configure_ports() {
     echo "Configure container ports (press Enter to use defaults):"
     echo ""
     
-    MINIO_API_PORT=$(prompt_env_var "MINIO_API_PORT" "9000" "MinIO API Port")
-    MINIO_CONSOLE_PORT=$(prompt_env_var "MINIO_CONSOLE_PORT" "9001" "MinIO Console Port")
+    RUSTFS_API_PORT=$(prompt_env_var "RUSTFS_API_PORT" "9000" "RustFS API Port")
+    RUSTFS_CONSOLE_PORT=$(prompt_env_var "RUSTFS_CONSOLE_PORT" "9001" "RustFS Console Port")
     BASE_UI_PORT=$(prompt_env_var "BASE_UI_PORT" "5050" "Base UI Port")
     ANTIVIRUS_CLAMAV_PORT=$(prompt_env_var "ANTIVIRUS_CLAMAV_PORT" "3310" "ClamAV Port")
     
     # Update port configuration in .env (only if changed)
-    update_env_var_if_changed "MINIO_API_PORT" "$MINIO_API_PORT"
-    update_env_var_if_changed "MINIO_CONSOLE_PORT" "$MINIO_CONSOLE_PORT"
+    update_env_var_if_changed "RUSTFS_API_PORT" "$RUSTFS_API_PORT"
+    update_env_var_if_changed "RUSTFS_CONSOLE_PORT" "$RUSTFS_CONSOLE_PORT"
     update_env_var_if_changed "BASE_UI_PORT" "$BASE_UI_PORT"
     update_env_var_if_changed "ANTIVIRUS_CLAMAV_PORT" "$ANTIVIRUS_CLAMAV_PORT"
     
@@ -1151,7 +1151,7 @@ echo ""
 echo -e "${GREEN}Access your application at:${NC}"
 echo "  Frontend:  http://${PUBLIC_HOST}:5050"
 echo "  Backend:   http://${PUBLIC_HOST}:8080"
-echo "  MinIO:     http://${PUBLIC_HOST}:9001"
+echo "  RustFS:     http://${PUBLIC_HOST}:9001"
 echo ""
 echo -e "${GREEN}Default admin credentials:${NC}"
 echo "  Email:    $OWNER_EMAIL"
@@ -1166,3 +1166,4 @@ echo "  make logs      - View service logs"
 echo "  make down-all  - Stop all services"
 echo "  make clean     - Remove all data"
 echo ""
+
