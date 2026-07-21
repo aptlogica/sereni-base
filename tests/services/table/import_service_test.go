@@ -233,6 +233,14 @@ func (m *MockTableManagementService) RemoveDuplicates(ctx context.Context, schem
 	return args.Get(0).(dto.RemoveDuplicatesResponse), args.Error(1)
 }
 
+func (m *MockTableManagementService) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.FuzzyDuplicatesResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.FuzzyDuplicatesResponse), args.Error(1)
+}
+
 // MockBaseManagementService implements interfaces.BaseManagementService
 // Only CreateBase is used in Import tests.
 type MockBaseManagementService struct {

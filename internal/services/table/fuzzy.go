@@ -5,9 +5,12 @@ package services
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/rivo/uniseg"
 )
@@ -224,56 +227,130 @@ func FindFuzzyDuplicates(
 		}
 	}
 
-	// Perform fuzzy comparisons between all pairs of non-empty rows
-	for i := 0; i < len(allRows); i++ {
-		emptyI := true
+	// Pre-calculate graphemes for selected columns of all rows
+	graphemesCache := make([]map[string][]string, len(allRows))
+	for i := range allRows {
+		colMap := make(map[string][]string)
 		for _, col := range selectedColumns {
-			val := allRows[i][col]
-			if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
-				emptyI = false
-				break
-			}
+			valStr := strings.ToLower(strings.TrimSpace(getStringVal(allRows[i][col])))
+			colMap[col] = graphemes(valStr)
 		}
-		if emptyI {
-			continue
-		}
+		graphemesCache[i] = colMap
+	}
 
-		for j := i + 1; j < len(allRows); j++ {
-			emptyJ := true
-			for _, col := range selectedColumns {
-				val := allRows[j][col]
-				if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
-					emptyJ = false
+	type matchPair struct {
+		i, j int
+	}
+
+	var matches []matchPair
+	var mu sync.Mutex
+
+	numWorkers := runtime.NumCPU()
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	var wg sync.WaitGroup
+	var nextI int64
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var localMatches []matchPair
+			n := len(allRows)
+
+			for {
+				i := int(atomic.AddInt64(&nextI, 1) - 1)
+				if i >= n {
 					break
 				}
-			}
-			if emptyJ {
-				continue
-			}
 
-			match := true
-			for _, col := range selectedColumns {
-				valI := strings.ToLower(strings.TrimSpace(getStringVal(allRows[i][col])))
-				valJ := strings.ToLower(strings.TrimSpace(getStringVal(allRows[j][col])))
-
-				if valI == "" && valJ == "" {
+				emptyI := true
+				for _, col := range selectedColumns {
+					val := allRows[i][col]
+					if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
+						emptyI = false
+						break
+					}
+				}
+				if emptyI {
 					continue
 				}
-				if valI == "" || valJ == "" {
-					match = false
-					break
-				}
 
-				score := SimilarityScore(valI, valJ)
-				if score < threshold {
-					match = false
-					break
+				for j := i + 1; j < n; j++ {
+					emptyJ := true
+					for _, col := range selectedColumns {
+						val := allRows[j][col]
+						if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
+							emptyJ = false
+							break
+						}
+					}
+					if emptyJ {
+						continue
+					}
+
+					match := true
+					for _, col := range selectedColumns {
+						gI := graphemesCache[i][col]
+						gJ := graphemesCache[j][col]
+
+						if len(gI) == 0 && len(gJ) == 0 {
+							continue
+						}
+						if len(gI) == 0 || len(gJ) == 0 {
+							match = false
+							break
+						}
+
+						// Length pruning check:
+						minPos := (threshold - 0.25) / 0.75
+						if minPos < 0 {
+							minPos = 0
+						}
+						maxLen := len(gI)
+						if len(gJ) > maxLen {
+							maxLen = len(gJ)
+						}
+						maxEditDist := (1.0 - minPos) * float64(maxLen)
+						lenDiff := len(gI) - len(gJ)
+						if lenDiff < 0 {
+							lenDiff = -lenDiff
+						}
+						if float64(lenDiff) > maxEditDist {
+							match = false
+							break
+						}
+
+						pos := positionalSimilarity(gI, gJ)
+						set := multisetSimilarity(gI, gJ)
+						score := (1.0-DefaultReorderWeight)*pos + DefaultReorderWeight*set
+
+						if score < threshold {
+							match = false
+							break
+						}
+					}
+					if match {
+						localMatches = append(localMatches, matchPair{i: i, j: j})
+					}
 				}
 			}
-			if match {
-				union(i, j)
+
+			if len(localMatches) > 0 {
+				mu.Lock()
+				matches = append(matches, localMatches...)
+				mu.Unlock()
 			}
-		}
+		}()
+	}
+
+	wg.Wait()
+
+	// Apply unions sequentially on the collected matches
+	for _, pair := range matches {
+		union(pair.i, pair.j)
 	}
 
 	// 2. Collect entries into their respective groups.

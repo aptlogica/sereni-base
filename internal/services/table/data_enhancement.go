@@ -2911,13 +2911,30 @@ func (s tableManagementService) FuzzyDuplicates(ctx context.Context, schemaName 
 		thresholdVal = 0.8
 	}
 
-	// Perform fuzzy deduplication using helper function
-	duplicateRowIDs := FindFuzzyDuplicates(allRows, selectedColumns, req.KeepRule, thresholdVal)
+	var duplicateRowIDs []interface{}
+	var clearColumnRowIDs []interface{}
 
-	totalDuplicateRows := int64(len(duplicateRowIDs))
+	if req.DeduplicationMode == "manual" || (req.DeduplicationMode == "" && len(req.RowActions) > 0) {
+		for rowID, action := range req.RowActions {
+			if action == "delete" {
+				duplicateRowIDs = append(duplicateRowIDs, rowID)
+			} else if action == "clear" {
+				clearColumnRowIDs = append(clearColumnRowIDs, rowID)
+			}
+		}
+	} else {
+		dupIDs := FindFuzzyDuplicates(allRows, selectedColumns, req.KeepRule, thresholdVal)
+		if req.Duplicate == "remove_row" {
+			duplicateRowIDs = dupIDs
+		} else if req.Duplicate == "remove_duplicates" {
+			clearColumnRowIDs = dupIDs
+		}
+	}
+
+	totalDuplicateRows := int64(len(duplicateRowIDs) + len(clearColumnRowIDs))
 	var affectedRows int64
 
-	if len(duplicateRowIDs) > 0 {
+	if len(duplicateRowIDs) > 0 || len(clearColumnRowIDs) > 0 {
 		tx, startErr := s.repo.DB.Begin()
 		if startErr != nil {
 			return dto.FuzzyDuplicatesResponse{}, app_errors.LogDatabaseError(startErr, "failed to start transaction for fuzzy duplicates update")
@@ -2930,7 +2947,7 @@ func (s tableManagementService) FuzzyDuplicates(ctx context.Context, schemaName 
 			}
 		}()
 
-		if req.Duplicate == "remove_row" {
+		if len(duplicateRowIDs) > 0 {
 			chunkSize := 500
 			for i := 0; i < len(duplicateRowIDs); i += chunkSize {
 				end := i + chunkSize
@@ -2954,7 +2971,9 @@ func (s tableManagementService) FuzzyDuplicates(ctx context.Context, schemaName 
 				affected, _ := res.RowsAffected()
 				affectedRows += affected
 			}
-		} else if req.Duplicate == "remove_duplicates" {
+		}
+
+		if len(clearColumnRowIDs) > 0 {
 			setClauses := make([]string, len(selectedColumns))
 			for idx, col := range selectedColumns {
 				setClauses[idx] = fmt.Sprintf("%s = NULL", quoteIdentifier(col))
@@ -2962,12 +2981,12 @@ func (s tableManagementService) FuzzyDuplicates(ctx context.Context, schemaName 
 			setClauseStr := strings.Join(setClauses, ", ")
 
 			chunkSize := 500
-			for i := 0; i < len(duplicateRowIDs); i += chunkSize {
+			for i := 0; i < len(clearColumnRowIDs); i += chunkSize {
 				end := i + chunkSize
-				if end > len(duplicateRowIDs) {
-					end = len(duplicateRowIDs)
+				if end > len(clearColumnRowIDs) {
+					end = len(clearColumnRowIDs)
 				}
-				chunk := duplicateRowIDs[i:end]
+				chunk := clearColumnRowIDs[i:end]
 
 				inPlaceholders := make([]string, len(chunk))
 				args := make([]interface{}, len(chunk))

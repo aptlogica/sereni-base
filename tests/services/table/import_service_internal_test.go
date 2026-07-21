@@ -232,6 +232,9 @@ func (s importTableServiceStub) ValidateColumnsAllowed(ctx context.Context, sche
 func (s importTableServiceStub) ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error {
 	return nil
 }
+func (s importTableServiceStub) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	return dto.FuzzyDuplicatesResponse{}, nil
+}
 
 type importBaseServiceStub struct {
 	createBaseWithoutTable func(ctx context.Context, req dto.CreateBaseRequest, schemaName string, userID string) (tenant.Base, error)

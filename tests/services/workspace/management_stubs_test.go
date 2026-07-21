@@ -334,6 +334,10 @@ func (s *StubTableManagementService) ValidateColumnAllowedForSplit(ctx context.C
 	return nil
 }
 
+func (s *StubTableManagementService) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	return dto.FuzzyDuplicatesResponse{}, nil
+}
+
 // StubRBACManagementService provides optional function overrides for RBACManagementService.
 type StubRBACManagementService struct {
 	GetUserAccessMembersFn func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error)
