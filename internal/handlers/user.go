@@ -17,6 +17,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// maxProfileFieldLen is the maximum number of characters allowed in any profile string field.
+const maxProfileFieldLen = 100
+
 type UserHandler struct {
 	userManagementService interfaces.UserManagementService
 }
@@ -64,6 +67,23 @@ func (h *UserHandler) bindUpdateProfileFields(c *gin.Context) dto.UpdateUserProf
 	}
 
 	return updatePayload
+}
+
+// validateProfileFields checks that all string profile fields do not exceed maxProfileFieldLen.
+// Returns false and sends a 422 error response if any field is too long.
+func (h *UserHandler) validateProfileFields(c *gin.Context, p dto.UpdateUserProfileRequest) bool {
+	for _, val := range []*string{
+		p.FirstName,
+		p.LastName,
+		p.DisplayName,
+		p.Country,
+	} {
+		if val != nil && len(*val) > maxProfileFieldLen {
+			response.SendError(c, responseConst.UserError.ProfileFieldTooLong)
+			return false
+		}
+	}
+	return true
 }
 
 // handleAvatarUpdate handles avatar upload and profile update logic
@@ -150,6 +170,10 @@ func (h *UserHandler) UpdateUserProfile(c *gin.Context) {
 	}
 
 	updatePayload := h.bindUpdateProfileFields(c)
+
+	if !h.validateProfileFields(c, updatePayload) {
+		return
+	}
 
 	// Bind file if present
 	if file, err := c.FormFile("avatar"); err == nil {
