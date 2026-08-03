@@ -20,6 +20,8 @@ type MockBulkService struct {
 	mock.Mock
 }
 
+
+
 func (m *MockBulkService) BulkInsert(tableName string, records []map[string]interface{}) ([]map[string]interface{}, error) {
 	args := m.Called(tableName, records)
 	if args.Get(0) == nil {
