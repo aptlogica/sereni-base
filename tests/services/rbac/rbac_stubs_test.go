@@ -8,6 +8,8 @@ import (
 
 // StubTableService provides functional hooks for TableService behavior.
 type StubTableService struct {
+	UpdateByColumnsFn   func(tableName string, where dbModels.ComplexFilter, data map[string]any) (map[string]interface{}, error)
+	DeleteByColumnsFn   func(tableName string, where dbModels.ComplexFilter) (int64, error)
 	GetTableDataFn      func(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error)
 	CreateRecordFn      func(tableName string, data map[string]interface{}) (map[string]interface{}, error)
 	UpdateRecordFn      func(tableName string, id interface{}, data map[string]interface{}) (map[string]interface{}, error)
@@ -22,6 +24,21 @@ type StubTableService struct {
 	CreateViewFn        func(ctx context.Context, viewName string, viewSQL string) error
 	CreateFunctionFn    func(ctx context.Context, functionName string, functionSQL string) error
 	GetByFunctionFn     func(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error)
+}
+
+
+func (s *StubTableService) UpdateByColumns(tableName string, where dbModels.ComplexFilter, data map[string]any) (map[string]interface{}, error) {
+	if s.UpdateByColumnsFn != nil {
+		return s.UpdateByColumnsFn(tableName, where, data)
+	}
+	return map[string]interface{}{}, nil
+}
+
+func (s *StubTableService) DeleteByColumns(tableName string, where dbModels.ComplexFilter) (int64, error) {
+	if s.DeleteByColumnsFn != nil {
+		return s.DeleteByColumnsFn(tableName, where)
+	}
+	return 0, nil
 }
 
 func (s *StubTableService) GetTableData(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error) {

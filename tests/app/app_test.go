@@ -64,7 +64,13 @@ func (f *fakeRepo) Insert(collection string, data map[string]any) (any, error) {
 func (f *fakeRepo) Update(collection string, id any, data map[string]any) (any, error) {
 	return nil, errors.New("fake")
 }
+func (f *fakeRepo) UpdateByColumns(collection string, where models.ComplexFilter, data map[string]any) (any, error) {
+	return nil, errors.New("fake")
+}
 func (f *fakeRepo) Delete(collection string, id any) error { return errors.New("fake") }
+func (f *fakeRepo) DeleteByColumns(collection string, where models.ComplexFilter) (int64, error) {
+	return 0, errors.New("fake")
+}
 func (f *fakeRepo) BulkInsert(tableName string, records []map[string]interface{}) ([]map[string]interface{}, error) {
 	return nil, errors.New("fake")
 }
