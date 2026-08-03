@@ -19,6 +19,19 @@ type MockTableServiceGeneric struct {
 	mock.Mock
 }
 
+func (m *MockTableServiceGeneric) UpdateByColumns(tableName string, where dbModels.ComplexFilter, data map[string]any) (map[string]interface{}, error) {
+	args := m.Called(tableName, where, data)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+func (m *MockTableServiceGeneric) DeleteByColumns(tableName string, where dbModels.ComplexFilter) (int64, error) {
+	args := m.Called(tableName, where)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockTableServiceGeneric) GetTableData(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error) {
 	args := m.Called(tableName, params)
 	if args.Get(0) == nil {

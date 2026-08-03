@@ -46,6 +46,19 @@ func (m *MockTableServiceRBAC) DeleteRecord(tableName string, id interface{}) er
 	return args.Error(0)
 }
 
+func (m *MockTableServiceRBAC) UpdateByColumns(tableName string, where dbModels.ComplexFilter, data map[string]any) (map[string]interface{}, error) {
+	args := m.Called(tableName, where, data)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+func (m *MockTableServiceRBAC) DeleteByColumns(tableName string, where dbModels.ComplexFilter) (int64, error) {
+	args := m.Called(tableName, where)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockTableServiceRBAC) GetTables(schema string) ([]dbModels.Table, error) {
 	args := m.Called(schema)
 	if args.Get(0) == nil {
