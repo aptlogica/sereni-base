@@ -30,6 +30,7 @@ var UserError = struct {
 	UserIDRequired           ResponseCode
 	UserIDInvalid            ResponseCode
 	EmailVerificationPending ResponseCode
+	ProfileFieldTooLong      ResponseCode
 }{
 	ErrNotFound:          "USR_2006",
 	UserAlreadyExists:    "USR_2005",
@@ -54,6 +55,7 @@ var UserError = struct {
 	UserIDRequired:           "USR_2024",
 	UserIDInvalid:            "USR_2025",
 	EmailVerificationPending: "USR_2026",
+	ProfileFieldTooLong:      "USR_2027",
 }
 
 var UserErrorCodes = map[ResponseCode]MetaResponse{
@@ -166,6 +168,11 @@ var UserErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Email verification is pending. User status cannot be updated.",
 		Description: "Email verification is pending. User status cannot be updated.",
+	},
+	UserError.ProfileFieldTooLong: {
+		HTTPStatus:  http.StatusUnprocessableEntity,
+		Message:     "Maximum 100 characters allowed.",
+		Description: "One or more profile fields exceed the maximum allowed length of 255 characters.",
 	},
 }
 
