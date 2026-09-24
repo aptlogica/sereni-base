@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: '1.24'
+          go-version: '1.27.1'
 
       - name: Run tests
         run: go test -v -race ./...
@@ -35,7 +35,7 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -ldflags "-X main.version=${{ github.ref_name }}" -o bin/serenibase-windows-amd64.exe ./cmd/server
 
       - name: Create Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 #3.0.3
         with:
           generate_release_notes: true
           files: |
