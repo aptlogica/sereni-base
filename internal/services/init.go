@@ -87,4 +87,5 @@ var NewOrganizationService = core.NewOrganizationService
 var NewCoreResourceService = core.NewResourceService
 var NewCoreActionService = core.NewActionService
 var NewViewService = core.NewViewService
+var NewAutomationService = core.NewAutomationService
 var NewRelationshipService = core.NewRelationshipService

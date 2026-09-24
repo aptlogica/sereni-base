@@ -120,6 +120,12 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.InvalidColumnMetaForLookupType, TableError.InvalidColumnMetaForLookupType},
 	{app_errors.SplitNotPossible, TableError.SplitNotPossible},
 
+	// automations (triggers & webhooks)
+	{app_errors.AutomationNotFound, AutomationError.AutomationNotFound},
+	{app_errors.InvalidTriggerQuery, AutomationError.InvalidTriggerQuery},
+	{app_errors.InvalidFunctionQuery, AutomationError.InvalidFunctionQuery},
+	{app_errors.TriggerFailed, AutomationError.TriggerFailed},
+
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},
 	{app_errors.ErrRoleCreation, Error.RoleCreationError},
