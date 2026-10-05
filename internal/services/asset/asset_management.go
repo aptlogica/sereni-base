@@ -71,6 +71,27 @@ func (s *assetManagementService) generateTimestampedFilename(filename string) st
 	return fmt.Sprintf("%s_%s%s", name, timestamp, ext)
 }
 
+// activeContentExtensions are file types a browser executes scripts in when opened directly.
+var activeContentExtensions = map[string]bool{
+	".html": true, ".htm": true, ".xhtml": true, ".shtml": true,
+	".svg": true, ".svgz": true, ".xml": true, ".xsl": true,
+	".js": true, ".mjs": true,
+}
+
+// safeContentType returns the client-declared content type, downgraded to
+// application/octet-stream for active content so stored uploads are downloaded,
+// not rendered. Both the header and the extension are client-controlled, so check both.
+func safeContentType(fileHeader *multipart.FileHeader) string {
+	contentType := fileHeader.Header.Get("Content-Type")
+	lower := strings.ToLower(contentType)
+	if activeContentExtensions[strings.ToLower(filepath.Ext(fileHeader.Filename))] ||
+		strings.Contains(lower, "html") || strings.Contains(lower, "svg") ||
+		strings.Contains(lower, "xml") || strings.Contains(lower, "javascript") {
+		return "application/octet-stream"
+	}
+	return contentType
+}
+
 func (s *assetManagementService) processAndUploadFile(fileHeader *multipart.FileHeader, schema string) (dto.AssetInsertion, error) {
 	file, err := fileHeader.Open()
 	if err != nil {
@@ -88,7 +109,7 @@ func (s *assetManagementService) processAndUploadFile(fileHeader *multipart.File
 		return dto.AssetInsertion{}, app_errors.StorageFileOpenFailed
 	}
 
-	contentType := fileHeader.Header.Get("Content-Type")
+	contentType := safeContentType(fileHeader)
 	fileName := s.generateTimestampedFilename(fileHeader.Filename)
 	objectName := filepath.Join(schema, fileName)
 

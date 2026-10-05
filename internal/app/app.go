@@ -13,6 +13,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -245,6 +246,10 @@ func New(cfg *config.Config) (*App, error) {
 			return middleware.WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService, allowedAccess)
 		},
 		AccessMemberService: accessMemberService,
+		BaseWorkspaceID: func(ctx context.Context, schema, baseID string) (string, error) {
+			base, err := baseService.GetBaseByID(ctx, schema, baseID)
+			return base.WorkspaceID, err
+		},
 	}
 
 	r := router.Setup(cfg, handlerGroups, middlewareGroups)

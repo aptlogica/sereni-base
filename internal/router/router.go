@@ -23,6 +23,9 @@ import (
 
 const (
 	RouteCreate = "/create"
+
+	// authRateLimitPerMinute caps login/reset/OTP attempts per client IP.
+	authRateLimitPerMinute = 20
 )
 
 type Middlewares struct {
@@ -35,6 +38,7 @@ type Middlewares struct {
 	ScopeHeaderMiddleware                      func(scope string) gin.HandlerFunc
 	WorkspaceAndBaseAccessValidationMiddleware func(allowedAccess []string) gin.HandlerFunc
 	AccessMemberService                        interfaces.AccessMemberService
+	BaseWorkspaceID                            middleware.BaseWorkspaceResolver
 }
 
 type Handlers struct {
@@ -120,10 +124,11 @@ func Setup(cfg *config.Config,
 // setupAuthRoutes configures public authentication endpoints
 func setupAuthRoutes(api *gin.RouterGroup, handlers Handlers) {
 	auth := api.Group("/auth")
+	credentialLimiter := middleware.RateLimiter(authRateLimitPerMinute)
 	{
-		auth.POST("/login", handlers.Auth.LoginUser)
-		auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
-		auth.POST("/reset-password", handlers.Auth.ResetPassword)
+		auth.POST("/login", credentialLimiter, handlers.Auth.LoginUser)
+		auth.POST("/forgot-password", credentialLimiter, handlers.Auth.ForgotPassword)
+		auth.POST("/reset-password", credentialLimiter, handlers.Auth.ResetPassword)
 		auth.POST("/validate-token", handlers.Auth.ValidateToken)
 		auth.POST("/verify-token", handlers.Auth.VerifyToken)
 		auth.POST("/refresh", handlers.Auth.RefreshToken)
@@ -131,8 +136,8 @@ func setupAuthRoutes(api *gin.RouterGroup, handlers Handlers) {
 
 		otp := auth.Group("/otp")
 		{
-			otp.POST("/verify", handlers.Auth.VerifyEmail)
-			otp.POST("/resend", handlers.Auth.ResendOTP)
+			otp.POST("/verify", credentialLimiter, handlers.Auth.VerifyEmail)
+			otp.POST("/resend", credentialLimiter, handlers.Auth.ResendOTP)
 		}
 	}
 }
@@ -140,16 +145,21 @@ func setupAuthRoutes(api *gin.RouterGroup, handlers Handlers) {
 // setupUserRoutes configures user management endpoints
 func setupUserRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	user := private.Group("/user")
+	// :id is a user ID: only that user may modify it; owner/co-owner may also read it
+	selfOnly := middleware.NewSelfOrRoleGuard(nil, middlewares.AccessMemberService)
+	selfOrAdmin := middleware.NewSelfOrRoleGuard(
+		[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner},
+		middlewares.AccessMemberService)
 	{
 		// User profile endpoints
-		user.GET("/profile/:id", handlers.User.GetUserProfileByID)
-		user.PATCH("/profile/:id", handlers.User.UpdateUserProfile)
-		user.POST("/change-password/:id", handlers.Auth.UpdatePassword)
-		user.POST("/profile/:id/avatar", handlers.User.AddAvatar)
-		user.DELETE("/profile/:id/avatar", handlers.User.RemoveAvatar)
+		user.GET("/profile/:id", selfOrAdmin, handlers.User.GetUserProfileByID)
+		user.PATCH("/profile/:id", selfOnly, handlers.User.UpdateUserProfile)
+		user.POST("/change-password/:id", selfOnly, handlers.Auth.UpdatePassword)
+		user.POST("/profile/:id/avatar", selfOnly, handlers.User.AddAvatar)
+		user.DELETE("/profile/:id/avatar", selfOnly, handlers.User.RemoveAvatar)
 		user.GET("/workspaces", handlers.User.GetWorkspaces)
 		user.GET("/access-details", handlers.User.GetUserAccessDetails)
-		user.GET("/roles-and-access/:id", handlers.User.GetUserRolesAndAccess)
+		user.GET("/roles-and-access/:id", selfOrAdmin, handlers.User.GetUserRolesAndAccess)
 
 		// Member assignment endpoints (owner, co-owner, maintainer)
 		user.POST("/assign",
@@ -218,6 +228,8 @@ func setupOrganizationRoutes(private *gin.RouterGroup, handlers Handlers, middle
 // setupWorkspaceRoutes configures workspace management endpoints
 func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	workspace := private.Group("/workspace")
+	// Object-level check: caller must be a member of the workspace in :id
+	wsAccess := middleware.NewScopeAccessGuard(appConstant.ScopeLevels.Workspace, middlewares.AccessMemberService, nil)
 	{
 		// Admin operations with permission-based guards
 		workspace.POST(RouteCreate,
@@ -227,44 +239,53 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.GetAllWorkspaces)
 		workspace.GET("/:id/tables",
+			wsAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.GetTablesByWorkspaceId)
 		workspace.PUT("/:id",
+			wsAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.UpdateWorkspace)
 		workspace.DELETE("/:id",
+			wsAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.DeleteWorkspace)
 
 		// Full access operations
 		workspace.POST("/:id/remove",
+			wsAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveUserFromWorkspace)
 		workspace.GET("/:id/members",
+			wsAccess,
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO},
 				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetWorkspaceMembers)
 		workspace.GET("/:id/members-with-roles",
+			wsAccess,
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO},
 				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetWorkspaceMembersWithRole)
 		workspace.POST("/:id/bulk-add-members",
+			wsAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Invite, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.BulkAddMembers)
 		workspace.DELETE("/access/:id",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveAccessMemberByID)
 		// All access operations
-		workspace.GET("/:id/bases", handlers.Workspace.GetBasesByWorkspaceId)
-		workspace.GET("/:id", handlers.Workspace.GetWorkspaceByID)
+		workspace.GET("/:id/bases", wsAccess, handlers.Workspace.GetBasesByWorkspaceId)
+		workspace.GET("/:id", wsAccess, handlers.Workspace.GetWorkspaceByID)
 	}
 }
 
 // setupBaseRoutes configures base management endpoints
 func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	base := private.Group("/base")
+	// Object-level check: caller must be a member of the base in :id (or its workspace)
+	baseAccess := middleware.NewScopeAccessGuard(appConstant.ScopeLevels.Base, middlewares.AccessMemberService, middlewares.BaseWorkspaceID)
 	{
 		// Admin operations with permission-based guards
 		base.POST(RouteCreate,
@@ -273,19 +294,23 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 
 		// Full access operations - member management with specific routes before dynamic :id routes
 		base.POST("/:id/remove",
+			baseAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage, middlewares.AccessMemberService).Middleware(),
 			handlers.Auth.RemoveUserFromBase)
 		base.GET("/:id/members",
+			baseAccess,
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO, appConstant.RBACRoleNames.BaseMember, appConstant.RBACRoleNames.BaseMemberReadOnly},
 				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetBaseMembers)
 		base.GET("/:id/members-with-roles",
+			baseAccess,
 			middleware.NewRoleGuard(
 				[]string{appConstant.RBACRoleNames.Owner, appConstant.RBACRoleNames.CoOwner, appConstant.RBACRoleNames.WorkspaceMaintainer, appConstant.RBACRoleNames.WorkspaceMaintainerRO, appConstant.RBACRoleNames.BaseMember, appConstant.RBACRoleNames.BaseMemberReadOnly},
 				middlewares.AccessMemberService, "").Middleware(),
 			handlers.Auth.GetBaseMembersWithRole)
 		base.POST("/:id/bulk-add-members",
+			baseAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Members, appConstant.ActionCodes.Invite, middlewares.AccessMemberService).Middleware(),
 			handlers.Workspace.BulkAddBaseMembers)
 		base.DELETE("/access/:id",
@@ -294,23 +319,27 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 
 		// Image operations
 		base.POST("/:id/image",
+			baseAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Base.AddBaseImage)
 		base.DELETE("/:id/image",
+			baseAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Base.RemoveBaseImage)
 
 		// Base CRUD operations
 		base.PUT("/:id",
+			baseAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Base.UpdateBase)
 		base.DELETE("/:id",
+			baseAccess,
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Base, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Base.DeleteBase)
 
 		// All access operations
-		base.GET("/:id", handlers.Base.GetBaseByID)
-		base.GET("/:id/tables", handlers.Base.GetTablesByBaseId)
+		base.GET("/:id", baseAccess, handlers.Base.GetBaseByID)
+		base.GET("/:id/tables", baseAccess, handlers.Base.GetTablesByBaseId)
 	}
 }
 
