@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,11 +62,13 @@ func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
 	// This is a simple in-memory rate limiter
 	// For production, consider using external rate limiting solutions
 	clients := make(map[string][]int64)
+	var mu sync.Mutex
 
 	return gin.HandlerFunc(func(c *gin.Context) {
 		clientIP := c.ClientIP()
 		// now := gin.H{"timestamp": nil}["timestamp"].(int64)
 		now := time.Now().Unix()
+		mu.Lock()
 		if requests, exists := clients[clientIP]; exists {
 			// Remove old requests (older than 1 minute)
 			var validRequests []int64
@@ -76,6 +79,8 @@ func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
 			}
 
 			if len(validRequests) >= requestsPerMinute {
+				clients[clientIP] = validRequests
+				mu.Unlock()
 				c.JSON(http.StatusTooManyRequests, gin.H{
 					"error": "Rate limit exceeded",
 				})
@@ -88,6 +93,7 @@ func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
 		} else {
 			clients[clientIP] = []int64{now}
 		}
+		mu.Unlock()
 
 		c.Next()
 	})

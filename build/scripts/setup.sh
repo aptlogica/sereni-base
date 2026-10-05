@@ -249,6 +249,11 @@ resolve_env_var() {
     echo "$default_value"
 }
 
+# Generate a random owner password (a fixed default is publicly known and exploitable)
+generate_owner_password() {
+    openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
 # Prompt for value with priority system
 # Priority 1: Script argument (highest - can override anything)
 # Priority 2: Existing .env value (protected - never prompted, never overridden)
@@ -468,7 +473,7 @@ AUTH_LOG_LEVEL=info
 OWNER_FIRST_NAME=Admin
 OWNER_LAST_NAME=User
 OWNER_EMAIL=admin@example.com
-OWNER_PASSWORD=Admin@123
+OWNER_PASSWORD=
 TEMPORARY_USER_PASSWORD=CHANGE_THIS      # Default password for new users
 
 # ------------------------------------------------------------------------------
@@ -1007,7 +1012,7 @@ configure_owner() {
     OWNER_FIRST_NAME=$(prompt_env_var "OWNER_FIRST_NAME" "Admin" "First Name")
     OWNER_LAST_NAME=$(prompt_env_var "OWNER_LAST_NAME" "User" "Last Name")
     OWNER_EMAIL=$(prompt_env_var "OWNER_EMAIL" "admin@example.com" "Email")
-    OWNER_PASSWORD=$(prompt_env_var "OWNER_PASSWORD" "Admin@123" "Password" "true")
+    OWNER_PASSWORD=$(prompt_env_var "OWNER_PASSWORD" "$(generate_owner_password)" "Password" "true")
 
     # Update .env file with owner configuration (only if changed)
     update_env_var_if_changed "OWNER_FIRST_NAME" "$OWNER_FIRST_NAME"
@@ -1141,7 +1146,7 @@ PUBLIC_HOST=$(get_env_var "PUBLIC_HOST")
 OWNER_EMAIL=$(get_env_var "OWNER_EMAIL")
 [ -z "$OWNER_EMAIL" ] && OWNER_EMAIL="admin@example.com"
 OWNER_PASSWORD=$(get_env_var "OWNER_PASSWORD")
-[ -z "$OWNER_PASSWORD" ] && OWNER_PASSWORD="Admin@123"
+[ -z "$OWNER_PASSWORD" ] && OWNER_PASSWORD="(see OWNER_PASSWORD in .env)"
 
 echo ""
 echo -e "${BLUE}========================================================================"
