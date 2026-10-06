@@ -73,6 +73,7 @@ func TestScopeAccessGuard_Workspace(t *testing.T) {
 		{"base member is denied an unrelated workspace", []dto.AccessMemberDTO{{ScopeType: constant.ScopeLevels.Base, ScopeID: strPtr(ownBaseID), WorkspaceID: strPtr(ownWorkspaceID)}}, nil, victimWorkspace, false},
 		{"base ID equal to workspace param does not grant access", []dto.AccessMemberDTO{{ScopeType: constant.ScopeLevels.Base, ScopeID: strPtr(victimWorkspace)}}, nil, victimWorkspace, false},
 		{"user with no memberships is denied", []dto.AccessMemberDTO{}, nil, victimWorkspace, false},
+		{"membership of unknown scope type is ignored", []dto.AccessMemberDTO{{ScopeType: "organization", ScopeID: strPtr(victimWorkspace)}}, nil, victimWorkspace, false},
 		{"membership lookup error is denied", []dto.AccessMemberDTO{}, errors.New("db down"), victimWorkspace, false},
 	}
 

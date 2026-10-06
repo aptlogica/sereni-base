@@ -9,6 +9,7 @@ import (
 	"context"
 
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
+	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
@@ -48,40 +49,54 @@ func NewScopeAccessGuard(scopeType string, accessMemberSvc interfaces.AccessMemb
 		}
 
 		// Resolve the owning workspace lazily: system members never need it.
-		workspaceID := id
-		resolved := scopeType != appConstant.ScopeLevels.Base
+		workspace := lazyWorkspace{id: id, resolved: scopeType != appConstant.ScopeLevels.Base}
 
 		for _, m := range members {
-			switch m.ScopeType {
-			case appConstant.ScopeLevels.System:
+			granted, err := memberGrantsAccess(ctx, userInfo.Schema, m, scopeType, id, resolveBaseWorkspace, &workspace)
+			if err != nil {
+				deny(c)
+				return
+			}
+			if granted {
 				c.Next()
 				return
-			case appConstant.ScopeLevels.Base:
-				if (scopeType == appConstant.ScopeLevels.Base && strValue(m.ScopeID) == id) ||
-					(scopeType == appConstant.ScopeLevels.Workspace && strValue(m.WorkspaceID) == id) {
-					c.Next()
-					return
-				}
-			case appConstant.ScopeLevels.Workspace:
-				if !resolved {
-					if resolveBaseWorkspace == nil {
-						continue
-					}
-					if workspaceID, err = resolveBaseWorkspace(ctx, userInfo.Schema, id); err != nil {
-						deny(c)
-						return
-					}
-					resolved = true
-				}
-				if strValue(m.ScopeID) == workspaceID {
-					c.Next()
-					return
-				}
 			}
 		}
 
 		deny(c)
 	}
+}
+
+// lazyWorkspace is the workspace that owns the object guarded by NewScopeAccessGuard,
+// resolved on first use when that object is a base.
+type lazyWorkspace struct {
+	id       string
+	resolved bool
+}
+
+// memberGrantsAccess reports whether membership m grants access to the workspace or base id.
+// An error means the owning workspace could not be resolved, and access must be denied.
+func memberGrantsAccess(ctx context.Context, schema string, m dto.AccessMemberDTO, scopeType, id string, resolveBaseWorkspace BaseWorkspaceResolver, workspace *lazyWorkspace) (bool, error) {
+	switch m.ScopeType {
+	case appConstant.ScopeLevels.System:
+		return true, nil
+	case appConstant.ScopeLevels.Base:
+		return (scopeType == appConstant.ScopeLevels.Base && strValue(m.ScopeID) == id) ||
+			(scopeType == appConstant.ScopeLevels.Workspace && strValue(m.WorkspaceID) == id), nil
+	case appConstant.ScopeLevels.Workspace:
+		if !workspace.resolved {
+			if resolveBaseWorkspace == nil {
+				return false, nil
+			}
+			var err error
+			if workspace.id, err = resolveBaseWorkspace(ctx, schema, id); err != nil {
+				return false, err
+			}
+			workspace.resolved = true
+		}
+		return strValue(m.ScopeID) == workspace.id, nil
+	}
+	return false, nil
 }
 
 // strValue dereferences an optional string, treating nil as empty.
