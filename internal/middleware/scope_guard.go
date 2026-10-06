@@ -95,3 +95,11 @@ func NewScopeAccessGuard(scopeType string, accessMemberSvc interfaces.AccessMemb
 		deny(c)
 	}
 }
+
+// NewWorkspaceFormPermissionGuard enforces a permission on create routes that take the target
+// workspace from a form field instead of :id. The permission is only evaluated on the user's
+// system-scope membership or their membership of that workspace, so a maintainer of one workspace
+// cannot create content in another. Base-only membership never passes.
+func NewWorkspaceFormPermissionGuard(field, resourceCode, actionCode string, accessMemberSvc interfaces.AccessMemberService) gin.HandlerFunc {
+	return NewObjectPermissionGuard(resourceCode, actionCode, accessMemberSvc, ScopeLookups{}.WorkspaceForm(field))
+}

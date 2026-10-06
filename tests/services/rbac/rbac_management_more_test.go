@@ -83,6 +83,9 @@ func TestInitializeRBACSystem_SuccessAndPartialErrors(t *testing.T) {
 	mockRole.On("CreateAccessRole", mock.Anything, "schema", mock.Anything).Return(tenant.AccessRole{ID: uuid.New()}, nil)
 	mockPermission.On("GetOrCreatePermission", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Permission{ID: uuid.New()}, nil)
 	mockRolePerm.On("AssignPermissionToRole", mock.Anything, "schema", mock.Anything).Return(tenant.RolePermission{ID: uuid.New()}, nil)
+	// Fresh install: roles do not exist yet and have no permissions
+	mockRole.On("GetAccessRoleByName", mock.Anything, "schema", mock.Anything).Return(tenant.AccessRole{}, errors.New("role not found")).Maybe()
+	mockRolePerm.On("CheckRoleHasPermission", mock.Anything, "schema", mock.Anything, mock.Anything).Return(false, nil).Maybe()
 
 	deps := services.RBACManagementServiceDeps{
 		RoleService:           mockRole,
@@ -292,4 +295,40 @@ func TestProcessUserMemberships_Variants(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, summary)
+}
+
+// On an existing install the roles already exist. The seed must reuse them so permissions added
+// later (e.g. maintainer base.create) are granted on restart, and skip permissions already held.
+func TestInitializeRBACSystem_ExistingRolesGetNewPermissions(t *testing.T) {
+	repo := &pkg.DatabaseService{TableService: new(MockTableService)}
+
+	mockRole := new(MockAccessRoleService)
+	mockResource := new(MockResourceService)
+	mockAction := new(MockActionService)
+	mockPermission := new(MockPermissionService)
+	mockRolePerm := new(MockRolePermissionService)
+
+	mockResource.On("GetOrCreateResource", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Resource{ID: uuid.New()}, nil)
+	mockAction.On("GetOrCreateAction", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Action{ID: uuid.New()}, nil)
+	mockPermission.On("GetOrCreatePermission", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Permission{ID: uuid.New()}, nil)
+
+	existingRole := uuid.New()
+	mockRole.On("GetAccessRoleByName", mock.Anything, "schema", mock.Anything).Return(tenant.AccessRole{ID: existingRole}, nil)
+	mockRolePerm.On("CheckRoleHasPermission", mock.Anything, "schema", existingRole, mock.Anything).Return(false, nil)
+	mockRolePerm.On("AssignPermissionToRole", mock.Anything, "schema", mock.MatchedBy(func(rp dto.RolePermissionDTO) bool {
+		return rp.RoleID == existingRole
+	})).Return(tenant.RolePermission{ID: uuid.New()}, nil)
+
+	svc := services.NewRBACManagementService(repo, services.RBACManagementServiceDeps{
+		RoleService:           mockRole,
+		ResourceService:       mockResource,
+		ActionService:         mockAction,
+		PermissionService:     mockPermission,
+		RolePermissionService: mockRolePerm,
+		AccessMemberService:   new(MockAccessMemberService),
+	})
+
+	assert.NoError(t, svc.InitializeRBACSystem(context.Background(), "schema"))
+	mockRole.AssertNotCalled(t, "CreateAccessRole", mock.Anything, mock.Anything, mock.Anything)
+	mockRolePerm.AssertCalled(t, "AssignPermissionToRole", mock.Anything, "schema", mock.Anything)
 }

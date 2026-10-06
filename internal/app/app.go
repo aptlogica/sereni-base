@@ -19,12 +19,14 @@ import (
 	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
+	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/router"
 	"github.com/aptlogica/sereni-base/internal/scripts"
 	"github.com/aptlogica/sereni-base/internal/services"
+	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
 
 	"github.com/aptlogica/sereni-base/internal/providers/antivirus"
 	"github.com/aptlogica/sereni-base/internal/providers/auth"
@@ -246,9 +248,29 @@ func New(cfg *config.Config) (*App, error) {
 			return middleware.WorkspaceAndBaseAccessValidationMiddleware(workspaceMemberService, allowedAccess)
 		},
 		AccessMemberService: accessMemberService,
-		BaseWorkspaceID: func(ctx context.Context, schema, baseID string) (string, error) {
-			base, err := baseService.GetBaseByID(ctx, schema, baseID)
-			return base.WorkspaceID, err
+		// Resolve tables, columns, views and access rows to the base/workspace that owns them,
+		// for object-level authorization. Columns and views resolve through their table, whose
+		// base is authoritative, rather than their own client-supplied base_id.
+		ScopeLookups: middleware.ScopeLookups{
+			BaseWorkspace: func(ctx context.Context, schema, baseID string) (string, error) {
+				base, err := baseService.GetBaseByID(ctx, schema, baseID)
+				return base.WorkspaceID, err
+			},
+			ModelBase: func(ctx context.Context, schema, modelID string) (string, error) {
+				model, err := modelService.GetModelByID(ctx, schema, modelID)
+				return model.BaseID.String(), err
+			},
+			ColumnModel: func(ctx context.Context, schema, columnID string) (string, error) {
+				column, err := columnService.GetColumnByID(ctx, schema, columnID)
+				return column.ModelID, err
+			},
+			ViewModel: func(ctx context.Context, schema, viewID string) (string, error) {
+				view, err := viewService.GetViewByID(ctx, schema, viewID)
+				return view.ModelID, err
+			},
+			AccessMember: func(_ context.Context, schema, id string) (dto.AccessMemberDTO, error) {
+				return rbac.GetAccessMemberByID(dbService, schema, id)
+			},
 		},
 	}
 

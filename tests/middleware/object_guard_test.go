@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
@@ -223,4 +225,63 @@ func TestRateLimiter_ConcurrentRequests(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, limit, ok)
+}
+
+// POST /base/create takes workspace_id from the form; Base:Create must be granted in that workspace,
+// not in any workspace the user happens to maintain.
+func TestWorkspaceFormPermissionGuard_CreateBase(t *testing.T) {
+	ownMaintainer := dto.AccessMemberDTO{ScopeType: constant.ScopeLevels.Workspace, ScopeID: strPtr(ownWorkspaceID)}
+	victimReadOnly := dto.AccessMemberDTO{ScopeType: constant.ScopeLevels.Workspace, ScopeID: strPtr(victimWorkspace)}
+
+	tests := []struct {
+		name    string
+		members []dto.AccessMemberDTO
+		grants  map[string]bool // scopeID -> has Base:Create there
+		target  string
+		allowed bool
+	}{
+		{"system owner may create in any workspace", []dto.AccessMemberDTO{{ScopeType: constant.ScopeLevels.System}}, map[string]bool{"": true}, victimWorkspace, true},
+		{"maintainer may create in own workspace", []dto.AccessMemberDTO{ownMaintainer}, map[string]bool{ownWorkspaceID: true}, ownWorkspaceID, true},
+		{"maintainer is denied another workspace", []dto.AccessMemberDTO{ownMaintainer}, map[string]bool{ownWorkspaceID: true}, victimWorkspace, false},
+		{"maintainer elsewhere and read-only member of target is denied", []dto.AccessMemberDTO{ownMaintainer, victimReadOnly},
+			map[string]bool{ownWorkspaceID: true, victimWorkspace: false}, victimWorkspace, false},
+		{"base member of target workspace is denied", []dto.AccessMemberDTO{{ScopeType: constant.ScopeLevels.Base, ScopeID: strPtr(ownBaseID), WorkspaceID: strPtr(victimWorkspace)}},
+			map[string]bool{ownBaseID: true}, victimWorkspace, false},
+		{"missing workspace_id is denied", []dto.AccessMemberDTO{ownMaintainer}, map[string]bool{ownWorkspaceID: true}, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := membersMock(tt.members, nil)
+			for scopeID, granted := range tt.grants {
+				id := scopeID
+				svc.On("CheckUserPermission", mock.Anything, guardSchema, guardUserID, mock.Anything,
+					mock.MatchedBy(func(s *string) bool { return s != nil && *s == id }),
+					constant.ResourceCodes.Base, constant.ActionCodes.Create).Return(granted, nil).Maybe()
+			}
+			guard := middleware.NewWorkspaceFormPermissionGuard("workspace_id", constant.ResourceCodes.Base, constant.ActionCodes.Create, svc)
+
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Set("user_id", guardUserID)
+				c.Set("schema", guardSchema)
+				c.Next()
+			})
+			reached := false
+			r.POST("/base/create", guard, func(c *gin.Context) {
+				reached = true
+				c.Status(http.StatusOK)
+			})
+			req := httptest.NewRequest(http.MethodPost, "/base/create", strings.NewReader(url.Values{"workspace_id": {tt.target}, "title": {"B"}}.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.allowed, reached)
+			if !tt.allowed {
+				assert.NotEqual(t, http.StatusOK, w.Code)
+			}
+		})
+	}
 }
