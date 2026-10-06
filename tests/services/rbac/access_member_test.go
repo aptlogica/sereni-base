@@ -835,3 +835,40 @@ func TestUpdateRoleForUser_UpdateError(t *testing.T) {
 	assert.Error(t, err)
 	mockTable.AssertExpectations(t)
 }
+
+func TestGetAccessMemberByID(t *testing.T) {
+	const table = "\"test_schema\".access_members"
+	memberID := uuid.New()
+
+	t.Run("returns the row", func(t *testing.T) {
+		mockTable := new(MockTableService)
+		mockTable.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{
+			{"id": memberID.String(), "user_id": "u1", "scope_type": "workspace", "scope_id": "ws-1", "role_id": "r1"},
+		}, nil)
+
+		member, err := services.GetAccessMemberByID(&pkg.DatabaseService{TableService: mockTable}, "test_schema", memberID.String())
+
+		assert.NoError(t, err)
+		assert.Equal(t, memberID, member.ID)
+		assert.Equal(t, "workspace", member.ScopeType)
+		assert.Equal(t, "ws-1", *member.ScopeID)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		mockTable := new(MockTableService)
+		mockTable.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		_, err := services.GetAccessMemberByID(&pkg.DatabaseService{TableService: mockTable}, "test_schema", memberID.String())
+
+		assert.ErrorIs(t, err, app_errors.ErrRecordNotFound)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		mockTable := new(MockTableService)
+		mockTable.On("GetTableData", table, mock.Anything).Return(nil, errors.New("db down"))
+
+		_, err := services.GetAccessMemberByID(&pkg.DatabaseService{TableService: mockTable}, "test_schema", memberID.String())
+
+		assert.Error(t, err)
+	})
+}

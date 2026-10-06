@@ -201,9 +201,9 @@ configure_owner_interactive() {
         OWNER_EMAIL="admin@example.com"
     fi
     
-    read -p "Password [Admin@123]: " OWNER_PASSWORD
+    read -s -p "Password [leave blank to generate]: " OWNER_PASSWORD; echo ""
     if [ -z "$OWNER_PASSWORD" ]; then
-        OWNER_PASSWORD="Admin@123"
+        OWNER_PASSWORD=$(generate_owner_password)
     fi
     
     # Update all owner configuration variables
@@ -246,7 +246,7 @@ configure_with_defaults() {
     local OWNER_FIRST_NAME="Admin"
     local OWNER_LAST_NAME="User"
     local OWNER_EMAIL="admin@example.com"
-    local OWNER_PASSWORD="Admin@123"
+    local OWNER_PASSWORD=$(generate_owner_password)
     
     echo "   First Name: $OWNER_FIRST_NAME"
     echo "   Last Name:  $OWNER_LAST_NAME"

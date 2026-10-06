@@ -118,7 +118,6 @@ REM Create a temporary file with all default environment variables
     echo OWNER_FIRST_NAME=Admin
     echo OWNER_LAST_NAME=User
     echo OWNER_EMAIL=admin@example.com
-    echo OWNER_PASSWORD=Admin@123
     echo TEMPORARY_USER_PASSWORD=CHANGE_THIS
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -298,7 +297,7 @@ echo.
 set OWNER_FIRST_NAME=Admin
 set OWNER_LAST_NAME=User
 set OWNER_EMAIL=admin@example.com
-set OWNER_PASSWORD=Admin@123
+for /f %%p in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "OWNER_PASSWORD=%%p"
 
 echo   First Name: %OWNER_FIRST_NAME%
 echo   Last Name:  %OWNER_LAST_NAME%

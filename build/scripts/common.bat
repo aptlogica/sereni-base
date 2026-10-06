@@ -150,7 +150,7 @@ REM ========================================================================
     
     if "%PUBLIC_HOST%"=="" set "PUBLIC_HOST=localhost"
     if "%OWNER_EMAIL%"=="" set "OWNER_EMAIL=admin@example.com"
-    if "%OWNER_PASSWORD%"=="" set "OWNER_PASSWORD=Admin@123"
+    if "%OWNER_PASSWORD%"=="" set "OWNER_PASSWORD=(see OWNER_PASSWORD in .env)"
     
     echo.
     echo ========================================================================

@@ -167,6 +167,11 @@ stop_docker_services() {
     fi
 }
 
+# Generate a random owner password (a fixed default is publicly known and exploitable)
+generate_owner_password() {
+    openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
 # ========================================================================
 #                      COMPLETION MESSAGE
 # ========================================================================
@@ -174,7 +179,7 @@ stop_docker_services() {
 print_completion() {
     local public_host="${1:-localhost}"
     local owner_email="${2:-admin@example.com}"
-    local owner_password="${3:-Admin@123}"
+    local owner_password="${3:-(see OWNER_PASSWORD in .env)}"
     
     echo -e "\n${GREEN}"
     echo "========================================================================"
