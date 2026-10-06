@@ -332,3 +332,32 @@ func TestInitializeRBACSystem_ExistingRolesGetNewPermissions(t *testing.T) {
 	mockRole.AssertNotCalled(t, "CreateAccessRole", mock.Anything, mock.Anything, mock.Anything)
 	mockRolePerm.AssertCalled(t, "AssignPermissionToRole", mock.Anything, "schema", mock.Anything)
 }
+
+// Restarting an up-to-date install must not re-insert permissions a role already holds.
+func TestInitializeRBACSystem_SkipsPermissionsAlreadyHeld(t *testing.T) {
+	repo := &pkg.DatabaseService{TableService: new(MockTableService)}
+
+	mockRole := new(MockAccessRoleService)
+	mockResource := new(MockResourceService)
+	mockAction := new(MockActionService)
+	mockPermission := new(MockPermissionService)
+	mockRolePerm := new(MockRolePermissionService)
+
+	mockResource.On("GetOrCreateResource", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Resource{ID: uuid.New()}, nil)
+	mockAction.On("GetOrCreateAction", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Action{ID: uuid.New()}, nil)
+	mockPermission.On("GetOrCreatePermission", mock.Anything, "schema", mock.Anything, mock.Anything).Return(tenant.Permission{ID: uuid.New()}, nil)
+	mockRole.On("GetAccessRoleByName", mock.Anything, "schema", mock.Anything).Return(tenant.AccessRole{ID: uuid.New()}, nil)
+	mockRolePerm.On("CheckRoleHasPermission", mock.Anything, "schema", mock.Anything, mock.Anything).Return(true, nil)
+
+	svc := services.NewRBACManagementService(repo, services.RBACManagementServiceDeps{
+		RoleService:           mockRole,
+		ResourceService:       mockResource,
+		ActionService:         mockAction,
+		PermissionService:     mockPermission,
+		RolePermissionService: mockRolePerm,
+		AccessMemberService:   new(MockAccessMemberService),
+	})
+
+	assert.NoError(t, svc.InitializeRBACSystem(context.Background(), "schema"))
+	mockRolePerm.AssertNotCalled(t, "AssignPermissionToRole", mock.Anything, mock.Anything, mock.Anything)
+}

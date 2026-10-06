@@ -260,33 +260,40 @@ func (l ScopeLookups) ModelBody() TargetResolver {
 			return nil, errOutOfScope
 		}
 
-		var columnIDs []string
-		if id := str(body, "column_id"); id != "" {
-			columnIDs = append(columnIDs, id)
-		}
-		if values, ok := body["values"].(map[string]interface{}); ok {
-			for id := range values {
-				columnIDs = append(columnIDs, id)
-			}
-		}
-		if err := l.requireColumnsInModel(ctx, schema, modelID, columnIDs...); err != nil {
+		if err := l.requireColumnsInModel(ctx, schema, modelID, bodyColumnIDs(body)...); err != nil {
 			return nil, err
 		}
 
 		targets := []ScopeTarget{t}
-		if meta, ok := body["meta"].(map[string]interface{}); ok {
-			if rel, ok := meta["relation"].(map[string]interface{}); ok {
-				if linked := str(rel, "with"); linked != "" {
-					lt, err := l.modelTarget(ctx, schema, linked)
-					if err != nil {
-						return nil, err
-					}
-					targets = append(targets, lt)
-				}
+		if linked := linkedModelID(body); linked != "" {
+			lt, err := l.modelTarget(ctx, schema, linked)
+			if err != nil {
+				return nil, err
 			}
+			targets = append(targets, lt)
 		}
 		return targets, nil
 	}
+}
+
+// bodyColumnIDs returns the column IDs a body addresses: column_id and the keys of values.
+func bodyColumnIDs(body map[string]interface{}) []string {
+	var ids []string
+	if id := str(body, "column_id"); id != "" {
+		ids = append(ids, id)
+	}
+	values, _ := body["values"].(map[string]interface{})
+	for id := range values {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// linkedModelID returns meta.relation.with, the table a links column points to.
+func linkedModelID(body map[string]interface{}) string {
+	meta, _ := body["meta"].(map[string]interface{})
+	rel, _ := meta["relation"].(map[string]interface{})
+	return str(rel, "with")
 }
 
 // ModelForm is ModelBody for multipart requests: model_id and column_id are form fields.

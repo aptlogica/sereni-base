@@ -34,12 +34,8 @@ func NewScopeAccessGuard(scopeType string, accessMemberSvc interfaces.AccessMemb
 
 	return func(c *gin.Context) {
 		userInfo, err := ExtractUserInfo(c)
-		if err != nil {
-			deny(c)
-			return
-		}
 		id := c.Param("id")
-		if id == "" {
+		if err != nil || id == "" {
 			deny(c)
 			return
 		}
@@ -56,21 +52,13 @@ func NewScopeAccessGuard(scopeType string, accessMemberSvc interfaces.AccessMemb
 		resolved := scopeType != appConstant.ScopeLevels.Base
 
 		for _, m := range members {
-			var scopeID, memberWorkspaceID string
-			if m.ScopeID != nil {
-				scopeID = *m.ScopeID
-			}
-			if m.WorkspaceID != nil {
-				memberWorkspaceID = *m.WorkspaceID
-			}
-
 			switch m.ScopeType {
 			case appConstant.ScopeLevels.System:
 				c.Next()
 				return
 			case appConstant.ScopeLevels.Base:
-				if (scopeType == appConstant.ScopeLevels.Base && scopeID == id) ||
-					(scopeType == appConstant.ScopeLevels.Workspace && memberWorkspaceID == id) {
+				if (scopeType == appConstant.ScopeLevels.Base && strValue(m.ScopeID) == id) ||
+					(scopeType == appConstant.ScopeLevels.Workspace && strValue(m.WorkspaceID) == id) {
 					c.Next()
 					return
 				}
@@ -85,7 +73,7 @@ func NewScopeAccessGuard(scopeType string, accessMemberSvc interfaces.AccessMemb
 					}
 					resolved = true
 				}
-				if scopeID == workspaceID {
+				if strValue(m.ScopeID) == workspaceID {
 					c.Next()
 					return
 				}
@@ -94,6 +82,14 @@ func NewScopeAccessGuard(scopeType string, accessMemberSvc interfaces.AccessMemb
 
 		deny(c)
 	}
+}
+
+// strValue dereferences an optional string, treating nil as empty.
+func strValue(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // NewWorkspaceFormPermissionGuard enforces a permission on create routes that take the target
