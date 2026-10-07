@@ -184,6 +184,7 @@ var (
 	InvalidTriggerQuery  = errors.New("invalid trigger query")
 	InvalidFunctionQuery = errors.New("invalid function query")
 	TriggerFailed        = errors.New("failed to run trigger query")
+	TriggerHasFunction   = errors.New("trigger query contains a function")
 )
 
 // APIError represents an error response from an external API

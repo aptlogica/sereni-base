@@ -506,6 +506,12 @@ func setupAutomationRoutes(private *gin.RouterGroup, handlers Handlers, middlewa
 		automation.GET("",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
 			handlers.Automation.GetAutomations)
+		automation.PUT("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.UpdateAutomation)
+		automation.POST("/:id/run",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.RunAutomation)
 		automation.DELETE("/:id",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Automation.DeleteAutomation)

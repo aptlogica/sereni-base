@@ -14,7 +14,7 @@ var AutomationError = struct {
 	TitleRequired        ResponseCode
 	TitleTooLong         ResponseCode
 	InvalidFunctionQuery ResponseCode
-	TypeInvalid          ResponseCode
+	TriggerHasFunction   ResponseCode
 }{
 	AutomationNotFound:   "AUT_1001",
 	InvalidTriggerQuery:  "AUT_1002",
@@ -22,7 +22,7 @@ var AutomationError = struct {
 	TitleRequired:        "AUT_1005",
 	TitleTooLong:         "AUT_1006",
 	InvalidFunctionQuery: "AUT_1007",
-	TypeInvalid:          "AUT_1008",
+	TriggerHasFunction:   "AUT_1009",
 }
 
 var AutomationErrorCodes = map[ResponseCode]MetaResponse{
@@ -46,10 +46,10 @@ var AutomationErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Invalid function query",
 		Description: "Context must be a single CREATE FUNCTION name() RETURNS trigger statement",
 	},
-	AutomationError.TypeInvalid: {
+	AutomationError.TriggerHasFunction: {
 		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Invalid type",
-		Description: "Type must be trigger, webhook or function",
+		Message:     "Add the function in the Functions tab",
+		Description: "A trigger may only contain CREATE TRIGGER; save its function in the Functions tab and call it with EXECUTE FUNCTION name()",
 	},
 	AutomationError.TitleRequired: {
 		HTTPStatus:  http.StatusBadRequest,
@@ -67,10 +67,14 @@ var AutomationSuccess = struct {
 	AutomationCreated  ResponseCode
 	AutomationsFetched ResponseCode
 	AutomationDeleted  ResponseCode
+	AutomationUpdated  ResponseCode
+	AutomationRun      ResponseCode
 }{
 	AutomationCreated:  "AUT_SUCCESS_2001",
 	AutomationsFetched: "AUT_SUCCESS_2002",
 	AutomationDeleted:  "AUT_SUCCESS_2003",
+	AutomationUpdated:  "AUT_SUCCESS_2004",
+	AutomationRun:      "AUT_SUCCESS_2005",
 }
 
 var AutomationSuccessCodes = map[ResponseCode]MetaResponse{
@@ -83,6 +87,16 @@ var AutomationSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Automations fetched successfully",
 		Description: "The triggers and webhooks have been fetched successfully",
+	},
+	AutomationSuccess.AutomationUpdated: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Automation updated successfully",
+		Description: "The trigger, webhook or function has been updated successfully",
+	},
+	AutomationSuccess.AutomationRun: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Automation run successfully",
+		Description: "The saved query has been applied in Postgres",
 	},
 	AutomationSuccess.AutomationDeleted: {
 		HTTPStatus:  http.StatusOK,

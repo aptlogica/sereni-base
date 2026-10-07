@@ -11,4 +11,14 @@ type CreateAutomationRequest struct {
 	Title   string `json:"title" binding:"required"`
 	Type    string `json:"type" binding:"required,oneof=trigger webhook function"`
 	Context string `json:"context" binding:"required"`
+	// Set by the handler from the logged-in user
+	CreatedBy string `json:"-"`
+}
+
+// UpdateAutomationRequest is the payload for PUT /automation/:id; the table and type stay the same
+type UpdateAutomationRequest struct {
+	Title   string `json:"title" binding:"required"`
+	Context string `json:"context" binding:"required"`
+	// Set by the handler from the logged-in user
+	UpdatedBy string `json:"-"`
 }
