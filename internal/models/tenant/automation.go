@@ -30,6 +30,8 @@ type Automation struct {
 	Title   string    `db:"title" json:"title,omitempty" mapstructure:"title"`
 	Type    string    `db:"type" json:"type,omitempty" mapstructure:"type"`
 	Context string    `db:"context" json:"context,omitempty" mapstructure:"context"`
+	// When a trigger fires, chosen in the form: timing + events, e.g. "BEFORE INSERT, BEFORE UPDATE"
+	Event string `db:"event" json:"event" mapstructure:"event"`
 
 	CreatedBy string    `db:"created_by" json:"created_by" mapstructure:"created_by"`
 	UpdatedBy string    `db:"last_modified_by" json:"last_modified_by" mapstructure:"last_modified_by"`
@@ -50,6 +52,7 @@ func (tbl Automation) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "title", DataType: "varchar"},
 			{Name: "type", DataType: "varchar", NotNull: true},
 			{Name: "context", DataType: "text", NotNull: true},
+			{Name: "event", DataType: "varchar"},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
 			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},

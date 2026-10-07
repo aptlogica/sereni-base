@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,6 +60,10 @@ func (s *automationService) Create(ctx context.Context, schemaName string, req d
 	if err != nil {
 		return tenant.Automation{}, err
 	}
+	event, err := normalizeEvent(req.Type, req.Event)
+	if err != nil {
+		return tenant.Automation{}, err
+	}
 
 	automation := tenant.Automation{
 		ID:      uuid.New(),
@@ -82,6 +87,7 @@ func (s *automationService) Create(ctx context.Context, schemaName string, req d
 		"title":            automation.Title,
 		"type":             automation.Type,
 		"context":          automation.Context,
+		"event":            event,
 		"created_by":       req.CreatedBy,
 		"last_modified_by": req.CreatedBy,
 	})
@@ -118,12 +124,17 @@ func (s *automationService) Update(ctx context.Context, schemaName, id string, r
 	if _, err := prepareQuery(automation.Type, query, model.Alias); err != nil {
 		return tenant.Automation{}, err
 	}
+	event, err := normalizeEvent(automation.Type, req.Event)
+	if err != nil {
+		return tenant.Automation{}, err
+	}
 	// Entries saved before labels existed: label what is installed now, while the saved query still names it
 	s.ensureLabel(automation, model.Alias)
 
 	updated, err := s.repo.TableService.UpdateRecord(tenant.Automation{}.TableName(schemaName), id, map[string]interface{}{
 		"title":              req.Title,
 		"context":            query,
+		"event":              event,
 		"last_modified_by":   req.UpdatedBy,
 		"last_modified_time": time.Now(),
 	})
@@ -415,6 +426,44 @@ func (s *automationService) ensureLabel(automation tenant.Automation, tableAlias
 	if _, err := s.repo.DB.Exec(label); err != nil {
 		logger.Get().Warn().Err(err).Str("automation", automation.ID.String()).Msg("could not label installed trigger or function")
 	}
+}
+
+var (
+	triggerTimings    = []string{"BEFORE", "AFTER", "INSTEAD OF"}
+	triggerOperations = []string{"INSERT", "UPDATE", "DELETE", "TRUNCATE"}
+)
+
+// normalizeEvent checks the timing and events chosen for a trigger, e.g. "before insert, before update",
+// and returns them in a fixed form: "BEFORE INSERT, BEFORE UPDATE". Other types have no event.
+func normalizeEvent(automationType, event string) (string, error) {
+	if automationType != tenant.AutomationTypeTrigger {
+		return "", nil
+	}
+	timing := ""
+	chosen := map[string]bool{}
+	for _, part := range strings.Split(event, ",") {
+		words := strings.Fields(strings.ToUpper(part))
+		if len(words) < 2 {
+			return "", app_errors.InvalidTriggerEvent
+		}
+		partTiming, operation := strings.Join(words[:len(words)-1], " "), words[len(words)-1]
+		if !slices.Contains(triggerTimings, partTiming) || !slices.Contains(triggerOperations, operation) {
+			return "", app_errors.InvalidTriggerEvent
+		}
+		// One trigger has one timing
+		if timing != "" && partTiming != timing {
+			return "", app_errors.InvalidTriggerEvent
+		}
+		timing = partTiming
+		chosen[operation] = true
+	}
+	parts := make([]string, 0, len(chosen))
+	for _, operation := range triggerOperations {
+		if chosen[operation] {
+			parts = append(parts, timing+" "+operation)
+		}
+	}
+	return strings.Join(parts, ", "), nil
 }
 
 // sameIdentifier compares Postgres names the way Postgres does for unquoted names

@@ -126,6 +126,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.InvalidFunctionQuery, AutomationError.InvalidFunctionQuery},
 	{app_errors.TriggerFailed, AutomationError.TriggerFailed},
 	{app_errors.TriggerHasFunction, AutomationError.TriggerHasFunction},
+	{app_errors.InvalidTriggerEvent, AutomationError.InvalidTriggerEvent},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},

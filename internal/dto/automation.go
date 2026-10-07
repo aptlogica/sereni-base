@@ -11,6 +11,8 @@ type CreateAutomationRequest struct {
 	Title   string `json:"title" binding:"required"`
 	Type    string `json:"type" binding:"required,oneof=trigger webhook function"`
 	Context string `json:"context" binding:"required"`
+	// Triggers only: timing + events, e.g. "BEFORE INSERT, BEFORE UPDATE"
+	Event string `json:"event"`
 	// Set by the handler from the logged-in user
 	CreatedBy string `json:"-"`
 }
@@ -19,6 +21,8 @@ type CreateAutomationRequest struct {
 type UpdateAutomationRequest struct {
 	Title   string `json:"title" binding:"required"`
 	Context string `json:"context" binding:"required"`
+	// Triggers only: timing + events, e.g. "BEFORE INSERT, BEFORE UPDATE"
+	Event string `json:"event"`
 	// Set by the handler from the logged-in user
 	UpdatedBy string `json:"-"`
 }

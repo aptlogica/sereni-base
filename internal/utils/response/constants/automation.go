@@ -15,6 +15,7 @@ var AutomationError = struct {
 	TitleTooLong         ResponseCode
 	InvalidFunctionQuery ResponseCode
 	TriggerHasFunction   ResponseCode
+	InvalidTriggerEvent  ResponseCode
 }{
 	AutomationNotFound:   "AUT_1001",
 	InvalidTriggerQuery:  "AUT_1002",
@@ -23,6 +24,7 @@ var AutomationError = struct {
 	TitleTooLong:         "AUT_1006",
 	InvalidFunctionQuery: "AUT_1007",
 	TriggerHasFunction:   "AUT_1009",
+	InvalidTriggerEvent:  "AUT_1010",
 }
 
 var AutomationErrorCodes = map[ResponseCode]MetaResponse{
@@ -50,6 +52,11 @@ var AutomationErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Add the function in the Functions tab",
 		Description: "A trigger may only contain CREATE TRIGGER; save its function in the Functions tab and call it with EXECUTE FUNCTION name()",
+	},
+	AutomationError.InvalidTriggerEvent: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Choose a timing and at least one event",
+		Description: "Event must be one timing (BEFORE, AFTER or INSTEAD OF) with INSERT, UPDATE, DELETE or TRUNCATE, e.g. \"BEFORE INSERT, BEFORE UPDATE\"",
 	},
 	AutomationError.TitleRequired: {
 		HTTPStatus:  http.StatusBadRequest,
