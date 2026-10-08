@@ -365,6 +365,9 @@ func TestRBACManagement_InitializeRBACSystem_AssignPermissionError(t *testing.T)
 		Return(tenant.Permission{ID: uuid.New()}, nil)
 	mockRolePerm.On("AssignPermissionToRole", mock.Anything, "schema", mock.Anything).
 		Return(tenant.RolePermission{}, errors.New("assign error"))
+	// Fresh install: roles do not exist yet and have no permissions
+	mockRole.On("GetAccessRoleByName", mock.Anything, "schema", mock.Anything).Return(tenant.AccessRole{}, errors.New("role not found")).Maybe()
+	mockRolePerm.On("CheckRoleHasPermission", mock.Anything, "schema", mock.Anything, mock.Anything).Return(false, nil).Maybe()
 
 	deps := services.RBACManagementServiceDeps{
 		RoleService:           mockRole,
@@ -397,6 +400,7 @@ func TestRBACManagement_InitializeRBACSystem_RoleCreationError(t *testing.T) {
 		Return(tenant.Action{ID: uuid.New()}, nil)
 	mockRole.On("CreateAccessRole", mock.Anything, "schema", mock.Anything).
 		Return(tenant.AccessRole{}, errors.New("role create error"))
+	mockRole.On("GetAccessRoleByName", mock.Anything, "schema", mock.Anything).Return(tenant.AccessRole{}, errors.New("role not found")).Maybe()
 	mockPermission.On("GetOrCreatePermission", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(tenant.Permission{}, errors.New("perm create error"))
 	mockRolePerm.On("AssignPermissionToRole", mock.Anything, "schema", mock.Anything).

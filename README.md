@@ -61,7 +61,7 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 | Field | Value |
 |-------|-------|
 | Email | admin@example.com |
-| Password | Admin@123 |
+| Password | Generated during setup and printed at the end (also stored as `OWNER_PASSWORD` in `.env`) |
 | Live Demo (no install) | https://demo.serenibase.com |
 
 ? **If this project helps you, please consider giving it a star!**  
