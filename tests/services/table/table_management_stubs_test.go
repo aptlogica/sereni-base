@@ -161,6 +161,7 @@ func (s *StubBulkService) BulkDelete(tableName string, ids []interface{}, idColu
 }
 
 func setupTableManagementServiceWithStubs(tableSvc *StubTableService, bulkSvc *StubBulkService, model interfaces.ModelService, column interfaces.ColumnService, view interfaces.ViewService, rel interfaces.RelationshipService, asset interfaces.AssetManagementService) interfaces.TableManagementService {
-	db := &pkg.DatabaseService{TableService: tableSvc, BulkService: bulkSvc}
+	fakeDB, _ := newRelationFakeDB()
+	db := &pkg.DatabaseService{TableService: tableSvc, BulkService: bulkSvc, DB: fakeDB}
 	return services.NewTableManagementService("postgres", db, model, column, view, rel, asset)
 }
