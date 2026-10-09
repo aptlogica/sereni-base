@@ -7,7 +7,6 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"mime/multipart"
 	"regexp"
@@ -2205,7 +2204,7 @@ func (s tableManagementService) resolveLinkSides(
 }
 
 // UpdateRawDataForLinks links or unlinks two rows. Both sides, and any partner released to keep
-// one-to-one / has-many cardinality, are written in one transaction.
+// one-to-one / has-many cardinality, are written by one link_rows call.
 func (s tableManagementService) UpdateRawDataForLinks(
 	ctx context.Context,
 	schemaName string,
@@ -2224,35 +2223,7 @@ func (s tableManagementService) UpdateRawDataForLinks(
 		return dto.RecordResponse{}, app_errors.SelfReferenceNotAllowed
 	}
 
-	err = s.withTx(ctx, func(tx *sql.Tx) error {
-		if err := lockLinkRows(ctx, tx, source.TableName, sourceRowID, target.TableName, targetRowID); err != nil {
-			return err
-		}
-		if isSingleColumnRelation(relation) {
-			return applySingleColumnLink(ctx, tx, source, relation.RelationType, sourceRowID, targetRowID, isLink, req.UpdatedBy)
-		}
-		if !isLink {
-			return applyLinkPair(ctx, tx, source, target, sourceRowID, targetRowID, false, req.UpdatedBy)
-		}
-		if isSelf && relation.RelationType == relationHasMany {
-			// The INT side of a has-many points from a child to its parent.
-			parentSide, parentID, childID := target, sourceRowID, targetRowID
-			if source.DataType == linkDataTypeInt {
-				parentSide, parentID, childID = source, targetRowID, sourceRowID
-			}
-			cycle, err := wouldCreateCycle(ctx, tx, parentSide, parentID, childID)
-			if err != nil {
-				return err
-			}
-			if cycle {
-				return app_errors.LinkCycleDetected
-			}
-		}
-		if err := releaseExistingLinks(ctx, tx, relation.RelationType, source, target, sourceRowID, targetRowID, req.UpdatedBy); err != nil {
-			return err
-		}
-		return applyLinkPair(ctx, tx, source, target, sourceRowID, targetRowID, true, req.UpdatedBy)
-	})
+	err = s.linkRows(ctx, relation, source, target, sourceRowID, targetRowID, isLink, req.UpdatedBy)
 	if err != nil {
 		return dto.RecordResponse{}, err
 	}
@@ -2271,33 +2242,6 @@ func (s tableManagementService) UpdateRawDataForLinks(
 		Record:        sourceRecord,
 		RelatedRecord: targetRecord,
 	}, nil
-}
-
-// lockLinkRows locks both rows in a fixed order (avoids deadlocks between opposite link calls)
-// and checks that they exist.
-func lockLinkRows(ctx context.Context, tx *sql.Tx, sourceTable string, sourceRowID int64, targetTable string, targetRowID int64) error {
-	type rowRef struct {
-		table   string
-		id      int64
-		missing error
-	}
-	refs := []rowRef{
-		{sourceTable, sourceRowID, app_errors.RowNotFound},
-		{targetTable, targetRowID, app_errors.LinkTargetRowNotFound},
-	}
-	if refs[1].table < refs[0].table || (refs[1].table == refs[0].table && refs[1].id < refs[0].id) {
-		refs[0], refs[1] = refs[1], refs[0]
-	}
-	for _, ref := range refs {
-		exists, err := lockRow(ctx, tx, ref.table, ref.id)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return ref.missing
-		}
-	}
-	return nil
 }
 
 func (s tableManagementService) InsertRowData(ctx context.Context, schemaName string, req dto.InsertRowDataRequest) (dto.RecordResponse, error) {
@@ -2466,14 +2410,24 @@ func ExtractCreatedRowID(record map[string]interface{}) (int, error) {
 	}
 }
 
-// cleanUpLinksForRows removes every reference to the given rows from partner link columns, in one transaction.
+// cleanUpLinksForRows removes every reference to the given rows from partner link columns, in one function call.
 func (s tableManagementService) cleanUpLinksForRows(ctx context.Context, schemaName string, model tenant.Model, rowIDs []int64) error {
 	if len(rowIDs) == 0 {
 		return nil
 	}
-	return s.withTx(ctx, func(tx *sql.Tx) error {
-		return s.removeBackReferences(ctx, tx, schemaName, model, rowIDs, "")
+	partners, err := s.backReferencePartners(ctx, schemaName, model)
+	if err != nil {
+		return err
+	}
+	if len(partners) == 0 {
+		return nil
+	}
+	_, err = s.callRelationFunction(ctx, removeBackReferencesFunctionName, map[string]interface{}{
+		"p_partners":   partners,
+		"p_row_ids":    rowIDs,
+		"p_updated_by": "",
 	})
+	return err
 }
 
 func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string, req dto.DeleteRowDataRequest) error {

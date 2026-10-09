@@ -195,8 +195,7 @@ func setupTableManagementService() (*pkg.DatabaseService, *MockTableService, *Mo
 	mockRel := &MockRelationshipService{}
 	mockAsset := &MockAssetManagementService{}
 
-	fakeDB, _ := newRelationFakeDB()
-	db := &pkg.DatabaseService{TableService: mockTable, BulkService: mockBulk, DB: fakeDB}
+	db := &pkg.DatabaseService{TableService: mockTable, BulkService: mockBulk}
 
 	svc := services.NewTableManagementService("postgres", db, mockModel, mockColumn, mockView, mockRel, mockAsset)
 

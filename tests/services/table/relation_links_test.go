@@ -9,6 +9,7 @@ import (
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
@@ -34,7 +35,6 @@ type relFixture struct {
 	column *MockColumnService
 	view   *MockViewService
 	rel    *MockRelationshipService
-	db     *relationFakeDB
 }
 
 func newRelFixture() *relFixture {
@@ -46,9 +46,7 @@ func newRelFixture() *relFixture {
 		view:   &MockViewService{},
 		rel:    &MockRelationshipService{},
 	}
-	sqlDB, state := newRelationFakeDB()
-	f.db = state
-	repo := &pkg.DatabaseService{TableService: f.table, BulkService: f.bulk, DB: sqlDB}
+	repo := &pkg.DatabaseService{TableService: f.table, BulkService: f.bulk}
 	f.svc = services.NewTableManagementService("postgres", repo, f.model, f.column, f.view, f.rel, &MockAssetManagementService{})
 	return f
 }
@@ -633,7 +631,7 @@ func TestGetRecordsWithLookups_NoLookupsAndErrors(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Linking rows
+// Linking rows (public.link_rows)
 // ---------------------------------------------------------------------------
 
 type linkEnv struct {
@@ -684,99 +682,156 @@ func (e linkEnv) link(source, target int, action string) (dto.RecordResponse, er
 	})
 }
 
+// expectFunction makes the named SQL function return result and records the arguments of each call.
+func (f *relFixture) expectFunction(name string, result interface{}) *[]map[string]interface{} {
+	calls := &[]map[string]interface{}{}
+	f.table.On("GetByFunction", mock.Anything, "public."+name, mock.Anything).Run(func(a mock.Arguments) {
+		*calls = append(*calls, a.Get(2).(map[string]interface{}))
+	}).Return([]map[string]interface{}{{name: result}}, nil)
+	return calls
+}
+
+// assertArgsMatchFunction checks the Go call passes exactly the parameters the SQL function declares.
+func assertArgsMatchFunction(t *testing.T, name string, args map[string]interface{}) {
+	t.Helper()
+	var params []string
+	for _, fn := range constant.DefinedFunctions {
+		if fn.FunctionName != name {
+			continue
+		}
+		for _, p := range strings.Split(fn.FunctionParams, ",") {
+			params = append(params, strings.Fields(p)[0])
+		}
+	}
+	var keys []string
+	for k := range args {
+		keys = append(keys, k)
+	}
+	assert.ElementsMatch(t, params, keys, "arguments for %s", name)
+}
+
 func TestUpdateRawDataForLinks_TwoTables(t *testing.T) {
-	t.Run("many-to-many link writes both sides in one transaction", func(t *testing.T) {
+	t.Run("link sends both sides to link_rows", func(t *testing.T) {
 		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
+		calls := e.f.expectFunction("link_rows", "ok")
+
 		resp, err := e.link(1, 2, "link")
 
 		assert.NoError(t, err)
 		assert.NotNil(t, resp.Record)
 		assert.NotNil(t, resp.RelatedRecord)
-		a, b := e.f.db.execsOn("a_link"), e.f.db.execsOn("b_link")
-		if assert.Len(t, a, 1) && assert.Len(t, b, 1) {
-			assert.Contains(t, a[0].Query, "array_append")
-			assert.Equal(t, []any{int64(2), int64(1)}, a[0].Args[:2])
-			assert.Equal(t, []any{int64(1), int64(2)}, b[0].Args[:2])
-			assert.Equal(t, "u", a[0].Args[3])
+		if assert.Len(t, *calls, 1) {
+			args := (*calls)[0]
+			assertArgsMatchFunction(t, "link_rows", args)
+			assert.Equal(t, map[string]interface{}{
+				"p_relation_type":   "many-to-many",
+				"p_single_column":   false,
+				"p_is_self":         false,
+				"p_action":          "link",
+				"p_source_table":    `"schema"."a"`,
+				"p_source_column":   "a_link",
+				"p_source_is_array": true,
+				"p_target_table":    `"schema"."b"`,
+				"p_target_column":   "b_link",
+				"p_target_is_array": true,
+				"p_source_row":      int64(1),
+				"p_target_row":      int64(2),
+				"p_updated_by":      "u",
+			}, args)
 		}
-		assert.Equal(t, 1, e.f.db.commits)
-		assert.Equal(t, 0, e.f.db.rollbacks)
 	})
 
-	t.Run("unlink removes from both sides", func(t *testing.T) {
-		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
+	t.Run("unlink", func(t *testing.T) {
+		e := newTwoTableLink("one-to-one", "INT", "INT")
+		calls := e.f.expectFunction("link_rows", "ok")
+
 		_, err := e.link(1, 2, "unlink")
 
 		assert.NoError(t, err)
-		assert.Contains(t, e.f.db.execsOn("a_link")[0].Query, "array_remove")
-		assert.Contains(t, e.f.db.execsOn("b_link")[0].Query, "array_remove")
+		assert.Equal(t, "unlink", (*calls)[0]["p_action"])
+		assert.Equal(t, false, (*calls)[0]["p_source_is_array"])
 	})
 
-	t.Run("one-to-one releases existing partners", func(t *testing.T) {
-		e := newTwoTableLink("one-to-one", "INT", "INT")
-		e.f.db.holders["a_link"] = []int64{7} // row 7 of A already points at B#2
-		_, err := e.link(1, 2, "link")
-
-		assert.NoError(t, err)
-		// a_link: release row 7 + link row 1. b_link: release B#2->7 + link B#2->1.
-		assert.Len(t, e.f.db.execsOn("a_link"), 2)
-		assert.Len(t, e.f.db.execsOn("b_link"), 2)
-		assert.Contains(t, e.f.db.execsOn("a_link")[0].Query, "= NULL")
-	})
-
-	t.Run("has-many from child side releases old parent", func(t *testing.T) {
+	t.Run("has-many from the child side", func(t *testing.T) {
 		// A holds the children (INT[]), B holds the parent (INT). Link from the child column on B.
 		e := newTwoTableLink("has-many", "INT[]", "INT")
-		e.f.db.holders["a_link"] = []int64{9} // parent 9 already lists child B#1
+		calls := e.f.expectFunction("link_rows", "ok")
+
 		_, err := e.f.svc.UpdateRawDataForLinks(context.Background(), relSchema, dto.UpdateRowDataLinksRequest{
 			ModelID: e.modelB, ColumnId: e.colB.ID.String(), SourceRowId: 1, TargetRowId: 2, Action: "link",
 		})
 
 		assert.NoError(t, err)
-		a, b := e.f.db.execsOn("a_link"), e.f.db.execsOn("b_link")
-		if assert.Len(t, a, 2) && assert.Len(t, b, 2) {
-			assert.Contains(t, a[0].Query, "array_remove") // old parent 9 drops child 1
-			assert.Equal(t, int64(9), a[0].Args[1])
-			assert.Contains(t, a[1].Query, "array_append") // new parent 2 gains child 1
-			assert.Equal(t, int64(2), a[1].Args[1])
-			assert.Contains(t, b[1].Query, "= $1::int") // child 1 points at parent 2
-		}
+		args := (*calls)[0]
+		assert.Equal(t, `"schema"."b"`, args["p_source_table"])
+		assert.Equal(t, "b_link", args["p_source_column"])
+		assert.Equal(t, false, args["p_source_is_array"])
+		assert.Equal(t, `"schema"."a"`, args["p_target_table"])
+		assert.Equal(t, true, args["p_target_is_array"])
+		assert.Equal(t, "", args["p_updated_by"])
 	})
 
-	t.Run("missing target row", func(t *testing.T) {
+	statuses := []struct {
+		result interface{}
+		want   error
+	}{
+		{"source_not_found", app_errors.RowNotFound},
+		{"target_not_found", app_errors.LinkTargetRowNotFound},
+		{"cycle", app_errors.LinkCycleDetected},
+		{"something else", app_errors.DatabaseError},
+		{nil, app_errors.DatabaseError},
+	}
+	for _, s := range statuses {
+		t.Run("status "+functionStatusName(s.result), func(t *testing.T) {
+			e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
+			e.f.expectFunction("link_rows", s.result)
+
+			_, err := e.link(1, 2, "link")
+
+			assert.ErrorIs(t, err, s.want)
+			e.f.table.AssertNotCalled(t, "GetTableData", mock.Anything, mock.Anything)
+		})
+	}
+
+	t.Run("byte status from the driver", func(t *testing.T) {
 		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.db.missingRows[2] = true
+		e.f.expectFunction("link_rows", []byte("ok"))
+
 		_, err := e.link(1, 2, "link")
 
-		assert.ErrorIs(t, err, app_errors.LinkTargetRowNotFound)
-		assert.Empty(t, e.f.db.execs)
-		assert.Equal(t, 1, e.f.db.rollbacks)
+		assert.NoError(t, err)
 	})
 
-	t.Run("missing source row", func(t *testing.T) {
+	t.Run("function error", func(t *testing.T) {
 		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.db.missingRows[1] = true
-		_, err := e.link(1, 2, "link")
+		e.f.table.On("GetByFunction", mock.Anything, "public.link_rows", mock.Anything).Return(nil, errors.New("db down"))
 
-		assert.ErrorIs(t, err, app_errors.RowNotFound)
-	})
-
-	t.Run("write error rolls back", func(t *testing.T) {
-		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.db.execErr = errors.New("write failed")
-		_, err := e.link(1, 2, "link")
-
-		assert.Error(t, err)
-		assert.Equal(t, 0, e.f.db.commits)
-		assert.Equal(t, 1, e.f.db.rollbacks)
-	})
-
-	t.Run("begin error", func(t *testing.T) {
-		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.db.beginErr = errors.New("no tx")
 		_, err := e.link(1, 2, "link")
 
 		assert.ErrorIs(t, err, app_errors.DatabaseError)
+	})
+
+	t.Run("function returned no row", func(t *testing.T) {
+		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
+		e.f.table.On("GetByFunction", mock.Anything, "public.link_rows", mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		_, err := e.link(1, 2, "link")
+
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
+	})
+
+	t.Run("linked row reload failure is not fatal", func(t *testing.T) {
+		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
+		e.f.expectFunction("link_rows", "ok")
+		e.f.table.ExpectedCalls = filterCalls(e.f.table.ExpectedCalls, "GetTableData")
+		e.f.table.On("GetTableData", `"schema"."a"`, mock.Anything).Return([]map[string]interface{}{{"id": int64(1)}}, nil)
+		e.f.table.On("GetTableData", `"schema"."b"`, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		resp, err := e.link(1, 2, "link")
+
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.Record)
+		assert.Nil(t, resp.RelatedRecord)
 	})
 
 	t.Run("column on another table rejected", func(t *testing.T) {
@@ -785,6 +840,7 @@ func TestUpdateRawDataForLinks_TwoTables(t *testing.T) {
 			ModelID: e.modelB, ColumnId: e.colA.ID.String(), SourceRowId: 1, TargetRowId: 2, Action: "link",
 		})
 		assert.ErrorIs(t, err, app_errors.InvalidColumnMetaForLinkType)
+		e.f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("non-link column rejected", func(t *testing.T) {
@@ -804,94 +860,71 @@ func TestUpdateRawDataForLinks_SelfLink(t *testing.T) {
 		_, err := e.link(3, 3, "link")
 
 		assert.ErrorIs(t, err, app_errors.SelfReferenceNotAllowed)
-		assert.Empty(t, e.f.db.queries)
+		e.f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
 	})
 
-	t.Run("many-to-many writes only the edited row", func(t *testing.T) {
+	t.Run("unlinking a row from itself is allowed", func(t *testing.T) {
 		e := newSelfLink("many-to-many", "INT[]")
-		_, err := e.link(1, 2, "link")
+		e.f.expectFunction("link_rows", "ok")
+
+		_, err := e.link(3, 3, "unlink")
 
 		assert.NoError(t, err)
-		execs := e.f.db.execsOn("emp_link")
-		if assert.Len(t, execs, 1) {
-			assert.Contains(t, execs[0].Query, "array_append")
-			assert.Equal(t, []any{int64(2), int64(1)}, execs[0].Args[:2])
-		}
-		for _, q := range e.f.db.queries {
-			assert.NotContains(t, q, "WITH RECURSIVE")
-		}
 	})
 
-	t.Run("has-many releases the record from another row", func(t *testing.T) {
-		e := newSelfLink("has-many", "INT[]")
-		e.f.db.holders["emp_link"] = []int64{5, 1} // row 5 holds it; row 1 is the edited row and is skipped
-		_, err := e.link(1, 2, "link")
+	for _, c := range []struct{ relType, dt string }{{"one-to-one", "INT"}, {"has-many", "INT[]"}, {"many-to-many", "INT[]"}} {
+		t.Run("single column "+c.relType, func(t *testing.T) {
+			e := newSelfLink(c.relType, c.dt)
+			calls := e.f.expectFunction("link_rows", "ok")
 
-		assert.NoError(t, err)
-		execs := e.f.db.execsOn("emp_link")
-		if assert.Len(t, execs, 2) {
-			assert.Contains(t, execs[0].Query, "array_remove")
-			assert.Equal(t, int64(5), execs[0].Args[1])
-			assert.Contains(t, execs[1].Query, "array_append")
-		}
-	})
+			_, err := e.link(1, 2, "link")
 
-	t.Run("has-many cycle rejected", func(t *testing.T) {
-		e := newSelfLink("has-many", "INT[]")
-		e.f.db.cycle = true
-		_, err := e.link(1, 2, "link")
+			assert.NoError(t, err)
+			args := (*calls)[0]
+			assertArgsMatchFunction(t, "link_rows", args)
+			assert.Equal(t, true, args["p_single_column"])
+			assert.Equal(t, true, args["p_is_self"])
+			assert.Equal(t, c.relType, args["p_relation_type"])
+			assert.Equal(t, args["p_source_table"], args["p_target_table"])
+			assert.Equal(t, args["p_source_column"], args["p_target_column"])
+			assert.Equal(t, c.dt == "INT[]", args["p_source_is_array"])
+		})
+	}
 
-		assert.ErrorIs(t, err, app_errors.LinkCycleDetected)
-		assert.Empty(t, e.f.db.execs)
-		assert.Equal(t, 1, e.f.db.rollbacks)
-	})
-
-	t.Run("one-to-one releases other holder without cycle check", func(t *testing.T) {
-		e := newSelfLink("one-to-one", "INT")
-		e.f.db.holders["emp_link"] = []int64{4}
-		_, err := e.link(1, 2, "link")
-
-		assert.NoError(t, err)
-		execs := e.f.db.execsOn("emp_link")
-		if assert.Len(t, execs, 2) {
-			assert.Contains(t, execs[0].Query, "= NULL")
-			assert.Equal(t, int64(4), execs[0].Args[1])
-		}
-		for _, q := range e.f.db.queries {
-			assert.NotContains(t, q, "WITH RECURSIVE")
-		}
-	})
-
-	t.Run("unlink is one-way", func(t *testing.T) {
-		e := newSelfLink("has-many", "INT[]")
-		resp, err := e.link(1, 2, "unlink")
-
-		assert.NoError(t, err)
-		assert.NotNil(t, resp.RelatedRecord)
-		execs := e.f.db.execsOn("emp_link")
-		if assert.Len(t, execs, 1) {
-			assert.Contains(t, execs[0].Query, "array_remove")
-		}
-	})
-
-	t.Run("legacy two-column self-link has-many cycle rejected", func(t *testing.T) {
+	t.Run("legacy two-column self-link", func(t *testing.T) {
 		e := newTwoTableLink("has-many", "INT[]", "INT")
-		e.modelB = e.modelA
 		e.relation.TargetModelID = e.modelA
-		// Re-register the relation and partner as a two-column self-link.
 		e.f.rel.ExpectedCalls = nil
 		e.f.rel.On("GetRelationByID", mock.Anything, e.relation.ID.String(), relSchema).Return(e.relation, nil)
-		e.f.model.On("GetModelByID", mock.Anything, relSchema, e.modelA).Return(tenant.Model{Alias: "a"}, nil)
-		e.f.db.cycle = true
+		calls := e.f.expectFunction("link_rows", "cycle")
 
 		_, err := e.link(1, 2, "link")
 
 		assert.ErrorIs(t, err, app_errors.LinkCycleDetected)
+		assert.Equal(t, false, (*calls)[0]["p_single_column"])
+		assert.Equal(t, true, (*calls)[0]["p_is_self"])
 	})
 }
 
+func functionStatusName(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return "nil"
+}
+
+func filterCalls(calls []*mock.Call, method string) []*mock.Call {
+	var out []*mock.Call
+	for _, c := range calls {
+		if c.Method != method {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
-// Generic writes, row deletes
+// Generic writes, row deletes (public.remove_link_back_references)
 // ---------------------------------------------------------------------------
 
 func TestInsertRowData_RejectsLinkAndLookup(t *testing.T) {
@@ -914,35 +947,58 @@ func TestDeleteRow_RemovesBackReferences(t *testing.T) {
 	t.Run("two-table link partner", func(t *testing.T) {
 		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
 		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA, plainCol(uuid.New(), e.modelA, "name", "text")}, nil)
-		e.f.db.holders["b_link"] = []int64{3, 4}
+		calls := e.f.expectFunction("remove_link_back_references", nil)
 		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(nil)
 
 		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
 
 		assert.NoError(t, err)
-		execs := e.f.db.execsOn("b_link")
-		if assert.Len(t, execs, 2) {
-			assert.Contains(t, execs[0].Query, "array_remove")
-			assert.Equal(t, int64(1), execs[0].Args[0])
+		if assert.Len(t, *calls, 1) {
+			args := (*calls)[0]
+			assertArgsMatchFunction(t, "remove_link_back_references", args)
+			assert.Equal(t, []map[string]interface{}{{"table": `"schema"."b"`, "column": "b_link", "is_array": true}}, args["p_partners"])
+			assert.Equal(t, []int64{1}, args["p_row_ids"])
+			assert.Equal(t, "", args["p_updated_by"])
 		}
-		assert.Equal(t, 1, e.f.db.commits)
 		e.f.table.AssertCalled(t, "DeleteRecord", mock.Anything, 1)
 	})
 
-	t.Run("single-column self-link", func(t *testing.T) {
+	t.Run("target-side link points back at the source column", func(t *testing.T) {
+		e := newTwoTableLink("has-many", "INT[]", "INT")
+		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelB).Return([]tenant.Column{e.colB}, nil)
+		calls := e.f.expectFunction("remove_link_back_references", nil)
+		e.f.table.On("DeleteRecord", mock.Anything, 5).Return(nil)
+
+		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelB, RowId: 5})
+
+		assert.NoError(t, err)
+		assert.Equal(t, []map[string]interface{}{{"table": `"schema"."a"`, "column": "a_link", "is_array": true}}, (*calls)[0]["p_partners"])
+	})
+
+	t.Run("single-column self-link uses its own column", func(t *testing.T) {
 		e := newSelfLink("one-to-one", "INT")
 		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		e.f.db.holders["emp_link"] = []int64{2}
+		calls := e.f.expectFunction("remove_link_back_references", nil)
 		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(nil)
 
 		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
 
 		assert.NoError(t, err)
-		execs := e.f.db.execsOn("emp_link")
-		if assert.Len(t, execs, 1) {
-			assert.Contains(t, execs[0].Query, "= NULL")
-			assert.Equal(t, int64(2), execs[0].Args[1])
-		}
+		assert.Equal(t, []map[string]interface{}{{"table": `"schema"."emp"`, "column": "emp_link", "is_array": false}}, (*calls)[0]["p_partners"])
+	})
+
+	t.Run("table without links skips the function", func(t *testing.T) {
+		f := newRelFixture()
+		modelID := uuid.New()
+		f.model.On("GetModelByID", mock.Anything, relSchema, modelID.String()).Return(tenant.Model{ID: modelID, Alias: "t"}, nil)
+		f.table.On("GetTableData", mock.Anything, mock.Anything).Return([]map[string]interface{}{{"id": int64(1)}}, nil)
+		f.column.On("GetColumnByModelID", mock.Anything, relSchema, modelID.String()).Return([]tenant.Column{plainCol(uuid.New(), modelID.String(), "name", "text")}, nil)
+		f.table.On("DeleteRecord", mock.Anything, 1).Return(nil)
+
+		err := f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: modelID.String(), RowId: 1})
+
+		assert.NoError(t, err)
+		f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("row not found", func(t *testing.T) {
@@ -954,14 +1010,25 @@ func TestDeleteRow_RemovesBackReferences(t *testing.T) {
 		err := f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: modelID, RowId: 1})
 
 		assert.ErrorIs(t, err, app_errors.RowNotFound)
-		assert.Empty(t, f.db.queries)
+		f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("cleanup failure keeps the row", func(t *testing.T) {
 		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
 		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		e.f.db.holders["b_link"] = []int64{3}
-		e.f.db.execErr = errors.New("write failed")
+		e.f.table.On("GetByFunction", mock.Anything, "public.remove_link_back_references", mock.Anything).Return(nil, errors.New("write failed"))
+
+		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
+
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
+		e.f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+	})
+
+	t.Run("partner lookup failure keeps the row", func(t *testing.T) {
+		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
+		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
+		e.f.rel.ExpectedCalls = nil
+		e.f.rel.On("GetRelationByID", mock.Anything, e.relation.ID.String(), relSchema).Return(tenant.Relation{}, errors.New("gone"))
 
 		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
 
@@ -971,26 +1038,26 @@ func TestDeleteRow_RemovesBackReferences(t *testing.T) {
 }
 
 func TestBulkDeleteRows_RemovesBackReferences(t *testing.T) {
-	e := newTwoTableLink("has-many", "INT[]", "INT")
-	e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-	e.f.db.holders["b_link"] = []int64{8}
-	e.f.bulk.On("BulkDelete", mock.Anything, []interface{}{1, 2}, "id").Return(int64(2), nil)
+	t.Run("one cleanup call for all rows", func(t *testing.T) {
+		e := newTwoTableLink("has-many", "INT[]", "INT")
+		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
+		calls := e.f.expectFunction("remove_link_back_references", nil)
+		e.f.bulk.On("BulkDelete", mock.Anything, []interface{}{1, 2}, "id").Return(int64(2), nil)
 
-	count, err := e.f.svc.BulkDeleteRows(context.Background(), relSchema, dto.BulkDeleteRowsRequest{ModelID: e.modelA, RowIds: []int{1, 2}})
+		count, err := e.f.svc.BulkDeleteRows(context.Background(), relSchema, dto.BulkDeleteRowsRequest{ModelID: e.modelA, RowIds: []int{1, 2}})
 
-	assert.NoError(t, err)
-	assert.Equal(t, 2, count)
-	// One holder query per deleted row; each finds row 8 and clears it.
-	execs := e.f.db.execsOn("b_link")
-	if assert.Len(t, execs, 2) {
-		assert.Contains(t, execs[0].Query, "= NULL")
-	}
+		assert.NoError(t, err)
+		assert.Equal(t, 2, count)
+		if assert.Len(t, *calls, 1) {
+			assert.Equal(t, []int64{1, 2}, (*calls)[0]["p_row_ids"])
+			assert.Equal(t, []map[string]interface{}{{"table": `"schema"."b"`, "column": "b_link", "is_array": false}}, (*calls)[0]["p_partners"])
+		}
+	})
 
 	t.Run("cleanup failure skips bulk delete", func(t *testing.T) {
 		e := newTwoTableLink("has-many", "INT[]", "INT")
 		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		e.f.db.holders["b_link"] = []int64{8}
-		e.f.db.execErr = errors.New("write failed")
+		e.f.table.On("GetByFunction", mock.Anything, "public.remove_link_back_references", mock.Anything).Return(nil, errors.New("write failed"))
 
 		_, err := e.f.svc.BulkDeleteRows(context.Background(), relSchema, dto.BulkDeleteRowsRequest{ModelID: e.modelA, RowIds: []int{1}})
 
@@ -1103,4 +1170,14 @@ func TestDeleteTable_SkipsColumnsRemovedWithTheirLink(t *testing.T) {
 	assert.NoError(t, err)
 	f.column.AssertNumberOfCalls(t, "DeleteColumn", 2)
 	f.table.AssertCalled(t, "DropTable", mock.Anything, mock.Anything)
+}
+
+// linkFunctionsSucceed is a StubTableService.GetByFunctionFn that answers the link SQL functions
+// with success ("ok" for link_rows, an empty result for the void functions).
+func linkFunctionsSucceed(_ context.Context, functionName string, _ map[string]interface{}) ([]map[string]interface{}, error) {
+	name := strings.TrimPrefix(functionName, "public.")
+	if name == "link_rows" {
+		return []map[string]interface{}{{name: "ok"}}, nil
+	}
+	return []map[string]interface{}{{name: nil}}, nil
 }

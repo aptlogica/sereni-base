@@ -835,6 +835,7 @@ func TestRowsAndLinks(t *testing.T) {
 			return map[string]interface{}{"id": id}, nil
 		}
 
+		stubTable.GetByFunctionFn = linkFunctionsSucceed
 		svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 		_, err := svc.UpdateRawDataForLinks(context.Background(), "schema", dto.UpdateRowDataLinksRequest{
@@ -1192,6 +1193,7 @@ func TestUpdateRawDataForLinks_HasManyVariants(t *testing.T) {
 		return map[string]interface{}{"id": id}, nil
 	}
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	for i := 1; i <= 6; i++ {
@@ -1254,6 +1256,7 @@ func TestUpdateRawDataForLinks_HasManyExisting(t *testing.T) {
 		return map[string]interface{}{"id": id}, nil
 	}
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	_, err := svc.UpdateRawDataForLinks(context.Background(), "schema", dto.UpdateRowDataLinksRequest{
@@ -1308,6 +1311,7 @@ func TestDeleteRow_WithLinks(t *testing.T) {
 	}
 	stubTable.DeleteRecordFn = func(tableName string, id interface{}) error { return nil }
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	err := svc.DeleteRow(context.Background(), "schema", dto.DeleteRowDataRequest{ModelID: sourceModelID, RowId: 1})
@@ -1571,6 +1575,7 @@ func TestConvertToInt64Array_Variants(t *testing.T) {
 		return map[string]interface{}{"id": id}, nil
 	}
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	_, err := svc.UpdateRawDataForLinks(context.Background(), "schema", dto.UpdateRowDataLinksRequest{

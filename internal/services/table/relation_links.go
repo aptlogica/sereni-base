@@ -7,12 +7,11 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -33,9 +32,18 @@ const (
 	linkDataTypeInt      = "INT"
 	linkDataTypeIntArray = "INT[]"
 
-	linkActionLink = "link"
+	linkActionLink   = "link"
+	linkActionUnlink = "unlink"
 
-	lookupDataFunctionName = "get_table_data_with_lookups"
+	lookupDataFunctionName           = "get_table_data_with_lookups"
+	linkRowsFunctionName             = "link_rows"
+	removeBackReferencesFunctionName = "remove_link_back_references"
+
+	// Statuses returned by link_rows.
+	linkStatusOK             = "ok"
+	linkStatusSourceNotFound = "source_not_found"
+	linkStatusTargetNotFound = "target_not_found"
+	linkStatusCycle          = "cycle"
 )
 
 // linkColumnInfo is the parsed meta of a "links" column.
@@ -259,253 +267,107 @@ func (s tableManagementService) buildLookupRelationData(
 }
 
 // ---------------------------------------------------------------------------
-// Transactional link / unlink
+// Link / unlink and row-delete cleanup (Postgres functions, see constant.DefinedFunctions)
 // ---------------------------------------------------------------------------
 
-func (s tableManagementService) withTx(ctx context.Context, fn func(tx *sql.Tx) error) (err error) {
-	tx, err := s.repo.DB.Begin()
+// callRelationFunction runs one of the link SQL functions. Each call is a single statement, so
+// everything it writes is applied together or not at all.
+func (s tableManagementService) callRelationFunction(ctx context.Context, name string, args map[string]interface{}) (interface{}, error) {
+	rows, err := s.repo.TableService.GetByFunction(ctx, fmt.Sprintf("%s.%s", constant.MasterDatabase, name), args)
 	if err != nil {
-		return app_errors.LogDatabaseError(err, "failed to start transaction")
+		return nil, app_errors.LogDatabaseError(err, "failed to run "+name)
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			_ = tx.Rollback()
-			panic(r)
-		}
-	}()
-	if err = fn(tx); err != nil {
-		_ = tx.Rollback()
-		return err
+	if len(rows) == 0 {
+		return nil, app_errors.LogDatabaseError(fmt.Errorf("%s returned no result", name), "failed to run "+name)
 	}
-	if err = tx.Commit(); err != nil {
-		return app_errors.LogDatabaseError(err, "failed to commit transaction")
-	}
-	return nil
+	return rows[0][name], nil
 }
 
-// lockRow locks a row for the rest of the transaction and reports whether it exists.
-func lockRow(ctx context.Context, tx *sql.Tx, tableName string, rowID int64) (bool, error) {
-	var id int64
-	err := tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT id FROM %s WHERE id = $1 FOR UPDATE`, tableName), rowID).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, app_errors.LogDatabaseError(err, "failed to lock row")
-	}
-	return true, nil
-}
-
-// applyLinkChange adds or removes value in one row's link column, atomically in SQL.
-func applyLinkChange(ctx context.Context, tx *sql.Tx, side linkSide, rowID int64, value int64, link bool, updatedBy string) error {
-	column := fmt.Sprintf(QuotedColumnFormat, side.ColumnName)
-	var setExpr, where string
-	switch {
-	case side.DataType == linkDataTypeIntArray && link:
-		setExpr = fmt.Sprintf(`%[1]s = CASE WHEN $1::int = ANY(COALESCE(%[1]s, '{}'::int[])) THEN %[1]s ELSE array_append(COALESCE(%[1]s, '{}'::int[]), $1::int) END`, column)
-		where = "id = $2"
-	case side.DataType == linkDataTypeIntArray:
-		setExpr = fmt.Sprintf(`%[1]s = array_remove(%[1]s, $1::int)`, column)
-		where = "id = $2"
-	case link:
-		setExpr = fmt.Sprintf(`%s = $1::int`, column)
-		where = "id = $2"
-	default:
-		setExpr = fmt.Sprintf(`%s = NULL`, column)
-		where = fmt.Sprintf(`id = $2 AND %s = $1::int`, column)
-	}
-
-	args := []interface{}{value, rowID, time.Now().UTC()}
-	audit := `, last_modified_time = $3`
-	if updatedBy != "" {
-		audit += `, last_modified_by = $4`
-		args = append(args, updatedBy)
-	}
-
-	query := fmt.Sprintf(`UPDATE %s SET %s%s WHERE %s`, side.TableName, setExpr, audit, where)
-	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
-		return app_errors.LogDatabaseError(err, "failed to update link column")
-	}
-	return nil
-}
-
-// applyLinkPair writes both sides of one link: sourceRow.sourceColumn ↔ targetRow.targetColumn.
-func applyLinkPair(ctx context.Context, tx *sql.Tx, source, target linkSide, sourceRowID, targetRowID int64, link bool, updatedBy string) error {
-	if err := applyLinkChange(ctx, tx, source, sourceRowID, targetRowID, link, updatedBy); err != nil {
-		return err
-	}
-	return applyLinkChange(ctx, tx, target, targetRowID, sourceRowID, link, updatedBy)
-}
-
-// rowsHoldingID returns rows of side.TableName whose link column contains value.
-func rowsHoldingID(ctx context.Context, tx *sql.Tx, side linkSide, value int64) ([]int64, error) {
-	column := fmt.Sprintf(QuotedColumnFormat, side.ColumnName)
-	condition := fmt.Sprintf(`%s = $1::int`, column)
-	if side.DataType == linkDataTypeIntArray {
-		condition = fmt.Sprintf(`$1::int = ANY(%s)`, column)
-	}
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`SELECT id FROM %s WHERE %s FOR UPDATE`, side.TableName, condition), value)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to find linked rows")
-	}
-	defer rows.Close()
-
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, app_errors.LogDatabaseError(err, "failed to scan linked row")
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
-// releaseExistingLinks enforces cardinality before a link: in one-to-one either row loses its current
-// partner, and in has-many a child loses its current parent.
-func releaseExistingLinks(ctx context.Context, tx *sql.Tx, relationType string, source, target linkSide, sourceRowID, targetRowID int64, updatedBy string) error {
-	checks := []struct {
-		holder, other linkSide
-		id            int64
-	}{
-		{source, target, targetRowID},
-		{target, source, sourceRowID},
-	}
-	for _, c := range checks {
-		enforce := relationType == relationOneToOne ||
-			(relationType == relationHasMany && c.holder.DataType == linkDataTypeIntArray)
-		if !enforce {
-			continue
-		}
-		holders, err := rowsHoldingID(ctx, tx, c.holder, c.id)
-		if err != nil {
-			return err
-		}
-		for _, holderID := range holders {
-			if err := applyLinkPair(ctx, tx, c.holder, c.other, holderID, c.id, false, updatedBy); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// wouldCreateCycle reports whether making parentID the parent of childID creates a loop.
-// parentSide is the INT column that points from a child to its parent.
-func wouldCreateCycle(ctx context.Context, tx *sql.Tx, parentSide linkSide, parentID, childID int64) (bool, error) {
-	if parentID == childID {
-		return true, nil
-	}
-	column := fmt.Sprintf(QuotedColumnFormat, parentSide.ColumnName)
-	query := fmt.Sprintf(`
-		WITH RECURSIVE ancestors(id) AS (
-			SELECT %[1]s::bigint FROM %[2]s WHERE id = $1
-			UNION
-			SELECT t.%[1]s::bigint FROM %[2]s t JOIN ancestors a ON t.id = a.id
-		)
-		SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $2)`, column, parentSide.TableName)
-	var exists bool
-	if err := tx.QueryRowContext(ctx, query, parentID, childID).Scan(&exists); err != nil {
-		return false, app_errors.LogDatabaseError(err, "failed to check link cycle")
-	}
-	return exists, nil
-}
-
-// applySingleColumnLink links or unlinks on a one-way self-link column: only rowID's cell changes.
-// one-to-one and has-many still allow a record to be chosen by only one row, so other holders release it.
-func applySingleColumnLink(ctx context.Context, tx *sql.Tx, side linkSide, relationType string, rowID, targetRowID int64, link bool, updatedBy string) error {
-	if !link {
-		return applyLinkChange(ctx, tx, side, rowID, targetRowID, false, updatedBy)
-	}
-
-	if relationType == relationHasMany {
-		cycle, err := wouldCreateCycleInChildren(ctx, tx, side, rowID, targetRowID)
-		if err != nil {
-			return err
-		}
-		if cycle {
-			return app_errors.LinkCycleDetected
-		}
-	}
-
-	if relationType == relationOneToOne || relationType == relationHasMany {
-		holders, err := rowsHoldingID(ctx, tx, side, targetRowID)
-		if err != nil {
-			return err
-		}
-		for _, holderID := range holders {
-			if holderID == rowID {
-				continue
-			}
-			if err := applyLinkChange(ctx, tx, side, holderID, targetRowID, false, updatedBy); err != nil {
-				return err
-			}
-		}
-	}
-
-	return applyLinkChange(ctx, tx, side, rowID, targetRowID, true, updatedBy)
-}
-
-// wouldCreateCycleInChildren reports whether adding childID to parentID's children (an INT[] column)
-// creates a loop, i.e. childID is already parentID or one of its ancestors.
-func wouldCreateCycleInChildren(ctx context.Context, tx *sql.Tx, childrenSide linkSide, parentID, childID int64) (bool, error) {
-	if parentID == childID {
-		return true, nil
-	}
-	column := fmt.Sprintf(QuotedColumnFormat, childrenSide.ColumnName)
-	query := fmt.Sprintf(`
-		WITH RECURSIVE ancestors(id) AS (
-			SELECT id::bigint FROM %[2]s WHERE $1::int = ANY(%[1]s)
-			UNION
-			SELECT t.id::bigint FROM %[2]s t JOIN ancestors a ON a.id::int = ANY(t.%[1]s)
-		)
-		SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $2)`, column, childrenSide.TableName)
-	var exists bool
-	if err := tx.QueryRowContext(ctx, query, parentID, childID).Scan(&exists); err != nil {
-		return false, app_errors.LogDatabaseError(err, "failed to check link cycle")
-	}
-	return exists, nil
-}
-
-// ---------------------------------------------------------------------------
-// Row delete: remove back-references
-// ---------------------------------------------------------------------------
-
-// removeBackReferences strips rowID from every partner link column that points at this table.
-// It does not rely on the deleted row's own values, so one-sided or stale links are cleaned too.
-func (s tableManagementService) removeBackReferences(
+// linkRows links or unlinks two rows through link_rows: locks both rows, checks for loops,
+// releases existing partners (one-to-one / has-many) and writes both sides.
+func (s tableManagementService) linkRows(
 	ctx context.Context,
-	tx *sql.Tx,
-	schemaName string,
-	sourceModel tenant.Model,
-	rowIDs []int64,
+	relation tenant.Relation,
+	source, target linkSide,
+	sourceRowID, targetRowID int64,
+	link bool,
 	updatedBy string,
 ) error {
-	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())
+	action := linkActionUnlink
+	if link {
+		action = linkActionLink
+	}
+	result, err := s.callRelationFunction(ctx, linkRowsFunctionName, map[string]interface{}{
+		"p_relation_type":   relation.RelationType,
+		"p_single_column":   isSingleColumnRelation(relation),
+		"p_is_self":         isSelfRelation(relation),
+		"p_action":          action,
+		"p_source_table":    source.TableName,
+		"p_source_column":   source.ColumnName,
+		"p_source_is_array": source.DataType == linkDataTypeIntArray,
+		"p_target_table":    target.TableName,
+		"p_target_column":   target.ColumnName,
+		"p_target_is_array": target.DataType == linkDataTypeIntArray,
+		"p_source_row":      sourceRowID,
+		"p_target_row":      targetRowID,
+		"p_updated_by":      updatedBy,
+	})
 	if err != nil {
 		return err
 	}
+
+	switch functionResultString(result) {
+	case linkStatusOK:
+		return nil
+	case linkStatusSourceNotFound:
+		return app_errors.RowNotFound
+	case linkStatusTargetNotFound:
+		return app_errors.LinkTargetRowNotFound
+	case linkStatusCycle:
+		return app_errors.LinkCycleDetected
+	default:
+		return app_errors.LogDatabaseError(fmt.Errorf("unexpected status %v", result), "failed to update link data")
+	}
+}
+
+func functionResultString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	default:
+		return ""
+	}
+}
+
+// backReferencePartners returns, for every link column on the model, the partner column that can
+// hold IDs of this model's rows.
+func (s tableManagementService) backReferencePartners(
+	ctx context.Context,
+	schemaName string,
+	sourceModel tenant.Model,
+) ([]map[string]interface{}, error) {
+	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	var partners []map[string]interface{}
 	for _, column := range columns {
 		if column.UIDT != uidtLinks {
 			continue
 		}
 		partner, err := s.partnerSide(ctx, schemaName, column)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		for _, rowID := range rowIDs {
-			holders, err := rowsHoldingID(ctx, tx, partner, rowID)
-			if err != nil {
-				return err
-			}
-			for _, holderID := range holders {
-				if err := applyLinkChange(ctx, tx, partner, holderID, rowID, false, updatedBy); err != nil {
-					return err
-				}
-			}
-		}
+		partners = append(partners, map[string]interface{}{
+			"table":    partner.TableName,
+			"column":   partner.ColumnName,
+			"is_array": partner.DataType == linkDataTypeIntArray,
+		})
 	}
-	return nil
+	return partners, nil
 }
 
 // partnerSide returns the other side (table, column, type) of a link column.

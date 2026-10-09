@@ -269,6 +269,253 @@ var DefinedFunctions = []Function{
 			$$;
 		`,
 	},
+	// --- Link functions --------------------------------------------------------------------------
+	// Link/unlink and row-delete cleanup run as single function calls, so each operation is atomic
+	// without a client-side transaction. p_table values are already-quoted "schema"."table" names
+	// taken from metadata; column names are quoted here with %I.
+	{
+		// Locks a row for the rest of the calling statement and reports whether it exists.
+		FunctionName:   "link_lock_row",
+		FunctionParams: "p_table TEXT, p_row BIGINT",
+		FunctionSQL: `
+			RETURNS BOOLEAN
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				locked_id BIGINT;
+			BEGIN
+				EXECUTE format('SELECT id::bigint FROM %s WHERE id = $1 FOR UPDATE', p_table)
+					INTO locked_id USING p_row;
+				RETURN locked_id IS NOT NULL;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Adds (p_link) or removes p_value in one row's link column. INT[] columns are updated in place.
+		FunctionName:   "link_apply_change",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_is_array BOOLEAN, p_row BIGINT, p_value BIGINT, p_link BOOLEAN, p_updated_by TEXT",
+		FunctionSQL: `
+			RETURNS VOID
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				set_expr TEXT;
+				where_expr TEXT := 'id = $2';
+				audit TEXT := ', last_modified_time = $3';
+			BEGIN
+				IF p_is_array AND p_link THEN
+					set_expr := format(
+						'%1$I = CASE WHEN $1::int = ANY(COALESCE(%1$I, ''{}''::int[])) THEN %1$I ELSE array_append(COALESCE(%1$I, ''{}''::int[]), $1::int) END',
+						p_column);
+				ELSIF p_is_array THEN
+					set_expr := format('%1$I = array_remove(%1$I, $1::int)', p_column);
+				ELSIF p_link THEN
+					set_expr := format('%I = $1::int', p_column);
+				ELSE
+					set_expr := format('%I = NULL', p_column);
+					where_expr := format('id = $2 AND %I = $1::int', p_column);
+				END IF;
+
+				IF COALESCE(p_updated_by, '') <> '' THEN
+					audit := audit || ', last_modified_by = $4';
+				END IF;
+
+				EXECUTE format('UPDATE %s SET %s%s WHERE %s', p_table, set_expr, audit, where_expr)
+					USING p_value, p_row, (now() AT TIME ZONE 'UTC'), p_updated_by;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Returns (and locks) the rows whose link column contains p_value.
+		FunctionName:   "link_rows_holding",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_is_array BOOLEAN, p_value BIGINT",
+		FunctionSQL: `
+			RETURNS SETOF BIGINT
+			LANGUAGE plpgsql AS
+			$$
+			BEGIN
+				IF p_is_array THEN
+					RETURN QUERY EXECUTE format('SELECT id::bigint FROM %s WHERE $1::int = ANY(%I) FOR UPDATE', p_table, p_column)
+						USING p_value;
+				ELSE
+					RETURN QUERY EXECUTE format('SELECT id::bigint FROM %s WHERE %I = $1::int FOR UPDATE', p_table, p_column)
+						USING p_value;
+				END IF;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Would making p_parent the parent of p_child create a loop? p_column is the INT column that
+		// points from a child to its parent.
+		FunctionName:   "link_cycle_parent",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_parent BIGINT, p_child BIGINT",
+		FunctionSQL: `
+			RETURNS BOOLEAN
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				result BOOLEAN;
+			BEGIN
+				IF p_parent = p_child THEN
+					RETURN TRUE;
+				END IF;
+				EXECUTE format(
+					'WITH RECURSIVE ancestors(id) AS (
+						SELECT %1$I::bigint FROM %2$s WHERE id = $1
+						UNION
+						SELECT t.%1$I::bigint FROM %2$s t JOIN ancestors a ON t.id = a.id
+					)
+					SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $2)', p_column, p_table)
+					INTO result USING p_parent, p_child;
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Would adding p_child to p_parent's children (an INT[] column) create a loop?
+		FunctionName:   "link_cycle_children",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_parent BIGINT, p_child BIGINT",
+		FunctionSQL: `
+			RETURNS BOOLEAN
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				result BOOLEAN;
+			BEGIN
+				IF p_parent = p_child THEN
+					RETURN TRUE;
+				END IF;
+				EXECUTE format(
+					'WITH RECURSIVE ancestors(id) AS (
+						SELECT id::bigint FROM %2$s WHERE $1::int = ANY(%1$I)
+						UNION
+						SELECT t.id::bigint FROM %2$s t JOIN ancestors a ON a.id::int = ANY(t.%1$I)
+					)
+					SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $2)', p_column, p_table)
+					INTO result USING p_parent, p_child;
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Links or unlinks two rows. Returns 'ok', 'source_not_found', 'target_not_found' or 'cycle';
+		// every non-ok status is returned before anything is written.
+		FunctionName: "link_rows",
+		FunctionParams: "p_relation_type TEXT, p_single_column BOOLEAN, p_is_self BOOLEAN, p_action TEXT, " +
+			"p_source_table TEXT, p_source_column TEXT, p_source_is_array BOOLEAN, " +
+			"p_target_table TEXT, p_target_column TEXT, p_target_is_array BOOLEAN, " +
+			"p_source_row BIGINT, p_target_row BIGINT, p_updated_by TEXT",
+		FunctionSQL: `
+			RETURNS TEXT
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				is_link BOOLEAN := p_action = 'link';
+				holder BIGINT;
+				has_cycle BOOLEAN;
+			BEGIN
+				-- Lock both rows in a fixed order so opposite link calls can't deadlock.
+				IF p_target_table COLLATE "C" < p_source_table COLLATE "C"
+					OR (p_target_table = p_source_table AND p_target_row < p_source_row) THEN
+					IF NOT public.link_lock_row(p_target_table, p_target_row) THEN RETURN 'target_not_found'; END IF;
+					IF NOT public.link_lock_row(p_source_table, p_source_row) THEN RETURN 'source_not_found'; END IF;
+				ELSE
+					IF NOT public.link_lock_row(p_source_table, p_source_row) THEN RETURN 'source_not_found'; END IF;
+					IF NOT public.link_lock_row(p_target_table, p_target_row) THEN RETURN 'target_not_found'; END IF;
+				END IF;
+
+				-- One-way self-link: only the edited row's cell changes.
+				IF p_single_column THEN
+					IF NOT is_link THEN
+						PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, p_target_row, FALSE, p_updated_by);
+						RETURN 'ok';
+					END IF;
+					IF p_relation_type = 'has-many'
+						AND public.link_cycle_children(p_source_table, p_source_column, p_source_row, p_target_row) THEN
+						RETURN 'cycle';
+					END IF;
+					IF p_relation_type IN ('one-to-one', 'has-many') THEN
+						FOR holder IN SELECT * FROM public.link_rows_holding(p_source_table, p_source_column, p_source_is_array, p_target_row) LOOP
+							IF holder <> p_source_row THEN
+								PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, holder, p_target_row, FALSE, p_updated_by);
+							END IF;
+						END LOOP;
+					END IF;
+					PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, p_target_row, TRUE, p_updated_by);
+					RETURN 'ok';
+				END IF;
+
+				IF NOT is_link THEN
+					PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, p_target_row, FALSE, p_updated_by);
+					PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, p_target_row, p_source_row, FALSE, p_updated_by);
+					RETURN 'ok';
+				END IF;
+
+				-- Two-column self-link has-many: the INT side points from a child to its parent.
+				IF p_is_self AND p_relation_type = 'has-many' THEN
+					IF NOT p_source_is_array THEN
+						has_cycle := public.link_cycle_parent(p_source_table, p_source_column, p_target_row, p_source_row);
+					ELSE
+						has_cycle := public.link_cycle_parent(p_target_table, p_target_column, p_source_row, p_target_row);
+					END IF;
+					IF has_cycle THEN
+						RETURN 'cycle';
+					END IF;
+				END IF;
+
+				-- Cardinality: one-to-one partners and has-many parents release the record first.
+				IF p_relation_type = 'one-to-one' OR (p_relation_type = 'has-many' AND p_source_is_array) THEN
+					FOR holder IN SELECT * FROM public.link_rows_holding(p_source_table, p_source_column, p_source_is_array, p_target_row) LOOP
+						PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, holder, p_target_row, FALSE, p_updated_by);
+						PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, p_target_row, holder, FALSE, p_updated_by);
+					END LOOP;
+				END IF;
+				IF p_relation_type = 'one-to-one' OR (p_relation_type = 'has-many' AND p_target_is_array) THEN
+					FOR holder IN SELECT * FROM public.link_rows_holding(p_target_table, p_target_column, p_target_is_array, p_source_row) LOOP
+						PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, holder, p_source_row, FALSE, p_updated_by);
+						PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, holder, FALSE, p_updated_by);
+					END LOOP;
+				END IF;
+
+				PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, p_target_row, TRUE, p_updated_by);
+				PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, p_target_row, p_source_row, TRUE, p_updated_by);
+				RETURN 'ok';
+			END;
+			$$;
+		`,
+	},
+	{
+		// Removes every reference to p_row_ids from the given partner link columns.
+		// p_partners entry: {"table": "\"schema\".\"table\"", "column": "...", "is_array": true}
+		FunctionName:   "remove_link_back_references",
+		FunctionParams: "p_partners JSON[], p_row_ids BIGINT[], p_updated_by TEXT",
+		FunctionSQL: `
+			RETURNS VOID
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				partner JSON;
+				partner_is_array BOOLEAN;
+				row_id BIGINT;
+				holder BIGINT;
+			BEGIN
+				FOR partner IN SELECT * FROM unnest(COALESCE(p_partners, ARRAY[]::JSON[])) LOOP
+					partner_is_array := COALESCE((partner->>'is_array')::BOOLEAN, FALSE);
+					FOR row_id IN SELECT * FROM unnest(COALESCE(p_row_ids, ARRAY[]::BIGINT[])) LOOP
+						FOR holder IN SELECT * FROM public.link_rows_holding(partner->>'table', partner->>'column', partner_is_array, row_id) LOOP
+							PERFORM public.link_apply_change(partner->>'table', partner->>'column', partner_is_array, holder, row_id, FALSE, p_updated_by);
+						END LOOP;
+					END LOOP;
+				END LOOP;
+			END;
+			$$;
+		`,
+	},
 	{
 		FunctionName:   "reorder_columns_after_delete",
 		FunctionParams: "p_schema_name TEXT, p_model_id TEXT, p_order_index INT",
