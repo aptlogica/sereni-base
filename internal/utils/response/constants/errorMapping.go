@@ -119,6 +119,12 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.RowNotFound, TableError.RowNotFound},
 	{app_errors.InvalidColumnMetaForLookupType, TableError.InvalidColumnMetaForLookupType},
 	{app_errors.SplitNotPossible, TableError.SplitNotPossible},
+	{app_errors.SelfReferenceNotAllowed, TableError.SelfReferenceNotAllowed},
+	{app_errors.LinkCycleDetected, TableError.LinkCycleDetected},
+	{app_errors.InvalidLookupLinkColumn, TableError.InvalidLookupLinkColumn},
+	{app_errors.LinkTargetRowNotFound, TableError.LinkTargetRowNotFound},
+	{app_errors.InvalidLookupTargetColumn, TableError.InvalidLookupTargetColumn},
+	{app_errors.LinkColumnNotWritable, TableError.LinkColumnNotWritable},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},
