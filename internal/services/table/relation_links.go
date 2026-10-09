@@ -204,51 +204,22 @@ func (s tableManagementService) buildLookupRelationData(
 	schemaName string,
 	columnsData []dto.ColumnResponse,
 ) []map[string]interface{} {
-	lg := logger.Get()
 	entries := map[string]map[string]interface{}{}
 	var order []string
 	modelAliases := map[string]string{}
 
 	for _, col := range columnsData {
-		if col.UIDT != uidtLookup {
-			continue
-		}
-		lookupColumnID, relationID, ok := s.validateMetaForLookup(col.Meta)
+		linkCol, foreign, ok := s.resolveLookupSource(ctx, schemaName, col, columnsData)
 		if !ok {
-			continue
-		}
-		linkCol, ok := lookupLinkColumn(col, relationID, columnsData)
-		if !ok {
-			lg.Warn().Str("lookupColumnID", col.ID.String()).Msg("Lookup has no matching link column, skipping")
-			continue
-		}
-		info, _ := parseLinkMeta(linkCol.Meta)
-
-		foreign, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
-		if err != nil || foreign.ModelID != info.With {
-			lg.Warn().Str("lookupColumnID", col.ID.String()).Msg("Looked-up column is missing or on another table, skipping")
 			continue
 		}
 
 		key := linkCol.ID.String()
 		entry, exists := entries[key]
 		if !exists {
-			alias, cached := modelAliases[info.With]
-			if !cached {
-				targetModel, err := s.modelService.GetModelByID(ctx, schemaName, info.With)
-				if err != nil {
-					continue
-				}
-				alias = targetModel.Alias
-				modelAliases[info.With] = alias
-			}
-			entry = map[string]interface{}{
-				"source_column_name": linkCol.ColumnName,
-				"relation":           info.RelationType,
-				"is_array":           linkCol.DT == linkDataTypeIntArray,
-				"target_table_name":  alias,
-				"target_column_name": "id",
-				"targets":            []map[string]interface{}{},
+			entry, ok = s.newLookupRelationEntry(ctx, schemaName, linkCol, modelAliases)
+			if !ok {
+				continue
 			}
 			entries[key] = entry
 			order = append(order, key)
@@ -264,6 +235,65 @@ func (s tableManagementService) buildLookupRelationData(
 		relationData = append(relationData, entries[key])
 	}
 	return relationData
+}
+
+// resolveLookupSource returns the link column a lookup reads through and the foreign column it shows.
+// ok is false for non-lookup columns and for lookups that can't be resolved (those are skipped).
+func (s tableManagementService) resolveLookupSource(
+	ctx context.Context,
+	schemaName string,
+	col dto.ColumnResponse,
+	columnsData []dto.ColumnResponse,
+) (dto.ColumnResponse, tenant.Column, bool) {
+	if col.UIDT != uidtLookup {
+		return dto.ColumnResponse{}, tenant.Column{}, false
+	}
+	lookupColumnID, relationID, ok := s.validateMetaForLookup(col.Meta)
+	if !ok {
+		return dto.ColumnResponse{}, tenant.Column{}, false
+	}
+	lg := logger.Get()
+	linkCol, ok := lookupLinkColumn(col, relationID, columnsData)
+	if !ok {
+		lg.Warn().Str("lookupColumnID", col.ID.String()).Msg("Lookup has no matching link column, skipping")
+		return dto.ColumnResponse{}, tenant.Column{}, false
+	}
+	info, _ := parseLinkMeta(linkCol.Meta)
+
+	foreign, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
+	if err != nil || foreign.ModelID != info.With {
+		lg.Warn().Str("lookupColumnID", col.ID.String()).Msg("Looked-up column is missing or on another table, skipping")
+		return dto.ColumnResponse{}, tenant.Column{}, false
+	}
+	return linkCol, foreign, true
+}
+
+// newLookupRelationEntry builds the relation_data entry for one link column. Target table aliases are
+// cached in modelAliases; ok is false if the linked model can't be loaded.
+func (s tableManagementService) newLookupRelationEntry(
+	ctx context.Context,
+	schemaName string,
+	linkCol dto.ColumnResponse,
+	modelAliases map[string]string,
+) (map[string]interface{}, bool) {
+	info, _ := parseLinkMeta(linkCol.Meta)
+	alias, cached := modelAliases[info.With]
+	if !cached {
+		targetModel, err := s.modelService.GetModelByID(ctx, schemaName, info.With)
+		if err != nil {
+			return nil, false
+		}
+		alias = targetModel.Alias
+		modelAliases[info.With] = alias
+	}
+	return map[string]interface{}{
+		"source_column_name": linkCol.ColumnName,
+		"relation":           info.RelationType,
+		"is_array":           linkCol.DT == linkDataTypeIntArray,
+		"target_table_name":  alias,
+		"target_column_name": "id",
+		"targets":            []map[string]interface{}{},
+	}, true
 }
 
 // ---------------------------------------------------------------------------
@@ -289,12 +319,10 @@ func (s tableManagementService) linkRows(
 	ctx context.Context,
 	relation tenant.Relation,
 	source, target linkSide,
-	sourceRowID, targetRowID int64,
-	link bool,
-	updatedBy string,
+	req dto.UpdateRowDataLinksRequest,
 ) error {
 	action := linkActionUnlink
-	if link {
+	if req.Action == linkActionLink {
 		action = linkActionLink
 	}
 	result, err := s.callRelationFunction(ctx, linkRowsFunctionName, map[string]interface{}{
@@ -308,14 +336,18 @@ func (s tableManagementService) linkRows(
 		"p_target_table":    target.TableName,
 		"p_target_column":   target.ColumnName,
 		"p_target_is_array": target.DataType == linkDataTypeIntArray,
-		"p_source_row":      sourceRowID,
-		"p_target_row":      targetRowID,
-		"p_updated_by":      updatedBy,
+		"p_source_row":      int64(req.SourceRowId),
+		"p_target_row":      int64(req.TargetRowId),
+		"p_updated_by":      req.UpdatedBy,
 	})
 	if err != nil {
 		return err
 	}
+	return linkStatusError(result)
+}
 
+// linkStatusError maps the status returned by link_rows to the service error.
+func linkStatusError(result interface{}) error {
 	switch functionResultString(result) {
 	case linkStatusOK:
 		return nil

@@ -2223,7 +2223,7 @@ func (s tableManagementService) UpdateRawDataForLinks(
 		return dto.RecordResponse{}, app_errors.SelfReferenceNotAllowed
 	}
 
-	err = s.linkRows(ctx, relation, source, target, sourceRowID, targetRowID, isLink, req.UpdatedBy)
+	err = s.linkRows(ctx, relation, source, target, req)
 	if err != nil {
 		return dto.RecordResponse{}, err
 	}
