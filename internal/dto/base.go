@@ -164,10 +164,11 @@ func (b *BaseUpdate) Map() map[string]interface{} {
 }
 
 type CreateBaseRequest struct {
-	Title       string  `db:"title" json:"title,omitempty"`
-	Description *string `db:"description" json:"description,omitempty"`
-	WorkspaceID string  `db:"workspace_id" json:"workspace_id,omitempty"`
-	CreatedBy   string  `json:"created_by,omitempty"`
+	Title       string                 `db:"title" json:"title,omitempty"`
+	Description *string                `db:"description" json:"description,omitempty"`
+	WorkspaceID string                 `db:"workspace_id" json:"workspace_id,omitempty"`
+	Meta        map[string]interface{} `db:"meta" json:"meta,omitempty"`
+	CreatedBy   string                 `json:"created_by,omitempty"`
 }
 
 type BaseResponse struct {

@@ -62,6 +62,7 @@ func (s baseManagementService) insertBase(ctx context.Context, req dto.CreateBas
 		WorkspaceID: id,
 		Title:       req.Title,
 		Description: req.Description,
+		Meta:        req.Meta,
 		CreatedBy:   req.CreatedBy,
 		UpdatedBy:   req.CreatedBy,
 	}
