@@ -7,6 +7,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"mime/multipart"
 	"regexp"
@@ -64,54 +65,8 @@ type targetColumnParams struct {
 	RelationWith    string
 	RelationID      uuid.UUID
 	RelationType    string
+	InverseTitle    string
 	Now             time.Time
-}
-
-// updateLinkDataParams holds parameters for updating link data
-type updateLinkDataParams struct {
-	SourceTableName  string
-	TargetTableName  string
-	SourceColumnName string
-	TargetColumnName string
-	SourceDataType   string
-	TargetDataType   string
-	Request          dto.UpdateRowDataLinksRequest
-}
-
-// updateIfExistParams holds parameters for checking and updating existing links
-type updateIfExistParams struct {
-	RelationType     string
-	SourceTableName  string
-	SourceColumnName string
-	TargetTableName  string
-	TargetColumnName string
-	SourceDataType   string
-	TargetDataType   string
-	Request          dto.UpdateRowDataLinksRequest
-}
-
-// unlinkRowDataParams holds parameters for unlinking row data
-type unlinkRowDataParams struct {
-	Request         dto.DeleteRowDataRequest
-	SourceTableName string
-	TargetTableName string
-	Column          tenant.Column
-	TargetColumn    tenant.Column
-	RowData         map[string]interface{}
-	SourceDataType  string
-	TargetDataType  string
-}
-
-// unlinkSingleRowParams holds parameters for unlinking a single row
-type unlinkSingleRowParams struct {
-	Request         dto.DeleteRowDataRequest
-	SourceTableName string
-	TargetTableName string
-	Column          tenant.Column
-	TargetColumn    tenant.Column
-	SourceDataType  string
-	TargetDataType  string
-	TargetRowId     int64
 }
 
 func NewTableManagementService(
@@ -519,6 +474,15 @@ func (s tableManagementService) deleteColumnsForModel(ctx context.Context, schem
 	}
 	for _, col := range columns {
 		if col.ModelID == modelID {
+			// Deleting a link also removes its partner column and its lookups, which may be later in this
+			// list (always, for a self-link), so skip columns that are already gone.
+			exists, err := s.columnExists(ctx, schemaName, col.ID.String())
+			if err != nil {
+				return err
+			}
+			if !exists {
+				continue
+			}
 			if err := s.DeleteColumnForTable(ctx, schemaName, col); err != nil {
 				return err
 			}
@@ -554,7 +518,9 @@ func (s tableManagementService) slugify(input string) string {
 	}
 	slug = strings.ToLower(slug)
 	timestamp := time.Now().Unix()
-	return slug + "_" + fmt.Sprintf("%d", timestamp)
+	// Random suffix keeps names unique when two columns with the same title are
+	// created in the same second (e.g. both sides of a self-link).
+	return slug + "_" + fmt.Sprintf("%d", timestamp) + "_" + uuid.NewString()[:4]
 }
 
 func (s tableManagementService) AddColumnInTableDb(schemaName string, tableName string, columnData tenant.Column) error {
@@ -728,22 +694,30 @@ func (s tableManagementService) addColumnWithRelation(
 
 	relationId := uuid.New()
 	now := time.Now().UTC()
+	isSelf := relationWith == columnData.ModelID.String()
+	inverseTitle := s.extractInverseTitle(sourceMeta)
 
 	sourcColumn, sourceModelData, err := s.createSourceColumnForRelation(ctx, schemaName, columnData, sourceMeta, relationId, relationType, now)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
 
-	targetColumn, targetModelData, err := s.createTargetColumnForRelation(ctx, schemaName, targetColumnParams{
-		ColumnData:      columnData,
-		SourceModelData: sourceModelData,
-		RelationWith:    relationWith,
-		RelationID:      relationId,
-		RelationType:    relationType,
-		Now:             now,
-	})
-	if err != nil {
-		return dto.ColumnResponse{}, err
+	// A self-link is a single one-way column: the relation points at the same column on both sides.
+	targetColumn, targetModelData := sourcColumn, sourceModelData
+	if !isSelf {
+		targetColumn, targetModelData, err = s.createTargetColumnForRelation(ctx, schemaName, targetColumnParams{
+			ColumnData:      columnData,
+			SourceModelData: sourceModelData,
+			RelationWith:    relationWith,
+			RelationID:      relationId,
+			RelationType:    relationType,
+			InverseTitle:    inverseTitle,
+			Now:             now,
+		})
+		if err != nil {
+			s.rollbackLinkColumn(ctx, schemaName, sourcColumn, sourceModelData.Alias)
+			return dto.ColumnResponse{}, err
+		}
 	}
 
 	if err := s.createRelationRecord(ctx, schemaName, relationRecordParams{
@@ -756,6 +730,10 @@ func (s tableManagementService) addColumnWithRelation(
 		RelationType:    relationType,
 		Now:             now,
 	}); err != nil {
+		if !isSelf {
+			s.rollbackLinkColumn(ctx, schemaName, targetColumn, targetModelData.Alias)
+		}
+		s.rollbackLinkColumn(ctx, schemaName, sourcColumn, sourceModelData.Alias)
 		return dto.ColumnResponse{}, err
 	}
 
@@ -768,6 +746,29 @@ func (s tableManagementService) addColumnWithRelation(
 	return columnResponse, nil
 }
 
+// extractInverseTitle pops relation.inverse_title from the request meta; it names the partner column
+// and is not stored on the source column.
+func (s tableManagementService) extractInverseTitle(meta map[string]interface{}) string {
+	relation, ok := meta["relation"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	title, _ := relation["inverse_title"].(string)
+	delete(relation, "inverse_title")
+	return strings.TrimSpace(title)
+}
+
+// rollbackLinkColumn removes a link column created earlier in a failed link creation.
+func (s tableManagementService) rollbackLinkColumn(ctx context.Context, schemaName string, column tenant.Column, tableAlias string) {
+	lg := logger.Get()
+	if err := s.columnsService.DeleteColumn(ctx, schemaName, column.ID.String()); err != nil {
+		lg.Error().Err(err).Str("columnID", column.ID.String()).Msg("Failed to roll back link column metadata")
+	}
+	if err := s.removeColumnInTableDb(schemaName, tableAlias, column.ColumnName); err != nil {
+		lg.Error().Err(err).Str("column", column.ColumnName).Msg("Failed to roll back link column")
+	}
+}
+
 func (s tableManagementService) createSourceColumnForRelation(
 	ctx context.Context,
 	schemaName string,
@@ -777,8 +778,11 @@ func (s tableManagementService) createSourceColumnForRelation(
 	relationType string,
 	now time.Time,
 ) (tenant.Column, tenant.Model, error) {
-	sourceMeta["entity_role"] = "source"
+	sourceMeta["entity_role"] = entityRoleSource
 	sourceMeta["relation_id"] = relationId
+	if relation, ok := sourceMeta["relation"].(map[string]interface{}); ok {
+		sourceMeta["is_self_link"] = relation["with"] == columnData.ModelID.String()
+	}
 
 	sourceTempUidt := fmt.Sprintf("%s_source_%v", columnData.UIDT, relationType)
 	sourceDataType, err := s.getDataBaseType(sourceTempUidt)
@@ -800,6 +804,8 @@ func (s tableManagementService) createSourceColumnForRelation(
 		System:      columnData.System != nil && *columnData.System,
 		Deleted:     false,
 		OrderIndex:  columnData.OrderIndex,
+		CreatedBy:   columnData.CreatedBy,
+		UpdatedBy:   columnData.CreatedBy,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -831,8 +837,13 @@ func (s tableManagementService) createTargetColumnForRelation(
 			"with": params.ColumnData.ModelID.String(),
 			"type": params.RelationType,
 		},
-		"entity_role": "target",
+		"entity_role": entityRoleTarget,
 		"relation_id": params.RelationID,
+	}
+
+	targetTitle := params.InverseTitle
+	if targetTitle == "" {
+		targetTitle = params.SourceModelData.Title
 	}
 
 	targetTempUidt := fmt.Sprintf("%s_target_%v", params.ColumnData.UIDT, params.RelationType)
@@ -850,8 +861,8 @@ func (s tableManagementService) createTargetColumnForRelation(
 		ID:          uuid.New(),
 		ModelID:     uuid.MustParse(params.RelationWith),
 		BaseID:      params.ColumnData.BaseID,
-		Title:       params.SourceModelData.Title,
-		ColumnName:  s.slugify(params.SourceModelData.Title),
+		Title:       targetTitle,
+		ColumnName:  s.slugify(targetTitle),
 		Description: helpers.StringPtr(""),
 		Meta:        targetMeta,
 		UIDT:        params.ColumnData.UIDT,
@@ -860,6 +871,8 @@ func (s tableManagementService) createTargetColumnForRelation(
 		System:      params.ColumnData.System != nil && *params.ColumnData.System,
 		Deleted:     false,
 		OrderIndex:  helpers.Float64Ptr(targetCurrentOrderIndex + 1),
+		CreatedBy:   params.ColumnData.CreatedBy,
+		UpdatedBy:   params.ColumnData.CreatedBy,
 		CreatedAt:   params.Now,
 		UpdatedAt:   params.Now,
 	}
@@ -902,17 +915,20 @@ func (s tableManagementService) createRelationRecord(
 	return err
 }
 
+// addLookupColumnInRelation records a lookup's foreign column on the relation side the lookup reads from.
+// The side comes from the link column's entity_role, so a self-link (where both sides are the same model)
+// updates exactly one array.
 func (s tableManagementService) addLookupColumnInRelation(
 	ctx context.Context,
 	schemaName string,
-	modelId string,
+	entityRole string,
 	relationID string,
 	lookupColumnName string,
 ) error {
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationID, schemaName)
 	if err != nil {
 		lg := logger.Get()
-		lg.Debug().Str("relationID", relationID).Str("schemaName", schemaName).Msg("Fetching source lookup columns for relation")
+		lg.Debug().Str("relationID", relationID).Str("schemaName", schemaName).Msg("Fetching lookup columns for relation")
 		lg.Error().Stack().Err(err).Msg("Failed to get relation by ID")
 		return err
 	}
@@ -921,27 +937,16 @@ func (s tableManagementService) addLookupColumnInRelation(
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	if relationData.SourceModelID == modelId {
-		if relationData.SourceLookupColumns == nil {
-			relationUpdation.SourceLookupColumns = []string{lookupColumnName}
-		} else {
-			newArr := append(relationData.SourceLookupColumns, lookupColumnName)
-			relationUpdation.SourceLookupColumns = newArr
-		}
-	}
-	if relationData.TargetModelID == modelId {
-		if relationData.TargetLookupColumns == nil {
-			relationUpdation.TargetLookupColumns = []string{lookupColumnName}
-		} else {
-			newArr := append(relationData.TargetLookupColumns, lookupColumnName)
-			relationUpdation.TargetLookupColumns = newArr
-		}
+	if entityRole == entityRoleSource {
+		relationUpdation.SourceLookupColumns = append(append([]string{}, relationData.SourceLookupColumns...), lookupColumnName)
+	} else {
+		relationUpdation.TargetLookupColumns = append(append([]string{}, relationData.TargetLookupColumns...), lookupColumnName)
 	}
 
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
 		lg := logger.Get()
-		lg.Error().Stack().Err(err).Msg("Failed to update relation with source lookup columns")
+		lg.Error().Stack().Err(err).Msg("Failed to update relation with lookup columns")
 		return err
 	}
 	return nil
@@ -950,14 +955,14 @@ func (s tableManagementService) addLookupColumnInRelation(
 func (s tableManagementService) removeLookupColumnInRelation(
 	ctx context.Context,
 	schemaName string,
-	modelId string,
+	entityRole string,
 	relationID string,
 	lookupColumnName string,
 ) error {
 	relationData, err := s.relationshipService.GetRelationByID(ctx, relationID, schemaName)
 	if err != nil {
 		lg := logger.Get()
-		lg.Debug().Str("relationID", relationID).Str("schemaName", schemaName).Msg("Fetching target lookup columns for relation")
+		lg.Debug().Str("relationID", relationID).Str("schemaName", schemaName).Msg("Fetching lookup columns for relation")
 		lg.Error().Stack().Err(err).Msg("Failed to get relation by ID for removal")
 		return err
 	}
@@ -966,16 +971,15 @@ func (s tableManagementService) removeLookupColumnInRelation(
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	if relationData.SourceModelID == modelId {
+	if entityRole == entityRoleSource {
 		relationUpdation.SourceLookupColumns = s.removeLookupColumnFromList(relationData.SourceLookupColumns, lookupColumnName, "SourceLookupColumns")
-	}
-	if relationData.TargetModelID == modelId {
+	} else {
 		relationUpdation.TargetLookupColumns = s.removeLookupColumnFromList(relationData.TargetLookupColumns, lookupColumnName, "TargetLookupColumns")
 	}
 	_, err = s.relationshipService.UpdateRelation(ctx, relationID, relationUpdation, schemaName)
 	if err != nil {
 		lg := logger.Get()
-		lg.Error().Stack().Err(err).Msg("Failed to update relation with target lookup columns")
+		lg.Error().Stack().Err(err).Msg("Failed to update relation with lookup columns")
 		return err
 	}
 	return nil
@@ -1010,6 +1014,51 @@ func (s tableManagementService) removeLookupColumnFromList(
 	return newArr
 }
 
+// lookupResolution is a validated lookup definition: the link column it goes through and the foreign column it shows.
+type lookupResolution struct {
+	LinkColumn   dto.ColumnResponse
+	LookupColumn tenant.Column
+	RelationID   string
+}
+
+// resolveLookupMeta validates lookup meta for a lookup on modelID and returns the resolved link and foreign columns.
+func (s tableManagementService) resolveLookupMeta(
+	ctx context.Context,
+	schemaName string,
+	modelID string,
+	meta map[string]interface{},
+) (lookupResolution, error) {
+	lookupColumnID, relationID, ok := s.validateMetaForLookup(meta)
+	if !ok {
+		return lookupResolution{}, app_errors.InvalidColumnMetaForLookupType
+	}
+
+	linkCol, err := s.resolveLookupLinkColumn(ctx, schemaName, modelID, relationID, metaString(meta, "link_column_id"))
+	if err != nil {
+		return lookupResolution{}, err
+	}
+
+	lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
+	if err != nil {
+		return lookupResolution{}, err
+	}
+	if err := validateLookupTarget(linkCol, lookupColumn); err != nil {
+		return lookupResolution{}, err
+	}
+
+	return lookupResolution{LinkColumn: linkCol, LookupColumn: lookupColumn, RelationID: relationID}, nil
+}
+
+// lookupEntityRole returns the side (source/target) an existing lookup column reads through.
+func (s tableManagementService) lookupEntityRole(ctx context.Context, schemaName string, lookup dto.ColumnResponse, relationID string) string {
+	linkCol, err := s.resolveLookupLinkColumn(ctx, schemaName, lookup.ModelID.String(), relationID, metaString(lookup.Meta, "link_column_id"))
+	if err != nil {
+		return entityRoleSource
+	}
+	info, _ := parseLinkMeta(linkCol.Meta)
+	return info.EntityRole
+}
+
 func (s tableManagementService) addColumnWithLookup(
 	ctx context.Context,
 	schemaName string,
@@ -1017,35 +1066,31 @@ func (s tableManagementService) addColumnWithLookup(
 ) (dto.ColumnResponse, error) {
 	now := time.Now().UTC()
 
-	lookupColumnID, relationID, ok := s.validateMetaForLookup(columnData.Meta)
-	if !ok {
-		return dto.ColumnResponse{}, app_errors.InvalidColumnMetaForLookupType
-	}
-
-	lookupColumnData, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
+	resolved, err := s.resolveLookupMeta(ctx, schemaName, columnData.ModelID.String(), columnData.Meta)
 	if err != nil {
 		return dto.ColumnResponse{}, err
 	}
+	linkInfo, _ := parseLinkMeta(resolved.LinkColumn.Meta)
 
-	lookupModelData, err := s.modelService.GetModelByID(ctx, schemaName, lookupColumnData.ModelID)
-	if err != nil {
-		return dto.ColumnResponse{}, err
-	}
+	meta := columnData.Meta
+	meta["link_column_id"] = resolved.LinkColumn.ID.String()
 
 	srcColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
 		ModelID:     columnData.ModelID,
 		BaseID:      columnData.BaseID,
 		Title:       columnData.Title,
-		ColumnName:  fmt.Sprintf("%s_%s", lookupModelData.Alias, lookupColumnData.ColumnName),
+		ColumnName:  lookupColumnName(resolved.LookupColumn),
 		Description: &columnData.Description,
-		Meta:        columnData.Meta,
+		Meta:        meta,
 		UIDT:        columnData.UIDT,
 		DT:          helpers.StringPtr(columnData.UIDT),
 		Virtual:     columnData.Virtual != nil && *columnData.Virtual,
 		System:      columnData.System != nil && *columnData.System,
 		Deleted:     false,
 		OrderIndex:  columnData.OrderIndex,
+		CreatedBy:   columnData.CreatedBy,
+		UpdatedBy:   columnData.CreatedBy,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -1062,10 +1107,10 @@ func (s tableManagementService) addColumnWithLookup(
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
 	}
 
-	if err := s.addLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumnData.ColumnName); err != nil {
+	if err := s.addLookupColumnInRelation(ctx, schemaName, linkInfo.EntityRole, resolved.RelationID, resolved.LookupColumn.ColumnName); err != nil {
 		lg := logger.Get()
 		lg.Error().Stack().Err(err).Msg("Failed to add lookup column in relationship")
-		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
+		return dto.ColumnResponse{}, err
 	}
 	return columnResponse, nil
 }
@@ -1338,7 +1383,8 @@ func (s tableManagementService) updateColumnForLink(
 	columnData dto.ColumnResponse,
 	req dto.ColumnUpdate,
 ) (dto.ColumnResponse, error) {
-	// For link columns, only update title, description, last_modified_time and last_modified_by
+	// For link columns, only update title, description, last_modified_time and last_modified_by.
+	// Type, target and relation type can't change; a new link must be created instead.
 	linkUpdateReq := dto.ColumnUpdate{
 		Title:       req.Title,
 		Description: req.Description,
@@ -1351,6 +1397,14 @@ func (s tableManagementService) updateColumnForLink(
 		return dto.ColumnResponse{}, err
 	}
 
+	if req.Meta != nil {
+		if inverseTitle := s.extractInverseTitle(*req.Meta); inverseTitle != "" {
+			if err := s.renamePartnerLinkColumn(ctx, schemaName, columnData, inverseTitle, req); err != nil {
+				return dto.ColumnResponse{}, err
+			}
+		}
+	}
+
 	var updatedColumnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(updatedColumn, &updatedColumnResponse); err != nil {
 		return dto.ColumnResponse{}, app_errors.ErrStructToStruct
@@ -1359,48 +1413,63 @@ func (s tableManagementService) updateColumnForLink(
 	return updatedColumnResponse, nil
 }
 
+// renamePartnerLinkColumn sets the title of the other column of a link (the inverse field).
+func (s tableManagementService) renamePartnerLinkColumn(
+	ctx context.Context,
+	schemaName string,
+	columnData dto.ColumnResponse,
+	title string,
+	req dto.ColumnUpdate,
+) error {
+	info, ok := parseLinkMeta(columnData.Meta)
+	if !ok {
+		return app_errors.InvalidColumnMetaForLinkType
+	}
+	relation, err := s.relationshipService.GetRelationByID(ctx, info.RelationID, schemaName)
+	if err != nil {
+		return err
+	}
+	if isSingleColumnRelation(relation) {
+		return nil // one-way self-link: no inverse column to rename
+	}
+	partnerColumnID := relation.TargetColumnID
+	if info.EntityRole == entityRoleTarget {
+		partnerColumnID = relation.SourceColumnID
+	}
+	_, err = s.columnsService.UpdateColumn(ctx, schemaName, partnerColumnID, dto.ColumnUpdate{
+		Title:     helpers.StringPtr(title),
+		UpdatedBy: req.UpdatedBy,
+		UpdatedAt: req.UpdatedAt,
+	})
+	return err
+}
+
 func (s tableManagementService) updateColumnForLookup(
 	ctx context.Context,
 	schemaName string,
 	columnData dto.ColumnResponse,
 	req dto.ColumnUpdate,
 ) (dto.ColumnResponse, error) {
-	lookupColumnID, relationID, ok := s.validateMetaForLookup(columnData.Meta)
-	if ok {
-		lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
-		if err != nil {
-			return dto.ColumnResponse{}, err
-		}
-
-		err = s.removeLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumn.ColumnName)
-		if err != nil {
-			return dto.ColumnResponse{}, err
-		}
+	lookupUpdateReq := dto.ColumnUpdate{
+		Title:       req.Title,
+		Description: req.Description,
+		UpdatedBy:   req.UpdatedBy,
+		UpdatedAt:   req.UpdatedAt,
 	}
 
-	var updatedColumn tenant.Column
-	updatedLookupColumnID, _, ok := s.validateMetaForLookup(*req.Meta)
-	if ok {
-		updatedLookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, updatedLookupColumnID)
+	// Title/description-only edit: the lookup definition stays as it is.
+	if req.Meta != nil {
+		newMeta, columnName, err := s.repointLookup(ctx, schemaName, columnData, *req.Meta)
 		if err != nil {
 			return dto.ColumnResponse{}, err
 		}
+		lookupUpdateReq.Meta = &newMeta
+		lookupUpdateReq.ColumnName = columnName
+	}
 
-		err = s.addLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, updatedLookupColumn.ColumnName)
-		if err != nil {
-			return dto.ColumnResponse{}, err
-		}
-
-		lookupModelData, err := s.modelService.GetModelByID(ctx, schemaName, updatedLookupColumn.ModelID)
-		if err != nil {
-			return dto.ColumnResponse{}, err
-		}
-
-		req.ColumnName = helpers.StringPtr(fmt.Sprintf("%s_%s", lookupModelData.Alias, updatedLookupColumn.ColumnName))
-		updatedColumn, err = s.columnsService.UpdateColumn(ctx, schemaName, columnData.ID.String(), req)
-		if err != nil {
-			return dto.ColumnResponse{}, err
-		}
+	updatedColumn, err := s.columnsService.UpdateColumn(ctx, schemaName, columnData.ID.String(), lookupUpdateReq)
+	if err != nil {
+		return dto.ColumnResponse{}, err
 	}
 
 	var updatedColumnResponse dto.ColumnResponse
@@ -1409,6 +1478,51 @@ func (s tableManagementService) updateColumnForLookup(
 	}
 
 	return updatedColumnResponse, nil
+}
+
+// repointLookup validates new lookup meta and, when the link or looked-up column changed, moves the
+// lookup's entry between relation arrays. It returns the meta to store and a new column_name if one is needed.
+func (s tableManagementService) repointLookup(
+	ctx context.Context,
+	schemaName string,
+	columnData dto.ColumnResponse,
+	meta map[string]interface{},
+) (map[string]interface{}, *string, error) {
+	// Validate everything before touching the relation, so a bad request changes nothing.
+	resolved, err := s.resolveLookupMeta(ctx, schemaName, columnData.ModelID.String(), meta)
+	if err != nil {
+		return nil, nil, err
+	}
+	meta["link_column_id"] = resolved.LinkColumn.ID.String()
+
+	oldLookupColumnID, oldRelationID, hadOld := s.validateMetaForLookup(columnData.Meta)
+	sameLookupColumn := hadOld && oldLookupColumnID == resolved.LookupColumn.ID.String()
+	sameLink := sameLookupColumn &&
+		oldRelationID == resolved.RelationID &&
+		metaString(columnData.Meta, "link_column_id") == resolved.LinkColumn.ID.String()
+	if sameLink {
+		return meta, nil, nil
+	}
+
+	lg := logger.Get()
+	if hadOld {
+		oldRole := s.lookupEntityRole(ctx, schemaName, columnData, oldRelationID)
+		if oldColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, oldLookupColumnID); err == nil {
+			if err := s.removeLookupColumnInRelation(ctx, schemaName, oldRole, oldRelationID, oldColumn.ColumnName); err != nil {
+				lg.Warn().Err(err).Str("relationID", oldRelationID).Msg("Failed to remove old lookup entry from relation")
+			}
+		}
+	}
+
+	linkInfo, _ := parseLinkMeta(resolved.LinkColumn.Meta)
+	if err := s.addLookupColumnInRelation(ctx, schemaName, linkInfo.EntityRole, resolved.RelationID, resolved.LookupColumn.ColumnName); err != nil {
+		return nil, nil, err
+	}
+
+	if sameLookupColumn {
+		return meta, nil, nil
+	}
+	return meta, helpers.StringPtr(lookupColumnName(resolved.LookupColumn)), nil
 }
 
 func (s tableManagementService) UpdateColumn(
@@ -1432,17 +1546,22 @@ func (s tableManagementService) UpdateColumn(
 		return dto.ColumnResponse{}, err
 	}
 
-	if req.UIDT != nil && *req.UIDT != "" {
-		dt, _ := s.getDataBaseType(*req.UIDT)
-		req.DT = helpers.StringPtr(dt)
-	}
-
-	if columnData.UIDT == "link" {
+	if columnData.UIDT == uidtLinks {
 		return s.updateColumnForLink(ctx, schemaName, columnData, req)
 	}
 
-	if columnData.UIDT == "lookup" {
+	if columnData.UIDT == uidtLookup {
 		return s.updateColumnForLookup(ctx, schemaName, columnData, req)
+	}
+
+	// Link and lookup columns need their relation set up, so a plain column can't be converted into one.
+	if req.UIDT != nil && (*req.UIDT == uidtLinks || *req.UIDT == uidtLookup) {
+		return dto.ColumnResponse{}, app_errors.UpdateNotAllowed
+	}
+
+	if req.UIDT != nil && *req.UIDT != "" {
+		dt, _ := s.getDataBaseType(*req.UIDT)
+		req.DT = helpers.StringPtr(dt)
 	}
 
 	column, err := s.columnsService.UpdateColumn(ctx, schemaName, id, req)
@@ -1558,7 +1677,8 @@ func (s tableManagementService) deleteLookups(ctx context.Context, relationId st
 	}
 
 	for _, col := range columns {
-		if col.UIDT == "lookup" {
+		// Only lookups that read through this relation; lookups of other links on the table stay.
+		if col.UIDT == uidtLookup && metaString(col.Meta, "relation_id") == relationId {
 			var columnData dto.ColumnResponse
 			if err := helpers.StructToStruct(col, &columnData); err != nil {
 				return app_errors.ErrStructToStruct
@@ -1621,6 +1741,11 @@ func (s tableManagementService) handleDeleteColumnForLink(ctx context.Context, s
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to delete lookups")
 		return err
+	}
+
+	// A one-way self-link has no partner column; everything is already removed.
+	if isSingleColumnRelation(relation) {
+		return nil
 	}
 
 	// target column
@@ -1819,24 +1944,20 @@ func (s tableManagementService) DeleteLookupColumnAndReorder(ctx context.Context
 }
 
 func (s tableManagementService) DeleteUsedLookupColumnForRelation(ctx context.Context, schemaName string, columnData dto.ColumnResponse) error {
-	lookupColumnID, relationID, _ := s.validateMetaForLookup(columnData.Meta)
+	lookupColumnID, relationID, ok := s.validateMetaForLookup(columnData.Meta)
 
-	lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID)
-	if err != nil {
-		return err
+	// The relation entry is bookkeeping only (reads are built from lookup meta), so a missing
+	// looked-up column or relation must not keep the lookup itself from being deleted.
+	if ok {
+		if lookupColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, lookupColumnID); err == nil {
+			role := s.lookupEntityRole(ctx, schemaName, columnData, relationID)
+			if err := s.removeLookupColumnInRelation(ctx, schemaName, role, relationID, lookupColumn.ColumnName); err != nil {
+				logger.Get().Warn().Err(err).Str("relationID", relationID).Msg("Failed to remove lookup entry from relation")
+			}
+		}
 	}
 
-	err = s.removeLookupColumnInRelation(ctx, schemaName, columnData.ModelID.String(), relationID, lookupColumn.ColumnName)
-	if err != nil {
-		return err
-	}
-
-	err = s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
-	if err != nil {
-		return err
-	}
-	return nil
-
+	return s.columnsService.DeleteColumn(ctx, schemaName, columnData.ID.String())
 }
 
 func (s tableManagementService) DeleteColumn(
@@ -1849,12 +1970,18 @@ func (s tableManagementService) DeleteColumn(
 	if err != nil {
 		return err
 	}
-	if columnData.UIDT == "links" {
+	if columnData.UIDT == uidtLinks {
 		return s.handleDeleteColumnForLink(ctx, schemaName, columnData, id)
 	}
 
-	if columnData.UIDT == "lookup" {
-		return s.DeleteUsedLookupColumnForRelation(ctx, schemaName, columnData)
+	if columnData.UIDT == uidtLookup {
+		if err := s.DeleteUsedLookupColumnForRelation(ctx, schemaName, columnData); err != nil {
+			return err
+		}
+		if columnData.OrderIndex == nil {
+			return nil
+		}
+		return s.reorderColumnsAfterDelete(ctx, schemaName, columnData.ModelID.String(), columnData)
 	}
 
 	ok := s.allowDelete(columnData)
@@ -1921,29 +2048,11 @@ func (s tableManagementService) GetAllRecords(ctx context.Context, schemaName st
 	}, nil
 }
 
-func (s tableManagementService) checkLookuup(columnsData []dto.ColumnResponse) []string {
-	relationIdsSet := make(map[string]struct{})
-	for _, col := range columnsData {
-		if col.UIDT == "lookup" {
-			relationId, _ := col.Meta["relation_id"].(string)
-			if relationId != "" {
-				relationIdsSet[relationId] = struct{}{}
-			}
-		}
-	}
-	relationIds := make([]string, 0, len(relationIdsSet))
-	for id := range relationIdsSet {
-		relationIds = append(relationIds, id)
-	}
-	return relationIds
-}
-
 func (s tableManagementService) GetRecordsWithLookups(ctx context.Context, schemaName string, tableName string, columnsData []dto.ColumnResponse) (dto.RecordsResponse, error) {
 	lg := logger.Get()
-	functionName := "get_table_data_with_relation"
-	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, functionName)
+	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, lookupDataFunctionName)
 
-	relationData := s.buildRelationData(ctx, schemaName, columnsData)
+	relationData := s.buildLookupRelationData(ctx, schemaName, columnsData)
 
 	args := map[string]interface{}{
 		"schema_name":       schemaName,
@@ -1966,125 +2075,10 @@ func (s tableManagementService) GetRecordsWithLookups(ctx context.Context, schem
 	return dto.RecordsResponse{Records: normalizedRecord}, nil
 }
 
-func (s tableManagementService) buildRelationData(ctx context.Context, schemaName string, columnsData []dto.ColumnResponse) []map[string]interface{} {
-	relationIds := s.checkLookuup(columnsData)
-	if len(relationIds) == 0 {
-		return nil
-	}
-
-	var relationData []map[string]interface{}
-	for _, col := range columnsData {
-		if col.UIDT != "links" {
-			continue
-		}
-
-		rData := s.buildRelationDataForColumn(ctx, schemaName, col, relationIds)
-		if rData != nil {
-			relationData = append(relationData, rData)
-		}
-	}
-	return relationData
-}
-
-func (s tableManagementService) buildRelationDataForColumn(
-	ctx context.Context,
-	schemaName string,
-	col dto.ColumnResponse,
-	relationIds []string,
-) map[string]interface{} {
-	rData := map[string]interface{}{
-		"source_column_name": col.ColumnName,
-	}
-
-	relationId, _ := col.Meta["relation_id"].(string)
-	if !s.isRelationIdInList(relationId, relationIds) {
-		return nil
-	}
-
-	entityRole, _ := col.Meta["entity_role"].(string)
-
-	relation, err := s.relationshipService.GetRelationByID(ctx, relationId, schemaName)
-	if err != nil {
-		return nil
-	}
-
-	rData["relation"] = relation.RelationType
-
-	if err := s.addTargetInfoToRelationData(ctx, schemaName, rData, relation, entityRole); err != nil {
-		return nil
-	}
-
-	return rData
-}
-
-func (s tableManagementService) isRelationIdInList(relationId string, relationIds []string) bool {
-	for _, relID := range relationIds {
-		if relationId == relID {
-			return true
-		}
-	}
-	return false
-}
-
-func (s tableManagementService) addTargetInfoToRelationData(
-	ctx context.Context,
-	schemaName string,
-	rData map[string]interface{},
-	relation tenant.Relation,
-	entityRole string,
-) error {
-	if entityRole == "source" {
-		return s.addSourceTargetInfo(ctx, schemaName, rData, relation)
-	}
-	return s.addTargetSourceInfo(ctx, schemaName, rData, relation)
-}
-
-func (s tableManagementService) addSourceTargetInfo(
-	ctx context.Context,
-	schemaName string,
-	rData map[string]interface{},
-	relation tenant.Relation,
-) error {
-	if len(relation.SourceLookupColumns) == 0 {
-		return fmt.Errorf("no source lookup columns")
-	}
-
-	targetModel, err := s.modelService.GetModelByID(ctx, schemaName, relation.TargetModelID)
-	if err != nil {
-		return err
-	}
-
-	rData["target_table_name"] = targetModel.Alias
-	rData["target_column_name"] = "id"
-	rData["target_columns"] = relation.SourceLookupColumns
-	return nil
-}
-
-func (s tableManagementService) addTargetSourceInfo(
-	ctx context.Context,
-	schemaName string,
-	rData map[string]interface{},
-	relation tenant.Relation,
-) error {
-	if len(relation.TargetLookupColumns) == 0 {
-		return fmt.Errorf("no target lookup columns")
-	}
-
-	targetModel, err := s.modelService.GetModelByID(ctx, schemaName, relation.SourceModelID)
-	if err != nil {
-		return err
-	}
-
-	rData["target_table_name"] = targetModel.Alias
-	rData["target_column_name"] = "id"
-	rData["target_columns"] = relation.TargetLookupColumns
-	return nil
-}
-
 func (s tableManagementService) normalizeRecords(records []map[string]interface{}) []map[string]interface{} {
 	var normalizedRecord []map[string]interface{}
 
-	getPaginated, ok := records[0]["get_table_data_with_relation"]
+	getPaginated, ok := records[0][lookupDataFunctionName]
 	if !ok {
 		return normalizedRecord
 	}
@@ -2135,513 +2129,186 @@ func (s tableManagementService) getRowByID(ctx context.Context, tableName string
 	return records[0], nil
 }
 
-func (s tableManagementService) getRowByRelationColumn(ctx context.Context, tableName string, columnName string, linkedId interface{}) (map[string]interface{}, error) {
-	limit := 1
-	params := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   columnName,
-				Operator: "eq",
-				Value:    linkedId,
-			},
-		},
-		Limit: &limit,
-	}
-
-	records, err := s.repo.TableService.GetTableData(tableName, params)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to get row by relation column")
-	}
-	if len(records) == 0 {
-		return nil, app_errors.RowNotFound
-	}
-	return records[0], nil
-}
-
-func (s tableManagementService) getRowByRelationColumnHasMany(ctx context.Context, tableName string, columnName string, linkedId interface{}) (map[string]interface{}, error) {
-	limit := 1
-	params := dbModels.QueryParams{
-		Filters: []dbModels.QueryFilter{
-			{
-				Column:   columnName,
-				Operator: "any",
-				Value:    linkedId,
-			},
-		},
-		Limit: &limit,
-	}
-
-	records, err := s.repo.TableService.GetTableData(tableName, params)
-	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to get row by relation column (has many)")
-	}
-	if len(records) == 0 {
-		return nil, app_errors.RowNotFound
-	}
-	return records[0], nil
-}
-
-func (s tableManagementService) linkRecord(
+// resolveLinkSides loads the relation behind a link column and returns both sides as seen from that column.
+func (s tableManagementService) resolveLinkSides(
 	ctx context.Context,
-	datatype string,
-	tableName string,
-	rowId int,
-	columnName string,
-	value int,
-	updatedBy string,
-) (map[string]interface{}, error) {
-	rowData, err := s.getRowByID(ctx, tableName, rowId)
-	if err != nil {
-		return nil, err
-	}
-
-	switch datatype {
-	case "INT[]":
-		return s.linkIntArray(tableName, rowId, columnName, value, updatedBy, rowData)
-	case "INT":
-		return s.linkInt(tableName, rowId, columnName, value, updatedBy)
-	default:
-		return nil, fmt.Errorf("unsupported datatype: %s", datatype)
-	}
-}
-
-func (s tableManagementService) linkIntArray(
-	tableName string,
-	rowId int,
-	columnName string,
-	value int,
-	updatedBy string,
-	rowData map[string]interface{},
-) (map[string]interface{}, error) {
-	updatedArr := s.buildUpdatedArrayForLink(rowData[columnName], value)
-
-	data := map[string]interface{}{
-		columnName:           updatedArr,
-		"last_modified_time": time.Now().UTC(),
-	}
-	if updatedBy != "" {
-		data["last_modified_by"] = updatedBy
-	}
-	return s.repo.TableService.UpdateRecord(tableName, rowId, data)
-}
-
-func (s tableManagementService) buildUpdatedArrayForLink(existingValue interface{}, value int) []int64 {
-	switch v := existingValue.(type) {
-	case nil:
-		return []int64{int64(value)}
-	case []int64:
-		return s.appendIfNotExists(v, value)
-	case []string:
-		return s.appendToConvertedStringArray(v, value)
-	case int64:
-		return s.buildArrayFromInt64(v, value)
-	case int:
-		return s.buildArrayFromInt(v, value)
-	default:
-		return []int64{int64(value)}
-	}
-}
-
-func (s tableManagementService) appendIfNotExists(arr []int64, value int) []int64 {
-	for _, item := range arr {
-		if item == int64(value) {
-			return arr
-		}
-	}
-	return append(arr, int64(value))
-}
-
-func (s tableManagementService) appendToConvertedStringArray(strArr []string, value int) []int64 {
-	var arr []int64
-	for _, s := range strArr {
-		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-			arr = append(arr, n)
-		}
-	}
-
-	for _, item := range arr {
-		if item == int64(value) {
-			return arr
-		}
-	}
-	return append(arr, int64(value))
-}
-
-func (s tableManagementService) buildArrayFromInt64(existing int64, value int) []int64 {
-	if existing == int64(value) {
-		return []int64{existing}
-	}
-	return []int64{existing, int64(value)}
-}
-
-func (s tableManagementService) buildArrayFromInt(existing int, value int) []int64 {
-	if existing == value {
-		return []int64{int64(existing)}
-	}
-	return []int64{int64(existing), int64(value)}
-}
-
-func (s tableManagementService) linkInt(
-	tableName string,
-	rowId int,
-	columnName string,
-	value int,
-	updatedBy string,
-) (map[string]interface{}, error) {
-	data := map[string]interface{}{
-		columnName:           value,
-		"last_modified_time": time.Now().UTC(),
-	}
-	if updatedBy != "" {
-		data["last_modified_by"] = updatedBy
-	}
-	return s.repo.TableService.UpdateRecord(tableName, rowId, data)
-}
-
-func (s tableManagementService) unlinkRecord(
-	ctx context.Context,
-	datatype string,
-	tableName string,
-	rowId int,
-	columnName string,
-	value int,
-	updatedBy string,
-) (map[string]interface{}, error) {
-	rowData, err := s.getRowByID(ctx, tableName, rowId)
-	if err != nil {
-		return nil, err
-	}
-
-	switch datatype {
-	case "INT[]":
-		return s.unlinkIntArray(tableName, rowId, columnName, value, updatedBy, rowData)
-	case "INT":
-		return s.unlinkInt(tableName, rowId, columnName, value, updatedBy, rowData)
-	default:
-		return rowData, nil
-	}
-}
-
-func (s tableManagementService) unlinkIntArray(
-	tableName string,
-	rowId int,
-	columnName string,
-	value int,
-	updatedBy string,
-	rowData map[string]interface{},
-) (map[string]interface{}, error) {
-	arrInt64 := s.convertToInt64Array(rowData[columnName])
-	if arrInt64 == nil {
-		return rowData, nil
-	}
-
-	newArr := make([]int64, 0, len(arrInt64))
-	for _, v := range arrInt64 {
-		if v != int64(value) {
-			newArr = append(newArr, v)
-		}
-	}
-
-	data := map[string]interface{}{
-		columnName:           newArr,
-		"last_modified_time": time.Now().UTC(),
-	}
-	if updatedBy != "" {
-		data["last_modified_by"] = updatedBy
-	}
-	return s.repo.TableService.UpdateRecord(tableName, rowId, data)
-}
-
-func (s tableManagementService) convertToInt64Array(value interface{}) []int64 {
-	switch arr := value.(type) {
-	case []int64:
-		return arr
-	case []int:
-		var arrInt64 []int64
-		for _, v := range arr {
-			arrInt64 = append(arrInt64, int64(v))
-		}
-		return arrInt64
-	case []string:
-		var arrInt64 []int64
-		for _, s := range arr {
-			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-				arrInt64 = append(arrInt64, n)
-			}
-		}
-		return arrInt64
-	case int64:
-		return []int64{arr}
-	case int:
-		return []int64{int64(arr)}
-	case nil:
-		return nil
-	default:
-		return nil
-	}
-}
-
-func (s tableManagementService) unlinkInt(
-	tableName string,
-	rowId int,
-	columnName string,
-	value int,
-	updatedBy string,
-	rowData map[string]interface{},
-) (map[string]interface{}, error) {
-	val, ok := rowData[columnName].(int64)
-	if !ok {
-		if v, ok2 := rowData[columnName].(int); ok2 {
-			val = int64(v)
-			ok = true
-		}
-	}
-	if ok && int(val) == value {
-		data := map[string]interface{}{
-			columnName:           nil,
-			"last_modified_time": time.Now().UTC(),
-		}
-		if updatedBy != "" {
-			data["last_modified_by"] = updatedBy
-		}
-		return s.repo.TableService.UpdateRecord(tableName, rowId, data)
-	}
-	return rowData, nil
-}
-
-func (s tableManagementService) updateLinkData(
-	ctx context.Context,
-	params updateLinkDataParams,
-) (dto.RecordResponse, error) {
-	var (
-		sourceInsertedRecord map[string]interface{}
-		err                  error
-	)
-	switch params.Request.Action {
-	case "link":
-		sourceInsertedRecord, err = s.linkRecord(ctx, params.SourceDataType, params.SourceTableName, params.Request.SourceRowId, params.SourceColumnName, params.Request.TargetRowId, params.Request.UpdatedBy)
-	default:
-		sourceInsertedRecord, err = s.unlinkRecord(ctx, params.SourceDataType, params.SourceTableName, params.Request.SourceRowId, params.SourceColumnName, params.Request.TargetRowId, params.Request.UpdatedBy)
-	}
-	if err != nil {
-		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update link data (source side)")
-	}
-
-	switch params.Request.Action {
-	case "link":
-		_, err = s.linkRecord(ctx, params.TargetDataType, params.TargetTableName, params.Request.TargetRowId, params.TargetColumnName, params.Request.SourceRowId, params.Request.UpdatedBy)
-	default:
-		_, err = s.unlinkRecord(ctx, params.TargetDataType, params.TargetTableName, params.Request.TargetRowId, params.TargetColumnName, params.Request.SourceRowId, params.Request.UpdatedBy)
-	}
-	if err != nil {
-		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update link data (target side)")
-	}
-
-	return dto.RecordResponse{
-		Record: sourceInsertedRecord,
-	}, nil
-}
-
-func (s tableManagementService) updateIfExist(
-	ctx context.Context,
-	params updateIfExistParams,
-) error {
-
-	type check struct {
-		srcTable    string
-		srcColumn   string
-		srcDatatype string
-		trgTable    string
-		trgColumn   string
-		trgDataType string
-		id          int
-	}
-	checks := []check{
-		{params.SourceTableName, params.SourceColumnName, params.SourceDataType, params.TargetTableName, params.TargetColumnName, params.TargetDataType, params.Request.TargetRowId},
-		{params.TargetTableName, params.TargetColumnName, params.TargetDataType, params.SourceTableName, params.SourceColumnName, params.SourceDataType, params.Request.SourceRowId},
-	}
-
-	for _, c := range checks {
-		switch {
-		case params.RelationType == "one-to-one":
-			if err := s.handleOneToOneRelation(ctx, c, params.Request); err != nil {
-				return err
-			}
-		case params.RelationType == "has-many" && c.srcDatatype == "INT[]":
-			if err := s.handleHasManyIntArrayRelation(ctx, c, params.Request); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (s tableManagementService) handleOneToOneRelation(
-	ctx context.Context,
-	c struct {
-		srcTable, srcColumn, srcDatatype, trgTable, trgColumn, trgDataType string
-		id                                                                 int
-	},
+	schemaName string,
 	req dto.UpdateRowDataLinksRequest,
-) error {
-	data, err := s.getRowByRelationColumn(ctx, c.srcTable, c.srcColumn, c.id)
-	if err != nil && err != app_errors.RowNotFound {
-		return err
+) (source, target linkSide, relation tenant.Relation, err error) {
+	sourceColumnData, err := s.GetColumnById(ctx, schemaName, req.ColumnId)
+	if err != nil {
+		return source, target, relation, err
 	}
-	if err == nil {
-		srcID, _ := data["id"].(int64)
-		tgtID := c.id
-		req.SourceRowId = int(srcID)
-		req.TargetRowId = int(tgtID)
-		req.Action = "unlink"
-		_, err = s.updateLinkData(ctx, updateLinkDataParams{
-			SourceTableName:  c.srcTable,
-			TargetTableName:  c.trgTable,
-			SourceColumnName: c.srcColumn,
-			TargetColumnName: c.trgColumn,
-			SourceDataType:   c.srcDatatype,
-			TargetDataType:   c.trgDataType,
-			Request:          req,
-		})
+	info, ok := parseLinkMeta(sourceColumnData.Meta)
+	if sourceColumnData.UIDT != uidtLinks || !ok || sourceColumnData.ModelID.String() != req.ModelID {
+		return source, target, relation, app_errors.InvalidColumnMetaForLinkType
+	}
+
+	sourceModel, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return source, target, relation, err
+	}
+
+	relation, err = s.relationshipService.GetRelationByID(ctx, info.RelationID, schemaName)
+	if err != nil {
+		return source, target, relation, app_errors.LogDatabaseError(err, "failed to fetch relation by id")
+	}
+
+	if isSingleColumnRelation(relation) {
+		// One-way self-link: both "sides" are the same column.
+		dataType, err := s.linkDataType(info.EntityRole, relation.RelationType)
 		if err != nil {
-			return err
+			return source, target, relation, err
 		}
+		source = linkSide{
+			TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias),
+			ColumnName: sourceColumnData.ColumnName,
+			DataType:   dataType,
+		}
+		return source, source, relation, nil
 	}
-	return nil
+
+	trgModelId, trgColumnId := relation.TargetModelID, relation.TargetColumnID
+	if info.EntityRole == entityRoleTarget {
+		trgModelId, trgColumnId = relation.SourceModelID, relation.SourceColumnID
+	}
+
+	targetModel, err := s.modelService.GetModelByID(ctx, schemaName, trgModelId)
+	if err != nil {
+		return source, target, relation, err
+	}
+	targetColumnData, err := s.columnsService.GetColumnByID(ctx, schemaName, trgColumnId)
+	if err != nil {
+		return source, target, relation, err
+	}
+
+	sourceDataType, err := s.linkDataType(info.EntityRole, relation.RelationType)
+	if err != nil {
+		return source, target, relation, err
+	}
+	targetDataType, err := s.linkDataType(oppositeEntityRole(info.EntityRole), relation.RelationType)
+	if err != nil {
+		return source, target, relation, err
+	}
+
+	source = linkSide{
+		TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias),
+		ColumnName: sourceColumnData.ColumnName,
+		DataType:   sourceDataType,
+	}
+	target = linkSide{
+		TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, targetModel.Alias),
+		ColumnName: targetColumnData.ColumnName,
+		DataType:   targetDataType,
+	}
+	return source, target, relation, nil
 }
 
-func (s tableManagementService) handleHasManyIntArrayRelation(
-	ctx context.Context,
-	c struct {
-		srcTable, srcColumn, srcDatatype, trgTable, trgColumn, trgDataType string
-		id                                                                 int
-	},
-	req dto.UpdateRowDataLinksRequest,
-) error {
-	lg := logger.Get()
-	lg.Debug().Str("srcTable", c.srcTable).Str("srcColumn", c.srcColumn).Int("id", c.id).Msg("Handling has-many int array relation")
-	data, err := s.getRowByRelationColumnHasMany(ctx, c.srcTable, c.srcColumn, c.id)
-	if err != nil && err != app_errors.RowNotFound {
-		return err
-	}
-	if data != nil {
-		srcID, _ := data["id"].(int64)
-		tgtID := c.id
-		req.SourceRowId = int(srcID)
-		req.TargetRowId = int(tgtID)
-		req.Action = "unlink"
-		_, err = s.updateLinkData(ctx, updateLinkDataParams{
-			SourceTableName:  c.srcTable,
-			TargetTableName:  c.trgTable,
-			SourceColumnName: c.srcColumn,
-			TargetColumnName: c.trgColumn,
-			SourceDataType:   c.srcDatatype,
-			TargetDataType:   c.trgDataType,
-			Request:          req,
-		})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
+// UpdateRawDataForLinks links or unlinks two rows. Both sides, and any partner released to keep
+// one-to-one / has-many cardinality, are written in one transaction.
 func (s tableManagementService) UpdateRawDataForLinks(
 	ctx context.Context,
 	schemaName string,
 	req dto.UpdateRowDataLinksRequest,
 ) (dto.RecordResponse, error) {
-
-	sourceColumnData, err := s.GetColumnById(ctx, schemaName, req.ColumnId)
+	source, target, relation, err := s.resolveLinkSides(ctx, schemaName, req)
 	if err != nil {
 		return dto.RecordResponse{}, err
 	}
 
-	sourceModel, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	isLink := req.Action == linkActionLink
+	isSelf := isSelfRelation(relation)
+	sourceRowID, targetRowID := int64(req.SourceRowId), int64(req.TargetRowId)
+
+	if isLink && isSelf && sourceRowID == targetRowID {
+		return dto.RecordResponse{}, app_errors.SelfReferenceNotAllowed
+	}
+
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := lockLinkRows(ctx, tx, source.TableName, sourceRowID, target.TableName, targetRowID); err != nil {
+			return err
+		}
+		if isSingleColumnRelation(relation) {
+			return applySingleColumnLink(ctx, tx, source, relation.RelationType, sourceRowID, targetRowID, isLink, req.UpdatedBy)
+		}
+		if !isLink {
+			return applyLinkPair(ctx, tx, source, target, sourceRowID, targetRowID, false, req.UpdatedBy)
+		}
+		if isSelf && relation.RelationType == relationHasMany {
+			// The INT side of a has-many points from a child to its parent.
+			parentSide, parentID, childID := target, sourceRowID, targetRowID
+			if source.DataType == linkDataTypeInt {
+				parentSide, parentID, childID = source, targetRowID, sourceRowID
+			}
+			cycle, err := wouldCreateCycle(ctx, tx, parentSide, parentID, childID)
+			if err != nil {
+				return err
+			}
+			if cycle {
+				return app_errors.LinkCycleDetected
+			}
+		}
+		if err := releaseExistingLinks(ctx, tx, relation.RelationType, source, target, sourceRowID, targetRowID, req.UpdatedBy); err != nil {
+			return err
+		}
+		return applyLinkPair(ctx, tx, source, target, sourceRowID, targetRowID, true, req.UpdatedBy)
+	})
 	if err != nil {
 		return dto.RecordResponse{}, err
 	}
 
-	sourceTableName := fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias)
-
-	relationId, ok := sourceColumnData.Meta["relation_id"].(string)
-	if !ok {
-		return dto.RecordResponse{}, app_errors.ErrInternal
-	}
-
-	relationData, err := s.relationshipService.GetRelationByID(ctx, relationId, schemaName)
-	if err != nil {
-		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to fetch relation by id")
-	}
-
-	srcEntityRole := sourceColumnData.Meta["entity_role"]
-	trgModelId := relationData.TargetModelID
-	trgColumnId := relationData.TargetColumnID
-	if srcEntityRole == "target" {
-		trgModelId = relationData.SourceModelID
-		trgColumnId = relationData.SourceColumnID
-	}
-
-	targetModel, err := s.modelService.GetModelByID(ctx, schemaName, trgModelId)
+	sourceRecord, err := s.getRowByID(ctx, source.TableName, req.SourceRowId)
 	if err != nil {
 		return dto.RecordResponse{}, err
 	}
-
-	targetTableName := fmt.Sprintf(SchemaTableFormat, schemaName, targetModel.Alias)
-
-	targetColumnData, err := s.columnsService.GetColumnByID(ctx, schemaName, trgColumnId)
+	// The other row changed too; return it so the client can refresh both without refetching.
+	targetRecord, err := s.getRowByID(ctx, target.TableName, req.TargetRowId)
 	if err != nil {
-		return dto.RecordResponse{}, err
+		logger.Get().Warn().Err(err).Int("targetRowId", req.TargetRowId).Msg("Failed to load linked row after update")
 	}
 
-	relationType, _, _ := s.validateMetaForLink(sourceColumnData.Meta)
+	return dto.RecordResponse{
+		Record:        sourceRecord,
+		RelatedRecord: targetRecord,
+	}, nil
+}
 
-	trgEntityRole := "source"
-	if srcEntityRole == "source" {
-		trgEntityRole = "target"
+// lockLinkRows locks both rows in a fixed order (avoids deadlocks between opposite link calls)
+// and checks that they exist.
+func lockLinkRows(ctx context.Context, tx *sql.Tx, sourceTable string, sourceRowID int64, targetTable string, targetRowID int64) error {
+	type rowRef struct {
+		table   string
+		id      int64
+		missing error
 	}
-	srcUidt := fmt.Sprintf("links_%v_%v", srcEntityRole, relationType)
-	sourceDataType, err := s.getDataBaseType(srcUidt)
-	if err != nil {
-		return dto.RecordResponse{}, err
+	refs := []rowRef{
+		{sourceTable, sourceRowID, app_errors.RowNotFound},
+		{targetTable, targetRowID, app_errors.LinkTargetRowNotFound},
 	}
-	trgUidt := fmt.Sprintf("links_%v_%v", trgEntityRole, relationType)
-	targetDataType, err := s.getDataBaseType(trgUidt)
-	if err != nil {
-		return dto.RecordResponse{}, err
+	if refs[1].table < refs[0].table || (refs[1].table == refs[0].table && refs[1].id < refs[0].id) {
+		refs[0], refs[1] = refs[1], refs[0]
 	}
-
-	if req.Action == "link" {
-		err = s.updateIfExist(ctx, updateIfExistParams{
-			RelationType:     relationType,
-			SourceTableName:  sourceTableName,
-			SourceColumnName: sourceColumnData.ColumnName,
-			TargetTableName:  targetTableName,
-			TargetColumnName: targetColumnData.ColumnName,
-			SourceDataType:   sourceDataType,
-			TargetDataType:   targetDataType,
-			Request:          req,
-		})
+	for _, ref := range refs {
+		exists, err := lockRow(ctx, tx, ref.table, ref.id)
 		if err != nil {
-			return dto.RecordResponse{}, err
+			return err
+		}
+		if !exists {
+			return ref.missing
 		}
 	}
-
-	return s.updateLinkData(ctx, updateLinkDataParams{
-		SourceTableName:  sourceTableName,
-		TargetTableName:  targetTableName,
-		SourceColumnName: sourceColumnData.ColumnName,
-		TargetColumnName: targetColumnData.ColumnName,
-		SourceDataType:   sourceDataType,
-		TargetDataType:   targetDataType,
-		Request:          req,
-	})
+	return nil
 }
 
 func (s tableManagementService) InsertRowData(ctx context.Context, schemaName string, req dto.InsertRowDataRequest) (dto.RecordResponse, error) {
 	columnData, err := s.GetColumnById(ctx, schemaName, req.ColumnId)
 	if err != nil {
 		return dto.RecordResponse{}, err
+	}
+
+	// Link values must go through the link endpoint so both sides stay in sync; lookups are read-only.
+	if columnData.UIDT == uidtLinks || columnData.UIDT == uidtLookup {
+		return dto.RecordResponse{}, app_errors.LinkColumnNotWritable
 	}
 
 	ok := s.allowInsert(columnData)
@@ -2799,177 +2466,14 @@ func ExtractCreatedRowID(record map[string]interface{}) (int, error) {
 	}
 }
 
-func (s tableManagementService) handleDeleteRowForLinks(ctx context.Context, sourceModel tenant.Model, rowData map[string]interface{}, schemaName string, req dto.DeleteRowDataRequest) error {
-	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())
-	if err != nil {
-		return err
+// cleanUpLinksForRows removes every reference to the given rows from partner link columns, in one transaction.
+func (s tableManagementService) cleanUpLinksForRows(ctx context.Context, schemaName string, model tenant.Model, rowIDs []int64) error {
+	if len(rowIDs) == 0 {
+		return nil
 	}
-
-	for _, column := range columns {
-		if column.UIDT != "links" {
-			continue
-		}
-
-		val, ok := rowData[column.ColumnName]
-		if !ok || val == nil {
-			continue
-		}
-		// Check if it's an empty array (slice)
-		if arr, isSlice := val.([]interface{}); isSlice && len(arr) == 0 {
-			continue
-		}
-
-		if err := s.handleLinkColumn(ctx, schemaName, req, sourceModel, rowData, column); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s tableManagementService) handleLinkColumn(
-	ctx context.Context,
-	schemaName string,
-	req dto.DeleteRowDataRequest,
-	sourceModel tenant.Model,
-	rowData map[string]interface{},
-	column tenant.Column,
-) error {
-	relationId := column.Meta["relation_id"].(string)
-	entityRole := column.Meta["entity_role"].(string)
-
-	relationData, err := s.relationshipService.GetRelationByID(ctx, relationId, schemaName)
-	if err != nil {
-		return err
-	}
-
-	targetModelId := relationData.SourceModelID
-	targetColumnID := relationData.SourceColumnID
-	if entityRole == "source" {
-		targetModelId = relationData.TargetModelID
-		targetColumnID = relationData.TargetColumnID
-	}
-
-	targetModel, err := s.modelService.GetModelByID(ctx, schemaName, targetModelId)
-	if err != nil {
-		return err
-	}
-
-	targetColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, targetColumnID)
-	if err != nil {
-		return err
-	}
-
-	sourceDataType, targetDataType, err := s.resolveDataTypes(column)
-	if err != nil {
-		return err
-	}
-
-	sourceTableName := fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias)
-	targetTableName := fmt.Sprintf(SchemaTableFormat, schemaName, targetModel.Alias)
-	return s.unlinkRowData(ctx, unlinkRowDataParams{
-		Request:         req,
-		SourceTableName: sourceTableName,
-		TargetTableName: targetTableName,
-		Column:          column,
-		TargetColumn:    targetColumn,
-		RowData:         rowData,
-		SourceDataType:  sourceDataType,
-		TargetDataType:  targetDataType,
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		return s.removeBackReferences(ctx, tx, schemaName, model, rowIDs, "")
 	})
-}
-
-// Resolve source/target datatype from relation metadata
-func (s tableManagementService) resolveDataTypes(column tenant.Column) (string, string, error) {
-	relation := column.Meta["relation"].(map[string]interface{})
-	relationType := relation["type"]
-	entityRole := column.Meta["entity_role"]
-
-	// source role
-	tempUidt := fmt.Sprintf("%s_%v_%v", column.UIDT, entityRole, relationType)
-	sourceDataType, err := s.getDataBaseType(tempUidt)
-	if err != nil {
-		return "", "", err
-	}
-
-	// target role
-	targteEntityRole := "source"
-	if entityRole == "source" {
-		targteEntityRole = "target"
-	}
-	trgTempUidt := fmt.Sprintf("%s_%v_%v", column.UIDT, targteEntityRole, relationType)
-	targetDataType, err := s.getDataBaseType(trgTempUidt)
-	if err != nil {
-		return "", "", err
-	}
-
-	return sourceDataType, targetDataType, nil
-}
-
-// Unlink row(s) depending on datatype (INT or INT[])
-func (s tableManagementService) unlinkRowData(
-	ctx context.Context,
-	params unlinkRowDataParams,
-) error {
-	if params.SourceDataType == "INT" {
-		targetRowId := params.RowData[params.Column.ColumnName].(int64)
-		return s.unlinkSingleRow(ctx, unlinkSingleRowParams{
-			Request:         params.Request,
-			SourceTableName: params.SourceTableName,
-			TargetTableName: params.TargetTableName,
-			Column:          params.Column,
-			TargetColumn:    params.TargetColumn,
-			SourceDataType:  params.SourceDataType,
-			TargetDataType:  params.TargetDataType,
-			TargetRowId:     targetRowId,
-		})
-	}
-
-	// handle multiple (INT[])
-	targetRowIds := params.RowData[params.Column.ColumnName].([]int64)
-	for _, targetRowId := range targetRowIds {
-		if err := s.unlinkSingleRow(ctx, unlinkSingleRowParams{
-			Request:         params.Request,
-			SourceTableName: params.SourceTableName,
-			TargetTableName: params.TargetTableName,
-			Column:          params.Column,
-			TargetColumn:    params.TargetColumn,
-			SourceDataType:  params.SourceDataType,
-			TargetDataType:  params.TargetDataType,
-			TargetRowId:     targetRowId,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Build unlink request and call updateLinkData
-func (s tableManagementService) unlinkSingleRow(
-	ctx context.Context,
-	params unlinkSingleRowParams,
-) error {
-	updateLinkReq := dto.UpdateRowDataLinksRequest{
-		ModelID:     params.Request.ModelID,
-		ColumnId:    params.Column.ID.String(),
-		SourceRowId: params.Request.RowId,
-		TargetRowId: int(params.TargetRowId),
-		Action:      "unlink",
-	}
-
-	_, err := s.updateLinkData(
-		ctx,
-		updateLinkDataParams{
-			SourceTableName:  params.SourceTableName,
-			TargetTableName:  params.TargetTableName,
-			SourceColumnName: params.Column.ColumnName,
-			TargetColumnName: params.TargetColumn.ColumnName,
-			SourceDataType:   params.SourceDataType,
-			TargetDataType:   params.TargetDataType,
-			Request:          updateLinkReq,
-		},
-	)
-	return err
 }
 
 func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string, req dto.DeleteRowDataRequest) error {
@@ -2979,12 +2483,11 @@ func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string
 	}
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
-	rowData, err := s.getRowByID(ctx, tableName, req.RowId)
-	if err != nil {
+	if _, err := s.getRowByID(ctx, tableName, req.RowId); err != nil {
 		return err
 	}
 
-	if err := s.handleDeleteRowForLinks(ctx, model, rowData, schemaName, req); err != nil {
+	if err := s.cleanUpLinksForRows(ctx, schemaName, model, []int64{int64(req.RowId)}); err != nil {
 		return err
 	}
 
@@ -3144,22 +2647,14 @@ func (s tableManagementService) BulkDeleteRows(ctx context.Context, schemaName s
 	}
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 	deletedCount := 0
-	// Process each row for link cleanup before bulk delete
-	for _, rowId := range req.RowIds {
-		rowData, err := s.getRowByID(ctx, tableName, rowId)
-		if err != nil {
-			lg.Warn().Err(err).Int("rowId", rowId).Msg("Row not found, skipping")
-			continue
-		}
-		// Handle link cleanup for this row
-		deleteReq := dto.DeleteRowDataRequest{
-			ModelID: req.ModelID,
-			RowId:   rowId,
-		}
-		if err := s.handleDeleteRowForLinks(ctx, model, rowData, schemaName, deleteReq); err != nil {
-			lg.Error().Stack().Err(err).Int("rowId", rowId).Msg("Failed to handle links for row")
-			return deletedCount, err
-		}
+	// Remove links pointing at these rows before bulk delete
+	rowIDs := make([]int64, len(req.RowIds))
+	for i, rowId := range req.RowIds {
+		rowIDs[i] = int64(rowId)
+	}
+	if err := s.cleanUpLinksForRows(ctx, schemaName, model, rowIDs); err != nil {
+		lg.Error().Stack().Err(err).Msg("Failed to handle links for rows")
+		return deletedCount, err
 	}
 	// Convert row IDs to interface{} slice for BulkDelete
 	ids := make([]interface{}, len(req.RowIds))

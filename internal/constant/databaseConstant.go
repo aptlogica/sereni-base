@@ -194,6 +194,82 @@ var DefinedFunctions = []Function{
 		`,
 	},
 	{
+		// Replaces get_table_data_with_relation. Each relation_data entry carries its own output aliases
+		// (the lookup column names) and whether the link column is an array, so two lookups of the same
+		// field through different links (including both directions of a self-link) never collide.
+		// relation_data entry: {source_column_name, target_table_name, target_column_name, relation,
+		//                       is_array, targets: [{column, alias}]}
+		FunctionName:   "get_table_data_with_lookups",
+		FunctionParams: "schema_name TEXT, source_table_name TEXT, relation_data JSON[]",
+		FunctionSQL: `
+			RETURNS JSON
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				rel JSON;
+				target JSON;
+				source_column_name TEXT;
+				target_table_name TEXT;
+				target_column_name TEXT;
+				relation TEXT;
+				is_array BOOLEAN;
+				expr TEXT;
+				relation_sql TEXT := '';
+				query TEXT;
+				result JSON;
+			BEGIN
+				FOR rel IN SELECT * FROM unnest(COALESCE(relation_data, ARRAY[]::JSON[]))
+				LOOP
+					source_column_name := rel->>'source_column_name';
+					target_table_name  := rel->>'target_table_name';
+					target_column_name := rel->>'target_column_name';
+					relation           := rel->>'relation';
+					is_array           := COALESCE((rel->>'is_array')::BOOLEAN, FALSE);
+
+					FOR target IN SELECT * FROM json_array_elements(rel->'targets')
+					LOOP
+						IF is_array THEN
+							expr := format(
+								'(SELECT COALESCE(JSON_AGG(t.%I), ''[]''::JSON) FROM %I.%I t WHERE t.%I = ANY(s.%I)) AS %I',
+								target->>'column', schema_name, target_table_name, target_column_name, source_column_name,
+								target->>'alias'
+							);
+						ELSIF relation IN ('has-many', 'many-to-many') THEN
+							expr := format(
+								'(SELECT COALESCE(JSON_AGG(t.%I), ''[]''::JSON) FROM %I.%I t WHERE t.%I = s.%I) AS %I',
+								target->>'column', schema_name, target_table_name, target_column_name, source_column_name,
+								target->>'alias'
+							);
+						ELSE
+							expr := format(
+								'(SELECT t.%I FROM %I.%I t WHERE t.%I = s.%I LIMIT 1) AS %I',
+								target->>'column', schema_name, target_table_name, target_column_name, source_column_name,
+								target->>'alias'
+							);
+						END IF;
+						relation_sql := relation_sql || ', ' || expr;
+					END LOOP;
+				END LOOP;
+
+				query := format(
+					'SELECT COALESCE(JSON_AGG(row_to_json(row)), ''[]''::JSON)
+					 FROM (
+						 SELECT s.* %s
+						 FROM %I.%I s
+						 ORDER BY s.created_time
+					 ) row',
+					relation_sql,
+					schema_name, source_table_name
+				);
+
+				EXECUTE query INTO result;
+
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
 		FunctionName:   "reorder_columns_after_delete",
 		FunctionParams: "p_schema_name TEXT, p_model_id TEXT, p_order_index INT",
 		FunctionSQL: `
