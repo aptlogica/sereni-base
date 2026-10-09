@@ -179,10 +179,10 @@ type BaseResponse struct {
 
 	// Database connection (for external sources)
 	Type   string                 `db:"type" json:"type,omitempty" mapstructure:"type"`
-	Config map[string]interface{} `db:"config" json:"config,omitempty" mapstructure:"config"`
+	Config map[string]interface{} `db:"config" json:"config" mapstructure:"config"`
 
 	// Settings and metadata
-	Settings map[string]interface{} `db:"settings" json:"settings,omitempty" mapstructure:"settings"`
+	Settings map[string]interface{} `db:"settings" json:"settings" mapstructure:"settings"`
 	Meta     map[string]interface{} `db:"meta" json:"meta" mapstructure:"meta"`
 
 	// Status and visibility
