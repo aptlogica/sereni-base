@@ -6,10 +6,10 @@ github.com/aptlogica/go-postgres-rest v1.0.1-alpha h1:hI77u/8i3cuE3BoZfSzn3g9Cmf
 github.com/aptlogica/go-postgres-rest v1.0.1-alpha/go.mod h1:dRtYmZyk/qs2gkDLk3Qq9PhQ+Q94/GlXycJ3WJmhGJU=
 github.com/bytedance/gopkg v0.1.4 h1:oZnQwnX82KAIWb7033bEwtxvTqXcYMxDBaQxo5JJHWM=
 github.com/bytedance/gopkg v0.1.4/go.mod h1:v1zWfPm21Fb+OsyXN2VAHdL6TBb2L88anLQgdyje6R4=
-github.com/bytedance/sonic v1.15.0 h1:/PXeWFaR5ElNcVE84U0dOHjiMHQOwNIx3K4ymzh/uSE=
-github.com/bytedance/sonic v1.15.0/go.mod h1:tFkWrPz0/CUCLEF4ri4UkHekCIcdnkqXw9VduqpJh0k=
-github.com/bytedance/sonic/loader v0.5.1 h1:Ygpfa9zwRCCKSlrp5bBP/b/Xzc3VxsAW+5NIYXrOOpI=
-github.com/bytedance/sonic/loader v0.5.1/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
+github.com/bytedance/sonic v1.15.4 h1:FgtV/4aBHpla9AxuMpuuzVUpa/Cf3izufkxNmnEzdI8=
+github.com/bytedance/sonic v1.15.4/go.mod h1:8e51yTPdY8M6t+vvGL1c2Y1xL9i+frEeIAQAEl75NUc=
+github.com/bytedance/sonic/loader v0.5.2 h1:0QtP1gevc1OZ6/H8Lb9BRZiCXd1Ftjd3OKuj1T1lBIo=
+github.com/bytedance/sonic/loader v0.5.2/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
 github.com/cloudwego/base64x v0.1.6 h1:t11wG9AECkCDk5fMSoxmufanudBtJ+/HemLstXDLI2M=
 github.com/cloudwego/base64x v0.1.6/go.mod h1:OFcloc187FXDaYHvrNIjxSe8ncn0OOM8gEHfghB2IPU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
