@@ -77,6 +77,8 @@ type CreateRowRequest struct {
 
 type RecordResponse struct {
 	Record map[string]interface{} `json:"record"`
+	// RelatedRecord is the other row changed by a link/unlink call.
+	RelatedRecord map[string]interface{} `json:"related_record,omitempty"`
 }
 
 type RecordsResponse struct {

@@ -176,6 +176,12 @@ var (
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
 	SplitNotPossible               = errors.New("split is not possible")
+	SelfReferenceNotAllowed        = errors.New("self reference not allowed")
+	LinkCycleDetected              = errors.New("link would create a cycle")
+	InvalidLookupLinkColumn        = errors.New("invalid lookup link field")
+	LinkTargetRowNotFound          = errors.New("linked record not found")
+	InvalidLookupTargetColumn      = errors.New("lookup field not allowed")
+	LinkColumnNotWritable          = errors.New("field is not directly writable")
 )
 
 // APIError represents an error response from an external API
