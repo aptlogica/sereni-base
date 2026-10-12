@@ -3,6 +3,7 @@ module github.com/aptlogica/sereni-base
 go 1.27.1
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/aptlogica/go-postgres-rest v1.0.1-alpha
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/universal-translator v0.18.1
