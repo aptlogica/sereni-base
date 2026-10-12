@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"mime/multipart"
 	"strings"
 
@@ -44,6 +45,20 @@ func validateBaseID(c *gin.Context, id string) bool {
 	return true
 }
 
+// parseBaseMeta reads the optional "meta" form field as a JSON object.
+// Returns nil when the field is absent; ok is false when it is not a valid JSON object.
+func parseBaseMeta(c *gin.Context) (map[string]interface{}, bool) {
+	raw, exists := c.GetPostForm("meta")
+	if !exists || strings.TrimSpace(raw) == "" {
+		return nil, true
+	}
+	var meta map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil || meta == nil {
+		return nil, false
+	}
+	return meta, true
+}
+
 // @Summary      Create a new base
 // @Description  Persists a base associated with a workspace and optional description, returning the stored base data. Optional image dimensions must not exceed 800x400 pixels.
 // @Tags         Admin Base
@@ -52,6 +67,7 @@ func validateBaseID(c *gin.Context, id string) bool {
 // @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
 // @Param        request     body      dto.CreateBaseRequest  true   "Base payload"
 // @Param        workspace_id formData string                true   "Workspace ID ownership"
+// @Param        meta        formData  string              false  "Optional base meta as a JSON object string"
 // @Param        image       formData  file                false  "Optional base image (max 800x400 pixels)"
 // @Success      201         {object}  dto.BaseResponse     "Base created"
 // @Failure      400         {object}  models.ErrorResponse  "Bad Request — missing title, workspace, or invalid image dimensions"
@@ -82,6 +98,12 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 		return
 	}
 
+	meta, ok := parseBaseMeta(c)
+	if !ok {
+		response.SendError(c, responseConst.BaseError.MetaInvalid)
+		return
+	}
+
 	// Get optional image file
 	file, _ := c.FormFile("image")
 
@@ -104,6 +126,7 @@ func (h *BaseHandler) CreateBase(c *gin.Context) {
 		Title:       title,
 		Description: &description,
 		WorkspaceID: workspaceID,
+		Meta:        meta,
 		CreatedBy:   userId,
 	}
 
@@ -199,6 +222,7 @@ func (h *BaseHandler) parseUpdateBaseForm(c *gin.Context) (dto.BaseUpdate, *mult
 // @Param        request      body      dto.BaseUpdate   true  "Fields to update"
 // @Param        image        formData  file            false "New base image (max 800x400 pixels)"
 // @Param        remove_image formData  string          false "Pass true to drop the existing image"
+// @Param        meta         formData  string          false "Base meta as a JSON object string (replaces existing meta)"
 // @Success      200          {object}  dto.BaseResponse  "Updated base data"
 // @Failure      400          {object}  models.ErrorResponse  "Bad Request — invalid payload or invalid image dimensions"
 // @Failure      401          {object}  models.ErrorResponse  "Unauthorized — invalid token"
@@ -225,6 +249,15 @@ func (h *BaseHandler) UpdateBase(c *gin.Context) {
 			return
 		}
 		req.Title = &title
+	}
+
+	meta, ok := parseBaseMeta(c)
+	if !ok {
+		response.SendError(c, responseConst.BaseError.MetaInvalid)
+		return
+	}
+	if meta != nil {
+		req.Meta = &meta
 	}
 
 	// Validate file size if image is provided
