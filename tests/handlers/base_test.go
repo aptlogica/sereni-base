@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -566,5 +567,122 @@ func TestBaseHandler_AddBaseImage_ImageTooLarge(t *testing.T) {
 	c.Set("user_id", "user123")
 
 	handler.AddBaseImage(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func newBaseMultipartContext(t *testing.T, method, path string, fields map[string]string) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for k, v := range fields {
+		_ = writer.WriteField(k, v)
+	}
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, body)
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+	return c, w
+}
+
+func TestBaseHandler_CreateBase_WithMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockBaseManagementService(ctrl)
+	mockService.EXPECT().CreateBaseWithImage(gomock.Any(), gomock.Any(), "test", "user123", gomock.Any()).
+		DoAndReturn(func(_ context.Context, req dto.CreateBaseRequest, _ string, _ string, _ *multipart.FileHeader) (tenant.Base, error) {
+			assert.Equal(t, "#fff", req.Meta["color"])
+			return tenant.Base{}, nil
+		})
+	handler := handlers.NewBaseHandler(mockService)
+
+	c, w := newBaseMultipartContext(t, "POST", "/bases", map[string]string{
+		"title":        "Base",
+		"workspace_id": "w1",
+		"meta":         `{"color":"#fff"}`,
+	})
+
+	handler.CreateBase(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_CreateBase_InvalidMeta(t *testing.T) {
+	cases := map[string]string{
+		"malformed": `{not-json`,
+		"array":     `[1,2]`,
+		"null":      `null`,
+	}
+	for name, meta := range cases {
+		t.Run(name, func(t *testing.T) {
+			handler := handlers.NewBaseHandler(nil)
+			c, w := newBaseMultipartContext(t, "POST", "/bases", map[string]string{
+				"title":        "Base",
+				"workspace_id": "w1",
+				"meta":         meta,
+			})
+
+			handler.CreateBase(c)
+			assert.NotEqual(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestBaseHandler_CreateBase_MissingWorkspace(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+	c, w := newBaseMultipartContext(t, "POST", "/bases", map[string]string{"title": "Base"})
+
+	handler.CreateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_WithMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockService := mocks.NewMockBaseManagementService(ctrl)
+	mockService.EXPECT().GetBaseByID(gomock.Any(), "test", testBaseID).Return(tenant.Base{}, nil)
+	mockService.EXPECT().UpdateBase(gomock.Any(), "test", testBaseID, gomock.Any(), "user123", gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, _ string, req dto.BaseUpdate, _ string, _ *multipart.FileHeader, _ string) (tenant.Base, error) {
+			if assert.NotNil(t, req.Meta) {
+				assert.Equal(t, "#000", (*req.Meta)["color"])
+			}
+			return tenant.Base{}, nil
+		})
+	handler := handlers.NewBaseHandler(mockService)
+
+	c, w := newBaseMultipartContext(t, "PUT", "/bases/"+testBaseID, map[string]string{
+		"meta": `{"color":"#000"}`,
+	})
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+
+	handler.UpdateBase(c)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_InvalidMeta(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+	c, w := newBaseMultipartContext(t, "PUT", "/bases/"+testBaseID, map[string]string{
+		"meta": `{not-json`,
+	})
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+
+	handler.UpdateBase(c)
+	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestBaseHandler_UpdateBase_EmptyTitle(t *testing.T) {
+	handler := handlers.NewBaseHandler(nil)
+	c, w := newBaseMultipartContext(t, "PUT", "/bases/"+testBaseID, map[string]string{
+		"title": "   ",
+	})
+	c.Params = gin.Params{{Key: "id", Value: testBaseID}}
+
+	handler.UpdateBase(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
