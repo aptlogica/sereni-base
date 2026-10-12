@@ -49,6 +49,7 @@ type Handlers struct {
 	Table        *handlers.TableHandler
 	User         *handlers.UserHandler
 	Organization *handlers.OrganizationHandler
+	Automation   *handlers.AutomationHandler
 }
 
 func Setup(cfg *config.Config,
@@ -115,6 +116,7 @@ func Setup(cfg *config.Config,
 		setupColumnRoutes(private, handlerGroups, middlewareGroups)
 		setupRowRoutes(private, handlerGroups, middlewareGroups)
 		setupViewRoutes(private, handlerGroups, middlewareGroups)
+		setupAutomationRoutes(private, handlerGroups, middlewareGroups)
 		setupAssetRoutes(private, handlerGroups, middlewareGroups)
 	}
 
@@ -472,6 +474,28 @@ func setupViewRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		view.DELETE("/:id",
 			objectGuard(middlewares, appConstant.ResourceCodes.Views, appConstant.ActionCodes.Delete, viewParam),
 			handlers.Table.DeleteView)
+	}
+}
+
+// setupAutomationRoutes configures trigger & webhook endpoints
+func setupAutomationRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
+	automation := private.Group("/automation")
+	{
+		automation.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Create, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.CreateAutomation)
+		automation.GET("",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.GetAutomations)
+		automation.PUT("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.UpdateAutomation)
+		automation.POST("/:id/run",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.RunAutomation)
+		automation.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.DeleteAutomation)
 	}
 }
 

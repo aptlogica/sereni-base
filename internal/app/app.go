@@ -129,6 +129,7 @@ func New(cfg *config.Config) (*App, error) {
 	modelService := services.NewModelService(dbService)
 	columnService := services.NewColumnService(dbService)
 	viewService := services.NewViewService(dbService)
+	automationService := services.NewAutomationService(dbService, modelService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
 	resourceService := services.NewCoreResourceService(dbService)
@@ -225,6 +226,7 @@ func New(cfg *config.Config) (*App, error) {
 	tableHandler := handlers.NewTableHandler(tableManagementService, importService)
 	userHandler := handlers.NewUserHandler(userManagementService)
 	organizationHandler := handlers.NewOrganizationHandler(organizationService)
+	automationHandler := handlers.NewAutomationHandler(automationService)
 
 	handlerGroups := router.Handlers{
 		Auth:         authHandler,
@@ -234,6 +236,7 @@ func New(cfg *config.Config) (*App, error) {
 		Table:        tableHandler,
 		User:         userHandler,
 		Organization: organizationHandler,
+		Automation:   automationHandler,
 	}
 
 	middlewareGroups := router.Middlewares{

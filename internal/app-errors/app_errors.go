@@ -184,6 +184,16 @@ var (
 	LinkColumnNotWritable          = errors.New("field is not directly writable")
 )
 
+// automations (triggers & webhooks)
+var (
+	AutomationNotFound   = errors.New("automation not found")
+	InvalidTriggerQuery  = errors.New("invalid trigger query")
+	InvalidFunctionQuery = errors.New("invalid function query")
+	TriggerFailed        = errors.New("failed to run trigger query")
+	TriggerHasFunction   = errors.New("trigger query contains a function")
+	InvalidTriggerEvent  = errors.New("invalid trigger timing or events")
+)
+
 // APIError represents an error response from an external API
 type APIError struct {
 	Code       string
