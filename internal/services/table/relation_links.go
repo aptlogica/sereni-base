@@ -29,15 +29,11 @@ const (
 	relationOneToOne = "one-to-one"
 	relationHasMany  = "has-many"
 
-	linkDataTypeInt      = "INT"
-	linkDataTypeIntArray = "INT[]"
-
 	linkActionLink   = "link"
 	linkActionUnlink = "unlink"
 
-	lookupDataFunctionName           = "get_table_data_with_lookups"
-	linkRowsFunctionName             = "link_rows"
-	removeBackReferencesFunctionName = "remove_link_back_references"
+	lookupDataFunctionName = "get_table_data_with_lookups"
+	linkRowsFunctionName   = "link_rows"
 
 	// Statuses returned by link_rows.
 	linkStatusOK             = "ok"
@@ -54,11 +50,12 @@ type linkColumnInfo struct {
 	With         string // model ID of the other side
 }
 
-// linkSide describes one side of a relation: the table and link column that hold IDs of the other side.
+// linkSide describes one side of a relation: the table and link column that hold keys of the other side.
 type linkSide struct {
 	TableName  string
 	ColumnName string
-	DataType   string
+	// IsMulti is true when the column holds many linked records (has-many source, many-to-many)
+	IsMulti bool
 }
 
 // metaString reads a string value from column meta. Values written before a DB round-trip may still be uuid.UUID.
@@ -106,7 +103,7 @@ func isSingleColumnRelation(relation tenant.Relation) bool {
 	return relation.SourceColumnID == relation.TargetColumnID
 }
 
-// linkDataType returns the physical type (INT or INT[]) of a link column for the given role and relation type.
+// linkDataType returns the physical type (JSONB) of a link column for the given role and relation type.
 func (s tableManagementService) linkDataType(entityRole, relationType string) (string, error) {
 	return s.getDataBaseType(fmt.Sprintf("%s_%s_%s", uidtLinks, entityRole, relationType))
 }
@@ -289,7 +286,7 @@ func (s tableManagementService) newLookupRelationEntry(
 	return map[string]interface{}{
 		"source_column_name": linkCol.ColumnName,
 		"relation":           info.RelationType,
-		"is_array":           linkCol.DT == linkDataTypeIntArray,
+		"is_array":           constant.LinkIsMulti(info.EntityRole, info.RelationType),
 		"target_table_name":  alias,
 		"target_column_name": "id",
 		"targets":            []map[string]interface{}{},
@@ -297,7 +294,7 @@ func (s tableManagementService) newLookupRelationEntry(
 }
 
 // ---------------------------------------------------------------------------
-// Link / unlink and row-delete cleanup (Postgres functions, see constant.DefinedFunctions)
+// Link / unlink (Postgres functions, see constant.DefinedFunctions)
 // ---------------------------------------------------------------------------
 
 // callRelationFunction runs one of the link SQL functions. Each call is a single statement, so
@@ -332,10 +329,10 @@ func (s tableManagementService) linkRows(
 		"p_action":          action,
 		"p_source_table":    source.TableName,
 		"p_source_column":   source.ColumnName,
-		"p_source_is_array": source.DataType == linkDataTypeIntArray,
+		"p_source_is_array": source.IsMulti,
 		"p_target_table":    target.TableName,
 		"p_target_column":   target.ColumnName,
-		"p_target_is_array": target.DataType == linkDataTypeIntArray,
+		"p_target_is_array": target.IsMulti,
 		"p_source_row":      int64(req.SourceRowId),
 		"p_target_row":      int64(req.TargetRowId),
 		"p_updated_by":      req.UpdatedBy,
@@ -371,84 +368,6 @@ func functionResultString(value interface{}) string {
 	default:
 		return ""
 	}
-}
-
-// backReferencePartners returns, for every link column on the model, the partner column that can
-// hold IDs of this model's rows.
-func (s tableManagementService) backReferencePartners(
-	ctx context.Context,
-	schemaName string,
-	sourceModel tenant.Model,
-) ([]map[string]interface{}, error) {
-	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, sourceModel.ID.String())
-	if err != nil {
-		return nil, err
-	}
-	var partners []map[string]interface{}
-	for _, column := range columns {
-		if column.UIDT != uidtLinks {
-			continue
-		}
-		partner, err := s.partnerSide(ctx, schemaName, column)
-		if err != nil {
-			return nil, err
-		}
-		partners = append(partners, map[string]interface{}{
-			"table":    partner.TableName,
-			"column":   partner.ColumnName,
-			"is_array": partner.DataType == linkDataTypeIntArray,
-		})
-	}
-	return partners, nil
-}
-
-// partnerSide returns the other side (table, column, type) of a link column.
-func (s tableManagementService) partnerSide(ctx context.Context, schemaName string, column tenant.Column) (linkSide, error) {
-	info, ok := parseLinkMeta(column.Meta)
-	if !ok {
-		return linkSide{}, app_errors.InvalidColumnMetaForLinkType
-	}
-	relation, err := s.relationshipService.GetRelationByID(ctx, info.RelationID, schemaName)
-	if err != nil {
-		return linkSide{}, err
-	}
-	if isSingleColumnRelation(relation) {
-		// One-way self-link: other rows of the same column hold references to this table's rows.
-		model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
-		if err != nil {
-			return linkSide{}, err
-		}
-		dataType, err := s.linkDataType(info.EntityRole, relation.RelationType)
-		if err != nil {
-			return linkSide{}, err
-		}
-		return linkSide{
-			TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias),
-			ColumnName: column.ColumnName,
-			DataType:   dataType,
-		}, nil
-	}
-	partnerModelID, partnerColumnID := relation.TargetModelID, relation.TargetColumnID
-	if info.EntityRole == entityRoleTarget {
-		partnerModelID, partnerColumnID = relation.SourceModelID, relation.SourceColumnID
-	}
-	partnerModel, err := s.modelService.GetModelByID(ctx, schemaName, partnerModelID)
-	if err != nil {
-		return linkSide{}, err
-	}
-	partnerColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, partnerColumnID)
-	if err != nil {
-		return linkSide{}, err
-	}
-	dataType, err := s.linkDataType(oppositeEntityRole(info.EntityRole), relation.RelationType)
-	if err != nil {
-		return linkSide{}, err
-	}
-	return linkSide{
-		TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, partnerModel.Alias),
-		ColumnName: partnerColumn.ColumnName,
-		DataType:   dataType,
-	}, nil
 }
 
 func (s tableManagementService) columnExists(ctx context.Context, schemaName string, columnID string) (bool, error) {

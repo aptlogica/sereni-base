@@ -10,7 +10,7 @@ import (
 )
 
 // TestLookupDataFunctionDefined checks the read function for lookups is registered for startup creation
-// and takes per-target output aliases and the is_array flag.
+// and matches link cells to target rows by their primary-key values.
 func TestLookupDataFunctionDefined(t *testing.T) {
 	var fn *constant.Function
 	for i := range constant.DefinedFunctions {
@@ -23,15 +23,19 @@ func TestLookupDataFunctionDefined(t *testing.T) {
 	}
 
 	assert.Equal(t, "schema_name TEXT, source_table_name TEXT, relation_data JSON[]", fn.FunctionParams)
-	for _, part := range []string{"RETURNS JSON", "'targets'", "'alias'", "'is_array'", "ANY(s.%I)", "ORDER BY s.created_time"} {
+	for _, part := range []string{"RETURNS JSON", "'targets'", "'alias'", "'is_array'", "jsonb_array_elements(s.%I) WITH ORDINALITY", "jsonb_populate_record", "public.link_key_join", "ORDER BY s.created_time"} {
 		assert.True(t, strings.Contains(fn.FunctionSQL, part), "function SQL should contain %q", part)
 	}
 }
 
 var linkFunctionNames = []string{
-	"link_lock_row", "link_apply_change", "link_rows_holding",
-	"link_cycle_parent", "link_cycle_children", "link_rows", "remove_link_back_references",
+	"link_row_key", "link_lock_row", "link_apply_change", "link_rows_holding",
+	"link_cycle_parent", "link_cycle_children", "link_rows", "get_table_data_with_lookups",
+	"link_key_sync", "link_install_key_sync", "link_ids_to_keys",
 }
+
+// linkKeyHelperNames are the SQL-language key helpers; Postgres checks their bodies when they are created
+var linkKeyHelperNames = []string{"link_key_columns", "link_key_expr", "link_key_join"}
 
 func definedFunction(name string) (constant.Function, bool) {
 	for _, fn := range constant.DefinedFunctions {
@@ -119,17 +123,19 @@ func TestLinkRowsFunctionContract(t *testing.T) {
 	assert.Contains(t, fn.FunctionSQL, "public.link_cycle_parent")
 }
 
-// TestLinkHelperFunctionsSQL checks the row-level helpers lock rows and update arrays in place.
+// TestLinkHelperFunctionsSQL checks the row-level helpers lock rows and update key arrays in place.
 func TestLinkHelperFunctionsSQL(t *testing.T) {
 	lock, _ := definedFunction("link_lock_row")
 	assert.Contains(t, lock.FunctionSQL, "FOR UPDATE")
 
 	holding, _ := definedFunction("link_rows_holding")
+	assert.Equal(t, "p_table TEXT, p_column TEXT, p_key JSONB", holding.FunctionParams)
 	assert.Contains(t, holding.FunctionSQL, "FOR UPDATE")
-	assert.Contains(t, holding.FunctionSQL, "ANY(%I)")
+	assert.Contains(t, holding.FunctionSQL, "@> jsonb_build_array($1)")
 
 	apply, _ := definedFunction("link_apply_change")
-	for _, part := range []string{"array_append", "array_remove", "last_modified_time", "last_modified_by", "%I = NULL"} {
+	assert.Contains(t, apply.FunctionParams, "p_key JSONB")
+	for _, part := range []string{"@> jsonb_build_array($1)", "|| jsonb_build_array($1)", "x.e <> $1", "last_modified_time", "last_modified_by"} {
 		assert.Contains(t, apply.FunctionSQL, part)
 	}
 
@@ -139,8 +145,76 @@ func TestLinkHelperFunctionsSQL(t *testing.T) {
 		assert.Contains(t, cycle.FunctionSQL, "IF p_parent = p_child THEN")
 	}
 
-	cleanup, _ := definedFunction("remove_link_back_references")
-	assert.Contains(t, cleanup.FunctionSQL, "public.link_rows_holding")
-	assert.Contains(t, cleanup.FunctionSQL, "COALESCE(p_partners")
-	assert.Contains(t, cleanup.FunctionSQL, "COALESCE(p_row_ids")
+	// link_rows stores keys, not row ids
+	rows, _ := definedFunction("link_rows")
+	assert.Contains(t, rows.FunctionSQL, "source_key := public.link_row_key(p_source_table, p_source_row)")
+	assert.Contains(t, rows.FunctionSQL, "target_key := public.link_row_key(p_target_table, p_target_row)")
+}
+
+// TestLinkKeyHelpersSQL checks the key helpers read the primary key constraint and fall back to id.
+func TestLinkKeyHelpersSQL(t *testing.T) {
+	for _, name := range linkKeyHelperNames {
+		fn, ok := definedFunction(name)
+		if assert.True(t, ok, "%s must be in DefinedFunctions", name) {
+			assert.Contains(t, fn.FunctionSQL, "LANGUAGE sql STABLE", name)
+		}
+	}
+	columns, _ := definedFunction("link_key_columns")
+	assert.Contains(t, columns.FunctionSQL, "contype = 'p'")
+	assert.Contains(t, columns.FunctionSQL, "ARRAY['id']")
+}
+
+// TestKeyHelpersDefinedBeforeUse checks SQL-language helpers are created after the helpers they call,
+// since Postgres validates their bodies at creation time.
+func TestKeyHelpersDefinedBeforeUse(t *testing.T) {
+	position := map[string]int{}
+	for i, fn := range constant.DefinedFunctions {
+		position[fn.FunctionName] = i
+	}
+	callPattern := regexp.MustCompile(`public\.([a-z_]+)\(`)
+	for _, name := range linkKeyHelperNames {
+		fn, _ := definedFunction(name)
+		for _, match := range callPattern.FindAllStringSubmatch(fn.FunctionSQL, -1) {
+			assert.Less(t, position[match[1]], position[name], "%s must be defined after %s", name, match[1])
+		}
+	}
+}
+
+// TestLinkKeySyncTrigger checks the trigger rewrites keys on UPDATE and drops them on DELETE for every
+// link field whose relation points at the changed table.
+func TestLinkKeySyncTrigger(t *testing.T) {
+	sync, _ := definedFunction("link_key_sync")
+	assert.Contains(t, sync.FunctionSQL, "RETURNS TRIGGER")
+	for _, part := range []string{"link_old_rows", "link_new_rows", "c.meta->''relation''->>''with''", "IS DISTINCT FROM", "ch ? ''new''"} {
+		assert.Contains(t, sync.FunctionSQL, part)
+	}
+	install, _ := definedFunction("link_install_key_sync")
+	for _, part := range []string{"AFTER UPDATE", "AFTER DELETE", "REFERENCING OLD TABLE AS link_old_rows", "FOR EACH STATEMENT"} {
+		assert.Contains(t, install.FunctionSQL, part)
+	}
+}
+
+// TestKeyFillDefaults checks new rows get a starting value per key field type
+func TestKeyFillDefaults(t *testing.T) {
+	fn, ok := definedFunction("key_fill_defaults")
+	if !assert.True(t, ok) {
+		return
+	}
+	assert.Contains(t, fn.FunctionSQL, "RETURNS TRIGGER")
+	for _, part := range []string{
+		"public.link_key_columns(format('%I.%I', TG_TABLE_SCHEMA, TG_TABLE_NAME))",
+		"key_column || '_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS') || '_' || (row_data->>'id')",
+		"WHEN type_category = 'N' THEN row_data->'id'",
+		"gen_random_uuid()",
+		"jsonb_populate_record(NEW, fill)",
+	} {
+		assert.Contains(t, fn.FunctionSQL, part)
+	}
+}
+
+// TestDroppedFunctions checks superseded signatures are dropped and no longer defined.
+func TestDroppedFunctions(t *testing.T) {
+	assert.Contains(t, constant.DroppedFunctions, "remove_link_back_references(JSON[], BIGINT[], TEXT)")
+	_, ok := definedFunction("remove_link_back_references")
+	assert.False(t, ok)
 }

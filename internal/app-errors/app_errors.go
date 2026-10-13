@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/lib/pq"
 )
 
 // var (
@@ -193,6 +194,52 @@ var (
 	TriggerHasFunction   = errors.New("trigger query contains a function")
 	InvalidTriggerEvent  = errors.New("invalid trigger timing or events")
 )
+
+// primary key
+var (
+	PrimaryKeyRequired      = errors.New("at least one primary key column is required")
+	PrimaryKeyColumnInvalid = errors.New("column cannot be part of the primary key")
+	PrimaryKeyLocked        = errors.New("primary key is locked by link fields")
+	PrimaryKeyDataInvalid   = errors.New("existing records do not satisfy the primary key")
+	PrimaryKeyUpdateFailed  = errors.New("failed to update primary key")
+	ColumnInPrimaryKey      = errors.New("column is part of the primary key")
+)
+
+// KeyViolation keeps a Postgres unique (23505) or not-null (23502) error from a write to a user table, so the
+// table service can name the key fields; it matches DatabaseError like other failed writes
+type KeyViolation struct {
+	Postgres *pq.Error
+}
+
+func (e *KeyViolation) Error() string { return e.Postgres.Error() }
+
+func (e *KeyViolation) Unwrap() error { return DatabaseError }
+
+// DatabaseOrKeyError logs a failed write; key violations are returned as *KeyViolation, others as DatabaseError
+func DatabaseOrKeyError(err error, msg string) error {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && (pqErr.Code == "23505" || pqErr.Code == "23502") {
+		logger.Get().Warn().Err(err).Msg(msg)
+		return &KeyViolation{Postgres: pqErr}
+	}
+	return LogDatabaseError(err, msg)
+}
+
+// PrimaryKeyViolation carries the records that block a primary key change; it matches PrimaryKeyDataInvalid
+type PrimaryKeyViolation struct {
+	// Message states exactly what failed
+	Message string
+	Details interface{}
+}
+
+func (e *PrimaryKeyViolation) Error() string {
+	if e.Message == "" {
+		return PrimaryKeyDataInvalid.Error()
+	}
+	return e.Message
+}
+
+func (e *PrimaryKeyViolation) Unwrap() error { return PrimaryKeyDataInvalid }
 
 // APIError represents an error response from an external API
 type APIError struct {

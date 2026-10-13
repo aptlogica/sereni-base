@@ -130,6 +130,7 @@ func New(cfg *config.Config) (*App, error) {
 	columnService := services.NewColumnService(dbService)
 	viewService := services.NewViewService(dbService)
 	automationService := services.NewAutomationService(dbService, modelService)
+	primaryKeyService := services.NewPrimaryKeyService(dbService, modelService, columnService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
 	resourceService := services.NewCoreResourceService(dbService)
@@ -227,6 +228,7 @@ func New(cfg *config.Config) (*App, error) {
 	userHandler := handlers.NewUserHandler(userManagementService)
 	organizationHandler := handlers.NewOrganizationHandler(organizationService)
 	automationHandler := handlers.NewAutomationHandler(automationService)
+	primaryKeyHandler := handlers.NewPrimaryKeyHandler(primaryKeyService)
 
 	handlerGroups := router.Handlers{
 		Auth:         authHandler,
@@ -237,6 +239,7 @@ func New(cfg *config.Config) (*App, error) {
 		User:         userHandler,
 		Organization: organizationHandler,
 		Automation:   automationHandler,
+		PrimaryKey:   primaryKeyHandler,
 	}
 
 	middlewareGroups := router.Middlewares{

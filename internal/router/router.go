@@ -50,6 +50,7 @@ type Handlers struct {
 	User         *handlers.UserHandler
 	Organization *handlers.OrganizationHandler
 	Automation   *handlers.AutomationHandler
+	PrimaryKey   *handlers.PrimaryKeyHandler
 }
 
 func Setup(cfg *config.Config,
@@ -366,6 +367,12 @@ func setupTableRoutes(private *gin.RouterGroup, handlers Handlers, middlewares M
 		table.GET("/:id/columns",
 			objectGuard(middlewares, appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, modelParam),
 			handlers.Table.GetColumnsByTable)
+		table.GET("/:id/primary-key",
+			objectGuard(middlewares, appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, modelParam),
+			handlers.PrimaryKey.GetPrimaryKey)
+		table.PUT("/:id/primary-key",
+			objectGuard(middlewares, appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, modelParam),
+			handlers.PrimaryKey.UpdatePrimaryKey)
 		table.GET("/:id/views",
 			objectGuard(middlewares, appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, modelParam),
 			handlers.Table.GetViewsByModelID)

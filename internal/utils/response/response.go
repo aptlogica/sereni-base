@@ -6,6 +6,7 @@
 package response
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -139,6 +140,30 @@ func SendErrorWithMessage(ctx *gin.Context, code responseConstants.ResponseCode,
 		RequestID: requestIDFromContext(ctx),
 	}
 	ctx.JSON(meta.HTTPStatus, response)
+}
+
+// SendErrorWithData sends an error carrying details the client can show, e.g. offending records. They are
+// in data and, as JSON, in error.details, since clients that turn errors into exceptions keep only the error object.
+func SendErrorWithData(ctx *gin.Context, code responseConstants.ResponseCode, message string, data interface{}) {
+	meta, ok := buildErrorMeta(code)
+	if !ok {
+		code = responseConstants.Error.InternalError
+	}
+	if message == "" {
+		message = responseConstants.ErrorCodes[code].Message
+	}
+	details, _ := json.Marshal(data)
+	ctx.JSON(meta.HTTPStatus, StandardResponse{
+		Success: false,
+		Data:    data,
+		Error: &ErrorInfo{
+			Code:    string(code),
+			Message: message,
+			Details: string(details),
+		},
+		Meta:      &meta,
+		RequestID: requestIDFromContext(ctx),
+	})
 }
 
 func CheckAndSendError(ctx *gin.Context, err error) {

@@ -801,6 +801,19 @@ func (h *TableHandler) UpdateRow(c *gin.Context) {
 		req.UpdatedBy = userId
 	}
 
+	// All fields in one statement: the record is either fully updated or left as it was
+	if rowUpdater, ok := h.tableManagementService.(interface {
+		UpdateRowValues(ctx context.Context, schemaName string, modelID string, rowID int, values map[string]interface{}, updatedBy string) (dto.RecordResponse, error)
+	}); ok {
+		record, err := rowUpdater.UpdateRowValues(c, schemaName, req.ModelID, req.RowId, req.Values, req.UpdatedBy)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+		return
+	}
+
 	updatedRow := dto.RecordResponse{}
 	for columnID, rawValue := range req.Values {
 		var valuePtr *interface{}

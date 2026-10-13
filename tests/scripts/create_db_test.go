@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/scripts"
@@ -121,10 +122,14 @@ func (m *MockTableService) GetByFunction(ctx context.Context, functionName strin
 }
 
 // Helper function to create a mock database service
+// setupMockDB returns a service whose raw SQL calls (function install, link key migration) fail;
+// CreateMasterSchema only logs those failures. TestCreateFunctionsAndMigration covers them.
 func setupMockDB() (*pkg.DatabaseService, *MockTableService) {
 	mockTable := &MockTableService{}
+	sqlDB, _, _ := sqlmock.New()
 	db := &pkg.DatabaseService{
 		TableService: mockTable,
+		DB:           sqlDB,
 	}
 	return db, mockTable
 }
@@ -178,9 +183,6 @@ func TestCreateMasterSchema(t *testing.T) {
 		// Mock CreateTable for all table creations
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
 
-		// Mock CreateFunction for all function creations
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-
 		// Should not panic
 		scripts.CreateMasterSchema(dbService)
 
@@ -197,9 +199,6 @@ func TestCreateMasterSchema(t *testing.T) {
 		// Mock CreateTable - should still be called even if schema fails
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
 
-		// Mock CreateFunction
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-
 		// Should not panic even with schema error
 		scripts.CreateMasterSchema(dbService)
 
@@ -214,9 +213,6 @@ func TestCreateMasterSchema(t *testing.T) {
 
 		// Mock CreateTable with "already exists" error
 		mockTable.On("CreateTable", mock.Anything).Return(errors.New("relation already exists"))
-
-		// Mock CreateFunction with "already exists" error
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(errors.New("function already exists"))
 
 		// Should not panic - "already exists" errors should be handled gracefully
 		scripts.CreateMasterSchema(dbService)
@@ -233,9 +229,6 @@ func TestCreateMasterSchema(t *testing.T) {
 		// Mock CreateTable with various errors
 		mockTable.On("CreateTable", mock.Anything).Return(errors.New("database connection failed"))
 
-		// Mock CreateFunction
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-
 		// Should not panic even with table errors
 		scripts.CreateMasterSchema(dbService)
 
@@ -250,9 +243,6 @@ func TestCreateMasterSchema(t *testing.T) {
 
 		// Mock CreateTable
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
-
-		// Mock CreateFunction with error
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(errors.New("syntax error in function"))
 
 		// Should not panic even with function errors
 		scripts.CreateMasterSchema(dbService)
@@ -270,10 +260,6 @@ func TestCreateMasterSchema(t *testing.T) {
 		mockTable.On("CreateTable", mock.Anything).Return(errors.New("table creation failed")).Once()
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
 
-		// Mock CreateFunction - some with "already exists"
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(errors.New("function already exists")).Once()
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-
 		// Should not panic
 		scripts.CreateMasterSchema(dbService)
 	})
@@ -287,7 +273,6 @@ func TestCreateMasterSchema(t *testing.T) {
 		mockTable.On("CreateTable", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			tableCount++
 		})
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		scripts.CreateMasterSchema(dbService)
 
@@ -303,7 +288,6 @@ func TestCreateMasterSchemaEdgeCases(t *testing.T) {
 
 		mockTable.On("CreateSchema", mock.Anything, mock.AnythingOfType("string")).Return(nil)
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		// Should not panic with nil error
 		assert.NotPanics(t, func() {
@@ -316,7 +300,6 @@ func TestCreateMasterSchemaEdgeCases(t *testing.T) {
 
 		mockTable.On("CreateSchema", mock.Anything, mock.AnythingOfType("string")).Return(errors.New(""))
 		mockTable.On("CreateTable", mock.Anything).Return(errors.New(""))
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(errors.New(""))
 
 		// Should not panic with empty error messages
 		assert.NotPanics(t, func() {
@@ -329,7 +312,6 @@ func TestCreateMasterSchemaEdgeCases(t *testing.T) {
 
 		mockTable.On("CreateSchema", mock.Anything, mock.AnythingOfType("string")).Return(errors.New("error with 'special' chars & <symbols>"))
 		mockTable.On("CreateTable", mock.Anything).Return(errors.New("relation \"test\" already exists"))
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		// Should not panic with special characters
 		assert.NotPanics(t, func() {
@@ -342,7 +324,6 @@ func TestCreateMasterSchemaEdgeCases(t *testing.T) {
 
 		mockTable.On("CreateSchema", mock.Anything, mock.AnythingOfType("string")).Return(errors.New("错误: 表已存在"))
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		// Should not panic with unicode error messages
 		assert.NotPanics(t, func() {
@@ -356,7 +337,6 @@ func TestCreateMasterSchemaEdgeCases(t *testing.T) {
 		longError := strings.Repeat("error ", 1000)
 		mockTable.On("CreateSchema", mock.Anything, mock.AnythingOfType("string")).Return(errors.New(longError))
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		// Should not panic with very long error messages
 		assert.NotPanics(t, func() {
@@ -375,26 +355,10 @@ func TestCreateMasterSchemaContextHandling(t *testing.T) {
 			capturedCtx = args.Get(0).(context.Context)
 		})
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		scripts.CreateMasterSchema(dbService)
 
 		assert.NotNil(t, capturedCtx, "Context should be passed to CreateSchema")
-	})
-
-	t.Run("context is passed to CreateFunction", func(t *testing.T) {
-		dbService, mockTable := setupMockDB()
-
-		var capturedCtx context.Context
-		mockTable.On("CreateSchema", mock.Anything, mock.AnythingOfType("string")).Return(nil)
-		mockTable.On("CreateTable", mock.Anything).Return(nil)
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Run(func(args mock.Arguments) {
-			capturedCtx = args.Get(0).(context.Context)
-		})
-
-		scripts.CreateMasterSchema(dbService)
-
-		assert.NotNil(t, capturedCtx, "Context should be passed to CreateFunction")
 	})
 }
 
@@ -408,7 +372,6 @@ func TestCreateMasterSchemaSchemaName(t *testing.T) {
 			capturedSchemaName = args.String(1)
 		})
 		mockTable.On("CreateTable", mock.Anything).Return(nil)
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		scripts.CreateMasterSchema(dbService)
 
@@ -427,7 +390,6 @@ func TestCreateMasterSchemaTableRequests(t *testing.T) {
 			req := args.Get(0).(dbModels.CreateTableRequest)
 			tableNames = append(tableNames, req.Name)
 		})
-		mockTable.On("CreateFunction", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 
 		scripts.CreateMasterSchema(dbService)
 

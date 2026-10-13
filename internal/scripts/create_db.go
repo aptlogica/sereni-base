@@ -44,16 +44,26 @@ func createTableUsingSchema(repo *pkg.DatabaseService, schema models.CreateTable
 	}
 }
 
+// createFunctions installs DefinedFunctions with CREATE OR REPLACE, so changed function bodies reach
+// existing databases on the next start. Superseded signatures are dropped first.
 func createFunctions(repo *pkg.DatabaseService, schemaName string) error {
-	ctx := context.Background()
+	for _, signature := range appConstant.DroppedFunctions {
+		if _, err := repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS \"%s\".%s", schemaName, signature)); err != nil {
+			fmt.Printf("error dropping function '%s': %v\n", signature, err)
+		}
+	}
 	for _, function := range appConstant.DefinedFunctions {
 		functionName := fmt.Sprintf("\"%s\".%s(%s)", schemaName, function.FunctionName, function.FunctionParams)
-		err := repo.TableService.CreateFunction(ctx, functionName, function.FunctionSQL)
-		if err != nil {
-			// Only log if it's not an "already exists" error
-			if !contains(err.Error(), "already exists") {
-				fmt.Printf("error creating function '%s': %v\n", function.FunctionName, err)
+		create := fmt.Sprintf("CREATE OR REPLACE FUNCTION %s %s", functionName, function.FunctionSQL)
+		_, err := repo.DB.Exec(create)
+		if err != nil && contains(err.Error(), "cannot change") {
+			// A changed return type or parameter name can't be replaced in place
+			if _, err = repo.DB.Exec("DROP FUNCTION IF EXISTS " + functionName); err == nil {
+				_, err = repo.DB.Exec(create)
 			}
+		}
+		if err != nil {
+			fmt.Printf("error creating function '%s': %v\n", function.FunctionName, err)
 		}
 	}
 	return nil
@@ -91,4 +101,7 @@ func CreateMasterSchema(dbService *pkg.DatabaseService) {
 
 	createFunctions(dbService, appConstant.MasterDatabase)
 
+	if err := MigrateLinkKeys(dbService, appConstant.MasterDatabase); err != nil {
+		fmt.Printf("⚠ Warning: link key migration failed: %v\n", err)
+	}
 }

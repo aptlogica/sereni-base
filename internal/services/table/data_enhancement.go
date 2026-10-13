@@ -850,7 +850,7 @@ func (s tableManagementService) TrimWhitespace(ctx context.Context, schemaName s
 
 	if len(updates) > 0 {
 		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
-			return dto.TrimWhitespaceResponse{}, err
+			return dto.TrimWhitespaceResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to apply column updates")
 		}
 	}
 
@@ -1218,7 +1218,7 @@ func (s tableManagementService) CaseNormalization(ctx context.Context, schemaNam
 
 	if len(updates) > 0 {
 		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
-			return dto.CaseNormalizationResponse{}, err
+			return dto.CaseNormalizationResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to apply column updates")
 		}
 	}
 
@@ -1283,7 +1283,7 @@ func (s tableManagementService) FindReplace(ctx context.Context, schemaName stri
 
 		if len(updates) > 0 {
 			if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
-				return dto.FindReplaceResponse{}, err
+				return dto.FindReplaceResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to apply column updates")
 			}
 		}
 
@@ -1406,7 +1406,8 @@ func (s tableManagementService) ApplyRemoveFormattingUpdates(ctx context.Context
 				Interface("value", update.Value).
 				Err(err).
 				Msg("Remove formatting update failed")
-			return app_errors.LogDatabaseError(err, "failed to apply remove formatting updates")
+			schemaName, alias := splitQualifiedTable(tableName)
+			return s.keyWriteError(ctx, schemaName, alias, err, "failed to apply remove formatting updates")
 		}
 	}
 
@@ -1456,7 +1457,7 @@ func (s tableManagementService) RemoveSpecialCharacters(ctx context.Context, sch
 
 		if len(updates) > 0 {
 			if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, model.Alias, updates); err != nil {
-				return dto.RemoveSpecialCharactersResponse{}, err
+				return dto.RemoveSpecialCharactersResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to apply column updates")
 			}
 		}
 
@@ -2269,14 +2270,14 @@ func (s tableManagementService) PerformBulkSplitUpdate(ctx context.Context, sche
 		}
 		if (idx+1)%batchSize == 0 {
 			if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, tableName, updates); err != nil {
-				return err
+				return s.keyWriteError(ctx, schemaName, tableName, err, "failed to apply column updates")
 			}
 			updates = updates[:0]
 		}
 	}
 	if len(updates) > 0 {
 		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, tableName, updates); err != nil {
-			return err
+			return s.keyWriteError(ctx, schemaName, tableName, err, "failed to apply column updates")
 		}
 	}
 	return nil
@@ -2828,7 +2829,7 @@ func (s tableManagementService) ApplyBulkUpdates(ctx context.Context, schemaName
 			end = len(updates)
 		}
 		if err := s.columnsService.BulkUpdateByColumns(ctx, schemaName, modelAlias, updates[start:end]); err != nil {
-			return err
+			return s.keyWriteError(ctx, schemaName, modelAlias, err, "failed to apply column updates")
 		}
 	}
 	return nil
