@@ -126,6 +126,25 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.InvalidLookupTargetColumn, TableError.InvalidLookupTargetColumn},
 	{app_errors.LinkColumnNotWritable, TableError.LinkColumnNotWritable},
 
+	// automations (triggers & webhooks)
+	{app_errors.AutomationNotFound, AutomationError.AutomationNotFound},
+	{app_errors.InvalidTriggerQuery, AutomationError.InvalidTriggerQuery},
+	{app_errors.InvalidFunctionQuery, AutomationError.InvalidFunctionQuery},
+	{app_errors.TriggerFailed, AutomationError.TriggerFailed},
+	{app_errors.TriggerHasFunction, AutomationError.TriggerHasFunction},
+	{app_errors.InvalidTriggerEvent, AutomationError.InvalidTriggerEvent},
+
+	// table constraints (unique keys)
+	{app_errors.ConstraintNotFound, TableConstraintError.ConstraintNotFound},
+	{app_errors.ConstraintColumnNotFound, TableConstraintError.ColumnNotFound},
+	{app_errors.ConstraintColumnNotAllowed, TableConstraintError.ColumnNotAllowed},
+	{app_errors.ConstraintRepeatedColumn, TableConstraintError.RepeatedColumn},
+	{app_errors.ConstraintAlreadyExists, TableConstraintError.AlreadyExists},
+	{app_errors.ConstraintDuplicateValues, TableConstraintError.DuplicateValues},
+	{app_errors.ConstraintFailed, TableConstraintError.ConstraintFailed},
+	{app_errors.ColumnUsedInConstraint, TableConstraintError.ColumnUsedInConstraint},
+	{app_errors.UniqueKeyViolation, TableConstraintError.UniqueKeyViolation},
+
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},
 	{app_errors.ErrRoleCreation, Error.RoleCreationError},

@@ -47,6 +47,8 @@ var ErrorCodes = MergeMaps(
 	AssetErrorCodes,
 	TableErrorCodes,
 	RBACErrorCodeDetails,
+	AutomationErrorCodes,
+	TableConstraintErrorCodes,
 )
 
 var SuccessCodes = MergeMaps(
@@ -59,6 +61,8 @@ var SuccessCodes = MergeMaps(
 	RoleSuccessCodes,
 	AssetSuccessCodes,
 	TableSuccessCodes,
+	AutomationSuccessCodes,
+	TableConstraintSuccessCodes,
 )
 
 // 	CoreErrorCodes,
