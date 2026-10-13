@@ -229,23 +229,23 @@ func (s *automationService) Validate(ctx context.Context, schemaName string, req
 func (s *automationService) replaceStatements(automation tenant.Automation, query, sql, label, tableAlias string) ([]string, error) {
 	switch automation.Type {
 	case tenant.AutomationTypeTrigger:
-		installed, table, err := s.installedTrigger(automation, tableAlias)
+		triggerName, table, err := s.findTriggerInPostgres(automation, tableAlias)
 		if err != nil {
 			return nil, err
 		}
-		return []string{fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", installed, table), sql, label}, nil
+		return []string{fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", triggerName, table), sql, label}, nil
 	case tenant.AutomationTypeFunction:
-		installed, err := s.installedFunction(automation)
+		oldName, err := s.findFunctionInPostgres(automation)
 		if err != nil {
 			return nil, err
 		}
 		_, newName, _, _ := splitTriggerContext(query)
-		if sameIdentifier(installed, newName) {
+		if sameIdentifier(oldName, newName) {
 			// Same function: replace its body, triggers using it keep working
 			return []string{createFunctionRegexp.ReplaceAllString(sql, "CREATE OR REPLACE FUNCTION"), label}, nil
 		}
 		// Renamed: Postgres refuses to drop the old one while a trigger still uses it
-		return []string{sql, fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", installed), label}, nil
+		return []string{sql, fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", oldName), label}, nil
 	}
 	return nil, nil
 }
@@ -266,46 +266,63 @@ func (s *automationService) Delete(ctx context.Context, schemaName, id string) e
 	}
 
 	if automation.Type == tenant.AutomationTypeFunction {
-		shared, err := s.functionSavedElsewhere(schemaName, automation)
-		if err != nil {
+		if err := s.removeFunctionFromPostgres(schemaName, automation); err != nil {
 			return err
-		}
-		// Another entry defines the same Postgres function, so it stays
-		if !shared {
-			installed, err := s.installedFunction(automation)
-			if err != nil {
-				return err
-			}
-			if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", installed)); err != nil {
-				logger.Get().Error().Err(err).Str("function", installed).Msg("failed to drop function")
-				return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
-			}
 		}
 	}
 
 	if automation.Type == tenant.AutomationTypeTrigger {
-		model, err := s.modelService.GetModelByID(ctx, schemaName, automation.ModelID)
-		if err != nil {
+		if err := s.removeTriggerFromPostgres(ctx, schemaName, automation); err != nil {
 			return err
-		}
-		installed, table, err := s.installedTrigger(automation, model.Alias)
-		if err != nil {
-			return err
-		}
-		if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", installed, table)); err != nil {
-			logger.Get().Error().Err(err).Msg("failed to drop trigger")
-			return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
-		}
-		// Triggers saved with their own function (before functions had their own tab) drop it too
-		if _, functionName, _, _ := splitTriggerContext(automation.Context); functionName != "" {
-			if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
-				logger.Get().Warn().Err(err).Str("function", functionName).Msg("trigger function not dropped")
-			}
 		}
 	}
 
 	if err := s.repo.TableService.DeleteRecord(tenant.Automation{}.TableName(schemaName), id); err != nil {
 		return app_errors.LogDatabaseError(err, "failed to delete automation")
+	}
+	return nil
+}
+
+// removeFunctionFromPostgres drops the Postgres function of a function entry being deleted
+func (s *automationService) removeFunctionFromPostgres(schemaName string, automation tenant.Automation) error {
+	shared, err := s.functionSavedElsewhere(schemaName, automation)
+	if err != nil {
+		return err
+	}
+	// Another entry defines the same Postgres function, so it stays
+	if shared {
+		return nil
+	}
+	functionName, err := s.findFunctionInPostgres(automation)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
+		logger.Get().Error().Err(err).Str("function", functionName).Msg("failed to drop function")
+		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+	}
+	return nil
+}
+
+// removeTriggerFromPostgres drops the Postgres trigger of a trigger entry being deleted
+func (s *automationService) removeTriggerFromPostgres(ctx context.Context, schemaName string, automation tenant.Automation) error {
+	model, err := s.modelService.GetModelByID(ctx, schemaName, automation.ModelID)
+	if err != nil {
+		return err
+	}
+	triggerName, table, err := s.findTriggerInPostgres(automation, model.Alias)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", triggerName, table)); err != nil {
+		logger.Get().Error().Err(err).Msg("failed to drop trigger")
+		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+	}
+	// Triggers saved with their own function (before functions had their own tab) drop it too
+	if _, functionName, _, _ := splitTriggerContext(automation.Context); functionName != "" {
+		if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
+			logger.Get().Warn().Err(err).Str("function", functionName).Msg("trigger function not dropped")
+		}
 	}
 	return nil
 }
@@ -415,9 +432,9 @@ func (s *automationService) labelledFunction(automation tenant.Automation) (stri
 	return name, err == nil
 }
 
-// installedTrigger returns the name and table of the trigger installed for the entry: the one
+// findTriggerInPostgres returns the name and table of the trigger installed for the entry: the one
 // labelled with its ID, or (entries saved before labels existed) the one named in its query
-func (s *automationService) installedTrigger(automation tenant.Automation, tableAlias string) (string, string, error) {
+func (s *automationService) findTriggerInPostgres(automation tenant.Automation, tableAlias string) (string, string, error) {
 	_, _, triggerSQL, err := splitTriggerContext(automation.Context)
 	if err != nil {
 		return "", "", err
@@ -432,9 +449,9 @@ func (s *automationService) installedTrigger(automation tenant.Automation, table
 	return name, table, nil
 }
 
-// installedFunction returns the name of the function installed for the entry: the one labelled
+// findFunctionInPostgres returns the name of the function installed for the entry: the one labelled
 // with its ID, or (entries saved before labels existed) the one named in its query
-func (s *automationService) installedFunction(automation tenant.Automation) (string, error) {
+func (s *automationService) findFunctionInPostgres(automation tenant.Automation) (string, error) {
 	if labelled, ok := s.labelledFunction(automation); ok {
 		return labelled, nil
 	}

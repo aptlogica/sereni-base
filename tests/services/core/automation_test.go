@@ -540,75 +540,130 @@ func TestAutomationService_List(t *testing.T) {
 }
 
 func TestAutomationService_Delete(t *testing.T) {
-	t.Run("drops the installed trigger and deletes the entry", func(t *testing.T) {
-		f := newAutomationFixture(t)
-		f.expectGetByID("trigger", triggerQuery)
-		f.expectLabelledTrigger("log_salary")
-		f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
-		f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
+	// Trigger entries: Delete drops the trigger from Postgres (removeTriggerFromPostgres)
+	t.Run("trigger entry", func(t *testing.T) {
+		t.Run("drops the installed trigger and deletes the entry", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("trigger", triggerQuery)
+			f.expectLabelledTrigger("log_salary")
+			f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
-		require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+		})
+
+		t.Run("also drops the function of an older trigger saved with one", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("trigger", functionQuery+"; "+triggerQuery)
+			f.expectLabelledTrigger("")
+			f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
+			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
+
+			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+		})
+
+		t.Run("returns the Postgres error when the trigger can't be dropped", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("trigger", triggerQuery)
+			f.expectLabelledTrigger("log_salary")
+			f.sql.ExpectExec("^DROP TRIGGER").WillReturnError(errors.New("permission denied"))
+
+			err := f.svc.Delete(context.Background(), automationSchema, automationID)
+			assert.ErrorIs(t, err, app_errors.TriggerFailed)
+			f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+		})
+
+		t.Run("still deletes the entry when the older trigger's function can't be dropped", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("trigger", functionQuery+"; "+triggerQuery)
+			f.expectLabelledTrigger("log_salary")
+			f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnError(errors.New("other objects depend on it"))
+			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
+
+			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+		})
+
+		t.Run("fails when the table of a trigger can't be loaded", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			saved := savedAutomation("trigger", triggerQuery)
+			saved["model_id"] = "m2"
+			f.table.On("GetTableData", automationsTable, mock.Anything).Return([]map[string]interface{}{saved}, nil).Once()
+			f.models.On("GetModelByID", automationSchema, "m2").Return(tenant.Model{}, errors.New("model not found"))
+
+			assert.EqualError(t, f.svc.Delete(context.Background(), automationSchema, automationID), "model not found")
+			f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+		})
+
+		t.Run("fails when the saved trigger query is not valid", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("trigger", "SELECT 1")
+
+			assert.Error(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+			f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+		})
 	})
 
-	t.Run("also drops the function of an older trigger saved with one", func(t *testing.T) {
-		f := newAutomationFixture(t)
-		f.expectGetByID("trigger", functionQuery+"; "+triggerQuery)
-		f.expectLabelledTrigger("")
-		f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
-		f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
-		f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
+	// Function entries: Delete drops the function from Postgres (removeFunctionFromPostgres)
+	t.Run("function entry", func(t *testing.T) {
+		functionsQuery := mock.MatchedBy(func(p dbModels.QueryParams) bool {
+			return len(p.Filters) == 1 && p.Filters[0].Column == "type" && p.Filters[0].Value == tenant.AutomationTypeFunction
+		})
 
-		require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
-	})
+		t.Run("drops a function no other entry defines", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("function", functionQuery)
+			f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{savedAutomation("function", functionQuery)}, nil)
+			f.expectLabelledFunction("log_fn")
+			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
+			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
-	t.Run("returns the Postgres error when the trigger can't be dropped", func(t *testing.T) {
-		f := newAutomationFixture(t)
-		f.expectGetByID("trigger", triggerQuery)
-		f.expectLabelledTrigger("log_salary")
-		f.sql.ExpectExec("^DROP TRIGGER").WillReturnError(errors.New("permission denied"))
+			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+		})
 
-		err := f.svc.Delete(context.Background(), automationSchema, automationID)
-		assert.ErrorIs(t, err, app_errors.TriggerFailed)
-		f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
-	})
+		t.Run("keeps a function another entry also defines", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("function", functionQuery)
+			other := savedAutomation("function", `CREATE FUNCTION "LOG_FN"() RETURNS trigger AS $$ $$`)
+			other["id"] = "11111111-2222-3333-4444-555555555555"
+			f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{savedAutomation("function", functionQuery), other}, nil)
+			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
-	functionsQuery := mock.MatchedBy(func(p dbModels.QueryParams) bool {
-		return len(p.Filters) == 1 && p.Filters[0].Column == "type" && p.Filters[0].Value == tenant.AutomationTypeFunction
-	})
+			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+		})
 
-	t.Run("drops a function no other entry defines", func(t *testing.T) {
-		f := newAutomationFixture(t)
-		f.expectGetByID("function", functionQuery)
-		f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{savedAutomation("function", functionQuery)}, nil)
-		f.expectLabelledFunction("log_fn")
-		f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
-		f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
+		t.Run("refuses while a trigger still uses the function", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("function", functionQuery)
+			f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{}, nil)
+			f.expectLabelledFunction("")
+			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnError(errors.New("cannot drop function log_fn() because other objects depend on it"))
 
-		require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
-	})
+			err := f.svc.Delete(context.Background(), automationSchema, automationID)
+			assert.ErrorIs(t, err, app_errors.TriggerFailed)
+			assert.Contains(t, err.Error(), "other objects depend on it")
+			f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+		})
 
-	t.Run("keeps a function another entry also defines", func(t *testing.T) {
-		f := newAutomationFixture(t)
-		f.expectGetByID("function", functionQuery)
-		other := savedAutomation("function", `CREATE FUNCTION "LOG_FN"() RETURNS trigger AS $$ $$`)
-		other["id"] = "11111111-2222-3333-4444-555555555555"
-		f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{savedAutomation("function", functionQuery), other}, nil)
-		f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
+		t.Run("fails when the other function entries can't be read", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("function", functionQuery)
+			f.table.On("GetTableData", automationsTable, functionsQuery).Return(nil, errors.New("db down"))
 
-		require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
-	})
+			assert.Error(t, f.svc.Delete(context.Background(), automationSchema, automationID))
+			f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+		})
 
-	t.Run("refuses while a trigger still uses the function", func(t *testing.T) {
-		f := newAutomationFixture(t)
-		f.expectGetByID("function", functionQuery)
-		f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{}, nil)
-		f.expectLabelledFunction("")
-		f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnError(errors.New("cannot drop function log_fn() because other objects depend on it"))
+		t.Run("fails when the saved function query names no function", func(t *testing.T) {
+			f := newAutomationFixture(t)
+			f.expectGetByID("function", "SELECT 1")
+			f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{}, nil)
+			f.expectLabelledFunction("")
 
-		err := f.svc.Delete(context.Background(), automationSchema, automationID)
-		assert.ErrorIs(t, err, app_errors.TriggerFailed)
-		assert.Contains(t, err.Error(), "other objects depend on it")
-		f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+			assert.ErrorIs(t, f.svc.Delete(context.Background(), automationSchema, automationID), app_errors.InvalidFunctionQuery)
+			f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+		})
 	})
 
 	t.Run("deletes a webhook entry only", func(t *testing.T) {
