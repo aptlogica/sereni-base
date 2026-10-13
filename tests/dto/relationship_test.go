@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"encoding/json"
+	"strings"
+
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"testing"
 	"time"
@@ -175,5 +178,23 @@ func TestRelationInsertionAllFields(t *testing.T) {
 	}
 	if _, ok := m["last_modified_time"]; !ok {
 		t.Error("Map() should contain 'last_modified_time' key")
+	}
+}
+
+func TestRecordResponseRelatedRecordJSON(t *testing.T) {
+	withoutRelated, err := json.Marshal(dto.RecordResponse{Record: map[string]interface{}{"id": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(withoutRelated), "related_record") {
+		t.Errorf("related_record should be omitted when empty: %s", withoutRelated)
+	}
+
+	withRelated, err := json.Marshal(dto.RecordResponse{Record: map[string]interface{}{"id": 1}, RelatedRecord: map[string]interface{}{"id": 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(withRelated), `"related_record":{"id":2}`) {
+		t.Errorf("related_record missing: %s", withRelated)
 	}
 }

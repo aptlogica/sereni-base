@@ -1,0 +1,29 @@
+{
+  "headers": [
+    "Title",
+    "IntField",
+    "DecimalField"
+  ],
+  "rows": [
+    [
+      "Item",
+      "42",
+      "3.14"
+    ]
+  ],
+  "settings_applied": {
+    "remove_duplicate_records": false,
+    "remove_empty_rows": false,
+    "trim_spaces": false
+  },
+  "statistics": {
+    "duplicate_rows": 0,
+    "duplicates_removed": 0,
+    "empty_rows": 0,
+    "empty_rows_skipped": 0,
+    "rows_after_cleanup": 1,
+    "total_columns": 0,
+    "total_rows": 0
+  },
+  "timestamp": "2026-10-09T13:28:02Z"
+}

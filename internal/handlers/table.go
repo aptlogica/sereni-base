@@ -19,6 +19,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers/validators"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
@@ -483,6 +484,19 @@ func (h *TableHandler) GetAllViews(c *gin.Context) {
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
+	}
+
+	// Drop views of tables the caller has no membership on (set by NewModelAccessFilter)
+	if filterVal, ok := c.Get(middleware.ModelAccessFilterKey); ok {
+		if canAccess, ok := filterVal.(func(string) bool); ok {
+			visible := make([]dto.ViewResponse, 0, len(views))
+			for _, v := range views {
+				if canAccess(v.ModelID.String()) {
+					visible = append(visible, v)
+				}
+			}
+			views = visible
+		}
 	}
 
 	response.SendSuccess(c, responseConst.TableSuccess.ViewFetched, views)

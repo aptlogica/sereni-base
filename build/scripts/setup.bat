@@ -118,7 +118,6 @@ REM Create a temporary file with all default environment variables
     echo OWNER_FIRST_NAME=Admin
     echo OWNER_LAST_NAME=User
     echo OWNER_EMAIL=admin@example.com
-    echo OWNER_PASSWORD=Admin@123
     echo TEMPORARY_USER_PASSWORD=CHANGE_THIS
     echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -549,8 +548,9 @@ if "%OWNER_LAST_NAME%"=="" set OWNER_LAST_NAME=User
 set /p OWNER_EMAIL="Email [admin@example.com]: "
 if "%OWNER_EMAIL%"=="" set OWNER_EMAIL=admin@example.com
 
-set /p OWNER_PASSWORD="Password [Admin@123]: "
-if "%OWNER_PASSWORD%"=="" set OWNER_PASSWORD=Admin@123
+for /f %%p in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"') do set "GEN_OWNER_PASSWORD=%%p"
+set /p OWNER_PASSWORD="Password [leave blank to generate]: "
+if "%OWNER_PASSWORD%"=="" set "OWNER_PASSWORD=%GEN_OWNER_PASSWORD%"
 
 REM Update .env file with owner configuration (add only if not already present)
 powershell -Command "$content = Get-Content '.env' -Raw; if ($content -notmatch '(?m)^OWNER_FIRST_NAME=') { $content += \"`nOWNER_FIRST_NAME=%OWNER_FIRST_NAME%\" }; Set-Content '.env' -Value $content -NoNewline"

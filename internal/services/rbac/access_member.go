@@ -534,3 +534,19 @@ func (s *accessMemberService) UpdateRoleForUser(ctx context.Context, schemaName 
 
 	return nil
 }
+
+// GetAccessMemberByID returns a single access_members row. It is a standalone function rather
+// than an AccessMemberService method so authorization middleware can resolve the scope of an
+// access row without widening the service interface.
+func GetAccessMemberByID(repo *pkg.DatabaseService, schemaName, id string) (dto.AccessMemberDTO, error) {
+	query := common.CreateMultiFilterQuery([]dbModels.QueryFilter{{Column: "id", Operator: "eq", Value: id}}, nil, nil)
+	data, err := repo.TableService.GetTableData(fmt.Sprintf(AccessMembersTableFormat, schemaName), query)
+	if err != nil {
+		return dto.AccessMemberDTO{}, app_errors.LogDatabaseError(err, "failed to fetch access member")
+	}
+	members, err := common.MapToStructList[dto.AccessMemberDTO](data)
+	if err != nil || len(members) == 0 {
+		return dto.AccessMemberDTO{}, app_errors.ErrRecordNotFound
+	}
+	return members[0], nil
+}

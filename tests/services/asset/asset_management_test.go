@@ -1065,3 +1065,48 @@ func TestAssetManagement_GetAssetByURL_Error(t *testing.T) {
 	assert.Equal(t, tenant.Assets{}, result)
 	mockAsset.AssertExpectations(t)
 }
+
+// GHSA-cv85-xpvm-265c: uploaded active content (HTML/SVG/XML/JS) must be stored as
+// application/octet-stream so previews download it instead of executing it.
+func TestUpload_ActiveContentStoredAsOctetStream(t *testing.T) {
+	tests := []struct {
+		name        string
+		filename    string
+		contentType string
+		expected    string
+	}{
+		{"html declared as html", "xss.html", "text/html", "application/octet-stream"},
+		{"html with spoofed image type", "xss.html", "image/png", "application/octet-stream"},
+		{"html type with harmless extension", "xss.txt", "text/html; charset=utf-8", "application/octet-stream"},
+		{"svg image", "logo.svg", "image/svg+xml", "application/octet-stream"},
+		{"xhtml", "page.xhtml", "application/xhtml+xml", "application/octet-stream"},
+		{"javascript", "app.js", "text/javascript", "application/octet-stream"},
+		{"uppercase extension", "XSS.HTML", "text/plain", "application/octet-stream"},
+		{"plain text is unchanged", "notes.txt", "text/plain", "text/plain"},
+		{"pdf is unchanged", "doc.pdf", "application/pdf", "application/pdf"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockAsset := &MockAssetService{}
+			mockStorage := &MockStorageProvider{}
+			service := services.NewAssetManagementService(nil, mockAsset, mockStorage, nil)
+			ctx := context.Background()
+
+			fileHeader := createTestTextFile(t, tt.filename, "<script>alert(1)</script>")
+			fileHeader.Header.Set("Content-Type", tt.contentType)
+
+			mockStorage.On("Upload", ctx, mock.Anything, mock.Anything, mock.Anything, tt.expected).
+				Return(storageInterfaces.UploadResponse{Url: "https://storage.example.com/" + tt.filename}, nil).Once()
+			mockAsset.On("AssetBulkInsertion", ctx, mock.MatchedBy(func(assets []dto.AssetInsertion) bool {
+				return len(assets) == 1 && assets[0].MimeType == tt.expected
+			}), "test_schema").Return([]tenant.Assets{{ID: uuid.New(), Title: tt.filename, MimeType: tt.expected}}, nil)
+
+			_, err := service.Upload(ctx, dto.UploadAssetRequest{Files: []*multipart.FileHeader{fileHeader}}, "test_schema")
+
+			assert.NoError(t, err)
+			mockStorage.AssertExpectations(t)
+			mockAsset.AssertExpectations(t)
+		})
+	}
+}

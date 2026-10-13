@@ -21,6 +21,7 @@ var BaseError = struct {
 	IdInvalid          ResponseCode
 	BaseNotFound       ResponseCode
 	ImageTooLarge      ResponseCode
+	MetaInvalid        ResponseCode
 }{
 	ErrNotFound:        "BAS_6001",
 	BaseAlreadyExists:  "BAS_6002",
@@ -35,6 +36,7 @@ var BaseError = struct {
 	IdInvalid:          "BAS_6010",
 	BaseNotFound:       "BAS_6011",
 	ImageTooLarge:      "BAS_6013",
+	MetaInvalid:        "BAS_6014",
 }
 
 var BaseErrorCodes = map[ResponseCode]MetaResponse{
@@ -102,6 +104,11 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Image size exceeds maximum allowed limit",
 		Description: "The uploaded image exceeds the maximum allowed size of 5MB",
+	},
+	BaseError.MetaInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Base meta is invalid",
+		Description: "The Base meta must be a valid JSON object",
 	},
 }
 

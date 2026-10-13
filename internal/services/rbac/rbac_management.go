@@ -210,6 +210,11 @@ func (s *rbacManagementService) createDefaultRoles(ctx context.Context, schema s
 	fmt.Println("\nCreating roles...")
 	roleMap := make(map[string]uuid.UUID)
 	for _, roleReq := range constant.DefaultAccessRoles {
+		// Reuse an existing role so permission changes in this seed also reach existing installs
+		if existing, err := s.roleService.GetAccessRoleByName(ctx, schema, roleReq.Name); err == nil && existing.ID != uuid.Nil {
+			roleMap[roleReq.Name] = existing.ID
+			continue
+		}
 		role, err := s.roleService.CreateAccessRole(ctx, schema, roleReq)
 		if err != nil {
 			fmt.Printf("Error creating role %s: %v\n", roleReq.Name, err)
@@ -365,13 +370,13 @@ func (s *rbacManagementService) assignDefaultRolePermissions(
 	// Workspace Maintainer
 	workspaceMaintainerPermissions := []string{
 		permWorkspaceRead,
-		permBaseRead,
+		permBaseRead, permBaseCreate, permBaseUpdate, permBaseDelete,
 
 		permTableRead, permTableCreate, permTableUpdate, permTableDelete,
 
 		permRecordsRead, permRecordsCreate, permRecordsUpdate, permRecordsDelete, permRecordsExport,
 
-		permMembersRead, permMembersInvite,
+		permMembersRead, permMembersInvite, permMembersManage,
 
 		permViewsRead, permViewsCreate, permViewsUpdate, permViewsDelete,
 	}
@@ -462,6 +467,9 @@ func (s *rbacManagementService) assignPermissionsToRole(
 
 	for _, permName := range permissionNames {
 		if permID, ok := permissionMap[permName]; ok {
+			if has, err := s.rolePermissionService.CheckRoleHasPermission(ctx, schema, roleID, permID); err == nil && has {
+				continue
+			}
 			_, err := s.rolePermissionService.AssignPermissionToRole(ctx, schema, dto.RolePermissionDTO{
 				ID:           uuid.New(),
 				RoleID:       roleID,

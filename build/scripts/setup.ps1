@@ -240,7 +240,7 @@ AUTH_LOG_LEVEL=info
 OWNER_FIRST_NAME=Admin
 OWNER_LAST_NAME=User
 OWNER_EMAIL=admin@example.com
-OWNER_PASSWORD=Admin@123
+OWNER_PASSWORD=
 TEMPORARY_USER_PASSWORD=CHANGE_THIS      # Default password for new users
 
 # ------------------------------------------------------------------------------
@@ -935,12 +935,13 @@ if ($AutoYes) {
     $OWNER_FIRST_NAME = "Admin"
     $OWNER_LAST_NAME = "User"
     $OWNER_EMAIL = "admin@example.com"
-    $OWNER_PASSWORD = "Admin@123"
+    $OWNER_PASSWORD = Get-EnvVar -Key "OWNER_PASSWORD"
+    if ([string]::IsNullOrWhiteSpace($OWNER_PASSWORD)) { $OWNER_PASSWORD = [guid]::NewGuid().ToString("N") }
 } else {
     $OWNER_FIRST_NAME = Read-EnvVar -Key "OWNER_FIRST_NAME" -DefaultValue "Admin" -Prompt "First Name"
     $OWNER_LAST_NAME = Read-EnvVar -Key "OWNER_LAST_NAME" -DefaultValue "User" -Prompt "Last Name"
     $OWNER_EMAIL = Read-EnvVar -Key "OWNER_EMAIL" -DefaultValue "admin@example.com" -Prompt "Email"
-    $OWNER_PASSWORD = Read-EnvVar -Key "OWNER_PASSWORD" -DefaultValue "Admin@123" -Prompt "Password" -IsPassword $true
+    $OWNER_PASSWORD = Read-EnvVar -Key "OWNER_PASSWORD" -DefaultValue ([guid]::NewGuid().ToString("N")) -Prompt "Password" -IsPassword $true
 }
 
 Update-EnvVarIfChanged -Key "OWNER_FIRST_NAME" -Value $OWNER_FIRST_NAME
@@ -1047,7 +1048,7 @@ if ([string]::IsNullOrWhiteSpace($displayPublicHost)) { $displayPublicHost = "lo
 $displayOwnerEmail = Get-EnvVar -Key "OWNER_EMAIL"
 if ([string]::IsNullOrWhiteSpace($displayOwnerEmail)) { $displayOwnerEmail = "admin@example.com" }
 $displayOwnerPassword = Get-EnvVar -Key "OWNER_PASSWORD"
-if ([string]::IsNullOrWhiteSpace($displayOwnerPassword)) { $displayOwnerPassword = "Admin@123" }
+if ([string]::IsNullOrWhiteSpace($displayOwnerPassword)) { $displayOwnerPassword = "(see OWNER_PASSWORD in .env)" }
 
 Write-Host ""
 Write-Host "========================================================================"

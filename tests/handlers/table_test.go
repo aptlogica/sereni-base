@@ -16,6 +16,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/tests/handlers/mocks"
 
 	"github.com/gin-gonic/gin"
@@ -3611,4 +3612,33 @@ func TestTableHandler_ExtractSubstring(t *testing.T) {
 		handler.ExtractSubstring(c)
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
+}
+
+// GET /view/ lists views across the tenant; the handler must drop views of tables the
+// caller has no membership on, as decided by the filter NewModelAccessFilter stores.
+func TestTableHandler_GetAllViews_FiltersInaccessibleTables(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	visibleModel, hiddenModel := uuid.New(), uuid.New()
+	visibleView, hiddenView := uuid.New(), uuid.New()
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().GetAllViews(gomock.Any(), "test").Return([]dto.ViewResponse{
+		{ID: visibleView, ModelID: visibleModel},
+		{ID: hiddenView, ModelID: hiddenModel},
+	}, nil)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/views", nil)
+	c.Set("schema", "test")
+	c.Set(middleware.ModelAccessFilterKey, func(modelID string) bool { return modelID == visibleModel.String() })
+
+	handler.GetAllViews(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), visibleView.String())
+	assert.NotContains(t, w.Body.String(), hiddenView.String())
 }

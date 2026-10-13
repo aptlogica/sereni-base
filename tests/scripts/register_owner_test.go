@@ -925,3 +925,24 @@ func TestRegisterOwnerWithAllValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+// GHSA-q8fx-q2c9-c6hc: publicly known default owner passwords must never be accepted.
+func TestValidateOwnerConfig_RejectsDefaultPasswords(t *testing.T) {
+	cfgWith := func(password string) *config.Config {
+		return &config.Config{OwnerRegistration: config.OwnerRegistrationConfig{
+			Email: "owner@example.com", Password: password, FirstName: "John", LastName: "Doe",
+		}}
+	}
+
+	for _, password := range []string{"Admin@123", "CHANGEME_OWNER_PASSWORD", "short", "1234567"} {
+		t.Run("rejects "+password, func(t *testing.T) {
+			err := scripts.ValidateOwnerConfig(cfgWith(password))
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "password")
+		})
+	}
+
+	t.Run("accepts a non-default password of minimum length", func(t *testing.T) {
+		assert.NoError(t, scripts.ValidateOwnerConfig(cfgWith("4f9c2a7e")))
+	})
+}
