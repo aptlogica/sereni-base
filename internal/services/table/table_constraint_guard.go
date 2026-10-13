@@ -81,22 +81,22 @@ func (s tableManagementService) recordWriteError(ctx context.Context, schemaName
 	return app_errors.WithMessage(app_errors.UniqueKeyViolation, s.uniqueViolationMessage(ctx, schemaName, name, detail))
 }
 
-// uniqueViolationMessage names the duplicate values by column title,
-// e.g. "A record with Department = 4 and Emp Code = E01 already exists"
+// uniqueViolationMessage says that the unique key doesn't allow duplicates, naming the key and its
+// columns by title, e.g. Duplicate value not allowed. The unique key "Unique code" does not allow
+// two records with the same Department and Emp Code.
 func (s tableManagementService) uniqueViolationMessage(ctx context.Context, schemaName, constraintName, detail string) string {
+	const prefix = "Duplicate value not allowed. "
 	key := s.constraintByName(schemaName, constraintName)
-	// Column names in the detail are shown by their titles
-	titles := map[string]string{}
-	if key != nil {
-		titles = s.columnTitles(ctx, schemaName, key.ModelID)
+	columns := s.duplicateColumnTitles(ctx, schemaName, key, detail)
+	switch {
+	case key != nil && len(columns) > 0:
+		return fmt.Sprintf("%sThe unique key %q does not allow two records with the same %s.", prefix, key.Title, joinTitles(columns))
+	case key != nil:
+		return fmt.Sprintf("%sThe unique key %q does not allow duplicate values.", prefix, key.Title)
+	case len(columns) > 0:
+		return fmt.Sprintf("%sTwo records can't have the same %s.", prefix, joinTitles(columns))
 	}
-	if values, ok := duplicateValues(detail, titles); ok {
-		return fmt.Sprintf("A record with %s already exists", values)
-	}
-	if key != nil {
-		return fmt.Sprintf("A record with the same values already exists (unique key %q)", key.Title)
-	}
-	return "A record with the same values already exists"
+	return prefix + "This record repeats the values of a unique key."
 }
 
 // constraintByName returns the unique key with the Postgres name, or nil when it can't be read
@@ -108,39 +108,46 @@ func (s tableManagementService) constraintByName(schemaName, constraintName stri
 	return &constraints[0]
 }
 
-// columnTitles maps the column names of a table to their titles; empty when they can't be read
-func (s tableManagementService) columnTitles(ctx context.Context, schemaName, modelID string) map[string]string {
-	titles := map[string]string{}
-	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, modelID)
-	if err != nil {
-		return titles
+// duplicateColumnTitles returns the titles of the key's columns, in key order. For keys added
+// outside the app, the columns come from Postgres' detail, e.g. Key (badge)=(B7) already exists.
+func (s tableManagementService) duplicateColumnTitles(ctx context.Context, schemaName string, key *tenant.TableConstraint, detail string) []string {
+	if key == nil {
+		return detailColumnNames(detail)
 	}
-	for _, c := range columns {
-		titles[c.ColumnName] = c.Title
+	byID := map[string]string{}
+	if columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, key.ModelID); err == nil {
+		for _, c := range columns {
+			byID[c.ID.String()] = c.Title
+		}
+	}
+	titles := make([]string, 0, len(key.ColumnIDs))
+	for _, id := range key.ColumnIDs {
+		if title, ok := byID[id]; ok {
+			titles = append(titles, title)
+		}
 	}
 	return titles
 }
 
-// duplicateValues reads Postgres' detail of a duplicate as "Department = 4 and Emp Code = E01",
-// naming columns by title when known; false when the detail can't be read
-func duplicateValues(detail string, titles map[string]string) (string, bool) {
+// detailColumnNames reads the column names from Postgres' detail of a duplicate; nil when it can't be read
+func detailColumnNames(detail string) []string {
 	match := duplicateDetailRegexp.FindStringSubmatch(detail)
 	if match == nil {
-		return "", false
+		return nil
 	}
-	names, values := strings.Split(match[1], ", "), strings.Split(match[2], ", ")
-	if len(names) != len(values) {
-		return "", false
-	}
-	parts := make([]string, len(names))
+	names := strings.Split(match[1], ", ")
 	for i, name := range names {
-		name = strings.Trim(name, `"`)
-		if title, ok := titles[name]; ok {
-			name = title
-		}
-		parts[i] = fmt.Sprintf("%s = %s", name, values[i])
+		names[i] = strings.Trim(name, `"`)
 	}
-	return strings.Join(parts, " and "), true
+	return names
+}
+
+// joinTitles lists titles as "Email", or "Title and Number", or "A, B and C"
+func joinTitles(titles []string) string {
+	if len(titles) == 1 {
+		return titles[0]
+	}
+	return strings.Join(titles[:len(titles)-1], ", ") + " and " + titles[len(titles)-1]
 }
 
 func (s tableManagementService) tableConstraints(schemaName string, filter dbModels.QueryFilter) ([]tenant.TableConstraint, error) {

@@ -1545,15 +1545,6 @@ func (s tableManagementService) UpdateColumn(
 		return dto.ColumnResponse{}, err
 	}
 
-	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
-		return dto.ColumnResponse{}, err
-	}
-
-	if req.UIDT != nil && *req.UIDT != "" {
-		dt, _ := s.getDataBaseType(*req.UIDT)
-		req.DT = helpers.StringPtr(dt)
-	}
-
 	if columnData.UIDT == uidtLinks {
 		return s.updateColumnForLink(ctx, schemaName, columnData, req)
 	}
@@ -1565,6 +1556,10 @@ func (s tableManagementService) UpdateColumn(
 	// Link and lookup columns need their relation set up, so a plain column can't be converted into one.
 	if req.UIDT != nil && (*req.UIDT == uidtLinks || *req.UIDT == uidtLookup) {
 		return dto.ColumnResponse{}, app_errors.UpdateNotAllowed
+	}
+
+	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
+		return dto.ColumnResponse{}, err
 	}
 
 	if req.UIDT != nil && *req.UIDT != "" {

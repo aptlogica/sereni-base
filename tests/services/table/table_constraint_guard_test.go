@@ -149,7 +149,7 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 		return p.Filters[0].Column == "constraint_name" && p.Filters[0].Value == "uq_tbl_1a2b3c4d"
 	})
 
-	t.Run("names the values by column title", func(t *testing.T) {
+	t.Run("names the key and its columns by title, in key order", func(t *testing.T) {
 		_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
 		mockTable.On("CreateRecord", mock.Anything, mock.Anything).
 			Return(nil, pqDuplicate("uq_tbl_1a2b3c4d", "Key (emp_code, email)=(E01, a@x.com) already exists."))
@@ -160,10 +160,10 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{"email": "a@x.com"})
 
 		assert.ErrorIs(t, err, app_errors.UniqueKeyViolation)
-		assert.Equal(t, "A record with Emp Code = E01 and Email = a@x.com already exists", detailedMessage(t, err))
+		assert.Equal(t, `Duplicate value not allowed. The unique key "Unique email" does not allow two records with the same Emp Code and Email.`, detailedMessage(t, err))
 	})
 
-	t.Run("names the key when Postgres gives no detail", func(t *testing.T) {
+	t.Run("names the key and column when Postgres gives no detail", func(t *testing.T) {
 		_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
 		mockTable.On("CreateRecord", mock.Anything, mock.Anything).
 			Return(nil, errors.New(`pq: duplicate key value violates unique constraint "uq_tbl_1a2b3c4d"`))
@@ -172,7 +172,7 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{emailCol}, nil)
 
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
-		assert.Equal(t, `A record with the same values already exists (unique key "Unique email")`, detailedMessage(t, err))
+		assert.Equal(t, `Duplicate value not allowed. The unique key "Unique email" does not allow two records with the same Email.`, detailedMessage(t, err))
 	})
 
 	t.Run("uses column names for keys added outside the app", func(t *testing.T) {
@@ -182,7 +182,7 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{}, nil)
 
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
-		assert.Equal(t, "A record with badge = B7 already exists", detailedMessage(t, err))
+		assert.Equal(t, "Duplicate value not allowed. Two records can't have the same badge.", detailedMessage(t, err))
 	})
 
 	t.Run("reports duplicates from a bulk insert", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 
 		_, err := svc.CreateRowsWithRecordsBulk(context.Background(), "schema", "tbl", []map[string]interface{}{{}, {}})
 		assert.ErrorIs(t, err, app_errors.UniqueKeyViolation)
-		assert.Equal(t, "A record with the same values already exists", detailedMessage(t, err))
+		assert.Equal(t, "Duplicate value not allowed. This record repeats the values of a unique key.", detailedMessage(t, err))
 	})
 
 	t.Run("keeps other database errors generic", func(t *testing.T) {
