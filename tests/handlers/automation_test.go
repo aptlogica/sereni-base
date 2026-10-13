@@ -268,6 +268,45 @@ func TestAutomationHandler_RunAutomation(t *testing.T) {
 	})
 }
 
+func TestAutomationHandler_ValidateAutomation(t *testing.T) {
+	body := dto.ValidateAutomationRequest{ModelID: "m1", Type: "function", Context: "CREATE FUNCTION f() RETURNS trigger AS $$ $$"}
+
+	t.Run("returns the result from the service", func(t *testing.T) {
+		h, svc := newAutomationHandler(t)
+		svc.EXPECT().Validate(gomock.Any(), "tenant_1", body).
+			Return(dto.AutomationValidationResult{Valid: false, Message: "syntax error at end of input"}, nil)
+
+		c, w := newAutomationContext(http.MethodPost, "/automation/validate", body)
+		h.ValidateAutomation(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var result dto.AutomationValidationResult
+		require.NoError(t, json.Unmarshal(decodeAutomationResponse(t, w).Data, &result))
+		assert.False(t, result.Valid)
+		assert.Equal(t, "syntax error at end of input", result.Message)
+	})
+
+	t.Run("rejects a webhook", func(t *testing.T) {
+		h, _ := newAutomationHandler(t)
+
+		c, w := newAutomationContext(http.MethodPost, "/automation/validate", dto.ValidateAutomationRequest{ModelID: "m1", Type: "webhook", Context: "{}"})
+		h.ValidateAutomation(c)
+
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	})
+
+	t.Run("returns a query format error", func(t *testing.T) {
+		h, svc := newAutomationHandler(t)
+		svc.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(dto.AutomationValidationResult{}, app_errors.InvalidFunctionQuery)
+
+		c, w := newAutomationContext(http.MethodPost, "/automation/validate", body)
+		h.ValidateAutomation(c)
+
+		assert.Equal(t, "AUT_1007", decodeAutomationResponse(t, w).Error.Code)
+	})
+}
+
 func TestAutomationHandler_DeleteAutomation(t *testing.T) {
 	t.Run("deletes the automation", func(t *testing.T) {
 		h, svc := newAutomationHandler(t)

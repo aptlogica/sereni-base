@@ -51,6 +51,7 @@ type Handlers struct {
 	Organization *handlers.OrganizationHandler
 	Automation   *handlers.AutomationHandler
 	PrimaryKey   *handlers.PrimaryKeyHandler
+	TableConstraint *handlers.TableConstraintHandler
 }
 
 func Setup(cfg *config.Config,
@@ -118,6 +119,7 @@ func Setup(cfg *config.Config,
 		setupRowRoutes(private, handlerGroups, middlewareGroups)
 		setupViewRoutes(private, handlerGroups, middlewareGroups)
 		setupAutomationRoutes(private, handlerGroups, middlewareGroups)
+		setupTableConstraintRoutes(private, handlerGroups, middlewareGroups)
 		setupAssetRoutes(private, handlerGroups, middlewareGroups)
 	}
 
@@ -484,6 +486,29 @@ func setupViewRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 	}
 }
 
+// setupTableConstraintRoutes configures unique key endpoints. Keys change the table's
+// structure, so they use the table permissions: read to list and check, update to change.
+func setupTableConstraintRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
+	constraint := private.Group("/table-constraint")
+	{
+		constraint.GET("",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.TableConstraint.GetTableConstraints)
+		constraint.POST("/check",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, middlewares.AccessMemberService).Middleware(),
+			handlers.TableConstraint.CheckTableConstraint)
+		constraint.POST(RouteCreate,
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.TableConstraint.CreateTableConstraint)
+		constraint.PUT("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.TableConstraint.UpdateTableConstraint)
+		constraint.DELETE("/:id",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Table, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.TableConstraint.DeleteTableConstraint)
+	}
+}
+
 // setupAutomationRoutes configures trigger & webhook endpoints
 func setupAutomationRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Middlewares) {
 	automation := private.Group("/automation")
@@ -500,6 +525,10 @@ func setupAutomationRoutes(private *gin.RouterGroup, handlers Handlers, middlewa
 		automation.POST("/:id/run",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Automation.RunAutomation)
+		// Runs the query in a rolled-back transaction, so it needs the same permission as Run
+		automation.POST("/validate",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.ValidateAutomation)
 		automation.DELETE("/:id",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Automation.DeleteAutomation)

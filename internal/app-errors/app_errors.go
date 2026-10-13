@@ -241,6 +241,34 @@ func (e *PrimaryKeyViolation) Error() string {
 
 func (e *PrimaryKeyViolation) Unwrap() error { return PrimaryKeyDataInvalid }
 
+// table constraints (unique keys)
+var (
+	ConstraintNotFound         = errors.New("constraint not found")
+	ConstraintColumnNotFound   = errors.New("column not found in this table")
+	ConstraintColumnNotAllowed = errors.New("column can't be part of a key")
+	ConstraintRepeatedColumn   = errors.New("column repeated in key")
+	ConstraintAlreadyExists    = errors.New("a key on these columns already exists")
+	ConstraintDuplicateValues  = errors.New("records repeat values in these columns")
+	ConstraintFailed           = errors.New("failed to apply constraint")
+	ColumnUsedInConstraint     = errors.New("column is used by a key")
+	UniqueKeyViolation         = errors.New("record repeats a unique key")
+)
+
+// DetailedError keeps a known error, for mapping to a response code, and a message for the user
+type DetailedError struct {
+	Err     error
+	Message string
+}
+
+func (e *DetailedError) Error() string { return e.Err.Error() + ": " + e.Message }
+
+func (e *DetailedError) Unwrap() error { return e.Err }
+
+// WithMessage returns err with a message for the user
+func WithMessage(err error, message string) error {
+	return &DetailedError{Err: err, Message: message}
+}
+
 // APIError represents an error response from an external API
 type APIError struct {
 	Code       string

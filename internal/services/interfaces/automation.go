@@ -18,6 +18,8 @@ type AutomationService interface {
 	Update(ctx context.Context, schemaName, id string, req dto.UpdateAutomationRequest) (tenant.Automation, error)
 	// Run applies the saved query in Postgres, replacing the trigger or function installed for the entry
 	Run(ctx context.Context, schemaName, id string) (tenant.Automation, error)
+	// Validate runs the query in a transaction that is always rolled back, so Postgres checks it without changing anything
+	Validate(ctx context.Context, schemaName string, req dto.ValidateAutomationRequest) (dto.AutomationValidationResult, error)
 	// List returns the automations of one table, newest first
 	List(ctx context.Context, schemaName, modelID string) ([]tenant.Automation, error)
 	Delete(ctx context.Context, schemaName, id string) error

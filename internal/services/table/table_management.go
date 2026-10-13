@@ -1562,6 +1562,10 @@ func (s tableManagementService) UpdateColumn(
 		return dto.ColumnResponse{}, app_errors.UpdateNotAllowed
 	}
 
+	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
+		return dto.ColumnResponse{}, err
+	}
+
 	if req.UIDT != nil && *req.UIDT != "" {
 		dt, _ := s.getDataBaseType(*req.UIDT)
 		req.DT = helpers.StringPtr(dt)
@@ -2008,7 +2012,12 @@ func (s tableManagementService) DeleteColumn(
 	}
 	// }()
 
-	return s.DeleteColumnAndCleanUp(ctx, schemaName, id, columnData)
+	if err := s.DeleteColumnAndCleanUp(ctx, schemaName, id, columnData); err != nil {
+		return err
+	}
+	// The column is dropped with CASCADE, which also drops unique keys using it; remove their entries too
+	s.removeKeysUsingColumn(schemaName, columnData)
+	return nil
 }
 
 func (s tableManagementService) CreateRow(ctx context.Context, schemaName string, req dto.CreateRowRequest) (dto.RecordResponse, error) {
@@ -2265,6 +2274,7 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
 		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, modelAlias, err, "failed to create row with records")
+
 	}
 
 	return dto.RecordResponse{
@@ -2279,7 +2289,7 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to bulk insert rows")
-		return nil, app_errors.LogDatabaseError(err, "failed to bulk insert rows")
+		return nil, s.recordWriteError(ctx, schemaName, err, "failed to bulk insert rows")
 	}
 
 	var response []dto.RecordResponse

@@ -1375,6 +1375,8 @@ func TestDeleteColumn_NonLookup(t *testing.T) {
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(modelID)}, nil)
 	mockTable.On("GetByFunction", mock.Anything, "public.reorder_columns_after_delete", mock.Anything).Return([]map[string]interface{}{}, nil)
 	mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)
+	// No unique key uses the column
+	mockTable.On("GetTableData", tenant.TableConstraint{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil)
 
 	err := svc.DeleteColumn(context.Background(), "schema", "cid")
 	assert.NoError(t, err)
