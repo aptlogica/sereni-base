@@ -187,6 +187,14 @@ func CheckAndSendError(ctx *gin.Context, err error) {
 	}
 
 	code := responseConstants.MapError(err)
+
+	// Known error with a message for the user, e.g. which column or key caused it
+	var detailed *appErrors.DetailedError
+	if code != "" && errors.As(err, &detailed) {
+		SendErrorWithMessage(ctx, code, detailed.Message)
+		return
+	}
+
 	if code == "" {
 		// No mapped code: surface the original error message instead of a generic internal error
 		code = responseConstants.Error.InternalError

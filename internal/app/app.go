@@ -127,6 +127,7 @@ func New(cfg *config.Config) (*App, error) {
 	columnService := services.NewColumnService(dbService)
 	viewService := services.NewViewService(dbService)
 	automationService := services.NewAutomationService(dbService, modelService)
+	tableConstraintService := services.NewTableConstraintService(dbService, modelService, columnService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
 	resourceService := services.NewCoreResourceService(dbService)
@@ -224,16 +225,18 @@ func New(cfg *config.Config) (*App, error) {
 	userHandler := handlers.NewUserHandler(userManagementService)
 	organizationHandler := handlers.NewOrganizationHandler(organizationService)
 	automationHandler := handlers.NewAutomationHandler(automationService)
+	tableConstraintHandler := handlers.NewTableConstraintHandler(tableConstraintService)
 
 	handlerGroups := router.Handlers{
-		Auth:         authHandler,
-		Workspace:    workspaceHandler,
-		Base:         baseHandler,
-		Asset:        assetHandler,
-		Table:        tableHandler,
-		User:         userHandler,
-		Organization: organizationHandler,
-		Automation:   automationHandler,
+		Auth:            authHandler,
+		Workspace:       workspaceHandler,
+		Base:            baseHandler,
+		Asset:           assetHandler,
+		Table:           tableHandler,
+		User:            userHandler,
+		Organization:    organizationHandler,
+		Automation:      automationHandler,
+		TableConstraint: tableConstraintHandler,
 	}
 
 	middlewareGroups := router.Middlewares{

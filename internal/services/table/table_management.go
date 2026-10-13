@@ -1432,6 +1432,10 @@ func (s tableManagementService) UpdateColumn(
 		return dto.ColumnResponse{}, err
 	}
 
+	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
+		return dto.ColumnResponse{}, err
+	}
+
 	if req.UIDT != nil && *req.UIDT != "" {
 		dt, _ := s.getDataBaseType(*req.UIDT)
 		req.DT = helpers.StringPtr(dt)
@@ -1869,7 +1873,12 @@ func (s tableManagementService) DeleteColumn(
 	}
 	// }()
 
-	return s.DeleteColumnAndCleanUp(ctx, schemaName, id, columnData)
+	if err := s.DeleteColumnAndCleanUp(ctx, schemaName, id, columnData); err != nil {
+		return err
+	}
+	// The column is dropped with CASCADE, which also drops unique keys using it; remove their entries too
+	s.removeKeysUsingColumn(schemaName, columnData)
+	return nil
 }
 
 func (s tableManagementService) CreateRow(ctx context.Context, schemaName string, req dto.CreateRowRequest) (dto.RecordResponse, error) {
@@ -1892,7 +1901,7 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, data)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row record")
-		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to create row record")
+		return dto.RecordResponse{}, s.recordWriteError(ctx, schemaName, err, "failed to create row record")
 	}
 
 	return dto.RecordResponse{
@@ -2680,7 +2689,7 @@ func (s tableManagementService) InsertRowData(ctx context.Context, schemaName st
 
 	insertedRecord, err := s.repo.TableService.UpdateRecord(tableName, req.RowId, data)
 	if err != nil {
-		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to update record for column")
+		return dto.RecordResponse{}, s.recordWriteError(ctx, schemaName, err, "failed to update record for column")
 	}
 
 	return dto.RecordResponse{
@@ -2695,7 +2704,7 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, record)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
-		return dto.RecordResponse{}, app_errors.LogDatabaseError(err, "failed to create row with records")
+		return dto.RecordResponse{}, s.recordWriteError(ctx, schemaName, err, "failed to create row with records")
 	}
 
 	return dto.RecordResponse{
@@ -2710,7 +2719,7 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to bulk insert rows")
-		return nil, app_errors.LogDatabaseError(err, "failed to bulk insert rows")
+		return nil, s.recordWriteError(ctx, schemaName, err, "failed to bulk insert rows")
 	}
 
 	var response []dto.RecordResponse
