@@ -171,34 +171,83 @@ func (s *automationService) Run(ctx context.Context, schemaName, id string) (ten
 		return tenant.Automation{}, err
 	}
 
+	statements, err := s.replaceStatements(automation, query, sql, label, model.Alias)
+	if err != nil {
+		return tenant.Automation{}, err
+	}
+	// A webhook has nothing in Postgres
+	if len(statements) == 0 {
+		return automation, nil
+	}
+	if err := s.execInTx(statements...); err != nil {
+		return tenant.Automation{}, err
+	}
+	return automation, nil
+}
+
+// Validate runs what Save and Run would run for the query, in a transaction that is always rolled
+// back: Postgres checks the syntax, the table and the function a trigger calls, and nothing is kept.
+// A new entry is checked as Create runs it; an existing one as Run replaces what it installed.
+func (s *automationService) Validate(ctx context.Context, schemaName string, req dto.ValidateAutomationRequest) (dto.AutomationValidationResult, error) {
+	automation := tenant.Automation{ID: uuid.New(), ModelID: req.ModelID, Type: req.Type}
+	if req.ID != "" {
+		saved, err := s.getByID(schemaName, req.ID)
+		if err != nil {
+			return dto.AutomationValidationResult{}, err
+		}
+		automation = saved
+	}
+	model, err := s.modelService.GetModelByID(ctx, schemaName, automation.ModelID)
+	if err != nil {
+		return dto.AutomationValidationResult{}, err
+	}
+
+	query := strings.TrimSuffix(strings.TrimSpace(req.Context), ";")
+	sql, err := prepareQuery(automation.Type, query, model.Alias)
+	if err != nil {
+		return dto.AutomationValidationResult{}, err
+	}
+	if _, err := normalizeEvent(automation.Type, req.Event); err != nil {
+		return dto.AutomationValidationResult{}, err
+	}
+	label, err := labelSQL(automation, query, model.Alias)
+	if err != nil {
+		return dto.AutomationValidationResult{}, err
+	}
+
+	statements := []string{sql, label}
+	if req.ID != "" {
+		if statements, err = s.replaceStatements(automation, query, sql, label, model.Alias); err != nil {
+			return dto.AutomationValidationResult{}, err
+		}
+	}
+	return s.tryInTx(statements...)
+}
+
+// replaceStatements returns the statements that replace the trigger or function installed for the
+// saved entry with sql, then label it. The installed one is found by the saved entry, not by sql.
+func (s *automationService) replaceStatements(automation tenant.Automation, query, sql, label, tableAlias string) ([]string, error) {
 	switch automation.Type {
 	case tenant.AutomationTypeTrigger:
-		installed, table, err := s.installedTrigger(automation, model.Alias)
+		installed, table, err := s.installedTrigger(automation, tableAlias)
 		if err != nil {
-			return tenant.Automation{}, err
+			return nil, err
 		}
-		err = s.execInTx(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", installed, table), sql, label)
-		if err != nil {
-			return tenant.Automation{}, err
-		}
+		return []string{fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", installed, table), sql, label}, nil
 	case tenant.AutomationTypeFunction:
 		installed, err := s.installedFunction(automation)
 		if err != nil {
-			return tenant.Automation{}, err
+			return nil, err
 		}
 		_, newName, _, _ := splitTriggerContext(query)
 		if sameIdentifier(installed, newName) {
 			// Same function: replace its body, triggers using it keep working
-			err = s.execInTx(createFunctionRegexp.ReplaceAllString(sql, "CREATE OR REPLACE FUNCTION"), label)
-		} else {
-			// Renamed: Postgres refuses to drop the old one while a trigger still uses it
-			err = s.execInTx(sql, fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", installed), label)
+			return []string{createFunctionRegexp.ReplaceAllString(sql, "CREATE OR REPLACE FUNCTION"), label}, nil
 		}
-		if err != nil {
-			return tenant.Automation{}, err
-		}
+		// Renamed: Postgres refuses to drop the old one while a trigger still uses it
+		return []string{sql, fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", installed), label}, nil
 	}
-	return automation, nil
+	return nil, nil
 }
 
 // List returns the automations of one table
@@ -527,6 +576,25 @@ func (s *automationService) execInTx(statements ...string) error {
 		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
 	}
 	return nil
+}
+
+// tryInTx runs the statements and always rolls back. A statement Postgres rejects makes the
+// result not valid, with Postgres' message; failing to start the transaction is an error.
+func (s *automationService) tryInTx(statements ...string) (dto.AutomationValidationResult, error) {
+	tx, err := s.repo.DB.Begin()
+	if err != nil {
+		return dto.AutomationValidationResult{}, fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, stmt := range statements {
+		if stmt == "" {
+			continue
+		}
+		if _, err := tx.Exec(stmt); err != nil {
+			return dto.AutomationValidationResult{Valid: false, Message: app_errors.PostgresMessage(err)}, nil
+		}
+	}
+	return dto.AutomationValidationResult{Valid: true}, nil
 }
 
 func (s *automationService) fetch(schemaName string, params dbModels.QueryParams) ([]tenant.Automation, error) {

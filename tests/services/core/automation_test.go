@@ -404,6 +404,110 @@ func TestAutomationService_Run(t *testing.T) {
 	})
 }
 
+func TestAutomationService_Validate(t *testing.T) {
+	t.Run("runs a new trigger and rolls back", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(exact(triggerQuery)).WillReturnResult(ok())
+		f.sql.ExpectExec(`^COMMENT ON TRIGGER log_salary ON "public"."employee" IS 'automation:`).WillReturnResult(ok())
+		f.sql.ExpectRollback()
+
+		out, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", Type: "trigger", Context: triggerQuery + ";", Event: "AFTER INSERT, AFTER UPDATE",
+		})
+		require.NoError(t, err)
+		assert.True(t, out.Valid)
+		assert.Empty(t, out.Message)
+	})
+
+	t.Run("returns Postgres' message and rolls back", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(exact(triggerQuery)).WillReturnError(errors.New("pq: function log_fn() does not exist"))
+		f.sql.ExpectRollback()
+
+		out, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", Type: "trigger", Context: triggerQuery, Event: "AFTER INSERT",
+		})
+		require.NoError(t, err)
+		assert.False(t, out.Valid)
+		assert.Equal(t, "function log_fn() does not exist", out.Message)
+	})
+
+	t.Run("checks an edited trigger as Run replaces the installed one", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.expectGetByID("trigger", triggerQuery)
+		f.expectLabelledTrigger("old_name")
+		edited := `CREATE TRIGGER log_salary BEFORE DELETE ON "public"."employee" FOR EACH ROW EXECUTE FUNCTION log_fn()`
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS old_name ON "public"."employee"`)).WillReturnResult(ok())
+		f.sql.ExpectExec(exact(edited)).WillReturnResult(ok())
+		f.sql.ExpectExec(exact(`COMMENT ON TRIGGER log_salary ON "public"."employee" IS '` + automationLabel + `'`)).WillReturnResult(ok())
+		f.sql.ExpectRollback()
+
+		out, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", ID: automationID, Type: "trigger", Context: edited, Event: "BEFORE DELETE",
+		})
+		require.NoError(t, err)
+		assert.True(t, out.Valid)
+	})
+
+	t.Run("checks an edited function as a replacement of the same function", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		plain := `CREATE FUNCTION log_fn() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql`
+		f.expectGetByID("function", plain)
+		f.expectLabelledFunction("log_fn")
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(exact(functionQuery)).WillReturnResult(ok())
+		f.sql.ExpectExec(exact(`COMMENT ON FUNCTION log_fn() IS '` + automationLabel + `'`)).WillReturnResult(ok())
+		f.sql.ExpectRollback()
+
+		out, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", ID: automationID, Type: "function", Context: plain,
+		})
+		require.NoError(t, err)
+		assert.True(t, out.Valid)
+	})
+
+	t.Run("rejects a query in the wrong format without touching Postgres", func(t *testing.T) {
+		f := newAutomationFixture(t)
+
+		_, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", Type: "trigger", Context: "SELECT 1", Event: "AFTER INSERT",
+		})
+		assert.ErrorIs(t, err, app_errors.InvalidTriggerQuery)
+	})
+
+	t.Run("rejects invalid trigger events", func(t *testing.T) {
+		f := newAutomationFixture(t)
+
+		_, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", Type: "trigger", Context: triggerQuery, Event: "SOMETIMES",
+		})
+		assert.ErrorIs(t, err, app_errors.InvalidTriggerEvent)
+	})
+
+	t.Run("returns not found for an unknown entry", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.table.On("GetTableData", automationsTable, mock.Anything).Return([]map[string]interface{}{}, nil).Once()
+
+		_, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", ID: automationID, Type: "trigger", Context: triggerQuery,
+		})
+		assert.ErrorIs(t, err, app_errors.AutomationNotFound)
+	})
+
+	t.Run("fails when the transaction can't start", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.sql.ExpectBegin().WillReturnError(errors.New("connection refused"))
+
+		_, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
+			ModelID: "m1", Type: "function", Context: functionQuery,
+		})
+		assert.ErrorIs(t, err, app_errors.TriggerFailed)
+	})
+}
+
 func TestAutomationService_List(t *testing.T) {
 	t.Run("returns the automations of a table, newest first", func(t *testing.T) {
 		f := newAutomationFixture(t)

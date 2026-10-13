@@ -95,6 +95,21 @@ func (mr *MockAutomationServiceMockRecorder) Run(ctx, schemaName, id interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockAutomationService)(nil).Run), ctx, schemaName, id)
 }
 
+// Validate mocks base method.
+func (m *MockAutomationService) Validate(ctx context.Context, schemaName string, req dto.ValidateAutomationRequest) (dto.AutomationValidationResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Validate", ctx, schemaName, req)
+	ret0, _ := ret[0].(dto.AutomationValidationResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Validate indicates an expected call of Validate.
+func (mr *MockAutomationServiceMockRecorder) Validate(ctx, schemaName, req interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockAutomationService)(nil).Validate), ctx, schemaName, req)
+}
+
 // Update mocks base method.
 func (m *MockAutomationService) Update(ctx context.Context, schemaName, id string, req dto.UpdateAutomationRequest) (tenant.Automation, error) {
 	m.ctrl.T.Helper()

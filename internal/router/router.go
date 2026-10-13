@@ -518,6 +518,10 @@ func setupAutomationRoutes(private *gin.RouterGroup, handlers Handlers, middlewa
 		automation.POST("/:id/run",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
 			handlers.Automation.RunAutomation)
+		// Runs the query in a rolled-back transaction, so it needs the same permission as Run
+		automation.POST("/validate",
+			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Update, middlewares.AccessMemberService).Middleware(),
+			handlers.Automation.ValidateAutomation)
 		automation.DELETE("/:id",
 			middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, appConstant.ActionCodes.Delete, middlewares.AccessMemberService).Middleware(),
 			handlers.Automation.DeleteAutomation)

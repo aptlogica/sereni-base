@@ -175,6 +175,35 @@ func (h *AutomationHandler) RunAutomation(c *gin.Context) {
 	response.SendSuccess(c, responseConst.AutomationSuccess.AutomationRun, automation)
 }
 
+// @Summary      Validate a trigger or function
+// @Description  Runs the query as typed, saved or not, in a transaction that is rolled back, so Postgres checks it. Nothing is changed.
+// @Tags         Automations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.ValidateAutomationRequest  true  "Table, type and query; id when editing"
+// @Success      200      {object}  dto.AutomationValidationResult
+// @Failure      400      {object}  models.ErrorResponse  "Bad Request"
+// @Security     BearerAuth
+// @Router       /automation/validate [post]
+func (h *AutomationHandler) ValidateAutomation(c *gin.Context) {
+	var req dto.ValidateAutomationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	result, err := h.automationService.Validate(c, schemaName, req)
+	if err != nil {
+		sendAutomationError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.AutomationSuccess.AutomationValidated, result)
+}
+
 // @Summary      Delete a trigger or webhook
 // @Description  Deletes the automation. For a trigger it also drops the trigger from the table.
 // @Tags         Automations

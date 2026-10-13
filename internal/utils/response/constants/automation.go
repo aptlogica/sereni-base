@@ -71,17 +71,19 @@ var AutomationErrorCodes = map[ResponseCode]MetaResponse{
 }
 
 var AutomationSuccess = struct {
-	AutomationCreated  ResponseCode
-	AutomationsFetched ResponseCode
-	AutomationDeleted  ResponseCode
-	AutomationUpdated  ResponseCode
-	AutomationRun      ResponseCode
+	AutomationCreated   ResponseCode
+	AutomationsFetched  ResponseCode
+	AutomationDeleted   ResponseCode
+	AutomationUpdated   ResponseCode
+	AutomationRun       ResponseCode
+	AutomationValidated ResponseCode
 }{
-	AutomationCreated:  "AUT_SUCCESS_2001",
-	AutomationsFetched: "AUT_SUCCESS_2002",
-	AutomationDeleted:  "AUT_SUCCESS_2003",
-	AutomationUpdated:  "AUT_SUCCESS_2004",
-	AutomationRun:      "AUT_SUCCESS_2005",
+	AutomationCreated:   "AUT_SUCCESS_2001",
+	AutomationsFetched:  "AUT_SUCCESS_2002",
+	AutomationDeleted:   "AUT_SUCCESS_2003",
+	AutomationUpdated:   "AUT_SUCCESS_2004",
+	AutomationRun:       "AUT_SUCCESS_2005",
+	AutomationValidated: "AUT_SUCCESS_2006",
 }
 
 var AutomationSuccessCodes = map[ResponseCode]MetaResponse{
@@ -104,6 +106,11 @@ var AutomationSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Automation run successfully",
 		Description: "The saved query has been applied in Postgres",
+	},
+	AutomationSuccess.AutomationValidated: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Query checked",
+		Description: "The query has been checked by Postgres; nothing was changed",
 	},
 	AutomationSuccess.AutomationDeleted: {
 		HTTPStatus:  http.StatusOK,
