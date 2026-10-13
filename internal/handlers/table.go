@@ -1061,8 +1061,8 @@ func (h *TableHandler) GetAllRecords(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.RecordsFetched, records)
 }
 
-// @Summary      Insert or update row cell
-// @Description  Sets the value for a specific column cell and returns the updated row record.
+// @Summary      Insert or update a row (upsert)
+// @Description  Without row_id, creates a record with values (column ID -> value); on a table with a custom primary key every key field is required and the key must be unused. With row_id, updates that record with values or column_id/value. All values are saved in one statement.
 // @Tags         Admin Table Column
 // @Accept       json
 // @Produce      json
@@ -1097,6 +1097,42 @@ func (h *TableHandler) InsertRowData(c *gin.Context) {
 		req.UpdatedBy = userId
 	}
 
+	// Upsert: create the record when there is no row_id, otherwise update it, with all values in one statement
+	if upserter, ok := h.tableManagementService.(interface {
+		UpsertRowValues(ctx context.Context, schemaName string, modelID string, rowID int, values map[string]interface{}, user string) (dto.RecordResponse, error)
+	}); ok {
+		values := make(map[string]interface{}, len(req.Values)+1)
+		for columnID, value := range req.Values {
+			values[columnID] = value
+		}
+		if req.ColumnId != "" {
+			var value interface{}
+			if req.Value != nil {
+				value = *req.Value
+			}
+			values[req.ColumnId] = value
+		}
+		if req.RowId > 0 && len(values) == 0 {
+			response.SendError(c, validators.InsertRowDataRequestValidationError(missingField{field: "ColumnId", tag: "required"}))
+			return
+		}
+		record, err := upserter.UpsertRowValues(c, schemaName, req.ModelID, req.RowId, values, req.UpdatedBy)
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+		return
+	}
+
+	if req.ColumnId == "" {
+		response.SendError(c, validators.InsertRowDataRequestValidationError(missingField{field: "ColumnId", tag: "required"}))
+		return
+	}
+	if req.RowId <= 0 {
+		response.SendError(c, validators.InsertRowDataRequestValidationError(missingField{field: "RowId", tag: "required"}))
+		return
+	}
 	record, err := h.tableManagementService.InsertRowData(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
@@ -1105,6 +1141,17 @@ func (h *TableHandler) InsertRowData(c *gin.Context) {
 
 	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
 }
+
+// missingField reports a field the request needs, in the same way as a binding validation error
+type missingField struct {
+	validator.FieldError
+	field string
+	tag   string
+}
+
+func (m missingField) Field() string { return m.field }
+
+func (m missingField) Tag() string { return m.tag }
 
 // @Summary      Delete a row
 // @Description  Removes the row described in the payload from the model.

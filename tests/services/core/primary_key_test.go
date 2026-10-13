@@ -187,18 +187,7 @@ func TestPrimaryKeyService_UpdateRejects(t *testing.T) {
 	}
 }
 
-// New rows get a starting value in each key field; dates and checkboxes repeat, so the key needs a field
-// whose starting value is unique
-func TestPrimaryKeyService_UpdateNeedsAUniqueStartingValue(t *testing.T) {
-	f := newKeyFixture(t, colID, colOpened, colActive, colCode)
-	f.expectKey("id")
-
-	_, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colOpened.ID.String(), colActive.ID.String()}})
-
-	assert.ErrorIs(t, err, app_errors.PrimaryKeyColumnInvalid)
-	assert.Contains(t, err.Error(), "New records need a unique starting value in the key. Add a text, number or Id field to the key (opened, active")
-}
-
+// Any eligible field types can form the key; new records must bring their own key values
 func TestPrimaryKeyService_DateWithATextFieldIsAllowed(t *testing.T) {
 	f := newKeyFixture(t, colID, colOpened, colCode)
 	f.expectKey("id")
@@ -209,8 +198,6 @@ func TestPrimaryKeyService_DateWithATextFieldIsAllowed(t *testing.T) {
 	f.sql.ExpectExec(`ADD UNIQUE`).WillReturnResult(sqlmock.NewResult(0, 0))
 	f.sql.ExpectExec(`SET NOT NULL`).WillReturnResult(sqlmock.NewResult(0, 0))
 	f.sql.ExpectExec(`ADD PRIMARY KEY \("opened", "code"\)`).WillReturnResult(sqlmock.NewResult(0, 0))
-	f.sql.ExpectExec(`DROP TRIGGER IF EXISTS sb_key_defaults`).WillReturnResult(sqlmock.NewResult(0, 0))
-	f.sql.ExpectExec(`CREATE TRIGGER sb_key_defaults BEFORE INSERT`).WillReturnResult(sqlmock.NewResult(0, 0))
 	f.sql.ExpectCommit()
 
 	_, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colOpened.ID.String(), colCode.ID.String()}})
@@ -249,8 +236,6 @@ func TestPrimaryKeyService_SystemIdAndTitleWithACompositeKey(t *testing.T) {
 	f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" DROP CONSTRAINT "org_pkey"`)).WillReturnResult(sqlmock.NewResult(0, 0))
 	f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ALTER COLUMN "id" SET NOT NULL`)).WillReturnResult(sqlmock.NewResult(0, 0))
 	f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ADD PRIMARY KEY ("id", "code")`)).WillReturnResult(sqlmock.NewResult(0, 0))
-	f.sql.ExpectExec(exactExec(`DROP TRIGGER IF EXISTS sb_key_defaults ON "public"."org"`)).WillReturnResult(sqlmock.NewResult(0, 0))
-	f.sql.ExpectExec(exactExec(`CREATE TRIGGER sb_key_defaults BEFORE INSERT ON "public"."org" FOR EACH ROW EXECUTE FUNCTION public.key_fill_defaults()`)).WillReturnResult(sqlmock.NewResult(0, 0))
 	f.sql.ExpectCommit()
 
 	out, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colID.ID.String(), colCode.ID.String()}})
@@ -326,8 +311,6 @@ func TestPrimaryKeyService_UpdateReplacesKey(t *testing.T) {
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ADD UNIQUE ("id")`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ALTER COLUMN "id" SET NOT NULL`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ADD PRIMARY KEY ("code", "dept")`)).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectExec(exactExec(`DROP TRIGGER IF EXISTS sb_key_defaults ON "public"."org"`)).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectExec(exactExec(`CREATE TRIGGER sb_key_defaults BEFORE INSERT ON "public"."org" FOR EACH ROW EXECUTE FUNCTION public.key_fill_defaults()`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectCommit()
 
 		out, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colCode.ID.String(), colDept.ID.String()}})
@@ -347,8 +330,6 @@ func TestPrimaryKeyService_UpdateReplacesKey(t *testing.T) {
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ALTER COLUMN "id" SET NOT NULL`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ALTER COLUMN "dept" DROP NOT NULL`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ADD PRIMARY KEY ("code")`)).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectExec(exactExec(`DROP TRIGGER IF EXISTS sb_key_defaults ON "public"."org"`)).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectExec(exactExec(`CREATE TRIGGER sb_key_defaults BEFORE INSERT ON "public"."org" FOR EACH ROW EXECUTE FUNCTION public.key_fill_defaults()`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectCommit()
 
 		_, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colCode.ID.String()}})
@@ -367,7 +348,6 @@ func TestPrimaryKeyService_UpdateReplacesKey(t *testing.T) {
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ALTER COLUMN "id" SET NOT NULL`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ALTER COLUMN "code" DROP NOT NULL`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectExec(exactExec(`ALTER TABLE "public"."org" ADD PRIMARY KEY ("id")`)).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectExec(exactExec(`DROP TRIGGER IF EXISTS sb_key_defaults ON "public"."org"`)).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectCommit()
 
 		_, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colID.ID.String()}})

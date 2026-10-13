@@ -73,9 +73,6 @@ func (s *primaryKeyService) Update(ctx context.Context, schemaName, modelID stri
 	if err != nil {
 		return dto.PrimaryKeyResponse{}, err
 	}
-	if err := t.ensureUniqueStart(newCols); err != nil {
-		return dto.PrimaryKeyResponse{}, err
-	}
 	if slices.Equal(newCols, t.keyCols) {
 		return t.response(), nil
 	}
@@ -184,21 +181,6 @@ func (t keyTable) columnByID(id string) (tenant.Column, bool) {
 		}
 	}
 	return tenant.Column{}, false
-}
-
-// ensureUniqueStart requires a key field whose starting value for new rows is always unique: text fields get
-// <column_name>_<timestamp>_<id>, numbers the row id, uuids a random uuid. Dates, date-times and checkboxes
-// get today, now and false, which can repeat.
-func (t keyTable) ensureUniqueStart(cols []string) error {
-	for _, c := range cols {
-		for _, col := range t.columns {
-			if col.ColumnName == c && (c == constant.PrimaryKeyIDColumn || slices.Contains(constant.PrimaryKeyUniqueStartUIDTs, col.UIDT)) {
-				return nil
-			}
-		}
-	}
-	return fmt.Errorf("%w: New records need a unique starting value in the key. Add a text, number or Id field to the key "+
-		"(%s can't provide one, since dates, date-times and checkboxes repeat).", app_errors.PrimaryKeyColumnInvalid, strings.Join(t.titles(cols), ", "))
 }
 
 // title is the field title of a column name, or the name itself
@@ -496,12 +478,6 @@ func (s *primaryKeyService) replaceKey(t keyTable, newCols []string) error {
 		quoted[i] = quoteIdent(c)
 	}
 	statements = append(statements, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", t.table, strings.Join(quoted, ", ")))
-	// New rows are added empty and filled in afterwards; key fields other than id get a starting value
-	statements = append(statements, fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", constant.KeyDefaultsTrigger, t.table))
-	if !slices.Equal(newCols, []string{constant.PrimaryKeyIDColumn}) {
-		statements = append(statements, fmt.Sprintf("CREATE TRIGGER %s BEFORE INSERT ON %s FOR EACH ROW EXECUTE FUNCTION public.key_fill_defaults()",
-			constant.KeyDefaultsTrigger, t.table))
-	}
 
 	tx, err := s.repo.DB.Begin()
 	if err != nil {

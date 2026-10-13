@@ -194,27 +194,13 @@ func TestLinkKeySyncTrigger(t *testing.T) {
 	}
 }
 
-// TestKeyFillDefaults checks new rows get a starting value per key field type
-func TestKeyFillDefaults(t *testing.T) {
-	fn, ok := definedFunction("key_fill_defaults")
-	if !assert.True(t, ok) {
-		return
-	}
-	assert.Contains(t, fn.FunctionSQL, "RETURNS TRIGGER")
-	for _, part := range []string{
-		"public.link_key_columns(format('%I.%I', TG_TABLE_SCHEMA, TG_TABLE_NAME))",
-		"key_column || '_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS') || '_' || (row_data->>'id')",
-		"WHEN type_category = 'N' THEN row_data->'id'",
-		"gen_random_uuid()",
-		"jsonb_populate_record(NEW, fill)",
-	} {
-		assert.Contains(t, fn.FunctionSQL, part)
-	}
-}
-
 // TestDroppedFunctions checks superseded signatures are dropped and no longer defined.
 func TestDroppedFunctions(t *testing.T) {
 	assert.Contains(t, constant.DroppedFunctions, "remove_link_back_references(JSON[], BIGINT[], TEXT)")
+	// Placeholder key values are no longer generated; CASCADE also removes the triggers that used it
+	assert.Contains(t, constant.DroppedFunctions, "key_fill_defaults() CASCADE")
+	_, defined := definedFunction("key_fill_defaults")
+	assert.False(t, defined)
 	_, ok := definedFunction("remove_link_back_references")
 	assert.False(t, ok)
 }

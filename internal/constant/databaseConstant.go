@@ -652,51 +652,6 @@ var DefinedFunctions = []Function{
 		`,
 	},
 	{
-		// Fills empty primary-key fields of a new row, so rows can be added empty and filled in afterwards:
-		// text fields get <column_name>_<timestamp>_<id>, numbers the row id, uuids a random uuid, dates today,
-		// date-times the current time and checkboxes false.
-		FunctionName:   "key_fill_defaults",
-		FunctionParams: "",
-		FunctionSQL: `
-			RETURNS TRIGGER
-			LANGUAGE plpgsql AS
-			$$
-			DECLARE
-				row_data JSONB := to_jsonb(NEW);
-				fill JSONB := '{}'::jsonb;
-				key_column TEXT;
-				type_name TEXT;
-				type_category TEXT;
-			BEGIN
-				FOREACH key_column IN ARRAY public.link_key_columns(format('%I.%I', TG_TABLE_SCHEMA, TG_TABLE_NAME)) LOOP
-					IF row_data->>key_column IS NOT NULL THEN
-						CONTINUE;
-					END IF;
-					SELECT t.typname, t.typcategory INTO type_name, type_category
-					FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid
-					WHERE a.attrelid = TG_RELID AND a.attname = key_column;
-
-					fill := fill || jsonb_build_object(key_column, CASE
-						WHEN type_category = 'S' THEN
-							to_jsonb(key_column || '_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSUS') || '_' || (row_data->>'id'))
-						WHEN type_category = 'N' THEN row_data->'id'
-						WHEN type_name = 'uuid' THEN to_jsonb(gen_random_uuid())
-						WHEN type_name = 'date' THEN to_jsonb(current_date)
-						WHEN type_name = 'timestamptz' THEN to_jsonb(clock_timestamp())
-						WHEN type_name = 'timestamp' THEN to_jsonb(clock_timestamp()::timestamp)
-						WHEN type_name = 'bool' THEN 'false'::jsonb
-					END);
-				END LOOP;
-
-				IF fill <> '{}'::jsonb THEN
-					NEW := jsonb_populate_record(NEW, fill);
-				END IF;
-				RETURN NEW;
-			END;
-			$$;
-		`,
-	},
-	{
 		FunctionName:   "reorder_columns_after_delete",
 		FunctionParams: "p_schema_name TEXT, p_model_id TEXT, p_order_index INT",
 		FunctionSQL: `
@@ -1140,6 +1095,8 @@ var DroppedFunctions = []string{
 	"link_rows_holding(TEXT, TEXT, BOOLEAN, BIGINT)",
 	// Link cleanup on row delete is done by the link_key_sync trigger
 	"remove_link_back_references(JSON[], BIGINT[], TEXT)",
+	// Placeholder key values for new rows are no longer generated; CASCADE drops its sb_key_defaults triggers
+	"key_fill_defaults() CASCADE",
 }
 
 // PrimaryKeyColumnsQuery returns the primary key column names of a quoted "schema"."table", in key order
@@ -1173,16 +1130,3 @@ const InstallKeySyncTriggersQuery = `
 	  AND NOT EXISTS (
 		SELECT 1 FROM pg_trigger
 		WHERE tgrelid = to_regclass(format('%%I.%%I', '%[2]s', m.alias)) AND tgname = 'sb_link_key_delete')`
-
-// KeyDefaultsTrigger fills empty key fields of new rows; installed while the key is not id alone
-const KeyDefaultsTrigger = "sb_key_defaults"
-
-// InstallKeyDefaultsTriggersQuery installs the key defaults trigger on tables whose key is not id alone
-const InstallKeyDefaultsTriggersQuery = `
-	SELECT format('CREATE TRIGGER sb_key_defaults BEFORE INSERT ON %%I.%%I FOR EACH ROW EXECUTE FUNCTION public.key_fill_defaults()', '%[2]s', m.alias)
-	FROM %[1]s.models m
-	WHERE to_regclass(format('%%I.%%I', '%[2]s', m.alias)) IS NOT NULL
-	  AND public.link_key_columns(format('%%I.%%I', '%[2]s', m.alias)) <> ARRAY['id']
-	  AND NOT EXISTS (
-		SELECT 1 FROM pg_trigger
-		WHERE tgrelid = to_regclass(format('%%I.%%I', '%[2]s', m.alias)) AND tgname = 'sb_key_defaults')`

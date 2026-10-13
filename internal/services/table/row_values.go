@@ -14,6 +14,7 @@ import (
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 )
 
@@ -32,27 +33,9 @@ func (s tableManagementService) UpdateRowValues(
 		return dto.RecordResponse{}, nil
 	}
 
-	// Column IDs in a fixed order, so errors and statements don't depend on map order
-	columnIDs := make([]string, 0, len(values))
-	for id := range values {
-		columnIDs = append(columnIDs, id)
-	}
-	sort.Strings(columnIDs)
-
-	byName := make(map[string]interface{}, len(values))
-	for _, columnID := range columnIDs {
-		columnData, err := s.GetColumnById(ctx, schemaName, columnID)
-		if err != nil {
-			return dto.RecordResponse{}, err
-		}
-		// Link values must go through the link endpoint so both sides stay in sync; lookups are read-only.
-		if columnData.UIDT == uidtLinks || columnData.UIDT == uidtLookup {
-			return dto.RecordResponse{}, app_errors.LinkColumnNotWritable
-		}
-		if !s.allowInsert(columnData) {
-			return dto.RecordResponse{}, app_errors.UpdateNotAllowed
-		}
-		byName[columnData.ColumnName] = cellValue(columnData, values[columnID])
+	byName, err := s.rowValuesByName(ctx, schemaName, values)
+	if err != nil {
+		return dto.RecordResponse{}, err
 	}
 
 	model, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
@@ -76,6 +59,88 @@ func (s tableManagementService) UpdateRowValues(
 	record, err := s.repo.TableService.UpdateRecord(tableName, rowID, data)
 	if err != nil {
 		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to update record for column")
+	}
+	return dto.RecordResponse{Record: record}, nil
+}
+
+// UpsertRowValues creates a record with values (column ID -> value) when rowID is 0, otherwise updates that
+// record. Used by POST /row/data/insert.
+func (s tableManagementService) UpsertRowValues(
+	ctx context.Context,
+	schemaName string,
+	modelID string,
+	rowID int,
+	values map[string]interface{},
+	user string,
+) (dto.RecordResponse, error) {
+	if rowID > 0 {
+		return s.UpdateRowValues(ctx, schemaName, modelID, rowID, values, user)
+	}
+	model, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	return s.insertRowValues(ctx, schemaName, model, values, user, user)
+}
+
+// rowValuesByName checks that every column (by ID) can be written and returns the values by column name
+func (s tableManagementService) rowValuesByName(ctx context.Context, schemaName string, values map[string]interface{}) (map[string]interface{}, error) {
+	// Column IDs in a fixed order, so errors and statements don't depend on map order
+	columnIDs := make([]string, 0, len(values))
+	for id := range values {
+		columnIDs = append(columnIDs, id)
+	}
+	sort.Strings(columnIDs)
+
+	byName := make(map[string]interface{}, len(values))
+	for _, columnID := range columnIDs {
+		columnData, err := s.GetColumnById(ctx, schemaName, columnID)
+		if err != nil {
+			return nil, err
+		}
+		// Link values must go through the link endpoint so both sides stay in sync; lookups are read-only.
+		if columnData.UIDT == uidtLinks || columnData.UIDT == uidtLookup {
+			return nil, app_errors.LinkColumnNotWritable
+		}
+		if !s.allowInsert(columnData) {
+			return nil, app_errors.UpdateNotAllowed
+		}
+		byName[columnData.ColumnName] = cellValue(columnData, values[columnID])
+	}
+	return byName, nil
+}
+
+// insertRowValues creates one record with its values (by column ID) in one statement. On a table with a custom
+// primary key every key field must be given, and the key must not be used by another record.
+func (s tableManagementService) insertRowValues(
+	ctx context.Context,
+	schemaName string,
+	model tenant.Model,
+	values map[string]interface{},
+	createdBy string,
+	updatedBy string,
+) (dto.RecordResponse, error) {
+	byName, err := s.rowValuesByName(ctx, schemaName, values)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	if err := s.checkKeyValues(ctx, schemaName, model, 0, byName); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
+	now := time.Now().UTC()
+	data := make(map[string]interface{}, len(byName)+4)
+	for name, value := range byName {
+		data[fmt.Sprintf(QuotedColumnFormat, name)] = value
+	}
+	data["created_by"] = createdBy
+	data["last_modified_by"] = updatedBy
+	data["created_time"] = now
+	data["last_modified_time"] = now
+
+	record, err := s.repo.TableService.CreateRecord(fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias), data)
+	if err != nil {
+		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to create row with values")
 	}
 	return dto.RecordResponse{Record: record}, nil
 }

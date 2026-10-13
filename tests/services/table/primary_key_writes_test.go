@@ -146,6 +146,7 @@ func TestInsertRowData_KeyFieldChecks(t *testing.T) {
 }
 
 type rowValuesService interface {
+	UpsertRowValues(ctx context.Context, schemaName string, modelID string, rowID int, values map[string]interface{}, user string) (dto.RecordResponse, error)
 	UpdateRowValues(ctx context.Context, schemaName string, modelID string, rowID int, values map[string]interface{}, updatedBy string) (dto.RecordResponse, error)
 	CreateRowsWithValues(ctx context.Context, schemaName string, modelID string, rowsInput []map[string]interface{}, createdBy string, updatedBy string) ([]dto.RecordResponse, error)
 }
@@ -182,33 +183,141 @@ func TestUpdateRowValues_SavesTheWholeRecordAtOnce(t *testing.T) {
 	})
 }
 
-func TestCreateRowsWithValues_RemovesTheRowWhenSavingFails(t *testing.T) {
-	w := newWriteFixture(t)
-	w.table.On("CreateRecord", `"schema"."org"`, mock.Anything).Return(map[string]interface{}{"id": int64(9)}, nil).Once()
-	w.sql.ExpectQuery(regexp.QuoteMeta(`AND o."code" = $1 AND o."yr" = cur."yr"`)).WithArgs("HR", 9).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "key"}).AddRow(4, "Acme", []byte(`{"code":"HR","yr":2026}`)))
-	w.table.On("DeleteRecord", `"schema"."org"`, 9).Return(nil).Once()
+var insertDuplicateQuery = regexp.QuoteMeta(`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object('code', o."code", 'yr', o."yr") FROM "schema"."org" o WHERE o."code" = $1 AND o."yr" = $2 LIMIT 1`)
 
-	rows, err := w.svc.(rowValuesService).CreateRowsWithValues(context.Background(), relSchema, w.modelID.String(),
-		[]map[string]interface{}{{w.code.ID.String(): "HR"}}, "u1", "u1")
-
-	assert.Nil(t, rows)
-	assert.Equal(t, "PKY_1008", apiError(t, err).Code)
-	// The half-made record is gone
-	w.table.AssertCalled(t, "DeleteRecord", `"schema"."org"`, 9)
+func (w *writeFixture) insert(rows ...map[string]interface{}) ([]dto.RecordResponse, error) {
+	return w.svc.(rowValuesService).CreateRowsWithValues(context.Background(), relSchema, w.modelID.String(), rows, "u1", "u1")
 }
 
-func TestCreateRowsWithValues_KeepsRowsWhenAllSave(t *testing.T) {
+func TestCreateRowsWithValues_NeedsEveryKeyField(t *testing.T) {
+	t.Run("missing key fields are named and nothing is created", func(t *testing.T) {
+		w := newWriteFixture(t)
+
+		rows, err := w.insert(map[string]interface{}{w.notes.ID.String(): "n"})
+
+		assert.Nil(t, rows)
+		apiErr := apiError(t, err)
+		assert.Equal(t, "PKY_1007", apiErr.Code)
+		assert.Equal(t, "Code and Year can't be empty: they are part of the primary key (Code + Year).", apiErr.Message)
+		w.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
+	})
+
+	t.Run("one missing key field", func(t *testing.T) {
+		w := newWriteFixture(t)
+
+		_, err := w.insert(map[string]interface{}{w.code.ID.String(): "HR", w.year.ID.String(): ""})
+
+		assert.Equal(t, "Year can't be empty: it is part of the primary key (Code + Year).", apiError(t, err).Message)
+	})
+
+	t.Run("a used key is rejected before inserting", func(t *testing.T) {
+		w := newWriteFixture(t)
+		w.sql.ExpectQuery(insertDuplicateQuery).WithArgs("HR", 2026.0).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "key"}).AddRow(4, "Acme", []byte(`{"code":"HR","yr":2026}`)))
+
+		_, err := w.insert(map[string]interface{}{w.code.ID.String(): "HR", w.year.ID.String(): 2026.0})
+
+		apiErr := apiError(t, err)
+		assert.Equal(t, "PKY_1008", apiErr.Code)
+		assert.Equal(t, `The combination Code = "HR", Year = 2026 is already used by record #4 (Acme). Each record needs a unique primary key (Code + Year).`, apiErr.Message)
+		w.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
+	})
+
+	t.Run("a complete record is inserted with its values in one statement", func(t *testing.T) {
+		w := newWriteFixture(t)
+		w.sql.ExpectQuery(insertDuplicateQuery).WithArgs("HR", 2026.0).WillReturnRows(sqlmock.NewRows([]string{"id", "title", "key"}))
+		var saved map[string]interface{}
+		w.table.On("CreateRecord", `"schema"."org"`, mock.Anything).
+			Run(func(args mock.Arguments) { saved = args.Get(1).(map[string]interface{}) }).
+			Return(map[string]interface{}{"id": int64(9)}, nil).Once()
+
+		rows, err := w.insert(map[string]interface{}{w.code.ID.String(): "HR", w.year.ID.String(): 2026.0, w.notes.ID.String(): "n"})
+
+		require.NoError(t, err)
+		assert.Len(t, rows, 1)
+		assert.Equal(t, "HR", saved[`"code"`])
+		assert.Equal(t, 2026.0, saved[`"yr"`])
+		assert.Equal(t, "n", saved[`"notes"`])
+		assert.Equal(t, "u1", saved["created_by"])
+		w.table.AssertNotCalled(t, "UpdateRecord", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("when a later record fails the earlier ones are removed", func(t *testing.T) {
+		w := newWriteFixture(t)
+		w.sql.ExpectQuery(insertDuplicateQuery).WithArgs("HR", 2026.0).WillReturnRows(sqlmock.NewRows([]string{"id", "title", "key"}))
+		w.table.On("CreateRecord", `"schema"."org"`, mock.Anything).Return(map[string]interface{}{"id": int64(9)}, nil).Once()
+		w.table.On("DeleteRecord", `"schema"."org"`, 9).Return(nil).Once()
+
+		rows, err := w.insert(
+			map[string]interface{}{w.code.ID.String(): "HR", w.year.ID.String(): 2026.0},
+			map[string]interface{}{w.code.ID.String(): "FIN"},
+		)
+
+		assert.Nil(t, rows)
+		assert.Equal(t, "Year can't be empty: it is part of the primary key (Code + Year).", apiError(t, err).Message)
+		w.table.AssertCalled(t, "DeleteRecord", `"schema"."org"`, 9)
+	})
+}
+
+// With id in the key (Id + Code) a new record only needs Code, and can't clash since its id is new
+func TestCreateRowsWithValues_IdInTheKey(t *testing.T) {
 	w := newWriteFixture(t)
+	w.table.ExpectedCalls = nil
+	w.table.On("GetByFunction", mock.Anything, "public.link_key_columns", mock.Anything).
+		Return([]map[string]interface{}{{"link_key_columns": "{id,code}"}}, nil)
+	w.table.On("GetTableData", mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
+
+	_, err := w.insert(map[string]interface{}{w.notes.ID.String(): "n"})
+	// The fixture has no Id column, so its title falls back to the column name
+	assert.Equal(t, "Code can't be empty: it is part of the primary key (id + Code).", apiError(t, err).Message)
+
 	w.table.On("CreateRecord", `"schema"."org"`, mock.Anything).Return(map[string]interface{}{"id": int64(9)}, nil).Once()
-	w.table.On("UpdateRecord", `"schema"."org"`, 9, mock.Anything).Return(map[string]interface{}{"id": 9, "notes": "n"}, nil).Once()
-
-	rows, err := w.svc.(rowValuesService).CreateRowsWithValues(context.Background(), relSchema, w.modelID.String(),
-		[]map[string]interface{}{{w.notes.ID.String(): "n"}}, "u1", "u1")
-
+	rows, err := w.insert(map[string]interface{}{w.code.ID.String(): "HR"})
 	require.NoError(t, err)
 	assert.Len(t, rows, 1)
-	w.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
+}
+
+func TestUpsertRowValues(t *testing.T) {
+	t.Run("without a row id the record is created", func(t *testing.T) {
+		w := newWriteFixture(t)
+		w.sql.ExpectQuery(insertDuplicateQuery).WithArgs("HR", 2026.0).WillReturnRows(sqlmock.NewRows([]string{"id", "title", "key"}))
+		w.table.On("CreateRecord", `"schema"."org"`, mock.Anything).Return(map[string]interface{}{"id": int64(9)}, nil).Once()
+
+		out, err := w.svc.(rowValuesService).UpsertRowValues(context.Background(), relSchema, w.modelID.String(), 0,
+			map[string]interface{}{w.code.ID.String(): "HR", w.year.ID.String(): 2026.0}, "u1")
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(9), out.Record["id"])
+	})
+
+	t.Run("without a row id the key fields are required", func(t *testing.T) {
+		w := newWriteFixture(t)
+
+		_, err := w.svc.(rowValuesService).UpsertRowValues(context.Background(), relSchema, w.modelID.String(), 0,
+			map[string]interface{}{w.code.ID.String(): "HR"}, "u1")
+
+		assert.Equal(t, "Year can't be empty: it is part of the primary key (Code + Year).", apiError(t, err).Message)
+	})
+
+	t.Run("with a row id the record is updated", func(t *testing.T) {
+		w := newWriteFixture(t)
+		w.table.On("UpdateRecord", `"schema"."org"`, 4, mock.Anything).Return(map[string]interface{}{"id": 4}, nil).Once()
+
+		_, err := w.svc.(rowValuesService).UpsertRowValues(context.Background(), relSchema, w.modelID.String(), 4,
+			map[string]interface{}{w.notes.ID.String(): "n"}, "u1")
+
+		require.NoError(t, err)
+		w.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
+	})
+}
+
+func TestCreateRow_EmptyRecordNeedsTheKeyFields(t *testing.T) {
+	w := newWriteFixture(t)
+
+	_, err := w.svc.CreateRow(context.Background(), relSchema, dto.CreateRowRequest{ModelID: w.modelID.String(), CreatedBy: "u1"})
+
+	assert.Equal(t, "Code and Year can't be empty: they are part of the primary key (Code + Year).", apiError(t, err).Message)
+	w.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
 }
 
 func TestBulkWrites_KeyViolationsAreExplained(t *testing.T) {

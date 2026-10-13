@@ -65,3 +65,72 @@ func TestTableHandler_UpdateRow_ReturnsTheExactKeyError(t *testing.T) {
 	assert.Equal(t, "PKY_1008", res.Error.Code)
 	assert.Equal(t, message, res.Error.Message)
 }
+
+// upsertRowService supports POST /row/data/insert as an upsert
+type upsertRowService struct {
+	interfaces.TableManagementService
+	rowID  int
+	values map[string]interface{}
+	err    error
+}
+
+func (s *upsertRowService) UpsertRowValues(_ context.Context, _ string, _ string, rowID int, values map[string]interface{}, _ string) (dto.RecordResponse, error) {
+	s.rowID, s.values = rowID, values
+	return dto.RecordResponse{Record: map[string]interface{}{"id": 9}}, s.err
+}
+
+func insertRequest(body map[string]interface{}) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	raw, _ := json.Marshal(body)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/row/data/insert", bytes.NewBuffer(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+	c.Set("user_id", "user123")
+	return c, w
+}
+
+func TestTableHandler_InsertRowData_Upsert(t *testing.T) {
+	t.Run("without row_id the record is created with all values", func(t *testing.T) {
+		svc := &upsertRowService{}
+		c, w := insertRequest(map[string]interface{}{"model_id": "m1", "values": map[string]interface{}{"col-code": "HR", "col-year": 2026}})
+
+		handlers.NewTableHandler(svc, nil).InsertRowData(c)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+		assert.Equal(t, 0, svc.rowID)
+		assert.Equal(t, map[string]interface{}{"col-code": "HR", "col-year": 2026.0}, svc.values)
+	})
+
+	t.Run("with row_id a single cell is updated", func(t *testing.T) {
+		svc := &upsertRowService{}
+		c, _ := insertRequest(map[string]interface{}{"model_id": "m1", "row_id": 7, "column_id": "col-code", "value": nil})
+
+		handlers.NewTableHandler(svc, nil).InsertRowData(c)
+
+		assert.Equal(t, 7, svc.rowID)
+		assert.Equal(t, map[string]interface{}{"col-code": nil}, svc.values)
+	})
+
+	t.Run("an update needs at least one value", func(t *testing.T) {
+		svc := &upsertRowService{}
+		c, w := insertRequest(map[string]interface{}{"model_id": "m1", "row_id": 7})
+
+		handlers.NewTableHandler(svc, nil).InsertRowData(c)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Nil(t, svc.values)
+	})
+
+	t.Run("missing key fields come back exactly", func(t *testing.T) {
+		message := "Code and Year can't be empty: they are part of the primary key (Code + Year)."
+		svc := &upsertRowService{err: &app_errors.APIError{Code: "PKY_1007", Message: message, StatusCode: http.StatusBadRequest}}
+		c, w := insertRequest(map[string]interface{}{"model_id": "m1", "values": map[string]interface{}{"col-notes": "n"}})
+
+		handlers.NewTableHandler(svc, nil).InsertRowData(c)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), message)
+	})
+}

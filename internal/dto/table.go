@@ -85,12 +85,18 @@ type RecordsResponse struct {
 	Records []map[string]interface{} `json:"records"`
 }
 
+// InsertRowDataRequest is the payload for POST /row/data/insert, which works as an upsert:
+//   - without row_id a record is created with values (on a table with a custom primary key every key field
+//     must be given);
+//   - with row_id that record is updated with values, or with column_id and value for a single cell.
 type InsertRowDataRequest struct {
-	ModelID   string       `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
-	ColumnId  string       `json:"column_id" binding:"required" example:"col-123"`
-	RowId     int          `json:"row_id" binding:"required" example:"1"`
-	Value     *interface{} `json:"value"`
-	UpdatedBy string       `json:"last_modified_by,omitempty"`
+	ModelID  string       `json:"model_id" binding:"required" example:"123e4567-e89b-12d3-a456-426614174000"`
+	ColumnId string       `json:"column_id,omitempty" example:"col-123"`
+	RowId    int          `json:"row_id,omitempty" example:"1"`
+	Value    *interface{} `json:"value"`
+	// Values by column ID; saved together with column_id/value in one statement
+	Values    map[string]interface{} `json:"values,omitempty"`
+	UpdatedBy string                 `json:"last_modified_by,omitempty"`
 }
 
 type CreateRowOrBulkInsertRequest struct {

@@ -32,18 +32,8 @@ func newSQLMockDB(t *testing.T) (*pkg.DatabaseService, *MockTableService, sqlmoc
 
 func ok() driver.Result { return sqlmock.NewResult(0, 0) }
 
-// expectTriggerInstall expects the key-sync triggers to be installed and, for the given CREATE TRIGGER
-// statements, the key defaults trigger on tables with a custom key
-func expectTriggerInstall(sqlMock sqlmock.Sqlmock, keyDefaults ...string) {
+func expectTriggerInstall(sqlMock sqlmock.Sqlmock) {
 	sqlMock.ExpectExec(`SELECT public\.link_install_key_sync\('public', m\.alias\)`).WillReturnResult(ok())
-	rows := sqlmock.NewRows([]string{"format"})
-	for _, stmt := range keyDefaults {
-		rows.AddRow(stmt)
-	}
-	sqlMock.ExpectQuery(`link_key_columns\(format\('%I\.%I', 'public', m\.alias\)\) <> ARRAY\['id'\]`).WillReturnRows(rows)
-	for _, stmt := range keyDefaults {
-		sqlMock.ExpectExec("^" + regexp.QuoteMeta(stmt) + "$").WillReturnResult(ok())
-	}
 }
 
 // TestCreateFunctionsAndMigration checks startup drops superseded signatures, installs every function with
@@ -112,13 +102,6 @@ func TestMigrateLinkKeys(t *testing.T) {
 		sqlMock.ExpectExec(`ALTER TABLE`).WillReturnError(errors.New("boom"))
 		sqlMock.ExpectRollback()
 		expectTriggerInstall(sqlMock)
-		assert.NoError(t, scripts.MigrateLinkKeys(db, "public"))
-	})
-
-	t.Run("installs the key defaults trigger on tables with a custom key", func(t *testing.T) {
-		db, _, sqlMock := newSQLMockDB(t)
-		sqlMock.ExpectQuery(`a\.atttypid IN`).WillReturnRows(sqlmock.NewRows(linkColumnFields))
-		expectTriggerInstall(sqlMock, `CREATE TRIGGER sb_key_defaults BEFORE INSERT ON public.dept FOR EACH ROW EXECUTE FUNCTION public.key_fill_defaults()`)
 		assert.NoError(t, scripts.MigrateLinkKeys(db, "public"))
 	})
 

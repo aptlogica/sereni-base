@@ -67,14 +67,15 @@ func (s tableManagementService) keyFields(ctx context.Context, schemaName string
 }
 
 // checkKeyValues rejects saving key fields (new values by column name) that are empty or that make the record's
-// key equal to another record's, naming the field or the record that already holds the key. Other fields, and
-// tables keyed by id alone, are not checked.
+// key equal to another record's, naming the fields or the record that already holds the key. rowID 0 checks a
+// new record, which must have every key field. Other fields, and tables keyed by id alone, are not checked.
 func (s tableManagementService) checkKeyValues(ctx context.Context, schemaName string, model tenant.Model, rowID int, values map[string]interface{}) error {
 	keyCols, err := s.primaryKeyColumns(ctx, schemaName, model.Alias)
-	if err != nil || slices.Equal(keyCols, []string{constant.PrimaryKeyIDColumn}) {
+	if err != nil || len(keyCols) == 0 || slices.Equal(keyCols, []string{constant.PrimaryKeyIDColumn}) {
 		return err
 	}
-	changed := false
+	insert := rowID <= 0
+	changed := insert
 	for _, c := range keyCols {
 		if _, ok := values[c]; ok {
 			changed = true
@@ -85,12 +86,22 @@ func (s tableManagementService) checkKeyValues(ctx context.Context, schemaName s
 	}
 	fields := s.keyFields(ctx, schemaName, model, keyCols)
 
+	// A new record needs every key field except id, which the database assigns; an update only the ones it changes
+	var empty []string
 	for _, c := range keyCols {
-		if v, ok := values[c]; ok && isEmptyKeyValue(v) {
-			return keyEmptyError(fieldTitle(fields, c), fields)
+		v, given := values[c]
+		if c == constant.PrimaryKeyIDColumn && !given {
+			continue
+		}
+		if (given || insert) && isEmptyKeyValue(v) {
+			empty = append(empty, fieldTitle(fields, c))
 		}
 	}
-	if s.repo.DB == nil {
+	if len(empty) > 0 {
+		return keyMissingError(empty, fields)
+	}
+	// A new record's id is new, so a key that includes id can't be used by another record
+	if s.repo.DB == nil || (insert && slices.Contains(keyCols, constant.PrimaryKeyIDColumn)) {
 		return nil
 	}
 
@@ -109,10 +120,16 @@ func (s tableManagementService) checkKeyValues(ctx context.Context, schemaName s
 		}
 		pairs = append(pairs, fmt.Sprintf("'%s', o.%s", strings.ReplaceAll(c, "'", "''"), col))
 	}
-	args = append(args, rowID)
-	query := fmt.Sprintf(
-		`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o JOIN %s cur ON cur.id = $%d WHERE o.id <> $%d AND %s LIMIT 1`,
-		strings.Join(pairs, ", "), table, table, len(args), len(args), strings.Join(conditions, " AND "))
+	var query string
+	if insert {
+		query = fmt.Sprintf(`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o WHERE %s LIMIT 1`,
+			strings.Join(pairs, ", "), table, strings.Join(conditions, " AND "))
+	} else {
+		args = append(args, rowID)
+		query = fmt.Sprintf(
+			`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o JOIN %s cur ON cur.id = $%d WHERE o.id <> $%d AND %s LIMIT 1`,
+			strings.Join(pairs, ", "), table, table, len(args), len(args), strings.Join(conditions, " AND "))
+	}
 
 	var otherID int64
 	var otherTitle string
@@ -252,6 +269,17 @@ func formatWriteValue(v interface{}) string {
 	default:
 		return fmt.Sprint(val)
 	}
+}
+
+// keyMissingError names every empty key field: "Code and Year can't be empty: they are part of the primary key
+// (Code + Year)."
+func keyMissingError(titles []string, fields []keyField) error {
+	if len(titles) == 1 {
+		return keyEmptyError(titles[0], fields)
+	}
+	list := strings.Join(titles[:len(titles)-1], ", ") + " and " + titles[len(titles)-1]
+	message := fmt.Sprintf("%s can't be empty: they are part of the primary key (%s).", list, keyTitles(fields))
+	return keyAPIError(responseConst.PrimaryKeyError.EmptyValue, http.StatusBadRequest, message, map[string]interface{}{"fields": titles})
 }
 
 // keyEmptyError: "Code can't be empty: it is part of the primary key (Code + Dept)."

@@ -2021,6 +2021,11 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 
+	// A table with a custom primary key can't have records without key values
+	if err := s.checkKeyValues(ctx, schemaName, model, 0, map[string]interface{}{}); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
 	data := map[string]interface{}{
 		"created_by":         req.CreatedBy,
 		"last_modified_by":   req.CreatedBy,
@@ -2295,46 +2300,31 @@ func (s tableManagementService) CreateRowsWithValues(
 	updatedBy string,
 ) ([]dto.RecordResponse, error) {
 	rows := make([]dto.RecordResponse, 0, len(rowsInput))
-	// Rows created by this request; removed again if any of them can't be saved, so nothing is half done
-	var created []int
-	tableName := ""
-	fail := func(err error) ([]dto.RecordResponse, error) {
-		if tableName != "" {
-			s.removeCreatedRows(tableName, created)
-		}
+	if len(rowsInput) == 0 {
+		return rows, nil
+	}
+	model, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
 		return nil, err
 	}
-	for _, row := range rowsInput {
-		createdRow, err := s.CreateRow(ctx, schemaName, dto.CreateRowRequest{
-			ModelID:   modelID,
-			CreatedBy: createdBy,
-		})
-		if err != nil {
-			return fail(err)
-		}
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 
-		rowID, err := ExtractCreatedRowID(createdRow.Record)
+	// Each record is inserted with its values in one statement; if one fails, the records created before it
+	// by this request are removed, so nothing is half done
+	var created []int
+	for _, row := range rowsInput {
+		inserted, err := s.insertRowValues(ctx, schemaName, model, row, createdBy, updatedBy)
 		if err != nil {
-			return fail(err)
+			s.removeCreatedRows(tableName, created)
+			return nil, err
+		}
+		rowID, err := ExtractCreatedRowID(inserted.Record)
+		if err != nil {
+			s.removeCreatedRows(tableName, created)
+			return nil, err
 		}
 		created = append(created, rowID)
-		if tableName == "" {
-			model, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
-			if err != nil {
-				return fail(err)
-			}
-			tableName = fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
-		}
-
-		updatedRow := createdRow
-		if len(row) > 0 {
-			updatedRow, err = s.UpdateRowValues(ctx, schemaName, modelID, rowID, row, updatedBy)
-			if err != nil {
-				return fail(err)
-			}
-		}
-
-		rows = append(rows, updatedRow)
+		rows = append(rows, inserted)
 	}
 
 	return rows, nil

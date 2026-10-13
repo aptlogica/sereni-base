@@ -23,9 +23,8 @@ type linkColumnToMigrate struct {
 }
 
 // MigrateLinkKeys converts link columns that still store row ids into JSONB arrays of the linked rows'
-// primary-key values, then installs the key-sync triggers on every table and the key defaults trigger on
-// tables with a custom key. Safe to run on every start: converted columns and tables that already have the
-// triggers are skipped.
+// primary-key values, then installs the key-sync triggers on every table. Safe to run on every start:
+// converted columns and tables that already have the triggers are skipped.
 func MigrateLinkKeys(repo *pkg.DatabaseService, schemaName string) error {
 	columns, err := linkColumnsToMigrate(repo, schemaName)
 	if err != nil {
@@ -40,30 +39,6 @@ func MigrateLinkKeys(repo *pkg.DatabaseService, schemaName string) error {
 
 	if _, err := repo.DB.Exec(fmt.Sprintf(appConstant.InstallKeySyncTriggersQuery, quoteIdent(schemaName), schemaName)); err != nil {
 		return fmt.Errorf("install link key triggers: %w", err)
-	}
-	return installKeyDefaults(repo, schemaName)
-}
-
-// installKeyDefaults adds the trigger that fills empty key fields of new rows to tables whose key is not id alone
-func installKeyDefaults(repo *pkg.DatabaseService, schemaName string) error {
-	rows, err := repo.DB.Query(fmt.Sprintf(appConstant.InstallKeyDefaultsTriggersQuery, quoteIdent(schemaName), schemaName))
-	if err != nil {
-		return fmt.Errorf("list tables needing key defaults: %w", err)
-	}
-	var statements []string
-	for rows.Next() {
-		var stmt string
-		if err := rows.Scan(&stmt); err != nil {
-			rows.Close()
-			return fmt.Errorf("list tables needing key defaults: %w", err)
-		}
-		statements = append(statements, stmt)
-	}
-	rows.Close()
-	for _, stmt := range statements {
-		if _, err := repo.DB.Exec(stmt); err != nil {
-			fmt.Printf("error installing key defaults: %v\n", err)
-		}
 	}
 	return nil
 }

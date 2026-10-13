@@ -19,14 +19,6 @@ var PrimaryKeyEligibleUIDTs = []string{
 	"date", "datetime", "time", "email", "phoneNumber", "url", "select", "boolean", "uuid",
 }
 
-// PrimaryKeyUniqueStartUIDTs are the key field types whose starting value in a new row is always unique
-// (see key_fill_defaults): text-stored types get <column_name>_<timestamp>_<id>, numbers the row id, uuids a
-// random uuid
-var PrimaryKeyUniqueStartUIDTs = []string{
-	"text", "email", "phoneNumber", "url", "select", "duration", "time",
-	"number", "decimal", "currency", "percent", "year", "rating", "uuid",
-}
-
 // LinkIsMulti reports whether the link field on this side of a relation holds many linked records
 func LinkIsMulti(entityRole, relationType string) bool {
 	switch relationType {
