@@ -101,6 +101,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.StorageFileOpenFailed, AssetError.StorageFileOpenFailed},
 	{app_errors.StorageUploadFailed, AssetError.StorageUploadFailed},
 	{app_errors.AssetNotFound, AssetError.AssetNotFound},
+	{app_errors.InvalidFileFormat, AssetError.InvalidFileFormat},
 	{app_errors.MultipartFormNotFound, AssetError.MultipartFormNotFound},
 	{app_errors.FileTooLargeError, AssetError.FileTooLargeError},
 	{app_errors.MultipleFilesTooLargeError, AssetError.MultipleFilesTooLargeError},

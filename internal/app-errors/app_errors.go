@@ -156,6 +156,7 @@ var (
 	StorageFileOpenFailed      = errors.New("failed to open file for storage")
 	StorageUploadFailed        = errors.New("failed to upload file to storage")
 	AssetNotFound              = errors.New("asset not found")
+	InvalidFileFormat          = errors.New("invalid file format")
 	FileTooLargeError          = errors.New("File is too large. Limit is 5MB.")
 	MultipleFilesTooLargeError = errors.New("One or more files exceed the 5MB size limit.")
 	TooManyFilesError          = errors.New("Too many files uploaded. Only 5 files are allowed.")
