@@ -28,6 +28,8 @@ import (
 // primaryKeySampleLimit caps the offending records returned when a key change is rejected
 const primaryKeySampleLimit = 10
 
+const duplicateKeyReadFailed = "failed to read duplicate key values"
+
 // System columns that may be key fields; the audit columns are filled in by the system
 var primaryKeySystemColumns = []string{constant.PrimaryKeyIDColumn, "title"}
 
@@ -347,7 +349,7 @@ func (s *primaryKeyService) duplicates(table, keyObject, anyNull string) ([]dto.
 		`SELECT %s AS k, count(*), (array_agg(id::bigint ORDER BY id))[1:%d] FROM %s WHERE NOT (%s) GROUP BY 1 HAVING count(*) > 1 ORDER BY 2 DESC, 1::text LIMIT %d`,
 		keyObject, primaryKeySampleLimit, table, anyNull, primaryKeySampleLimit))
 	if err != nil {
-		return nil, app_errors.LogDatabaseError(err, "failed to read duplicate key values")
+		return nil, app_errors.LogDatabaseError(err, duplicateKeyReadFailed)
 	}
 	defer rows.Close()
 	duplicates := []dto.PrimaryKeyDuplicate{}
@@ -356,10 +358,10 @@ func (s *primaryKeyService) duplicates(table, keyObject, anyNull string) ([]dto.
 		var ids pq.Int64Array
 		var d dto.PrimaryKeyDuplicate
 		if err := rows.Scan(&raw, &d.Count, &ids); err != nil {
-			return nil, app_errors.LogDatabaseError(err, "failed to read duplicate key values")
+			return nil, app_errors.LogDatabaseError(err, duplicateKeyReadFailed)
 		}
 		if err := json.Unmarshal(raw, &d.Values); err != nil {
-			return nil, app_errors.LogDatabaseError(err, "failed to read duplicate key values")
+			return nil, app_errors.LogDatabaseError(err, duplicateKeyReadFailed)
 		}
 		d.RecordIDs = ids
 		duplicates = append(duplicates, d)

@@ -100,6 +100,12 @@ func (s tableManagementService) checkKeyValues(ctx context.Context, schemaName s
 	if len(empty) > 0 {
 		return keyMissingError(empty, fields)
 	}
+	return s.checkKeyClash(schemaName, model, rowID, keyCols, fields, values)
+}
+
+// checkKeyClash rejects a record whose key equals another record's, naming the record that already holds it
+func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Model, rowID int, keyCols []string, fields []keyField, values map[string]interface{}) error {
+	insert := rowID <= 0
 	// A new record's id is new, so a key that includes id can't be used by another record
 	if s.repo.DB == nil || (insert && slices.Contains(keyCols, constant.PrimaryKeyIDColumn)) {
 		return nil
@@ -186,7 +192,12 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 	if pqErr.Code == "23502" {
 		return keyEmptyError(fieldTitle(fields, pqErr.Column), fields)
 	}
-	match := keyDetailRegexp.FindStringSubmatch(pqErr.Detail)
+	return keyDuplicateFromDetail(fields, pqErr.Detail)
+}
+
+// keyDuplicateFromDetail builds the duplicate key error from the detail Postgres gives, e.g. Key (a, b)=(1, 2) already exists
+func keyDuplicateFromDetail(fields []keyField, detail string) error {
+	match := keyDetailRegexp.FindStringSubmatch(detail)
 	if match == nil {
 		return keyDuplicateError(fields, nil, nil)
 	}
@@ -323,21 +334,7 @@ func keyEmptyError(title string, fields []keyField) error {
 // keyDuplicateError: "The combination Code = "HR", Dept = "IN" is already used by record #4 (Acme). Each record
 // needs a unique primary key (Code + Dept)."
 func keyDuplicateError(fields []keyField, values map[string]interface{}, other *dto.PrimaryKeyRecord) error {
-	subject := "This primary key value"
-	if values != nil {
-		parts := make([]string, 0, len(fields))
-		for _, f := range fields {
-			if v, ok := values[f.Column]; ok {
-				parts = append(parts, fmt.Sprintf("%s = %s", f.Title, formatWriteValue(v)))
-			}
-		}
-		if len(parts) > 0 {
-			subject = strings.Join(parts, ", ")
-			if len(parts) > 1 {
-				subject = "The combination " + subject
-			}
-		}
-	}
+	subject := keyValuesSubject(fields, values)
 	holder := "another record"
 	if other != nil {
 		holder = fmt.Sprintf("record #%d", other.ID)
@@ -354,6 +351,26 @@ func keyDuplicateError(fields []keyField, values map[string]interface{}, other *
 		details["record_id"] = other.ID
 	}
 	return keyAPIError(responseConst.PrimaryKeyError.DuplicateValue, http.StatusConflict, message+".", details)
+}
+
+// keyValuesSubject names the key values of an error: a single field, or the combination of several
+func keyValuesSubject(fields []keyField, values map[string]interface{}) string {
+	subject := "This primary key value"
+	if values != nil {
+		parts := make([]string, 0, len(fields))
+		for _, f := range fields {
+			if v, ok := values[f.Column]; ok {
+				parts = append(parts, fmt.Sprintf("%s = %s", f.Title, formatWriteValue(v)))
+			}
+		}
+		if len(parts) > 0 {
+			subject = strings.Join(parts, ", ")
+			if len(parts) > 1 {
+				subject = "The combination " + subject
+			}
+		}
+	}
+	return subject
 }
 
 func keyAPIError(code responseConst.ResponseCode, status int, message string, details map[string]interface{}) error {

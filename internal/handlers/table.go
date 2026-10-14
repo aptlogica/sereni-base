@@ -1098,30 +1098,8 @@ func (h *TableHandler) InsertRowData(c *gin.Context) {
 	}
 
 	// Upsert: create the record when there is no row_id, otherwise update it, with all values in one statement
-	if upserter, ok := h.tableManagementService.(interface {
-		UpsertRowValues(ctx context.Context, schemaName string, modelID string, rowID int, values map[string]interface{}, user string) (dto.RecordResponse, error)
-	}); ok {
-		values := make(map[string]interface{}, len(req.Values)+1)
-		for columnID, value := range req.Values {
-			values[columnID] = value
-		}
-		if req.ColumnId != "" {
-			var value interface{}
-			if req.Value != nil {
-				value = *req.Value
-			}
-			values[req.ColumnId] = value
-		}
-		if req.RowId > 0 && len(values) == 0 {
-			response.SendError(c, validators.InsertRowDataRequestValidationError(missingField{field: "ColumnId", tag: "required"}))
-			return
-		}
-		record, err := upserter.UpsertRowValues(c, schemaName, req.ModelID, req.RowId, values, req.UpdatedBy)
-		if err != nil {
-			response.CheckAndSendError(c, err)
-			return
-		}
-		response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+	if upserter, ok := h.tableManagementService.(rowUpserter); ok {
+		h.upsertRowData(c, upserter, schemaName, req)
 		return
 	}
 
@@ -1139,6 +1117,36 @@ func (h *TableHandler) InsertRowData(c *gin.Context) {
 		return
 	}
 
+	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
+}
+
+// rowUpserter is implemented by table services that can create or update a record in one statement
+type rowUpserter interface {
+	UpsertRowValues(ctx context.Context, schemaName string, modelID string, rowID int, values map[string]interface{}, user string) (dto.RecordResponse, error)
+}
+
+// upsertRowData writes all the values of the request to one record and sends the result
+func (h *TableHandler) upsertRowData(c *gin.Context, upserter rowUpserter, schemaName string, req dto.InsertRowDataRequest) {
+	values := make(map[string]interface{}, len(req.Values)+1)
+	for columnID, value := range req.Values {
+		values[columnID] = value
+	}
+	if req.ColumnId != "" {
+		var value interface{}
+		if req.Value != nil {
+			value = *req.Value
+		}
+		values[req.ColumnId] = value
+	}
+	if req.RowId > 0 && len(values) == 0 {
+		response.SendError(c, validators.InsertRowDataRequestValidationError(missingField{field: "ColumnId", tag: "required"}))
+		return
+	}
+	record, err := upserter.UpsertRowValues(c, schemaName, req.ModelID, req.RowId, values, req.UpdatedBy)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
 	response.SendSuccess(c, responseConst.TableSuccess.RowDataInserted, record)
 }
 
