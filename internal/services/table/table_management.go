@@ -1564,46 +1564,9 @@ func (s tableManagementService) UpdateColumn(
 		return s.updateColumnForLookup(ctx, schemaName, columnData, req)
 	}
 
-	// Link and lookup columns need their relation set up, so a plain column can't be converted into one.
-	if req.UIDT != nil && (*req.UIDT == uidtLinks || *req.UIDT == uidtLookup) {
-		return dto.ColumnResponse{}, app_errors.UpdateNotAllowed
-	}
-
-	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
-		return dto.ColumnResponse{}, err
-	}
-
-	if req.UIDT != nil && *req.UIDT != "" {
-		dt, _ := s.getDataBaseType(*req.UIDT)
-		req.DT = helpers.StringPtr(dt)
-	}
-
-	if req.UIDT != nil && *req.UIDT != "" && *req.UIDT != columnData.UIDT {
-		if err := s.ensureNotPrimaryKeyColumn(ctx, schemaName, columnData.ModelID.String(), columnData.ColumnName); err != nil {
-			return dto.ColumnResponse{}, err
-		}
-	}
-
-	column, err := s.columnsService.UpdateColumn(ctx, schemaName, id, req)
+	column, err := s.updatePlainColumn(ctx, schemaName, id, columnData, req)
 	if err != nil {
 		return dto.ColumnResponse{}, err
-	}
-
-	if err := s.handleDatatypeChangeIfNeeded(ctx, schemaName, id, columnData, column, req); err != nil {
-		return dto.ColumnResponse{}, err
-	}
-
-	if req.Meta != nil {
-		if _, hasDefault := (*req.Meta)[metaDefaultValueKey]; hasDefault {
-			model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
-			if err != nil {
-				return dto.ColumnResponse{}, err
-			}
-			if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, *req.Meta); err != nil {
-				s.revertColumnMetadata(ctx, schemaName, id, columnData)
-				return dto.ColumnResponse{}, err
-			}
-		}
 	}
 
 	var columnResponse dto.ColumnResponse
@@ -1613,6 +1576,60 @@ func (s tableManagementService) UpdateColumn(
 	}
 
 	return columnResponse, nil
+}
+
+// updatePlainColumn updates a column that is neither a link nor a lookup:
+// metadata, datatype conversion and the DB default.
+func (s tableManagementService) updatePlainColumn(
+	ctx context.Context,
+	schemaName string,
+	id string,
+	columnData dto.ColumnResponse,
+	req dto.ColumnUpdate,
+) (tenant.Column, error) {
+	// Link and lookup columns need their relation set up, so a plain column can't be converted into one.
+	if req.UIDT != nil && (*req.UIDT == uidtLinks || *req.UIDT == uidtLookup) {
+		return tenant.Column{}, app_errors.UpdateNotAllowed
+	}
+
+	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
+		return tenant.Column{}, err
+	}
+
+	if req.UIDT != nil && *req.UIDT != "" {
+		dt, _ := s.getDataBaseType(*req.UIDT)
+		req.DT = helpers.StringPtr(dt)
+	}
+
+	if req.UIDT != nil && *req.UIDT != "" && *req.UIDT != columnData.UIDT {
+		if err := s.ensureNotPrimaryKeyColumn(ctx, schemaName, columnData.ModelID.String(), columnData.ColumnName); err != nil {
+			return tenant.Column{}, err
+		}
+	}
+
+	column, err := s.columnsService.UpdateColumn(ctx, schemaName, id, req)
+	if err != nil {
+		return tenant.Column{}, err
+	}
+
+	if err := s.handleDatatypeChangeIfNeeded(ctx, schemaName, id, columnData, column, req); err != nil {
+		return tenant.Column{}, err
+	}
+
+	if req.Meta != nil {
+		if _, hasDefault := (*req.Meta)[metaDefaultValueKey]; hasDefault {
+			model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
+			if err != nil {
+				return tenant.Column{}, err
+			}
+			if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, *req.Meta); err != nil {
+				s.revertColumnMetadata(ctx, schemaName, id, columnData)
+				return tenant.Column{}, err
+			}
+		}
+	}
+
+	return column, nil
 }
 
 func (s tableManagementService) sanitizeUpdateRequest(columnData dto.ColumnResponse, req dto.ColumnUpdate) (dto.ColumnUpdate, error) {
