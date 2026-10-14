@@ -1614,71 +1614,111 @@ func (s tableManagementService) RemoveDuplicates(ctx context.Context, schemaName
 func (s tableManagementService) ColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (dto.ColumnSplitResponse, error) {
 	lg := logger.Get()
 
-	model, columnsData, selectedColumn, selectedIndex, selectedOrder, strategy, err := s.PrepareColumnSplit(ctx, schemaName, req)
+	plan, err := s.PlanColumnSplit(ctx, schemaName, req)
 	if err != nil {
 		return dto.ColumnSplitResponse{}, err
 	}
 
+	newColumnNames, err := s.ExecuteColumnSplit(ctx, schemaName, req, plan)
+	if err != nil {
+		return dto.ColumnSplitResponse{}, err
+	}
+
+	lg.Info().Str("model_id", req.ModelID.String()).Str("column_id", req.ColumnID.String()).Str("column_name", plan.selectedColumn.ColumnName).Str("split_type", plan.strategy.kind).Int("created_columns", len(newColumnNames)).Bool("keep_original", req.KeepOriginal).Str("where", req.Where).Msg("Column split completed")
+	return dto.ColumnSplitResponse{Message: "Column split completed successfully", CreatedColumns: newColumnNames}, nil
+}
+
+// columnSplitPlan holds everything validated and computed before any column is changed.
+type columnSplitPlan struct {
+	model          tenant.Model
+	columnsData    []dto.ColumnResponse
+	selectedColumn dto.ColumnResponse
+	selectedOrder  float64
+	strategy       columnSplitStrategy
+	columnCount    int
+	orderIndexes   []float64
+}
+
+// PlanColumnSplit validates the request and computes the split layout without modifying anything.
+func (s tableManagementService) PlanColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (columnSplitPlan, error) {
+	model, columnsData, selectedColumn, selectedIndex, selectedOrder, strategy, err := s.PrepareColumnSplit(ctx, schemaName, req)
+	if err != nil {
+		return columnSplitPlan{}, err
+	}
+
+	// System columns (e.g. title) can be split, but never removed.
+	if !req.KeepOriginal && selectedColumn.System != nil && *selectedColumn.System {
+		return columnSplitPlan{}, app_errors.DeleteNotAllowed
+	}
+
 	if strategy.kind == "fixed_length" {
 		if err := s.ValidateFixedLengthBounds(ctx, schemaName, model.Alias, selectedColumn.ColumnName, strategy.value); err != nil {
-			return dto.ColumnSplitResponse{}, err
+			return columnSplitPlan{}, err
 		}
 	}
 
 	maxParts, err := s.GetMaxSplitParts(ctx, schemaName, model.Alias, selectedColumn.ColumnName, strategy)
 	if err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return columnSplitPlan{}, err
 	}
 
 	if err = EnsureSplitIsPossible(maxParts, selectedColumn.ColumnName); err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return columnSplitPlan{}, err
 	}
 
 	columnCount, err := ResolveSplitColumnCount(maxParts, req.Limit)
 	if err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return columnSplitPlan{}, err
 	}
 
 	orderIndexes, err := s.ComputeSplitOrderIndexes(columnsData, selectedIndex, req.Where, columnCount)
 	if err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return columnSplitPlan{}, err
 	}
 
+	return columnSplitPlan{
+		model:          model,
+		columnsData:    columnsData,
+		selectedColumn: selectedColumn,
+		selectedOrder:  selectedOrder,
+		strategy:       strategy,
+		columnCount:    columnCount,
+		orderIndexes:   orderIndexes,
+	}, nil
+}
+
+// ExecuteColumnSplit applies a validated plan: shifts columns, creates the new ones and fills them.
+func (s tableManagementService) ExecuteColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest, plan columnSplitPlan) ([]string, error) {
 	if req.Where == "next" {
-		if err := s.ShiftColumnsForNext(ctx, schemaName, columnsData, selectedOrder, columnCount); err != nil {
-			return dto.ColumnSplitResponse{}, err
+		if err := s.ShiftColumnsForNext(ctx, schemaName, plan.columnsData, plan.selectedOrder, plan.columnCount); err != nil {
+			return nil, err
 		}
 	}
 
-	newColumnNames := make([]string, 0, columnCount)
-	createdColumns := make([]tenant.Column, 0, columnCount)
-
-	generatedNames, err := s.BuildSplitColumnNames(columnsData, selectedColumn.ColumnName, columnCount)
+	generatedNames, err := s.BuildSplitColumnNames(plan.columnsData, plan.selectedColumn.ColumnName, plan.columnCount)
 	if err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return nil, err
 	}
 
-	createdColumns, newColumnNames, err = s.CreateSplitColumns(ctx, schemaName, model, selectedColumn, orderIndexes, generatedNames)
+	createdColumns, newColumnNames, err := s.CreateSplitColumns(ctx, schemaName, plan.model, plan.selectedColumn, plan.orderIndexes, generatedNames)
 	if err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return nil, err
 	}
 
 	finArgs := splitFinalizationArgs{
 		SchemaName:     schemaName,
-		ModelAlias:     model.Alias,
-		SelectedColumn: selectedColumn,
+		ModelAlias:     plan.model.Alias,
+		SelectedColumn: plan.selectedColumn,
 		CreatedColumns: createdColumns,
 		NewColumnNames: newColumnNames,
-		Strategy:       strategy,
-		ColumnCount:    columnCount,
+		Strategy:       plan.strategy,
+		ColumnCount:    plan.columnCount,
 		KeepOriginal:   req.KeepOriginal,
 	}
 	if err := s.FinalizeColumnSplit(ctx, finArgs); err != nil {
-		return dto.ColumnSplitResponse{}, err
+		return nil, err
 	}
-
-	lg.Info().Str("model_id", req.ModelID.String()).Str("column_id", req.ColumnID.String()).Str("column_name", selectedColumn.ColumnName).Str("split_type", strategy.kind).Int("created_columns", len(newColumnNames)).Bool("keep_original", req.KeepOriginal).Str("where", req.Where).Msg("Column split completed")
-	return dto.ColumnSplitResponse{Message: "Column split completed successfully", CreatedColumns: newColumnNames}, nil
+	return newColumnNames, nil
 }
 
 func (s tableManagementService) PrepareColumnSplit(ctx context.Context, schemaName string, req dto.ColumnSplitRequest) (tenant.Model, []dto.ColumnResponse, dto.ColumnResponse, int, float64, columnSplitStrategy, error) {
@@ -1755,8 +1795,9 @@ func (s tableManagementService) ShiftColumnsForNext(ctx context.Context, schemaN
 	for _, col := range affected {
 		newOrderIndex := *col.OrderIndex + float64(columnCount)
 		orderIndexUpdate := dto.ColumnUpdate{OrderIndex: &newOrderIndex}
-		_, err := s.UpdateColumn(ctx, schemaName, col.ID.String(), orderIndexUpdate)
-		if err != nil {
+		// Go through the columns service directly: UpdateColumn rejects updates on system
+		// columns, but shifting only changes the display order, which is always safe.
+		if _, err := s.columnsService.UpdateColumn(ctx, schemaName, col.ID.String(), orderIndexUpdate); err != nil {
 			return err
 		}
 	}
