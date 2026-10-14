@@ -1619,6 +1619,11 @@ func (s tableManagementService) ColumnSplit(ctx context.Context, schemaName stri
 		return dto.ColumnSplitResponse{}, err
 	}
 
+	// System columns (e.g. title) can be split, but never removed.
+	if !req.KeepOriginal && selectedColumn.System != nil && *selectedColumn.System {
+		return dto.ColumnSplitResponse{}, app_errors.DeleteNotAllowed
+	}
+
 	if strategy.kind == "fixed_length" {
 		if err := s.ValidateFixedLengthBounds(ctx, schemaName, model.Alias, selectedColumn.ColumnName, strategy.value); err != nil {
 			return dto.ColumnSplitResponse{}, err
@@ -1755,8 +1760,9 @@ func (s tableManagementService) ShiftColumnsForNext(ctx context.Context, schemaN
 	for _, col := range affected {
 		newOrderIndex := *col.OrderIndex + float64(columnCount)
 		orderIndexUpdate := dto.ColumnUpdate{OrderIndex: &newOrderIndex}
-		_, err := s.UpdateColumn(ctx, schemaName, col.ID.String(), orderIndexUpdate)
-		if err != nil {
+		// Go through the columns service directly: UpdateColumn rejects updates on system
+		// columns, but shifting only changes the display order, which is always safe.
+		if _, err := s.columnsService.UpdateColumn(ctx, schemaName, col.ID.String(), orderIndexUpdate); err != nil {
 			return err
 		}
 	}
