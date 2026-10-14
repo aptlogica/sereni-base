@@ -105,8 +105,9 @@ func TestDeleteColumn_UniqueKeyCleanupFailureDoesNotFailTheDelete(t *testing.T) 
 }
 
 func TestDeleteColumn_KeepsKeysWhenTheDeleteFails(t *testing.T) {
-	_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+	_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
 	col := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.NewString(), ColumnName: "email", UIDT: "email", DT: helpers.StringPtr("TEXT")}
+	mockModel.On("GetModelByID", mock.Anything, "schema", col.ModelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(col.ModelID)}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", col.ModelID).Return([]tenant.Column{}, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", "cid").Return(errors.New("db down"))
