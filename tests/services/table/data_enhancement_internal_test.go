@@ -2102,3 +2102,19 @@ func TestValidateColumnAllowedForSplit(t *testing.T) {
 	})
 }
 
+
+func TestColumnSplitSystemColumnWithoutKeepOriginalNotAllowed(t *testing.T) {
+	colID := uuid.New()
+	col := makeEnhancementTenantColumn(colID, uuid.Nil, uuid.Nil, "title", 1)
+	col.System = true
+	f := setupEnhancementFixture(t, []tenant.Column{col})
+
+	_, err := f.svc.ColumnSplit(context.Background(), f.schema, dto.ColumnSplitRequest{
+		ModelID: f.modelID, ColumnID: colID,
+		SplitBy:      dto.SplitByRequest{Type: "separator", Config: map[string]interface{}{"separator": ","}},
+		KeepOriginal: false, Where: "next",
+	})
+	if !errors.Is(err, app_errors.DeleteNotAllowed) {
+		t.Fatalf("expected DeleteNotAllowed, got %v", err)
+	}
+}
