@@ -199,7 +199,10 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 	t.Run("keeps other database errors generic", func(t *testing.T) {
 		_, mockTable, _, _, _, _, _, _, svc := setupTableManagementService()
 		mockTable.On("CreateRecord", mock.Anything, mock.Anything).
-			Return(nil, &pq.Error{Code: "23502", Message: "null value in column violates not-null constraint"})
+			Return(nil, &pq.Error{Code: "23502", Column: "notes", Message: "null value in column violates not-null constraint"})
+		// An empty field outside the primary key is not a key error
+		mockTable.On("GetByFunction", mock.Anything, "public.link_key_columns", mock.Anything).
+			Return([]map[string]interface{}{{"link_key_columns": "{id}"}}, nil)
 
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
 		assert.ErrorIs(t, err, app_errors.DatabaseError)

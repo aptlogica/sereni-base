@@ -156,14 +156,24 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 		if errors.As(err, &apiErr) {
 			return err
 		}
-		return app_errors.LogDatabaseError(err, msg)
+		// Layers that keep only the text of a duplicate: the constraint name tells the unique key
+		return s.recordWriteError(ctx, schemaName, err, msg)
 	}
 	if pqErr.Code != "23505" && pqErr.Code != "23502" {
 		return app_errors.LogDatabaseError(err, msg)
 	}
 
-	model, modelErr := s.modelByAlias(schemaName, alias)
 	keyCols, _ := s.primaryKeyColumns(ctx, schemaName, alias)
+	// A duplicate rejected by a unique key, not by the primary key, gets the unique key's message
+	if pqErr.Code == "23505" && s.isUniqueKeyViolation(schemaName, pqErr, keyCols) {
+		return s.recordWriteError(ctx, schemaName, pqErr, msg)
+	}
+	// An empty field outside the primary key is not a key error
+	if pqErr.Code == "23502" && pqErr.Column != "" && !slices.Contains(keyCols, pqErr.Column) {
+		return app_errors.LogDatabaseError(err, msg)
+	}
+
+	model, modelErr := s.modelByAlias(schemaName, alias)
 	var fields []keyField
 	if modelErr == nil {
 		fields = s.keyFields(ctx, schemaName, model, keyCols)
@@ -193,6 +203,25 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 		values = nil
 	}
 	return keyDuplicateError(fields, values, nil)
+}
+
+// isUniqueKeyViolation tells a duplicate rejected by a unique key from one rejected by the primary key: the
+// constraint is a unique key of the table, or Postgres' detail names columns other than the key columns
+func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *pq.Error, keyCols []string) bool {
+	if pqErr.Constraint != "" && s.constraintByName(schemaName, pqErr.Constraint) != nil {
+		return true
+	}
+	match := keyDetailRegexp.FindStringSubmatch(pqErr.Detail)
+	if match == nil || len(keyCols) == 0 {
+		return false
+	}
+	names := strings.Split(match[1], ", ")
+	for i, name := range names {
+		names[i] = strings.Trim(name, `"`)
+	}
+	slices.Sort(names)
+	sortedKey := slices.Sorted(slices.Values(keyCols))
+	return !slices.Equal(names, sortedKey)
 }
 
 func (s tableManagementService) modelByAlias(schemaName, alias string) (tenant.Model, error) {

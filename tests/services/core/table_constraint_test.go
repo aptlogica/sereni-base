@@ -84,14 +84,14 @@ func newConstraintFixtureFor(t *testing.T, alias string) *constraintFixture {
 }
 
 // savedKey is a stored unique key as the database layer returns it (jsonb already parsed)
-func savedKey(id string, columnIDs []string, nullsEqual bool) map[string]interface{} {
+func savedKey(id string, columnIDs []string) map[string]interface{} {
 	ids := make([]interface{}, len(columnIDs))
 	for i, c := range columnIDs {
 		ids[i] = c
 	}
 	return map[string]interface{}{
 		"id": id, "model_id": "m1", "type": "unique", "title": "Unique email", "constraint_name": constraintPGName,
-		"column_ids": ids, "options": map[string]interface{}{"nulls_not_distinct": nullsEqual},
+		"column_ids": ids,
 	}
 }
 
@@ -139,18 +139,6 @@ func TestTableConstraintService_Check(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, result.Valid)
 		assert.Equal(t, `Duplicate data in columns "Email" + "Emp Code": some records have the same combination of values. Remove the duplicates and try again.`, result.Message)
-	})
-
-	t.Run("includes empty values when they count as equal", func(t *testing.T) {
-		f := newConstraintFixture(t)
-		f.sql.ExpectQuery(`FROM "tenant_1"\."employee" GROUP BY "email" HAVING`).
-			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
-
-		result, err := f.svc.Check(context.Background(), constraintSchema, dto.CheckTableConstraintRequest{
-			ModelID: "m1", ColumnIDs: []string{emailCol.ID.String()}, Options: dto.TableConstraintOptions{NullsNotDistinct: true},
-		})
-		require.NoError(t, err)
-		assert.True(t, result.Valid)
 	})
 
 	t.Run("is valid without a message when nothing repeats", func(t *testing.T) {
@@ -209,7 +197,7 @@ func TestTableConstraintService_Check(t *testing.T) {
 func TestTableConstraintService_Create(t *testing.T) {
 	request := dto.CreateTableConstraintRequest{
 		ModelID: "m1", Type: "unique", Title: "Dept code", ColumnIDs: []string{codeCol.ID.String(), emailCol.ID.String()},
-		Options: dto.TableConstraintOptions{NullsNotDistinct: true}, CreatedBy: "user-1",
+		CreatedBy: "user-1",
 	}
 
 	t.Run("adds the unique key in Postgres and stores it", func(t *testing.T) {
@@ -217,27 +205,26 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
 		f.sql.ExpectBegin()
-		f.sql.ExpectExec(`^ALTER TABLE "tenant_1"\."employee" ADD CONSTRAINT "uq_employee_[0-9a-f]{8}" UNIQUE NULLS NOT DISTINCT \("emp_code", "email"\)$`).
+		f.sql.ExpectExec(`^ALTER TABLE "tenant_1"\."employee" ADD CONSTRAINT "uq_employee_[0-9a-f]{8}" UNIQUE \("emp_code", "email"\)$`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectCommit()
 
 		var stored map[string]interface{}
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).
 			Run(func(args mock.Arguments) { stored = args.Get(1).(map[string]interface{}) }).
-			Return(savedKey(constraintID, request.ColumnIDs, true), nil)
+			Return(savedKey(constraintID, request.ColumnIDs), nil)
 
 		out, err := f.svc.Create(context.Background(), constraintSchema, request)
 
 		require.NoError(t, err)
 		assert.Regexp(t, `^uq_employee_[0-9a-f]{8}$`, stored["constraint_name"])
 		assert.Equal(t, `["`+codeCol.ID.String()+`","`+emailCol.ID.String()+`"]`, stored["column_ids"])
-		assert.Equal(t, `{"nulls_not_distinct":true}`, stored["options"])
+		assert.NotContains(t, stored, "options")
 		assert.NotContains(t, stored, "error_message")
 		assert.Equal(t, "user-1", stored["created_by"])
 
 		assert.Equal(t, constraintID, out.ID)
 		assert.Equal(t, "ok", out.Status)
-		assert.True(t, out.Options.NullsNotDistinct)
 		require.Len(t, out.Columns, 2)
 		assert.Equal(t, "Emp Code", out.Columns[0].Title)
 		assert.Equal(t, dto.ConstraintColumn{ID: emailCol.ID.String(), Title: "Email"}, out.Columns[1])
@@ -246,7 +233,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 	t.Run("rejects a key with the same columns in another order", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byModel)).
-			Return([]map[string]interface{}{savedKey(uuid.NewString(), []string{emailCol.ID.String(), codeCol.ID.String()}, false)}, nil)
+			Return([]map[string]interface{}{savedKey(uuid.NewString(), []string{emailCol.ID.String(), codeCol.ID.String()})}, nil)
 
 		_, err := f.svc.Create(context.Background(), constraintSchema, request)
 		assert.ErrorIs(t, err, app_errors.ConstraintAlreadyExists)
@@ -329,7 +316,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 		name := ""
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).
 			Run(func(args mock.Arguments) { name = args.Get(1).(map[string]interface{})["constraint_name"].(string) }).
-			Return(savedKey(constraintID, []string{emailCol.ID.String()}, false), nil)
+			Return(savedKey(constraintID, []string{emailCol.ID.String()}), nil)
 
 		_, err := f.svc.Create(context.Background(), constraintSchema, dto.CreateTableConstraintRequest{
 			ModelID: "m1", Type: "unique", Title: "x", ColumnIDs: []string{emailCol.ID.String()},
@@ -343,8 +330,8 @@ func TestTableConstraintService_Create(t *testing.T) {
 func TestTableConstraintService_Update(t *testing.T) {
 	t.Run("replaces the key in Postgres when the columns change", func(t *testing.T) {
 		f := newConstraintFixture(t)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, false)}, nil)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byModel)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, false)}, nil)
+		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
+		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byModel)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
 		f.expectNoDuplicates()
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`^ALTER TABLE "tenant_1"\."employee" DROP CONSTRAINT IF EXISTS "` + constraintPGName + `"$`).WillReturnResult(sqlmock.NewResult(0, 0))
@@ -354,7 +341,7 @@ func TestTableConstraintService_Update(t *testing.T) {
 		var saved map[string]interface{}
 		f.table.On("UpdateRecord", constraintsTable, constraintID, mock.Anything).
 			Run(func(args mock.Arguments) { saved = args.Get(2).(map[string]interface{}) }).
-			Return(savedKey(constraintID, []string{emailCol.ID.String(), codeCol.ID.String()}, false), nil)
+			Return(savedKey(constraintID, []string{emailCol.ID.String(), codeCol.ID.String()}), nil)
 
 		out, err := f.svc.Update(context.Background(), constraintSchema, constraintID, dto.UpdateTableConstraintRequest{
 			Title: "Email + code", ColumnIDs: []string{emailCol.ID.String(), codeCol.ID.String()}, UpdatedBy: "user-2",
@@ -368,25 +355,13 @@ func TestTableConstraintService_Update(t *testing.T) {
 
 	t.Run("only saves the name and message when the key is the same", func(t *testing.T) {
 		f := newConstraintFixture(t)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, true)}, nil)
-		f.table.On("UpdateRecord", constraintsTable, constraintID, mock.Anything).Return(savedKey(constraintID, []string{emailCol.ID.String()}, true), nil)
+		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
+		f.table.On("UpdateRecord", constraintsTable, constraintID, mock.Anything).Return(savedKey(constraintID, []string{emailCol.ID.String()}), nil)
 
 		_, err := f.svc.Update(context.Background(), constraintSchema, constraintID, dto.UpdateTableConstraintRequest{
-			Title: "Renamed", ColumnIDs: []string{emailCol.ID.String()}, Options: dto.TableConstraintOptions{NullsNotDistinct: true},
+			Title: "Renamed", ColumnIDs: []string{emailCol.ID.String()},
 		})
 		require.NoError(t, err)
-	})
-
-	t.Run("treats a changed empty-values option as a key change", func(t *testing.T) {
-		f := newConstraintFixture(t)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, false)}, nil)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byModel)).Return([]map[string]interface{}{}, nil)
-		f.expectDuplicates(true)
-
-		_, err := f.svc.Update(context.Background(), constraintSchema, constraintID, dto.UpdateTableConstraintRequest{
-			Title: "x", ColumnIDs: []string{emailCol.ID.String()}, Options: dto.TableConstraintOptions{NullsNotDistinct: true},
-		})
-		assert.ErrorIs(t, err, app_errors.ConstraintDuplicateValues)
 	})
 
 	t.Run("returns not found for an unknown id", func(t *testing.T) {
@@ -401,7 +376,7 @@ func TestTableConstraintService_Update(t *testing.T) {
 func TestTableConstraintService_Delete(t *testing.T) {
 	t.Run("drops the key in Postgres and removes it", func(t *testing.T) {
 		f := newConstraintFixture(t)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, false)}, nil)
+		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`DROP CONSTRAINT IF EXISTS "` + constraintPGName + `"`).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.sql.ExpectCommit()
@@ -412,7 +387,7 @@ func TestTableConstraintService_Delete(t *testing.T) {
 
 	t.Run("keeps the entry when Postgres can't drop the key", func(t *testing.T) {
 		f := newConstraintFixture(t)
-		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, false)}, nil)
+		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec("DROP CONSTRAINT").WillReturnError(&pq.Error{Message: "constraint is referenced by a foreign key"})
 		f.sql.ExpectRollback()
@@ -432,11 +407,11 @@ func TestTableConstraintService_Delete(t *testing.T) {
 func TestTableConstraintService_List(t *testing.T) {
 	t.Run("returns keys with their columns and whether Postgres still has them", func(t *testing.T) {
 		f := newConstraintFixture(t)
-		missing := savedKey(uuid.NewString(), []string{codeCol.ID.String(), goneCol.ID.String()}, false)
+		missing := savedKey(uuid.NewString(), []string{codeCol.ID.String(), goneCol.ID.String()})
 		missing["constraint_name"] = "uq_employee_deadbeef"
 		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(func(p dbModels.QueryParams) bool {
 			return len(p.Filters) == 2 && p.Filters[1].Column == "type" && p.Filters[1].Value == "unique" && p.OrderBy[0] == "created_time DESC"
-		})).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}, false), missing}, nil)
+		})).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}), missing}, nil)
 		f.sql.ExpectQuery(`FROM pg_constraint WHERE conrelid = \$1::regclass`).WithArgs(employeeTable).
 			WillReturnRows(sqlmock.NewRows([]string{"conname"}).AddRow(constraintPGName).AddRow("employee_pkey"))
 

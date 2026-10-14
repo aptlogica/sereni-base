@@ -137,6 +137,41 @@ func TestInsertRowData_KeyFieldChecks(t *testing.T) {
 		assert.Equal(t, `The combination Code = "HR", Year = 2026 is already used by another record. Each record needs a unique primary key (Code + Year).`, apiErr.Message)
 	})
 
+	t.Run("a value repeated in a unique key field names the unique key, not the primary key", func(t *testing.T) {
+		w := newWriteFixture(t)
+		pgErr := &pq.Error{Code: "23505", Constraint: "uq_tbl_1a2b3c4d", Detail: "Key (notes)=(dup) already exists."}
+		w.table.On("UpdateRecord", `"schema"."org"`, 2, mock.Anything).Return(nil, fmt.Errorf("failed to update record: %w", pgErr))
+		w.table.On("GetTableData", guardConstraintsTable, mock.Anything).
+			Return([]map[string]interface{}{uniqueKeyRow(w.modelID.String(), []string{w.notes.ID.String()})}, nil)
+
+		err := w.write(w.notes, "dup")
+
+		assert.ErrorIs(t, err, app_errors.UniqueKeyViolation)
+		assert.Equal(t, `Duplicate value not allowed. The unique key "Unique email" does not allow two records with the same Notes.`, detailedMessage(t, err))
+	})
+
+	t.Run("a unique key added outside the app is told apart by its columns", func(t *testing.T) {
+		w := newWriteFixture(t)
+		pgErr := &pq.Error{Code: "23505", Constraint: "org_notes_key", Detail: "Key (notes)=(dup) already exists."}
+		w.table.On("UpdateRecord", `"schema"."org"`, 2, mock.Anything).Return(nil, pgErr)
+		w.table.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		err := w.write(w.notes, "dup")
+
+		assert.ErrorIs(t, err, app_errors.UniqueKeyViolation)
+		assert.Equal(t, "Duplicate value not allowed. Two records can't have the same notes.", detailedMessage(t, err))
+	})
+
+	t.Run("a named primary key constraint is still a primary key error", func(t *testing.T) {
+		w := newWriteFixture(t)
+		w.sql.ExpectQuery(duplicateQuery).WillReturnRows(sqlmock.NewRows([]string{"id", "title", "key"}))
+		pgErr := &pq.Error{Code: "23505", Constraint: "org_pkey", Detail: "Key (code, yr)=(HR, 2026) already exists."}
+		w.table.On("UpdateRecord", `"schema"."org"`, 2, mock.Anything).Return(nil, pgErr)
+		w.table.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		assert.Equal(t, "PKY_1008", apiError(t, w.write(w.code, "HR")).Code)
+	})
+
 	t.Run("other database errors stay generic", func(t *testing.T) {
 		w := newWriteFixture(t)
 		w.table.On("UpdateRecord", `"schema"."org"`, 2, mock.Anything).Return(nil, errors.New("connection reset"))

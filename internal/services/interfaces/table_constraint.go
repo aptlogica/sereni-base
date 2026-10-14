@@ -18,7 +18,7 @@ type TableConstraintService interface {
 	Check(ctx context.Context, schemaName string, req dto.CheckTableConstraintRequest) (dto.ConstraintCheckResult, error)
 	// Create adds the constraint in Postgres and stores it
 	Create(ctx context.Context, schemaName string, req dto.CreateTableConstraintRequest) (dto.TableConstraintResponse, error)
-	// Update changes the title and message, and replaces the Postgres constraint when its columns or options change
+	// Update changes the title and message, and replaces the Postgres constraint when its columns change
 	Update(ctx context.Context, schemaName, id string, req dto.UpdateTableConstraintRequest) (dto.TableConstraintResponse, error)
 	// Delete drops the constraint in Postgres and removes it
 	Delete(ctx context.Context, schemaName, id string) error
