@@ -46,7 +46,13 @@ func newRelFixture() *relFixture {
 		view:   &MockViewService{},
 		rel:    &MockRelationshipService{},
 	}
+	return withService(f)
+}
+
+// withService builds the service over f's mocks; key helper answers registered before it take precedence
+func withService(f *relFixture) *relFixture {
 	repo := &pkg.DatabaseService{TableService: f.table, BulkService: f.bulk}
+	expectKeyDefaults(f.table)
 	f.svc = services.NewTableManagementService("postgres", repo, f.model, f.column, f.view, f.rel, &MockAssetManagementService{})
 	return f
 }
@@ -924,7 +930,7 @@ func filterCalls(calls []*mock.Call, method string) []*mock.Call {
 }
 
 // ---------------------------------------------------------------------------
-// Generic writes, row deletes (public.remove_link_back_references)
+// Generic writes, row deletes
 // ---------------------------------------------------------------------------
 
 func TestInsertRowData_RejectsLinkAndLookup(t *testing.T) {
@@ -943,62 +949,18 @@ func TestInsertRowData_RejectsLinkAndLookup(t *testing.T) {
 	}
 }
 
-func TestDeleteRow_RemovesBackReferences(t *testing.T) {
-	t.Run("two-table link partner", func(t *testing.T) {
-		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA, plainCol(uuid.New(), e.modelA, "name", "text")}, nil)
-		calls := e.f.expectFunction("remove_link_back_references", nil)
+// Row deletes run a plain DELETE: the link_key_sync trigger removes the deleted rows' keys from every
+// link field in the same statement, so no cleanup call is made first.
+func TestDeleteRow_LinksCleanedByTrigger(t *testing.T) {
+	t.Run("linked row is deleted without a cleanup call", func(t *testing.T) {
+		e := newTwoTableLink("many-to-many", "JSONB", "JSONB")
 		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(nil)
 
 		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
 
 		assert.NoError(t, err)
-		if assert.Len(t, *calls, 1) {
-			args := (*calls)[0]
-			assertArgsMatchFunction(t, "remove_link_back_references", args)
-			assert.Equal(t, []map[string]interface{}{{"table": `"schema"."b"`, "column": "b_link", "is_array": true}}, args["p_partners"])
-			assert.Equal(t, []int64{1}, args["p_row_ids"])
-			assert.Equal(t, "", args["p_updated_by"])
-		}
 		e.f.table.AssertCalled(t, "DeleteRecord", mock.Anything, 1)
-	})
-
-	t.Run("target-side link points back at the source column", func(t *testing.T) {
-		e := newTwoTableLink("has-many", "INT[]", "INT")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelB).Return([]tenant.Column{e.colB}, nil)
-		calls := e.f.expectFunction("remove_link_back_references", nil)
-		e.f.table.On("DeleteRecord", mock.Anything, 5).Return(nil)
-
-		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelB, RowId: 5})
-
-		assert.NoError(t, err)
-		assert.Equal(t, []map[string]interface{}{{"table": `"schema"."a"`, "column": "a_link", "is_array": true}}, (*calls)[0]["p_partners"])
-	})
-
-	t.Run("single-column self-link uses its own column", func(t *testing.T) {
-		e := newSelfLink("one-to-one", "INT")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		calls := e.f.expectFunction("remove_link_back_references", nil)
-		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(nil)
-
-		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
-
-		assert.NoError(t, err)
-		assert.Equal(t, []map[string]interface{}{{"table": `"schema"."emp"`, "column": "emp_link", "is_array": false}}, (*calls)[0]["p_partners"])
-	})
-
-	t.Run("table without links skips the function", func(t *testing.T) {
-		f := newRelFixture()
-		modelID := uuid.New()
-		f.model.On("GetModelByID", mock.Anything, relSchema, modelID.String()).Return(tenant.Model{ID: modelID, Alias: "t"}, nil)
-		f.table.On("GetTableData", mock.Anything, mock.Anything).Return([]map[string]interface{}{{"id": int64(1)}}, nil)
-		f.column.On("GetColumnByModelID", mock.Anything, relSchema, modelID.String()).Return([]tenant.Column{plainCol(uuid.New(), modelID.String(), "name", "text")}, nil)
-		f.table.On("DeleteRecord", mock.Anything, 1).Return(nil)
-
-		err := f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: modelID.String(), RowId: 1})
-
-		assert.NoError(t, err)
-		f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
+		e.f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("row not found", func(t *testing.T) {
@@ -1010,60 +972,28 @@ func TestDeleteRow_RemovesBackReferences(t *testing.T) {
 		err := f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: modelID, RowId: 1})
 
 		assert.ErrorIs(t, err, app_errors.RowNotFound)
-		f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
+		f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
 	})
 
-	t.Run("cleanup failure keeps the row", func(t *testing.T) {
-		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		e.f.table.On("GetByFunction", mock.Anything, "public.remove_link_back_references", mock.Anything).Return(nil, errors.New("write failed"))
+	t.Run("delete failure", func(t *testing.T) {
+		e := newTwoTableLink("many-to-many", "JSONB", "JSONB")
+		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(errors.New("write failed"))
 
 		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
 
 		assert.ErrorIs(t, err, app_errors.DatabaseError)
-		e.f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
-	})
-
-	t.Run("partner lookup failure keeps the row", func(t *testing.T) {
-		e := newTwoTableLink("many-to-many", "INT[]", "INT[]")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		e.f.rel.ExpectedCalls = nil
-		e.f.rel.On("GetRelationByID", mock.Anything, e.relation.ID.String(), relSchema).Return(tenant.Relation{}, errors.New("gone"))
-
-		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
-
-		assert.Error(t, err)
-		e.f.table.AssertNotCalled(t, "DeleteRecord", mock.Anything, mock.Anything)
 	})
 }
 
-func TestBulkDeleteRows_RemovesBackReferences(t *testing.T) {
-	t.Run("one cleanup call for all rows", func(t *testing.T) {
-		e := newTwoTableLink("has-many", "INT[]", "INT")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		calls := e.f.expectFunction("remove_link_back_references", nil)
-		e.f.bulk.On("BulkDelete", mock.Anything, []interface{}{1, 2}, "id").Return(int64(2), nil)
+func TestBulkDeleteRows_LinksCleanedByTrigger(t *testing.T) {
+	e := newTwoTableLink("has-many", "JSONB", "JSONB")
+	e.f.bulk.On("BulkDelete", mock.Anything, []interface{}{1, 2}, "id").Return(int64(2), nil)
 
-		count, err := e.f.svc.BulkDeleteRows(context.Background(), relSchema, dto.BulkDeleteRowsRequest{ModelID: e.modelA, RowIds: []int{1, 2}})
+	count, err := e.f.svc.BulkDeleteRows(context.Background(), relSchema, dto.BulkDeleteRowsRequest{ModelID: e.modelA, RowIds: []int{1, 2}})
 
-		assert.NoError(t, err)
-		assert.Equal(t, 2, count)
-		if assert.Len(t, *calls, 1) {
-			assert.Equal(t, []int64{1, 2}, (*calls)[0]["p_row_ids"])
-			assert.Equal(t, []map[string]interface{}{{"table": `"schema"."b"`, "column": "b_link", "is_array": false}}, (*calls)[0]["p_partners"])
-		}
-	})
-
-	t.Run("cleanup failure skips bulk delete", func(t *testing.T) {
-		e := newTwoTableLink("has-many", "INT[]", "INT")
-		e.f.column.On("GetColumnByModelID", mock.Anything, relSchema, e.modelA).Return([]tenant.Column{e.colA}, nil)
-		e.f.table.On("GetByFunction", mock.Anything, "public.remove_link_back_references", mock.Anything).Return(nil, errors.New("write failed"))
-
-		_, err := e.f.svc.BulkDeleteRows(context.Background(), relSchema, dto.BulkDeleteRowsRequest{ModelID: e.modelA, RowIds: []int{1}})
-
-		assert.Error(t, err)
-		e.f.bulk.AssertNotCalled(t, "BulkDelete", mock.Anything, mock.Anything, mock.Anything)
-	})
+	assert.NoError(t, err)
+	assert.Equal(t, 2, count)
+	e.f.table.AssertNotCalled(t, "GetByFunction", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // ---------------------------------------------------------------------------

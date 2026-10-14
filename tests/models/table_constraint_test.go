@@ -26,7 +26,7 @@ func TestTableConstraint_TableSchema(t *testing.T) {
 		unique[col.Name] = col.Unique
 	}
 	assert.Equal(t, "jsonb", types["column_ids"])
-	assert.Equal(t, "jsonb", types["options"])
+	assert.NotContains(t, types, "options")
 	for _, name := range []string{"id", "model_id", "type", "title", "constraint_name", "column_ids"} {
 		assert.True(t, notNull[name], "%s should be NOT NULL", name)
 	}

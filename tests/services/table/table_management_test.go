@@ -35,6 +35,28 @@ func TestCreateTableWithDefaults_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, model.ID, resp.Model.ID)
+	// Link fields pointing at the new table stay in step with its keys
+	mockTable.AssertCalled(t, "GetByFunction", mock.Anything, "public.link_install_key_sync",
+		map[string]interface{}{"p_schema": "schema", "p_table": "tbl"})
+}
+
+func TestCreateTableWithDefaults_TriggerInstallFailureIsNotFatal(t *testing.T) {
+	_, mockTable, _, mockModel, mockColumn, mockView, _, _, svc := setupTableManagementService()
+	mockTable.ExpectedCalls = nil
+
+	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
+	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
+	mockTable.On("CreateTable", mock.Anything).Return(nil)
+	mockTable.On("GetByFunction", mock.Anything, "public.link_install_key_sync", mock.Anything).Return(nil, errors.New("denied"))
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
+	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+
+	assert.NoError(t, err)
 }
 
 func TestCreateTableWithDefaults_Errors(t *testing.T) {

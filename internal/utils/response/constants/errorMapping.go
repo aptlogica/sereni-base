@@ -134,6 +134,13 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.TriggerHasFunction, AutomationError.TriggerHasFunction},
 	{app_errors.InvalidTriggerEvent, AutomationError.InvalidTriggerEvent},
 
+	// primary key
+	{app_errors.PrimaryKeyRequired, PrimaryKeyError.Required},
+	{app_errors.PrimaryKeyColumnInvalid, PrimaryKeyError.ColumnInvalid},
+	{app_errors.PrimaryKeyLocked, PrimaryKeyError.Locked},
+	{app_errors.PrimaryKeyDataInvalid, PrimaryKeyError.DataInvalid},
+	{app_errors.PrimaryKeyUpdateFailed, PrimaryKeyError.UpdateFailed},
+	{app_errors.ColumnInPrimaryKey, PrimaryKeyError.ColumnInKey},
 	// table constraints (unique keys)
 	{app_errors.ConstraintNotFound, TableConstraintError.ConstraintNotFound},
 	{app_errors.ConstraintColumnNotFound, TableConstraintError.ColumnNotFound},

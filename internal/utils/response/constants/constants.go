@@ -48,6 +48,7 @@ var ErrorCodes = MergeMaps(
 	TableErrorCodes,
 	RBACErrorCodeDetails,
 	AutomationErrorCodes,
+	PrimaryKeyErrorCodes,
 	TableConstraintErrorCodes,
 )
 
@@ -62,6 +63,7 @@ var SuccessCodes = MergeMaps(
 	AssetSuccessCodes,
 	TableSuccessCodes,
 	AutomationSuccessCodes,
+	PrimaryKeySuccessCodes,
 	TableConstraintSuccessCodes,
 )
 

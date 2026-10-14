@@ -105,8 +105,9 @@ func TestDeleteColumn_UniqueKeyCleanupFailureDoesNotFailTheDelete(t *testing.T) 
 }
 
 func TestDeleteColumn_KeepsKeysWhenTheDeleteFails(t *testing.T) {
-	_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+	_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
 	col := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.NewString(), ColumnName: "email", UIDT: "email", DT: helpers.StringPtr("TEXT")}
+	mockModel.On("GetModelByID", mock.Anything, "schema", col.ModelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(col.ModelID)}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", col.ModelID).Return([]tenant.Column{}, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", "cid").Return(errors.New("db down"))
@@ -199,7 +200,10 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 	t.Run("keeps other database errors generic", func(t *testing.T) {
 		_, mockTable, _, _, _, _, _, _, svc := setupTableManagementService()
 		mockTable.On("CreateRecord", mock.Anything, mock.Anything).
-			Return(nil, &pq.Error{Code: "23502", Message: "null value in column violates not-null constraint"})
+			Return(nil, &pq.Error{Code: "23502", Column: "notes", Message: "null value in column violates not-null constraint"})
+		// An empty field outside the primary key is not a key error
+		mockTable.On("GetByFunction", mock.Anything, "public.link_key_columns", mock.Anything).
+			Return([]map[string]interface{}{{"link_key_columns": "{id}"}}, nil)
 
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
 		assert.ErrorIs(t, err, app_errors.DatabaseError)

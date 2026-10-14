@@ -137,7 +137,7 @@ func (h *TableConstraintHandler) CreateTableConstraint(c *gin.Context) {
 }
 
 // @Summary      Update a unique key
-// @Description  Saves the name and message. When the columns or options change, the key is replaced in Postgres.
+// @Description  Saves the name and message. When the columns change, the key is replaced in Postgres.
 // @Tags         Table Constraints
 // @Accept       json
 // @Produce      json

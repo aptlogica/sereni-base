@@ -286,6 +286,10 @@ func (s tableManagementService) setupSystemColumns(ctx context.Context, schemaNa
 	if err != nil {
 		return []dto.ColumnResponse{}, err
 	}
+	// Missing triggers are also installed at startup, so a failure here is not fatal
+	if err := s.installKeySync(ctx, schemaName, model.Alias); err != nil {
+		logger.Get().Warn().Err(err).Str("table", model.Alias).Msg("link key triggers not installed")
+	}
 
 	columnsResponse, err := s.insertSystemColumns(schemaName, model, systemColumns)
 	if err != nil {
@@ -1567,6 +1571,12 @@ func (s tableManagementService) UpdateColumn(
 		req.DT = helpers.StringPtr(dt)
 	}
 
+	if req.UIDT != nil && *req.UIDT != "" && *req.UIDT != columnData.UIDT {
+		if err := s.ensureNotPrimaryKeyColumn(ctx, schemaName, columnData.ModelID.String(), columnData.ColumnName); err != nil {
+			return dto.ColumnResponse{}, err
+		}
+	}
+
 	column, err := s.columnsService.UpdateColumn(ctx, schemaName, id, req)
 	if err != nil {
 		return dto.ColumnResponse{}, err
@@ -1991,6 +2001,9 @@ func (s tableManagementService) DeleteColumn(
 	if !ok {
 		return app_errors.DeleteNotAllowed
 	}
+	if err := s.ensureNotPrimaryKeyColumn(ctx, schemaName, columnData.ModelID.String(), columnData.ColumnName); err != nil {
+		return err
+	}
 
 	// go func() {
 	err = s.DeleteUsedLookupColumn(ctx, schemaName, columnData)
@@ -2017,6 +2030,11 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 
+	// A table with a custom primary key can't have records without key values
+	if err := s.checkKeyValues(ctx, schemaName, model, 0, map[string]interface{}{}); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
 	data := map[string]interface{}{
 		"created_by":         req.CreatedBy,
 		"last_modified_by":   req.CreatedBy,
@@ -2027,7 +2045,7 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, data)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row record")
-		return dto.RecordResponse{}, s.recordWriteError(ctx, schemaName, err, "failed to create row record")
+		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to create row record")
 	}
 
 	return dto.RecordResponse{
@@ -2164,14 +2182,10 @@ func (s tableManagementService) resolveLinkSides(
 
 	if isSingleColumnRelation(relation) {
 		// One-way self-link: both "sides" are the same column.
-		dataType, err := s.linkDataType(info.EntityRole, relation.RelationType)
-		if err != nil {
-			return source, target, relation, err
-		}
 		source = linkSide{
 			TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias),
 			ColumnName: sourceColumnData.ColumnName,
-			DataType:   dataType,
+			IsMulti:    constant.LinkIsMulti(info.EntityRole, relation.RelationType),
 		}
 		return source, source, relation, nil
 	}
@@ -2190,24 +2204,15 @@ func (s tableManagementService) resolveLinkSides(
 		return source, target, relation, err
 	}
 
-	sourceDataType, err := s.linkDataType(info.EntityRole, relation.RelationType)
-	if err != nil {
-		return source, target, relation, err
-	}
-	targetDataType, err := s.linkDataType(oppositeEntityRole(info.EntityRole), relation.RelationType)
-	if err != nil {
-		return source, target, relation, err
-	}
-
 	source = linkSide{
 		TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, sourceModel.Alias),
 		ColumnName: sourceColumnData.ColumnName,
-		DataType:   sourceDataType,
+		IsMulti:    constant.LinkIsMulti(info.EntityRole, relation.RelationType),
 	}
 	target = linkSide{
 		TableName:  fmt.Sprintf(SchemaTableFormat, schemaName, targetModel.Alias),
 		ColumnName: targetColumnData.ColumnName,
-		DataType:   targetDataType,
+		IsMulti:    constant.LinkIsMulti(oppositeEntityRole(info.EntityRole), relation.RelationType),
 	}
 	return source, target, relation, nil
 }
@@ -2254,58 +2259,11 @@ func (s tableManagementService) UpdateRawDataForLinks(
 }
 
 func (s tableManagementService) InsertRowData(ctx context.Context, schemaName string, req dto.InsertRowDataRequest) (dto.RecordResponse, error) {
-	columnData, err := s.GetColumnById(ctx, schemaName, req.ColumnId)
-	if err != nil {
-		return dto.RecordResponse{}, err
-	}
-
-	// Link values must go through the link endpoint so both sides stay in sync; lookups are read-only.
-	if columnData.UIDT == uidtLinks || columnData.UIDT == uidtLookup {
-		return dto.RecordResponse{}, app_errors.LinkColumnNotWritable
-	}
-
-	ok := s.allowInsert(columnData)
-	if !ok {
-		return dto.RecordResponse{}, app_errors.UpdateNotAllowed
-	}
-
-	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
-	if err != nil {
-		return dto.RecordResponse{}, err
-	}
-
-	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
-
 	var value interface{}
 	if req.Value != nil {
 		value = *req.Value
-		// If the column is an array type, ensure the value is a slice
-		if columnData.DT != "" && strings.HasSuffix(columnData.DT, "[]") {
-			switch value.(type) {
-			case []interface{}:
-				// already a slice
-			default:
-				value = []interface{}{value}
-			}
-		}
-	} else {
-		value = nil
 	}
-
-	data := map[string]interface{}{
-		fmt.Sprintf(QuotedColumnFormat, columnData.ColumnName): value,
-		"last_modified_by":   req.UpdatedBy,
-		"last_modified_time": time.Now().UTC(),
-	}
-
-	insertedRecord, err := s.repo.TableService.UpdateRecord(tableName, req.RowId, data)
-	if err != nil {
-		return dto.RecordResponse{}, s.recordWriteError(ctx, schemaName, err, "failed to update record for column")
-	}
-
-	return dto.RecordResponse{
-		Record: insertedRecord,
-	}, nil
+	return s.UpdateRowValues(ctx, schemaName, req.ModelID, req.RowId, map[string]interface{}{req.ColumnId: value}, req.UpdatedBy)
 }
 
 func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schemaName string, modelAlias string, record map[string]interface{}) (dto.RecordResponse, error) {
@@ -2315,7 +2273,8 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, record)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
-		return dto.RecordResponse{}, s.recordWriteError(ctx, schemaName, err, "failed to create row with records")
+		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, modelAlias, err, "failed to create row with records")
+
 	}
 
 	return dto.RecordResponse{
@@ -2351,41 +2310,31 @@ func (s tableManagementService) CreateRowsWithValues(
 	updatedBy string,
 ) ([]dto.RecordResponse, error) {
 	rows := make([]dto.RecordResponse, 0, len(rowsInput))
+	if len(rowsInput) == 0 {
+		return rows, nil
+	}
+	model, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return nil, err
+	}
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+
+	// Each record is inserted with its values in one statement; if one fails, the records created before it
+	// by this request are removed, so nothing is half done
+	var created []int
 	for _, row := range rowsInput {
-		createdRow, err := s.CreateRow(ctx, schemaName, dto.CreateRowRequest{
-			ModelID:   modelID,
-			CreatedBy: createdBy,
-		})
+		inserted, err := s.insertRowValues(ctx, schemaName, model, row, createdBy, updatedBy)
 		if err != nil {
+			s.removeCreatedRows(tableName, created)
 			return nil, err
 		}
-
-		rowID, err := ExtractCreatedRowID(createdRow.Record)
+		rowID, err := ExtractCreatedRowID(inserted.Record)
 		if err != nil {
+			s.removeCreatedRows(tableName, created)
 			return nil, err
 		}
-
-		updatedRow := createdRow
-		for columnID, rawValue := range row {
-			var valuePtr *interface{}
-			if rawValue != nil {
-				value := rawValue
-				valuePtr = &value
-			}
-
-			updatedRow, err = s.InsertRowData(ctx, schemaName, dto.InsertRowDataRequest{
-				ModelID:   modelID,
-				ColumnId:  columnID,
-				RowId:     rowID,
-				Value:     valuePtr,
-				UpdatedBy: updatedBy,
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		rows = append(rows, updatedRow)
+		created = append(created, rowID)
+		rows = append(rows, inserted)
 	}
 
 	return rows, nil
@@ -2419,26 +2368,6 @@ func ExtractCreatedRowID(record map[string]interface{}) (int, error) {
 	}
 }
 
-// cleanUpLinksForRows removes every reference to the given rows from partner link columns, in one function call.
-func (s tableManagementService) cleanUpLinksForRows(ctx context.Context, schemaName string, model tenant.Model, rowIDs []int64) error {
-	if len(rowIDs) == 0 {
-		return nil
-	}
-	partners, err := s.backReferencePartners(ctx, schemaName, model)
-	if err != nil {
-		return err
-	}
-	if len(partners) == 0 {
-		return nil
-	}
-	_, err = s.callRelationFunction(ctx, removeBackReferencesFunctionName, map[string]interface{}{
-		"p_partners":   partners,
-		"p_row_ids":    rowIDs,
-		"p_updated_by": "",
-	})
-	return err
-}
-
 func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string, req dto.DeleteRowDataRequest) error {
 	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
 	if err != nil {
@@ -2450,10 +2379,7 @@ func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string
 		return err
 	}
 
-	if err := s.cleanUpLinksForRows(ctx, schemaName, model, []int64{int64(req.RowId)}); err != nil {
-		return err
-	}
-
+	// The link_key_sync trigger removes this row's key from every link field in the same statement
 	if err := s.repo.TableService.DeleteRecord(tableName, req.RowId); err != nil {
 		return app_errors.LogDatabaseError(err, "failed to delete record")
 	}
@@ -2610,15 +2536,7 @@ func (s tableManagementService) BulkDeleteRows(ctx context.Context, schemaName s
 	}
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 	deletedCount := 0
-	// Remove links pointing at these rows before bulk delete
-	rowIDs := make([]int64, len(req.RowIds))
-	for i, rowId := range req.RowIds {
-		rowIDs[i] = int64(rowId)
-	}
-	if err := s.cleanUpLinksForRows(ctx, schemaName, model, rowIDs); err != nil {
-		lg.Error().Stack().Err(err).Msg("Failed to handle links for rows")
-		return deletedCount, err
-	}
+	// The link_key_sync trigger removes these rows' keys from every link field in the same statement
 	// Convert row IDs to interface{} slice for BulkDelete
 	ids := make([]interface{}, len(req.RowIds))
 	for i, id := range req.RowIds {
@@ -2761,7 +2679,10 @@ func (s tableManagementService) BulkUpdateColumns(ctx context.Context, schemaNam
 		return err
 	}
 
-	return s.columnsService.BulkUpdate(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName, updates)
+	if err := s.columnsService.BulkUpdate(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName, updates); err != nil {
+		return s.keyWriteError(ctx, schemaName, fetchedModel.Alias, err, "failed to bulk update column")
+	}
+	return nil
 }
 
 func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaName string, modelID string, columnID string) error {
@@ -2775,5 +2696,8 @@ func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaNam
 		return err
 	}
 
-	return s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName)
+	if err := s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName); err != nil {
+		return s.keyWriteError(ctx, schemaName, fetchedModel.Alias, err, "failed to reset column")
+	}
+	return nil
 }

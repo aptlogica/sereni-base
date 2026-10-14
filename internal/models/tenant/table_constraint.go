@@ -30,8 +30,7 @@ type TableConstraint struct {
 	// Name of the constraint in Postgres, e.g. uq_employee_3f9a2c1b
 	ConstraintName string `db:"constraint_name" json:"constraint_name,omitempty" mapstructure:"constraint_name"`
 	// Columns of the key, in order, by columns.id so renaming a field doesn't break it
-	ColumnIDs []string               `db:"column_ids" json:"column_ids" mapstructure:"column_ids"`
-	Options   map[string]interface{} `db:"options" json:"options,omitempty" mapstructure:"options"`
+	ColumnIDs []string `db:"column_ids" json:"column_ids" mapstructure:"column_ids"`
 
 	CreatedBy string    `db:"created_by" json:"created_by" mapstructure:"created_by"`
 	UpdatedBy string    `db:"last_modified_by" json:"last_modified_by" mapstructure:"last_modified_by"`
@@ -53,7 +52,6 @@ func (tbl TableConstraint) TableSchema(prefix string) models.CreateTableRequest 
 			{Name: "title", DataType: "varchar", NotNull: true},
 			{Name: "constraint_name", DataType: "varchar", NotNull: true, Unique: true},
 			{Name: "column_ids", DataType: "jsonb", NotNull: true},
-			{Name: "options", DataType: "jsonb"},
 			{Name: "created_by", DataType: "varchar"},
 			{Name: "last_modified_by", DataType: "varchar"},
 			{Name: "created_time", DataType: "timestamp", NotNull: true, DefaultValue: StrPtr("CURRENT_TIMESTAMP")},

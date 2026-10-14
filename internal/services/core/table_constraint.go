@@ -89,7 +89,7 @@ func (s *tableConstraintService) Check(ctx context.Context, schemaName string, r
 	if err != nil {
 		return dto.ConstraintCheckResult{}, err
 	}
-	found, err := s.hasDuplicates(tableIdentifier(schemaName, model.Alias), keyColumns, req.Options)
+	found, err := s.hasDuplicates(tableIdentifier(schemaName, model.Alias), keyColumns)
 	if err != nil {
 		return dto.ConstraintCheckResult{}, err
 	}
@@ -114,13 +114,13 @@ func (s *tableConstraintService) Create(ctx context.Context, schemaName string, 
 	}
 
 	table := tableIdentifier(schemaName, model.Alias)
-	if err := s.ensureNoDuplicates(table, keyColumns, req.Options); err != nil {
+	if err := s.ensureNoDuplicates(table, keyColumns); err != nil {
 		return dto.TableConstraintResponse{}, err
 	}
 
 	id := uuid.New()
 	name := constraintName(model.Alias, id)
-	if err := s.exec(duplicateMessage(keyColumns), addUniqueSQL(table, name, keyColumns, req.Options)); err != nil {
+	if err := s.exec(duplicateMessage(keyColumns), addUniqueSQL(table, name, keyColumns)); err != nil {
 		return dto.TableConstraintResponse{}, err
 	}
 
@@ -131,7 +131,6 @@ func (s *tableConstraintService) Create(ctx context.Context, schemaName string, 
 		"title":            req.Title,
 		"constraint_name":  name,
 		"column_ids":       mustJSON(req.ColumnIDs),
-		"options":          mustJSON(req.Options),
 		"created_by":       req.CreatedBy,
 		"last_modified_by": req.CreatedBy,
 	})
@@ -149,7 +148,7 @@ func (s *tableConstraintService) Create(ctx context.Context, schemaName string, 
 	return toConstraintResponse(out, columns, dto.ConstraintStatusOK), nil
 }
 
-// Update saves the title; when the columns or options change, the Postgres
+// Update saves the title; when the columns change, the Postgres
 // constraint is replaced in one transaction, so a failure keeps the old one
 func (s *tableConstraintService) Update(ctx context.Context, schemaName, id string, req dto.UpdateTableConstraintRequest) (dto.TableConstraintResponse, error) {
 	existing, err := s.getByID(schemaName, id)
@@ -166,15 +165,15 @@ func (s *tableConstraintService) Update(ctx context.Context, schemaName, id stri
 	}
 
 	table := tableIdentifier(schemaName, model.Alias)
-	keyChanged := !slices.Equal(existing.ColumnIDs, req.ColumnIDs) || optionsOf(existing) != req.Options
+	keyChanged := !slices.Equal(existing.ColumnIDs, req.ColumnIDs)
 	if keyChanged {
 		if err := s.ensureNoSameKey(schemaName, existing.ModelID, id, req.ColumnIDs); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
-		if err := s.ensureNoDuplicates(table, keyColumns, req.Options); err != nil {
+		if err := s.ensureNoDuplicates(table, keyColumns); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
-		if err := s.exec(duplicateMessage(keyColumns), dropConstraintSQL(table, existing.ConstraintName), addUniqueSQL(table, existing.ConstraintName, keyColumns, req.Options)); err != nil {
+		if err := s.exec(duplicateMessage(keyColumns), dropConstraintSQL(table, existing.ConstraintName), addUniqueSQL(table, existing.ConstraintName, keyColumns)); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
 	}
@@ -182,7 +181,6 @@ func (s *tableConstraintService) Update(ctx context.Context, schemaName, id stri
 	updated, err := s.repo.TableService.UpdateRecord(tenant.TableConstraint{}.TableName(schemaName), id, map[string]interface{}{
 		"title":              req.Title,
 		"column_ids":         mustJSON(req.ColumnIDs),
-		"options":            mustJSON(req.Options),
 		"last_modified_by":   req.UpdatedBy,
 		"last_modified_time": time.Now(),
 	})
@@ -276,8 +274,8 @@ func (s *tableConstraintService) ensureNoSameKey(schemaName, modelID, exceptID s
 }
 
 // ensureNoDuplicates fails when existing records already repeat values in the columns
-func (s *tableConstraintService) ensureNoDuplicates(table string, columns []tenant.Column, options dto.TableConstraintOptions) error {
-	found, err := s.hasDuplicates(table, columns, options)
+func (s *tableConstraintService) ensureNoDuplicates(table string, columns []tenant.Column) error {
+	found, err := s.hasDuplicates(table, columns)
 	if err != nil {
 		return err
 	}
@@ -287,22 +285,17 @@ func (s *tableConstraintService) ensureNoDuplicates(table string, columns []tena
 	return nil
 }
 
-// hasDuplicates reports whether two records share the same values in the columns. Without
-// NULLS NOT DISTINCT, rows with an empty value in any column never conflict, so they are skipped.
-func (s *tableConstraintService) hasDuplicates(table string, columns []tenant.Column, options dto.TableConstraintOptions) (bool, error) {
+// hasDuplicates reports whether two records share the same values in the columns. Rows with an
+// empty value in any column never conflict, so they are skipped.
+func (s *tableConstraintService) hasDuplicates(table string, columns []tenant.Column) (bool, error) {
 	names := make([]string, len(columns))
 	notNull := make([]string, len(columns))
 	for i, c := range columns {
 		names[i] = pq.QuoteIdentifier(c.ColumnName)
 		notNull[i] = names[i] + " IS NOT NULL"
 	}
-	where := ""
-	if !options.NullsNotDistinct {
-		where = " WHERE " + strings.Join(notNull, " AND ")
-	}
-
-	query := fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s%s GROUP BY %s HAVING count(*) > 1)",
-		table, where, strings.Join(names, ", "))
+	query := fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s WHERE %s GROUP BY %s HAVING count(*) > 1)",
+		table, strings.Join(notNull, " AND "), strings.Join(names, ", "))
 	var found bool
 	if err := s.repo.DB.QueryRow(query).Scan(&found); err != nil {
 		return false, app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
@@ -409,25 +402,16 @@ func constraintName(alias string, id uuid.UUID) string {
 	return "uq_" + alias + "_" + strings.ReplaceAll(id.String(), "-", "")[:8]
 }
 
-func addUniqueSQL(table, name string, columns []tenant.Column, options dto.TableConstraintOptions) string {
+func addUniqueSQL(table, name string, columns []tenant.Column) string {
 	names := make([]string, len(columns))
 	for i, c := range columns {
 		names[i] = pq.QuoteIdentifier(c.ColumnName)
 	}
-	nulls := ""
-	if options.NullsNotDistinct {
-		nulls = " NULLS NOT DISTINCT"
-	}
-	return fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE%s (%s)", table, pq.QuoteIdentifier(name), nulls, strings.Join(names, ", "))
+	return fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)", table, pq.QuoteIdentifier(name), strings.Join(names, ", "))
 }
 
 func dropConstraintSQL(table, name string) string {
 	return fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", table, pq.QuoteIdentifier(name))
-}
-
-func optionsOf(c tenant.TableConstraint) dto.TableConstraintOptions {
-	nulls, _ := c.Options["nulls_not_distinct"].(bool)
-	return dto.TableConstraintOptions{NullsNotDistinct: nulls}
 }
 
 // sameColumnSet reports whether both keys have the same columns, in any order
@@ -455,7 +439,6 @@ func toConstraintResponse(c tenant.TableConstraint, columns map[string]tenant.Co
 		Title:          c.Title,
 		ConstraintName: c.ConstraintName,
 		Columns:        resolved,
-		Options:        optionsOf(c),
 		Status:         status,
 	}
 }
