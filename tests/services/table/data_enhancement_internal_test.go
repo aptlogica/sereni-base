@@ -2102,3 +2102,173 @@ func TestValidateColumnAllowedForSplit(t *testing.T) {
 	})
 }
 
+
+func TestColumnSplitSystemColumnWithoutKeepOriginalNotAllowed(t *testing.T) {
+	colID := uuid.New()
+	col := makeEnhancementTenantColumn(colID, uuid.Nil, uuid.Nil, "title", 1)
+	col.System = true
+	f := setupEnhancementFixture(t, []tenant.Column{col})
+
+	_, err := f.svc.ColumnSplit(context.Background(), f.schema, dto.ColumnSplitRequest{
+		ModelID: f.modelID, ColumnID: colID,
+		SplitBy:      dto.SplitByRequest{Type: "separator", Config: map[string]interface{}{"separator": ","}},
+		KeepOriginal: false, Where: "next",
+	})
+	if !errors.Is(err, app_errors.DeleteNotAllowed) {
+		t.Fatalf("expected DeleteNotAllowed, got %v", err)
+	}
+}
+
+func splitArrayLengthHook(parts int) func(ctx context.Context, query string, args ...any) ([]string, [][]driver.Value, error) {
+	return func(ctx context.Context, query string, args ...any) ([]string, [][]driver.Value, error) {
+		if strings.Contains(query, "array_length") {
+			return []string{"coalesce"}, [][]driver.Value{{parts}}, nil
+		}
+		return []string{"x"}, [][]driver.Value{{1}}, nil
+	}
+}
+
+func commaSplitRequest(f *enhancementTestFixture, colID uuid.UUID, where string, limit *int) dto.ColumnSplitRequest {
+	return dto.ColumnSplitRequest{
+		ModelID: f.modelID, ColumnID: colID,
+		SplitBy:      dto.SplitByRequest{Type: "separator", Config: map[string]interface{}{"separator": ","}},
+		KeepOriginal: true, Where: where, Limit: limit,
+	}
+}
+
+func TestColumnSplitPlanErrors(t *testing.T) {
+	colID := uuid.New()
+	newFixture := func() *enhancementTestFixture {
+		return setupEnhancementFixture(t, []tenant.Column{makeEnhancementTenantColumn(colID, uuid.Nil, uuid.Nil, "payload", 1)})
+	}
+	one := 1
+
+	t.Run("column not found", func(t *testing.T) {
+		f := newFixture()
+		_, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, uuid.New(), "end", nil))
+		if !errors.Is(err, app_errors.ColumnNotFound) {
+			t.Fatalf("expected ColumnNotFound, got %v", err)
+		}
+	})
+
+	t.Run("max parts query fails", func(t *testing.T) {
+		f := newFixture()
+		f.dbHooks.queryFn = func(ctx context.Context, query string, args ...any) ([]string, [][]driver.Value, error) {
+			return nil, nil, errors.New("query failed")
+		}
+		if _, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "end", nil)); err == nil {
+			t.Fatalf("expected max parts error")
+		}
+	})
+
+	t.Run("split not possible with a single part", func(t *testing.T) {
+		f := newFixture()
+		f.dbHooks.queryFn = splitArrayLengthHook(1)
+		_, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "end", nil))
+		if !errors.Is(err, app_errors.SplitNotPossible) {
+			t.Fatalf("expected SplitNotPossible, got %v", err)
+		}
+	})
+
+	t.Run("limit leaves a single column", func(t *testing.T) {
+		f := newFixture()
+		f.dbHooks.queryFn = splitArrayLengthHook(3)
+		_, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "end", &one))
+		if !errors.Is(err, app_errors.SplitNotPossible) {
+			t.Fatalf("expected SplitNotPossible, got %v", err)
+		}
+	})
+
+	t.Run("unsupported placement", func(t *testing.T) {
+		f := newFixture()
+		f.dbHooks.queryFn = splitArrayLengthHook(3)
+		_, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "middle", nil))
+		if !errors.Is(err, app_errors.InvalidPayload) {
+			t.Fatalf("expected InvalidPayload, got %v", err)
+		}
+	})
+}
+
+func TestColumnSplitNextShiftsLaterColumns(t *testing.T) {
+	colID := uuid.New()
+	laterID := uuid.New()
+	systemID := uuid.New()
+	system := makeEnhancementTenantColumn(systemID, uuid.Nil, uuid.Nil, "created_at", 3)
+	system.System = true
+	cols := []tenant.Column{
+		makeEnhancementTenantColumn(colID, uuid.Nil, uuid.Nil, "payload", 1),
+		makeEnhancementTenantColumn(laterID, uuid.Nil, uuid.Nil, "other", 2),
+		system,
+	}
+
+	t.Run("shifts every later column including system ones", func(t *testing.T) {
+		f := setupEnhancementFixture(t, cols)
+		f.dbHooks.queryFn = splitArrayLengthHook(2)
+		for i := 1; i <= 2; i++ {
+			dt := "TEXT"
+			order := float64(1 + i)
+			f.mockColumn.On("Create", mock.Anything, mock.Anything, f.schema).Return(tenant.Column{
+				ID: uuid.New(), ModelID: f.modelID.String(), BaseID: f.baseID.String(),
+				ColumnName: fmt.Sprintf("payload_%d", i), Title: fmt.Sprintf("payload_%d", i),
+				UIDT: "longText", DT: &dt, OrderIndex: &order,
+				CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+			}, nil).Once()
+		}
+		f.mockTable.On("AddColumn", f.tableName(), mock.Anything).Return(nil)
+		f.mockTable.On("GetTableData", f.tableName(), mock.Anything).Return([]map[string]interface{}{
+			{"id": 1, "payload": "a,b"},
+		}, nil)
+		f.mockColumn.On("BulkUpdateByColumns", mock.Anything, f.schema, f.modelAlias, mock.Anything).Return(nil)
+		f.mockColumn.On("UpdateColumn", mock.Anything, f.schema, laterID.String(), mock.MatchedBy(func(u dto.ColumnUpdate) bool {
+			return u.OrderIndex != nil && *u.OrderIndex == 4
+		})).Return(tenant.Column{}, nil).Once()
+		f.mockColumn.On("UpdateColumn", mock.Anything, f.schema, systemID.String(), mock.MatchedBy(func(u dto.ColumnUpdate) bool {
+			return u.OrderIndex != nil && *u.OrderIndex == 5
+		})).Return(tenant.Column{}, nil).Once()
+
+		res, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "next", nil))
+		if err != nil {
+			t.Fatalf("ColumnSplit next failed: %v", err)
+		}
+		if len(res.CreatedColumns) != 2 {
+			t.Fatalf("expected 2 created columns, got %+v", res)
+		}
+		f.mockColumn.AssertExpectations(t)
+	})
+
+	t.Run("shift failure aborts before creating columns", func(t *testing.T) {
+		f := setupEnhancementFixture(t, cols)
+		f.dbHooks.queryFn = splitArrayLengthHook(2)
+		f.mockColumn.On("UpdateColumn", mock.Anything, f.schema, mock.Anything, mock.Anything).
+			Return(tenant.Column{}, errors.New("shift failed"))
+
+		if _, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "next", nil)); err == nil {
+			t.Fatalf("expected shift error")
+		}
+		f.mockColumn.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+func TestColumnSplitFinalizeFailureRollsBack(t *testing.T) {
+	colID := uuid.New()
+	f := setupEnhancementFixture(t, []tenant.Column{makeEnhancementTenantColumn(colID, uuid.Nil, uuid.Nil, "payload", 1)})
+	f.dbHooks.queryFn = splitArrayLengthHook(2)
+
+	createdID := uuid.New()
+	dt := "TEXT"
+	f.mockColumn.On("Create", mock.Anything, mock.Anything, f.schema).Return(tenant.Column{
+		ID: createdID, ModelID: f.modelID.String(), BaseID: f.baseID.String(),
+		ColumnName: "payload_1", Title: "payload_1", UIDT: "longText", DT: &dt,
+		OrderIndex: helpers.Float64Ptr(2), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}, nil)
+	f.mockTable.On("AddColumn", f.tableName(), mock.Anything).Return(nil)
+	f.mockTable.On("GetTableData", f.tableName(), mock.Anything).Return([]map[string]interface{}(nil), errors.New("read failed"))
+	f.mockColumn.On("DeleteColumn", mock.Anything, f.schema, createdID.String()).Return(nil)
+	f.mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+	f.mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)
+
+	if _, err := f.svc.ColumnSplit(context.Background(), f.schema, commaSplitRequest(f, colID, "end", nil)); err == nil {
+		t.Fatalf("expected finalize error")
+	}
+	f.mockColumn.AssertCalled(t, "DeleteColumn", mock.Anything, f.schema, createdID.String())
+}
