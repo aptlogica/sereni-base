@@ -1616,20 +1616,39 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
-	if req.Meta != nil {
-		if _, hasDefault := (*req.Meta)[metaDefaultValueKey]; hasDefault {
-			model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
-			if err != nil {
-				return tenant.Column{}, err
-			}
-			if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, *req.Meta); err != nil {
-				s.revertColumnMetadata(ctx, schemaName, id, columnData)
-				return tenant.Column{}, err
-			}
-		}
+	if err := s.applyMetaDefaultIfPresent(ctx, schemaName, id, columnData, column, req); err != nil {
+		return tenant.Column{}, err
 	}
 
 	return column, nil
+}
+
+// applyMetaDefaultIfPresent syncs the DB default when the update carries meta.defaultValue,
+// reverting the column metadata if the ALTER fails.
+func (s tableManagementService) applyMetaDefaultIfPresent(
+	ctx context.Context,
+	schemaName string,
+	id string,
+	columnData dto.ColumnResponse,
+	column tenant.Column,
+	req dto.ColumnUpdate,
+) error {
+	if req.Meta == nil {
+		return nil
+	}
+	if _, hasDefault := (*req.Meta)[metaDefaultValueKey]; !hasDefault {
+		return nil
+	}
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
+	if err != nil {
+		return err
+	}
+	if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, *req.Meta); err != nil {
+		s.revertColumnMetadata(ctx, schemaName, id, columnData)
+		return err
+	}
+	return nil
 }
 
 func (s tableManagementService) sanitizeUpdateRequest(columnData dto.ColumnResponse, req dto.ColumnUpdate) (dto.ColumnUpdate, error) {
