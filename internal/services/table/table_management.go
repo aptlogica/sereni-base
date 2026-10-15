@@ -1623,8 +1623,8 @@ func (s tableManagementService) updatePlainColumn(
 	return column, nil
 }
 
-// applyMetaDefaultIfPresent syncs the DB default when the update carries meta.defaultValue,
-// reverting the column metadata if the ALTER fails.
+// applyMetaDefaultIfPresent syncs the DB default whenever the update carries meta
+// (set, or dropped when defaultValue is absent/empty/null), reverting the column metadata if the ALTER fails.
 func (s tableManagementService) applyMetaDefaultIfPresent(
 	ctx context.Context,
 	schemaName string,
@@ -1633,10 +1633,9 @@ func (s tableManagementService) applyMetaDefaultIfPresent(
 	column tenant.Column,
 	req dto.ColumnUpdate,
 ) error {
+	// A nil meta means the column's meta is untouched (PATCH), so the DB default stays.
+	// A provided meta replaces the stored one, so a missing defaultValue key drops the DB default.
 	if req.Meta == nil {
-		return nil
-	}
-	if _, hasDefault := (*req.Meta)[metaDefaultValueKey]; !hasDefault {
 		return nil
 	}
 

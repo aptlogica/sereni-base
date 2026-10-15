@@ -143,10 +143,29 @@ func TestUpdateColumn_AppliesMetaDefaultValue(t *testing.T) {
 		assert.True(t, modifyColumnReq(t, mockTable.Calls[0].Arguments).DropDefault)
 	})
 
-	t.Run("meta without key leaves default alone", func(t *testing.T) {
+	t.Run("null drops default", func(t *testing.T) {
+		mockTable, _, update := setup(nil)
+		assert.NoError(t, update(map[string]interface{}{"defaultValue": nil}))
+		assert.True(t, modifyColumnReq(t, mockTable.Calls[0].Arguments).DropDefault)
+	})
+
+	t.Run("meta without key drops default", func(t *testing.T) {
 		mockTable, _, update := setup(nil)
 		assert.NoError(t, update(map[string]interface{}{"other": 1}))
-		mockTable.AssertNotCalled(t, "AlterTable", mock.Anything, mock.Anything)
+		assert.True(t, modifyColumnReq(t, mockTable.Calls[0].Arguments).DropDefault)
+	})
+
+	t.Run("nil meta leaves default alone", func(t *testing.T) {
+		_, mockTable2,_, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		modelID, colID := uuid.New(), uuid.New()
+		col := tenant.Column{ID: colID, ModelID: modelID.String(), BaseID: uuid.New().String(), ColumnName: "col", UIDT: "number", DT: helpers.StringPtr("INTEGER")}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID.String()).Return(col, nil)
+		mockColumn.On("UpdateColumn", mock.Anything, "schema", colID.String(), mock.Anything).Return(col, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", modelID.String()).Return(tenant.Model{ID: modelID, Alias: "tbl"}, nil)
+		title := "new title"
+		_, err := svc.UpdateColumn(context.Background(), "schema", colID.String(), dto.ColumnUpdate{Title: &title})
+		assert.NoError(t, err)
+		mockTable2.AssertNotCalled(t, "AlterTable", mock.Anything, mock.Anything)
 	})
 
 	t.Run("alter failure reverts metadata", func(t *testing.T) {
