@@ -24,6 +24,7 @@ func TestTableConstraintCodes(t *testing.T) {
 		constants.TableConstraintError.ColumnUsedInConstraint: http.StatusConflict,
 		constants.TableConstraintError.UniqueKeyViolation:     http.StatusConflict,
 		constants.TableConstraintError.TypeRequired:           http.StatusBadRequest,
+		constants.TableConstraintError.DefaultConflict:        http.StatusConflict,
 	}
 	for code, status := range errorStatus {
 		meta, ok := constants.ErrorCodes[code]
@@ -56,6 +57,7 @@ func TestTableConstraintErrorMapping(t *testing.T) {
 		app_errors.ConstraintFailed:           constants.TableConstraintError.ConstraintFailed,
 		app_errors.ColumnUsedInConstraint:     constants.TableConstraintError.ColumnUsedInConstraint,
 		app_errors.UniqueKeyViolation:         constants.TableConstraintError.UniqueKeyViolation,
+		app_errors.UniqueKeyDefaultConflict:   constants.TableConstraintError.DefaultConflict,
 	}
 	for err, code := range cases {
 		assert.Equal(t, code, constants.MapError(err), err.Error())

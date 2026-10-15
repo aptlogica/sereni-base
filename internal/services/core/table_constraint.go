@@ -109,6 +109,9 @@ func (s *tableConstraintService) Create(ctx context.Context, schemaName string, 
 	if err != nil {
 		return dto.TableConstraintResponse{}, err
 	}
+	if err := ensureNoDefaultConflict(keyColumns); err != nil {
+		return dto.TableConstraintResponse{}, err
+	}
 	if err := s.ensureNoSameKey(schemaName, req.ModelID, "", req.ColumnIDs); err != nil {
 		return dto.TableConstraintResponse{}, err
 	}
@@ -167,6 +170,9 @@ func (s *tableConstraintService) Update(ctx context.Context, schemaName, id stri
 	table := tableIdentifier(schemaName, model.Alias)
 	keyChanged := !slices.Equal(existing.ColumnIDs, req.ColumnIDs)
 	if keyChanged {
+		if err := ensureNoDefaultConflict(keyColumns); err != nil {
+			return dto.TableConstraintResponse{}, err
+		}
 		if err := s.ensureNoSameKey(schemaName, existing.ModelID, id, req.ColumnIDs); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
@@ -271,6 +277,17 @@ func (s *tableConstraintService) ensureNoSameKey(schemaName, modelID, exceptID s
 		}
 	}
 	return nil
+}
+
+// ensureNoDefaultConflict fails when every column of the key has a default value: a new record
+// without values would get the same combination every time and the second one would be rejected
+func ensureNoDefaultConflict(columns []tenant.Column) error {
+	for _, c := range columns {
+		if !tenant.HasDefaultValue(c) {
+			return nil
+		}
+	}
+	return app_errors.WithMessage(app_errors.UniqueKeyDefaultConflict, tenant.UniqueDefaultConflictMessage)
 }
 
 // ensureNoDuplicates fails when existing records already repeat values in the columns

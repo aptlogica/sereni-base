@@ -153,6 +153,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.ConstraintFailed, TableConstraintError.ConstraintFailed},
 	{app_errors.ColumnUsedInConstraint, TableConstraintError.ColumnUsedInConstraint},
 	{app_errors.UniqueKeyViolation, TableConstraintError.UniqueKeyViolation},
+	{app_errors.UniqueKeyDefaultConflict, TableConstraintError.DefaultConflict},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},

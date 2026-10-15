@@ -124,6 +124,7 @@ func TestUpdateColumn_AppliesMetaDefaultValue(t *testing.T) {
 		mockColumn.On("UpdateColumn", mock.Anything, "schema", colID.String(), mock.Anything).Return(col, nil)
 		mockModel.On("GetModelByID", mock.Anything, "schema", modelID.String()).Return(tenant.Model{ID: modelID, Alias: "tbl"}, nil)
 		mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(altErr)
+		mockTable.On("GetTableData", mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 		return mockTable, mockColumn, func(meta map[string]interface{}) error {
 			_, err := svc.UpdateColumn(context.Background(), "schema", colID.String(), dto.ColumnUpdate{Meta: &meta})
 			return err
@@ -133,14 +134,14 @@ func TestUpdateColumn_AppliesMetaDefaultValue(t *testing.T) {
 	t.Run("sets default", func(t *testing.T) {
 		mockTable, _, update := setup(nil)
 		assert.NoError(t, update(map[string]interface{}{"defaultValue": float64(10)}))
-		req := modifyColumnReq(t, mockTable.Calls[0].Arguments)
+		req := modifyColumnReq(t, mockTable.Calls[len(mockTable.Calls)-1].Arguments)
 		assert.Equal(t, "10", *req.SetDefault)
 	})
 
 	t.Run("empty drops default", func(t *testing.T) {
 		mockTable, _, update := setup(nil)
 		assert.NoError(t, update(map[string]interface{}{"defaultValue": ""}))
-		assert.True(t, modifyColumnReq(t, mockTable.Calls[0].Arguments).DropDefault)
+		assert.True(t, modifyColumnReq(t, mockTable.Calls[len(mockTable.Calls)-1].Arguments).DropDefault)
 	})
 
 	t.Run("null drops default", func(t *testing.T) {

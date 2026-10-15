@@ -443,3 +443,91 @@ func TestTableConstraintService_List(t *testing.T) {
 		assert.ErrorIs(t, err, app_errors.DatabaseError)
 	})
 }
+
+// withDefaults gives the fixture's table columns a default value
+func (f *constraintFixture) withDefaults(cols ...tenant.Column) {
+	f.columns.ExpectedCalls = nil
+	f.columns.On("GetColumnByModelID", constraintSchema, "m1").
+		Return(append([]tenant.Column{idCol, titleCol, linkCol, goneCol}, cols...), nil).Maybe()
+}
+
+func withDefault(c tenant.Column, value interface{}) tenant.Column {
+	c.Meta = map[string]interface{}{"defaultValue": value}
+	return c
+}
+
+func assertDefaultConflict(t *testing.T, err error) {
+	t.Helper()
+	assert.ErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+	var detailed *app_errors.DetailedError
+	require.ErrorAs(t, err, &detailed)
+	assert.Equal(t, tenant.UniqueDefaultConflictMessage, detailed.Message)
+}
+
+func TestTableConstraintService_DefaultValueConflict(t *testing.T) {
+	t.Run("create rejects a key whose only column has a default", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(emailCol, "a@b.c"), codeCol)
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, dto.CreateTableConstraintRequest{
+			ModelID: "m1", Type: "unique", Title: "x", ColumnIDs: []string{emailCol.ID.String()},
+		})
+		assertDefaultConflict(t, err)
+	})
+
+	t.Run("create rejects a combined key when every column has a default", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(emailCol, "a@b.c"), withDefault(codeCol, 5.0))
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, dto.CreateTableConstraintRequest{
+			ModelID: "m1", Type: "unique", Title: "x", ColumnIDs: []string{emailCol.ID.String(), codeCol.ID.String()},
+		})
+		assertDefaultConflict(t, err)
+	})
+
+	t.Run("create allows a combined key when one column has no default", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(emailCol, "a@b.c"), codeCol)
+		f.expectNoOtherKeys()
+		f.expectNoDuplicates()
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(`ADD CONSTRAINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectCommit()
+		f.table.On("CreateRecord", constraintsTable, mock.Anything).
+			Return(savedKey(constraintID, []string{emailCol.ID.String(), codeCol.ID.String()}), nil)
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, dto.CreateTableConstraintRequest{
+			ModelID: "m1", Type: "unique", Title: "x", ColumnIDs: []string{emailCol.ID.String(), codeCol.ID.String()},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("create ignores an empty default", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(emailCol, "  "), codeCol)
+		f.expectNoOtherKeys()
+		f.expectNoDuplicates()
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(`ADD CONSTRAINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectCommit()
+		f.table.On("CreateRecord", constraintsTable, mock.Anything).
+			Return(savedKey(constraintID, []string{emailCol.ID.String()}), nil)
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, dto.CreateTableConstraintRequest{
+			ModelID: "m1", Type: "unique", Title: "x", ColumnIDs: []string{emailCol.ID.String()},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("update rejects changing the key to a column with a default", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(emailCol, withDefault(codeCol, "X"))
+		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).
+			Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
+
+		_, err := f.svc.Update(context.Background(), constraintSchema, constraintID, dto.UpdateTableConstraintRequest{
+			Title: "Code", ColumnIDs: []string{codeCol.ID.String()}, UpdatedBy: "user-2",
+		})
+		assertDefaultConflict(t, err)
+	})
+}

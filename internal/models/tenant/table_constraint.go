@@ -104,3 +104,21 @@ func KeyColumnBlockReason(c Column) string {
 	}
 	return ""
 }
+
+// HasDefaultValue reports whether the column has a user-set default (meta.defaultValue) that
+// would be written to every new record that doesn't give a value.
+func HasDefaultValue(c Column) bool {
+	switch v := c.Meta["defaultValue"].(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(v) != ""
+	case []interface{}:
+		return len(v) > 0
+	default:
+		return true
+	}
+}
+
+// UniqueDefaultConflictMessage is shown when a unique key and default values can't be combined
+const UniqueDefaultConflictMessage = "This column has a UNIQUE constraint. Its default value may be duplicated when inserting multiple rows. Remove the default value or the UNIQUE constraint to avoid duplicate-value errors."

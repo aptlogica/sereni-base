@@ -256,6 +256,7 @@ var (
 	ConstraintFailed           = errors.New("failed to apply constraint")
 	ColumnUsedInConstraint     = errors.New("column is used by a key")
 	UniqueKeyViolation         = errors.New("record repeats a unique key")
+	UniqueKeyDefaultConflict   = errors.New("default value conflicts with a unique key")
 )
 
 // DetailedError keeps a known error, for mapping to a response code, and a message for the user

@@ -70,3 +70,18 @@ func TestKeyColumnBlockReason(t *testing.T) {
 	assert.Empty(t, tenant.KeyColumnBlockReason(tenant.Column{ColumnName: "employee_id", UIDT: "number", Virtual: true}),
 		"columns made with the table are flagged virtual but are ordinary columns")
 }
+
+func TestHasDefaultValue(t *testing.T) {
+	withMeta := func(v interface{}) tenant.Column {
+		return tenant.Column{Meta: map[string]interface{}{"defaultValue": v}}
+	}
+	assert.False(t, tenant.HasDefaultValue(tenant.Column{}), "no meta")
+	assert.False(t, tenant.HasDefaultValue(withMeta(nil)))
+	assert.False(t, tenant.HasDefaultValue(withMeta("")))
+	assert.False(t, tenant.HasDefaultValue(withMeta("   ")))
+	assert.False(t, tenant.HasDefaultValue(withMeta([]interface{}{})))
+	assert.True(t, tenant.HasDefaultValue(withMeta("abc")))
+	assert.True(t, tenant.HasDefaultValue(withMeta(0.0)))
+	assert.True(t, tenant.HasDefaultValue(withMeta(false)), "false is written as the default")
+	assert.True(t, tenant.HasDefaultValue(withMeta([]interface{}{"a"})))
+}

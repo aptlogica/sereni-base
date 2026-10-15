@@ -1596,6 +1596,10 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
+	if err := s.ensureDefaultFitsKey(ctx, schemaName, columnData, req); err != nil {
+		return tenant.Column{}, err
+	}
+
 	if req.UIDT != nil && *req.UIDT != "" {
 		dt, _ := s.getDataBaseType(*req.UIDT)
 		req.DT = helpers.StringPtr(dt)

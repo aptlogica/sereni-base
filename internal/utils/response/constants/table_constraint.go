@@ -20,6 +20,7 @@ var TableConstraintError = struct {
 	ColumnUsedInConstraint ResponseCode
 	UniqueKeyViolation     ResponseCode
 	TypeRequired           ResponseCode
+	DefaultConflict        ResponseCode
 }{
 	ConstraintNotFound:     "TCN_1001",
 	TitleRequired:          "TCN_1002",
@@ -33,6 +34,7 @@ var TableConstraintError = struct {
 	ColumnUsedInConstraint: "TCN_1011",
 	UniqueKeyViolation:     "TCN_1012",
 	TypeRequired:           "TCN_1013",
+	DefaultConflict:        "TCN_1014",
 }
 
 var TableConstraintErrorCodes = map[ResponseCode]MetaResponse{
@@ -90,6 +92,11 @@ var TableConstraintErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusConflict,
 		Message:     "A record with these values already exists",
 		Description: "The record repeats the values of a unique key",
+	},
+	TableConstraintError.DefaultConflict: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Default value conflicts with a unique key",
+		Description: "A column of a unique key can't have a default value, since it would repeat in every new record",
 	},
 	TableConstraintError.TypeRequired: {
 		HTTPStatus:  http.StatusBadRequest,
