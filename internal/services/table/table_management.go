@@ -2437,7 +2437,9 @@ func (s tableManagementService) DeleteRow(ctx context.Context, schemaName string
 
 	// The link_key_sync trigger removes this row's key from every link field in the same statement
 	if err := s.repo.TableService.DeleteRecord(tableName, req.RowId); err != nil {
-		return app_errors.LogDatabaseError(err, "failed to delete record")
+		app_errors.LogDatabaseError(err, "failed to delete record")
+		// Keep the database message (e.g. an error raised by a trigger) so the user can see why
+		return fmt.Errorf("%w: %v", app_errors.RowDeleteFailed, err)
 	}
 
 	return nil

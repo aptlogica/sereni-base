@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -2921,6 +2922,30 @@ func TestTableHandler_DeleteRow_ServiceError(t *testing.T) {
 
 	handler.DeleteRow(c)
 	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+func TestTableHandler_DeleteRow_ReturnsDatabaseReason(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().DeleteRow(gomock.Any(), "test", gomock.Any()).
+		Return(fmt.Errorf("%w: %v", app_errors.RowDeleteFailed, errors.New(`pq: record "old" has no field "name"`)))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.DeleteRowDataRequest{ModelID: uuid.New().String(), RowId: 1})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("DELETE", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.DeleteRow(c)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `record \"old\" has no field \"name\"`)
+	assert.NotContains(t, w.Body.String(), "pq:")
 }
 
 func TestTableHandler_DeleteTable_ServiceError(t *testing.T) {

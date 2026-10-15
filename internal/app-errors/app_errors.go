@@ -188,12 +188,15 @@ var (
 
 // automations (triggers & webhooks)
 var (
-	AutomationNotFound   = errors.New("automation not found")
-	InvalidTriggerQuery  = errors.New("invalid trigger query")
-	InvalidFunctionQuery = errors.New("invalid function query")
-	TriggerFailed        = errors.New("failed to run trigger query")
-	TriggerHasFunction   = errors.New("trigger query contains a function")
-	InvalidTriggerEvent  = errors.New("invalid trigger timing or events")
+	// RowDeleteFailed wraps the database message of a failed row delete, e.g. from a trigger
+	RowDeleteFailed = errors.New("failed to delete record")
+	AutomationNotFound       = errors.New("automation not found")
+	InvalidTriggerQuery      = errors.New("invalid trigger query")
+	InvalidFunctionQuery     = errors.New("invalid function query")
+	TriggerFailed            = errors.New("failed to run trigger query")
+	TriggerHasFunction       = errors.New("trigger query contains a function")
+	InvalidTriggerEvent      = errors.New("invalid trigger timing or events")
+	DuplicateAutomationTitle = errors.New("automation title already exists")
 )
 
 // primary key

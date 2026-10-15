@@ -16,6 +16,7 @@ var AutomationError = struct {
 	InvalidFunctionQuery ResponseCode
 	TriggerHasFunction   ResponseCode
 	InvalidTriggerEvent  ResponseCode
+	DuplicateTitle       ResponseCode
 }{
 	AutomationNotFound:   "AUT_1001",
 	InvalidTriggerQuery:  "AUT_1002",
@@ -25,6 +26,7 @@ var AutomationError = struct {
 	InvalidFunctionQuery: "AUT_1007",
 	TriggerHasFunction:   "AUT_1009",
 	InvalidTriggerEvent:  "AUT_1010",
+	DuplicateTitle:       "AUT_1011",
 }
 
 var AutomationErrorCodes = map[ResponseCode]MetaResponse{
@@ -57,6 +59,11 @@ var AutomationErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Choose a timing and at least one event",
 		Description: "Event must be one timing (BEFORE, AFTER or INSTEAD OF) with INSERT, UPDATE, DELETE or TRUNCATE, e.g. \"BEFORE INSERT, BEFORE UPDATE\"",
+	},
+	AutomationError.DuplicateTitle: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Title already exists",
+		Description: "Another entry of this type on this table already uses this title; enter a unique title",
 	},
 	AutomationError.TitleRequired: {
 		HTTPStatus:  http.StatusBadRequest,

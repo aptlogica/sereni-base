@@ -21,6 +21,7 @@ func TestAutomationErrorCodes(t *testing.T) {
 		constants.AutomationError.InvalidFunctionQuery: http.StatusBadRequest,
 		constants.AutomationError.TriggerHasFunction:   http.StatusBadRequest,
 		constants.AutomationError.InvalidTriggerEvent:  http.StatusBadRequest,
+		constants.AutomationError.DuplicateTitle:       http.StatusConflict,
 	}
 	for code, status := range cases {
 		meta, ok := constants.ErrorCodes[code]
@@ -47,16 +48,21 @@ func TestAutomationSuccessCodes(t *testing.T) {
 
 func TestAutomationErrorMapping(t *testing.T) {
 	cases := map[error]constants.ResponseCode{
-		app_errors.AutomationNotFound:   constants.AutomationError.AutomationNotFound,
-		app_errors.InvalidTriggerQuery:  constants.AutomationError.InvalidTriggerQuery,
-		app_errors.InvalidFunctionQuery: constants.AutomationError.InvalidFunctionQuery,
-		app_errors.TriggerFailed:        constants.AutomationError.TriggerFailed,
-		app_errors.TriggerHasFunction:   constants.AutomationError.TriggerHasFunction,
-		app_errors.InvalidTriggerEvent:  constants.AutomationError.InvalidTriggerEvent,
+		app_errors.AutomationNotFound:       constants.AutomationError.AutomationNotFound,
+		app_errors.InvalidTriggerQuery:      constants.AutomationError.InvalidTriggerQuery,
+		app_errors.InvalidFunctionQuery:     constants.AutomationError.InvalidFunctionQuery,
+		app_errors.TriggerFailed:            constants.AutomationError.TriggerFailed,
+		app_errors.TriggerHasFunction:       constants.AutomationError.TriggerHasFunction,
+		app_errors.InvalidTriggerEvent:      constants.AutomationError.InvalidTriggerEvent,
+		app_errors.DuplicateAutomationTitle: constants.AutomationError.DuplicateTitle,
 	}
 	for err, code := range cases {
 		assert.Equal(t, code, constants.MapError(err), err.Error())
 	}
+
+	// The code is stable and wrapped errors still map to it
+	assert.Equal(t, constants.ResponseCode("AUT_1011"), constants.AutomationError.DuplicateTitle)
+	assert.Equal(t, constants.AutomationError.DuplicateTitle, constants.MapError(fmt.Errorf("create: %w", app_errors.DuplicateAutomationTitle)))
 
 	// A Postgres failure is wrapped with its message and still maps to TriggerFailed
 	wrapped := fmt.Errorf("%w: %v", app_errors.TriggerFailed, "syntax error")
