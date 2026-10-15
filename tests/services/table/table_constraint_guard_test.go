@@ -210,3 +210,99 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 		mockTable.AssertNotCalled(t, "GetTableData", mock.Anything, mock.Anything)
 	})
 }
+
+func TestUpdateColumn_DefaultValueConflictWithUniqueKey(t *testing.T) {
+	setup := func(otherMeta map[string]interface{}) (*MockColumnService, tenant.Column, interfaces.TableManagementService) {
+		_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+		modelID := uuid.New().String()
+		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.NewString(), ColumnName: "email", Title: "Email", UIDT: "email", DT: helpers.StringPtr("TEXT")}
+		other := tenant.Column{ID: uuid.New(), ModelID: modelID, ColumnName: "code", Title: "Code", UIDT: "text", Meta: otherMeta}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{col, other}, nil)
+		mockColumn.On("UpdateColumn", mock.Anything, "schema", "cid", mock.Anything).Return(tenant.Column{}, errors.New("stop"))
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).
+			Return([]map[string]interface{}{uniqueKeyRow(modelID, []string{col.ID.String(), other.ID.String()})}, nil)
+		return mockColumn, col, svc
+	}
+	withDefault := func(v interface{}) *map[string]interface{} {
+		return &map[string]interface{}{"defaultValue": v}
+	}
+
+	t.Run("rejects a default when every column of the key would have one", func(t *testing.T) {
+		mockColumn, _, svc := setup(map[string]interface{}{"defaultValue": "X"})
+
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: withDefault("a@b.c")})
+
+		assert.ErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+		assert.Equal(t, tenant.UniqueDefaultConflictMessage, detailedMessage(t, err))
+		mockColumn.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("allows a default when another column of the key has none", func(t *testing.T) {
+		mockColumn, _, svc := setup(nil)
+
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: withDefault("a@b.c")})
+
+		assert.NotErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+		mockColumn.AssertCalled(t, "UpdateColumn", mock.Anything, "schema", "cid", mock.Anything)
+	})
+
+	t.Run("allows clearing the default", func(t *testing.T) {
+		mockColumn, _, svc := setup(map[string]interface{}{"defaultValue": "X"})
+
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: withDefault("")})
+
+		assert.NotErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+		mockColumn.AssertCalled(t, "UpdateColumn", mock.Anything, "schema", "cid", mock.Anything)
+	})
+}
+
+func TestUpdateColumn_DefaultValueGuardErrorsAndSeveralKeys(t *testing.T) {
+	meta := &map[string]interface{}{"defaultValue": "a@b.c"}
+	newCol := func(modelID string) tenant.Column {
+		return tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.NewString(), ColumnName: "email", Title: "Email", UIDT: "email", DT: helpers.StringPtr("TEXT")}
+	}
+
+	t.Run("fails when the unique keys can't be read", func(t *testing.T) {
+		_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+		col := newCol(uuid.NewString())
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}(nil), errors.New("db down"))
+
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: meta})
+
+		assert.Error(t, err)
+		mockColumn.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("fails when the columns can't be read", func(t *testing.T) {
+		_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+		col := newCol(uuid.NewString())
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", col.ModelID).Return([]tenant.Column(nil), errors.New("db down"))
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).
+			Return([]map[string]interface{}{uniqueKeyRow(col.ModelID, []string{col.ID.String()})}, nil)
+
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: meta})
+
+		assert.Error(t, err)
+		mockColumn.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("rejects when any one of several keys would have defaults on all columns", func(t *testing.T) {
+		_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+		col := newCol(uuid.NewString())
+		withDefault := tenant.Column{ID: uuid.New(), ModelID: col.ModelID, ColumnName: "a", UIDT: "text", Meta: map[string]interface{}{"defaultValue": "X"}}
+		noDefault := tenant.Column{ID: uuid.New(), ModelID: col.ModelID, ColumnName: "b", UIDT: "text"}
+		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", col.ModelID).Return([]tenant.Column{col, withDefault, noDefault}, nil)
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{
+			uniqueKeyRow(col.ModelID, []string{col.ID.String(), noDefault.ID.String()}),
+			uniqueKeyRow(col.ModelID, []string{withDefault.ID.String(), col.ID.String()}),
+		}, nil)
+
+		_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: meta})
+
+		assert.ErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+	})
+}

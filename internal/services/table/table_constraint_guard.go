@@ -167,3 +167,50 @@ func (s tableManagementService) tableConstraints(schemaName string, filter dbMod
 	}
 	return constraints, nil
 }
+
+// ensureDefaultFitsKey fails when the update sets a default on a column whose unique key would
+// then have a default on all its columns. Removing or leaving the default is always allowed.
+func (s tableManagementService) ensureDefaultFitsKey(ctx context.Context, schemaName string, column dto.ColumnResponse, req dto.ColumnUpdate) error {
+	if req.Meta == nil || !tenant.HasDefaultValue(tenant.Column{Meta: *req.Meta}) {
+		return nil
+	}
+	constraints, err := s.tableConstraints(schemaName, dbModels.QueryFilter{Column: "model_id", Operator: "eq", Value: column.ModelID.String()})
+	if err != nil {
+		return err
+	}
+	columnID := column.ID.String()
+	keys := make([]tenant.TableConstraint, 0, len(constraints))
+	for _, c := range constraints {
+		if slices.Contains(c.ColumnIDs, columnID) {
+			keys = append(keys, c)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	all, err := s.columnsService.GetColumnByModelID(ctx, schemaName, column.ModelID.String())
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]tenant.Column, len(all))
+	for _, c := range all {
+		byID[c.ID.String()] = c
+	}
+	for _, key := range keys {
+		if othersAllHaveDefault(key.ColumnIDs, columnID, byID) {
+			return app_errors.WithMessage(app_errors.UniqueKeyDefaultConflict, tenant.UniqueDefaultConflictMessage)
+		}
+	}
+	return nil
+}
+
+// othersAllHaveDefault reports whether every column of the key except skipID has a default value
+func othersAllHaveDefault(columnIDs []string, skipID string, columns map[string]tenant.Column) bool {
+	for _, id := range columnIDs {
+		if id != skipID && !tenant.HasDefaultValue(columns[id]) {
+			return false
+		}
+	}
+	return true
+}
