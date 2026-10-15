@@ -55,6 +55,10 @@ func (s *automationService) Create(ctx context.Context, schemaName string, req d
 		return tenant.Automation{}, err
 	}
 
+	if err := s.ensureUniqueTitle(ctx, schemaName, req.ModelID, req.Type, req.Title, ""); err != nil {
+		return tenant.Automation{}, err
+	}
+
 	query := strings.TrimSuffix(strings.TrimSpace(req.Context), ";")
 	sql, err := prepareQuery(req.Type, query, model.Alias)
 	if err != nil {
@@ -119,6 +123,10 @@ func (s *automationService) Update(ctx context.Context, schemaName, id string, r
 		return tenant.Automation{}, err
 	}
 
+	if err := s.ensureUniqueTitle(ctx, schemaName, automation.ModelID, automation.Type, req.Title, automation.ID.String()); err != nil {
+		return tenant.Automation{}, err
+	}
+
 	query := strings.TrimSuffix(strings.TrimSpace(req.Context), ";")
 	// Only the format is checked here; Run applies it
 	if _, err := prepareQuery(automation.Type, query, model.Alias); err != nil {
@@ -147,6 +155,22 @@ func (s *automationService) Update(ctx context.Context, schemaName, id string, r
 		return tenant.Automation{}, app_errors.ErrMapToStruct
 	}
 	return out, nil
+}
+
+// ensureUniqueTitle rejects a title already used (ignoring case and surrounding spaces) by another
+// entry of the same type on the table; excludeID is the entry being updated
+func (s *automationService) ensureUniqueTitle(ctx context.Context, schemaName, modelID, automationType, title, excludeID string) error {
+	existing, err := s.List(ctx, schemaName, modelID)
+	if err != nil {
+		return err
+	}
+	wanted := strings.ToLower(strings.TrimSpace(title))
+	for _, a := range existing {
+		if a.Type == automationType && a.ID.String() != excludeID && strings.ToLower(strings.TrimSpace(a.Title)) == wanted {
+			return app_errors.DuplicateAutomationTitle
+		}
+	}
+	return nil
 }
 
 // Run applies the saved query in Postgres. The trigger or function installed for this entry is

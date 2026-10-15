@@ -134,6 +134,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.TriggerFailed, AutomationError.TriggerFailed},
 	{app_errors.TriggerHasFunction, AutomationError.TriggerHasFunction},
 	{app_errors.InvalidTriggerEvent, AutomationError.InvalidTriggerEvent},
+	{app_errors.DuplicateAutomationTitle, AutomationError.DuplicateTitle},
 
 	// primary key
 	{app_errors.PrimaryKeyRequired, PrimaryKeyError.Required},

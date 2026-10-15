@@ -147,6 +147,17 @@ func TestAutomationHandler_CreateAutomation(t *testing.T) {
 		assert.Equal(t, `syntax error at or near "TRIGER"`, res.Error.Message)
 	})
 
+	t.Run("returns 409 for a title already in use", func(t *testing.T) {
+		h, svc := newAutomationHandler(t)
+		svc.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any()).Return(tenant.Automation{}, app_errors.DuplicateAutomationTitle)
+
+		c, w := newAutomationContext(http.MethodPost, "/automation/create", validBody)
+		h.CreateAutomation(c)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+		assert.Equal(t, "AUT_1011", decodeAutomationResponse(t, w).Error.Code)
+	})
+
 	t.Run("maps known service errors", func(t *testing.T) {
 		h, svc := newAutomationHandler(t)
 		svc.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any()).Return(tenant.Automation{}, app_errors.TriggerHasFunction)
@@ -208,6 +219,18 @@ func TestAutomationHandler_UpdateAutomation(t *testing.T) {
 		h.UpdateAutomation(c)
 
 		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("returns 409 for a title already in use", func(t *testing.T) {
+		h, svc := newAutomationHandler(t)
+		svc.EXPECT().Update(gomock.Any(), "tenant_1", "a1", gomock.Any()).Return(tenant.Automation{}, app_errors.DuplicateAutomationTitle)
+
+		c, w := newAutomationContext(http.MethodPut, "/automation/a1", validBody)
+		c.Params = gin.Params{{Key: "id", Value: "a1"}}
+		h.UpdateAutomation(c)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+		assert.Equal(t, "AUT_1011", decodeAutomationResponse(t, w).Error.Code)
 	})
 
 	t.Run("rejects invalid JSON and missing context", func(t *testing.T) {

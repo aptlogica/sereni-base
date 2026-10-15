@@ -977,11 +977,13 @@ func TestDeleteRow_LinksCleanedByTrigger(t *testing.T) {
 
 	t.Run("delete failure", func(t *testing.T) {
 		e := newTwoTableLink("many-to-many", "JSONB", "JSONB")
-		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(errors.New("write failed"))
+		e.f.table.On("DeleteRecord", mock.Anything, 1).Return(errors.New(`pq: record "old" has no field "name"`))
 
 		err := e.f.svc.DeleteRow(context.Background(), relSchema, dto.DeleteRowDataRequest{ModelID: e.modelA, RowId: 1})
 
-		assert.ErrorIs(t, err, app_errors.DatabaseError)
+		// The database message (e.g. raised by a trigger) is kept so the user can see why
+		assert.ErrorIs(t, err, app_errors.RowDeleteFailed)
+		assert.Contains(t, err.Error(), `record "old" has no field "name"`)
 	})
 }
 

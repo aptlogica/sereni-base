@@ -1191,6 +1191,11 @@ func (h *TableHandler) DeleteRow(c *gin.Context) {
 	schemaName, _ := schemaNameVal.(string)
 
 	if err := h.tableManagementService.DeleteRow(c, schemaName, req); err != nil {
+		if errors.Is(err, app_errors.RowDeleteFailed) {
+			message := strings.TrimPrefix(err.Error(), app_errors.RowDeleteFailed.Error()+": ")
+			response.SendErrorWithMessage(c, responseConst.Error.DatabaseError, strings.TrimPrefix(message, "pq: "))
+			return
+		}
 		response.CheckAndSendError(c, err)
 		return
 	}

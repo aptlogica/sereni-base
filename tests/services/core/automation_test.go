@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -101,11 +102,26 @@ func (f *automationFixture) expectLabelledFunction(name string) {
 	q.WillReturnRows(sqlmock.NewRows([]string{"quote_ident"}).AddRow(name))
 }
 
+// expectTitles makes the titles already used on the table the given (type, title) pairs
+func (f *automationFixture) expectTitles(used ...[2]string) {
+	rows := []map[string]interface{}{}
+	for i, u := range used {
+		row := savedAutomation(u[0], "{}")
+		row["id"] = fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1)
+		row["title"] = u[1]
+		rows = append(rows, row)
+	}
+	f.table.On("GetTableData", automationsTable, mock.MatchedBy(func(p dbModels.QueryParams) bool {
+		return len(p.Filters) == 1 && p.Filters[0].Column == "model_id"
+	})).Return(rows, nil).Maybe()
+}
+
 func ok() sql.Result { return sqlmock.NewResult(0, 0) }
 
 func TestAutomationService_Create(t *testing.T) {
 	t.Run("installs a trigger, labels it and stores the entry", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(triggerQuery)).WillReturnResult(ok())
 		f.sql.ExpectExec(`^COMMENT ON TRIGGER log_salary ON "public"\."employee" IS 'automation:[0-9a-f-]{36}'$`).WillReturnResult(ok())
@@ -131,6 +147,7 @@ func TestAutomationService_Create(t *testing.T) {
 
 	t.Run("installs a function", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(functionQuery)).WillReturnResult(ok())
 		f.sql.ExpectExec(`^COMMENT ON FUNCTION log_fn\(\) IS 'automation:[0-9a-f-]{36}'$`).WillReturnResult(ok())
@@ -147,6 +164,7 @@ func TestAutomationService_Create(t *testing.T) {
 
 	t.Run("stores a webhook without running any SQL", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		// An empty transaction: there is no query to run for a webhook
 		f.sql.ExpectBegin()
 		f.sql.ExpectCommit()
@@ -181,6 +199,7 @@ func TestAutomationService_Create(t *testing.T) {
 	for _, tc := range invalid {
 		t.Run("rejects "+tc.name, func(t *testing.T) {
 			f := newAutomationFixture(t)
+			f.expectTitles()
 			tc.req.ModelID, tc.req.Title = "m1", "x"
 			_, err := f.svc.Create(context.Background(), automationSchema, tc.req)
 			assert.ErrorIs(t, err, tc.want)
@@ -190,6 +209,7 @@ func TestAutomationService_Create(t *testing.T) {
 
 	t.Run("returns the Postgres error and stores nothing when the query fails", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(triggerQuery)).WillReturnError(errors.New(`function log_fn() does not exist`))
 		f.sql.ExpectRollback()
@@ -204,6 +224,7 @@ func TestAutomationService_Create(t *testing.T) {
 
 	t.Run("drops the installed trigger when storing the entry fails", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(triggerQuery)).WillReturnResult(ok())
 		f.sql.ExpectExec("^COMMENT ON TRIGGER").WillReturnResult(ok())
@@ -219,6 +240,7 @@ func TestAutomationService_Create(t *testing.T) {
 
 	t.Run("drops the installed function when storing the entry fails", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(functionQuery)).WillReturnResult(ok())
 		f.sql.ExpectExec("^COMMENT ON FUNCTION").WillReturnResult(ok())
@@ -243,9 +265,73 @@ func TestAutomationService_Create(t *testing.T) {
 	})
 }
 
+func TestAutomationService_DuplicateTitle(t *testing.T) {
+	t.Run("create rejects a title used by the same type, ignoring case and spaces", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.expectTitles([2]string{"trigger", "Log Salary"})
+
+		_, err := f.svc.Create(context.Background(), automationSchema, dto.CreateAutomationRequest{
+			ModelID: "m1", Title: "  log salary ", Type: "trigger", Context: triggerQuery, Event: "AFTER INSERT",
+		})
+		assert.ErrorIs(t, err, app_errors.DuplicateAutomationTitle)
+		f.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
+	})
+
+	t.Run("create allows a title used by another type", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.expectTitles([2]string{"function", "Log Salary"})
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(exact(triggerQuery)).WillReturnResult(ok())
+		f.sql.ExpectExec(`^COMMENT ON TRIGGER`).WillReturnResult(ok())
+		f.sql.ExpectCommit()
+		f.table.On("CreateRecord", automationsTable, mock.Anything).Return(savedAutomation("trigger", triggerQuery), nil)
+
+		_, err := f.svc.Create(context.Background(), automationSchema, dto.CreateAutomationRequest{
+			ModelID: "m1", Title: "Log salary", Type: "trigger", Context: triggerQuery, Event: "AFTER INSERT",
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("create fails when the titles can't be read", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.table.On("GetTableData", automationsTable, mock.Anything).Return(nil, errors.New("db down"))
+
+		_, err := f.svc.Create(context.Background(), automationSchema, dto.CreateAutomationRequest{
+			ModelID: "m1", Title: "x", Type: "webhook", Context: "{}",
+		})
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
+	})
+
+	t.Run("update rejects a title used by another entry", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.expectGetByID("trigger", triggerQuery)
+		f.expectTitles([2]string{"trigger", "Audit"})
+
+		_, err := f.svc.Update(context.Background(), automationSchema, automationID, dto.UpdateAutomationRequest{
+			Title: "audit", Context: triggerQuery, Event: "AFTER INSERT",
+		})
+		assert.ErrorIs(t, err, app_errors.DuplicateAutomationTitle)
+		f.table.AssertNotCalled(t, "UpdateRecord", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("update keeps the entry's own title", func(t *testing.T) {
+		f := newAutomationFixture(t)
+		f.expectGetByID("webhook", "{}")
+		// The listed entry has the id being updated, so it is not a duplicate
+		f.table.On("GetTableData", automationsTable, mock.MatchedBy(func(p dbModels.QueryParams) bool {
+			return len(p.Filters) == 1 && p.Filters[0].Column == "model_id"
+		})).Return([]map[string]interface{}{savedAutomation("webhook", "{}")}, nil)
+		f.table.On("UpdateRecord", automationsTable, automationID, mock.Anything).Return(savedAutomation("webhook", "{}"), nil)
+
+		_, err := f.svc.Update(context.Background(), automationSchema, automationID, dto.UpdateAutomationRequest{Title: "Saved", Context: "{}"})
+		require.NoError(t, err)
+	})
+}
+
 func TestAutomationService_Update(t *testing.T) {
 	t.Run("saves title, query and event without applying the query", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.expectGetByID("trigger", triggerQuery)
 		// Already labelled, so nothing is written to Postgres
 		f.expectLabelledTrigger("log_salary")
@@ -270,6 +356,7 @@ func TestAutomationService_Update(t *testing.T) {
 
 	t.Run("labels a trigger installed before labels existed", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.expectGetByID("trigger", triggerQuery)
 		f.expectLabelledTrigger("")
 		f.sql.ExpectExec(exact(`COMMENT ON TRIGGER log_salary ON "public"."employee" IS '` + automationLabel + `'`)).WillReturnResult(ok())
@@ -283,6 +370,7 @@ func TestAutomationService_Update(t *testing.T) {
 
 	t.Run("labels a function installed before labels existed", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.expectGetByID("function", functionQuery)
 		f.expectLabelledFunction("")
 		f.sql.ExpectExec(exact(`COMMENT ON FUNCTION log_fn() IS '` + automationLabel + `'`)).WillReturnResult(ok())
@@ -294,6 +382,7 @@ func TestAutomationService_Update(t *testing.T) {
 
 	t.Run("checks the query format", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.expectGetByID("trigger", triggerQuery)
 
 		_, err := f.svc.Update(context.Background(), automationSchema, automationID, dto.UpdateAutomationRequest{
@@ -305,6 +394,7 @@ func TestAutomationService_Update(t *testing.T) {
 
 	t.Run("checks the event", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.expectGetByID("trigger", triggerQuery)
 
 		_, err := f.svc.Update(context.Background(), automationSchema, automationID, dto.UpdateAutomationRequest{Title: "x", Context: triggerQuery})
@@ -321,6 +411,7 @@ func TestAutomationService_Update(t *testing.T) {
 
 	t.Run("fails when saving fails", func(t *testing.T) {
 		f := newAutomationFixture(t)
+		f.expectTitles()
 		f.expectGetByID("webhook", "{}")
 		f.table.On("UpdateRecord", automationsTable, automationID, mock.Anything).Return(nil, errors.New("db down"))
 
