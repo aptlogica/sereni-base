@@ -2,8 +2,8 @@ github.com/DATA-DOG/go-sqlmock v1.5.2 h1:OcvFkGmslmlZibjAjaHm3L//6LiuBgolP7Oputl
 github.com/DATA-DOG/go-sqlmock v1.5.2/go.mod h1:88MAG/4G7SMwSE3CeA0ZKzrT5CiOU3OJ+JlNzwDqpNU=
 github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc=
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
-github.com/aptlogica/go-postgres-rest v1.0.1-alpha h1:hI77u/8i3cuE3BoZfSzn3g9CmfRk74RlPjvVOyZUtwo=
-github.com/aptlogica/go-postgres-rest v1.0.1-alpha/go.mod h1:dRtYmZyk/qs2gkDLk3Qq9PhQ+Q94/GlXycJ3WJmhGJU=
+github.com/aptlogica/go-postgres-rest v1.0.2 h1:Fnqe3kt3cjA6mFYNdEK3wypRTgBT+kpRi5mpHN9mdHo=
+github.com/aptlogica/go-postgres-rest v1.0.2/go.mod h1:dRtYmZyk/qs2gkDLk3Qq9PhQ+Q94/GlXycJ3WJmhGJU=
 github.com/bytedance/gopkg v0.1.4 h1:oZnQwnX82KAIWb7033bEwtxvTqXcYMxDBaQxo5JJHWM=
 github.com/bytedance/gopkg v0.1.4/go.mod h1:v1zWfPm21Fb+OsyXN2VAHdL6TBb2L88anLQgdyje6R4=
 github.com/bytedance/sonic v1.15.0 h1:/PXeWFaR5ElNcVE84U0dOHjiMHQOwNIx3K4ymzh/uSE=
