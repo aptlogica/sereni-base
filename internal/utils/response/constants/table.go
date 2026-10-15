@@ -82,6 +82,12 @@ var TableError = struct {
 	ContentInvalid                 ResponseCode
 	UpdatesRequired                ResponseCode
 	UpdatesInvalid                 ResponseCode
+	SelfReferenceNotAllowed        ResponseCode
+	LinkCycleDetected              ResponseCode
+	InvalidLookupLinkColumn        ResponseCode
+	LinkTargetRowNotFound          ResponseCode
+	InvalidLookupTargetColumn      ResponseCode
+	LinkColumnNotWritable          ResponseCode
 }{
 	BaseIDRequired:                 "TBL_1001",
 	BaseIDInvalid:                  "TBL_1002",
@@ -157,6 +163,12 @@ var TableError = struct {
 	ContentInvalid:                 "TBL_1059",
 	UpdatesRequired:                "TBL_1060",
 	UpdatesInvalid:                 "TBL_1061",
+	SelfReferenceNotAllowed:        "TBL_1075",
+	LinkCycleDetected:              "TBL_1076",
+	InvalidLookupLinkColumn:        "TBL_1077",
+	LinkTargetRowNotFound:          "TBL_1078",
+	InvalidLookupTargetColumn:      "TBL_1079",
+	LinkColumnNotWritable:          "TBL_1080",
 }
 
 var TableErrorCodes = map[ResponseCode]MetaResponse{
@@ -519,6 +531,36 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Invalid content",
 		Description: "The provided content is invalid or malformed",
+	},
+	TableError.SelfReferenceNotAllowed: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Self reference not allowed",
+		Description: "A record cannot be linked to itself",
+	},
+	TableError.LinkCycleDetected: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Link would create a cycle",
+		Description: "Linking these records would create a circular parent-child chain",
+	},
+	TableError.InvalidLookupLinkColumn: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Invalid lookup link field",
+		Description: "The link field for this lookup is missing, is not a link field, or does not belong to this table and relation",
+	},
+	TableError.LinkTargetRowNotFound: {
+		HTTPStatus:  http.StatusNotFound,
+		Message:     "Linked record not found",
+		Description: "The record to link or unlink does not exist",
+	},
+	TableError.InvalidLookupTargetColumn: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Lookup field not allowed",
+		Description: "A lookup cannot point to a link, lookup or rollup field",
+	},
+	TableError.LinkColumnNotWritable: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Field is not directly writable",
+		Description: "Link and lookup fields cannot be written through this endpoint; use the link endpoint instead",
 	},
 }
 

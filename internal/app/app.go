@@ -129,6 +129,9 @@ func New(cfg *config.Config) (*App, error) {
 	modelService := services.NewModelService(dbService)
 	columnService := services.NewColumnService(dbService)
 	viewService := services.NewViewService(dbService)
+	automationService := services.NewAutomationService(dbService, modelService)
+	primaryKeyService := services.NewPrimaryKeyService(dbService, modelService, columnService)
+	tableConstraintService := services.NewTableConstraintService(dbService, modelService, columnService)
 	relationshipService := services.NewRelationshipService(dbService)
 	userResetTokenService := services.NewUserResetTokenService(dbService)
 	resourceService := services.NewCoreResourceService(dbService)
@@ -225,15 +228,24 @@ func New(cfg *config.Config) (*App, error) {
 	tableHandler := handlers.NewTableHandler(tableManagementService, importService)
 	userHandler := handlers.NewUserHandler(userManagementService)
 	organizationHandler := handlers.NewOrganizationHandler(organizationService)
+	automationHandler := handlers.NewAutomationHandler(automationService)
+	tableConstraintHandler := handlers.NewTableConstraintHandler(tableConstraintService)
+	primaryKeyHandler := handlers.NewPrimaryKeyHandler(primaryKeyService)
+
+
 
 	handlerGroups := router.Handlers{
-		Auth:         authHandler,
-		Workspace:    workspaceHandler,
-		Base:         baseHandler,
-		Asset:        assetHandler,
-		Table:        tableHandler,
-		User:         userHandler,
-		Organization: organizationHandler,
+		Auth:            authHandler,
+		Workspace:       workspaceHandler,
+		Base:            baseHandler,
+		Asset:           assetHandler,
+		Table:           tableHandler,
+		User:            userHandler,
+		Organization:    organizationHandler,
+		Automation:      automationHandler,
+		TableConstraint: tableConstraintHandler,
+		PrimaryKey:   primaryKeyHandler,
+
 	}
 
 	middlewareGroups := router.Middlewares{

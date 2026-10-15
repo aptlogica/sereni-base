@@ -185,6 +185,15 @@ func (m *MockAssetManagementService) GetAssetByURL(ctx context.Context, schemaNa
 	return args.Get(0).(tenant.Assets), args.Error(1)
 }
 
+// expectKeyDefaults answers the primary key helpers for tables keyed by id: the key is (id), and
+// installing the key-sync triggers on a new table succeeds. Tests may register their own answers first.
+func expectKeyDefaults(mockTable *MockTableService) {
+	mockTable.On("GetByFunction", mock.Anything, "public.link_key_columns", mock.Anything).
+		Return([]map[string]interface{}{{"link_key_columns": "{id}"}}, nil).Maybe()
+	mockTable.On("GetByFunction", mock.Anything, "public.link_install_key_sync", mock.Anything).
+		Return([]map[string]interface{}{{}}, nil).Maybe()
+}
+
 // Helper to build a table management service with mocks.
 func setupTableManagementService() (*pkg.DatabaseService, *MockTableService, *MockBulkService, *MockModelService, *MockColumnService, *MockViewService, *MockRelationshipService, *MockAssetManagementService, interfaces.TableManagementService) {
 	mockTable := &MockTableService{}
@@ -196,6 +205,7 @@ func setupTableManagementService() (*pkg.DatabaseService, *MockTableService, *Mo
 	mockAsset := &MockAssetManagementService{}
 
 	db := &pkg.DatabaseService{TableService: mockTable, BulkService: mockBulk}
+	expectKeyDefaults(mockTable)
 
 	svc := services.NewTableManagementService("postgres", db, mockModel, mockColumn, mockView, mockRel, mockAsset)
 

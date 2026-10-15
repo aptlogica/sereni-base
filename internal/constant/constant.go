@@ -293,6 +293,20 @@ func createIntMapping(component, label, postgres string) DBMapping {
 	}
 }
 
+// createLinkMapping is the storage of a link field: an array of key objects
+func createLinkMapping() DBMapping {
+	return DBMapping{
+		Component: "LinkInput",
+		Label:     "Links",
+		Postgres:  "JSONB",
+		MongoDB:   "Array",
+		MySQL:     "JSON",
+		SQLite:    "TEXT",
+		MSSQL:     DBTypeNVarcharMax,
+		Oracle:    "CLOB",
+	}
+}
+
 func createTimestampMapping(component, label string) DBMapping {
 	return DBMapping{
 		Component: component,
@@ -458,12 +472,13 @@ var UITypeMappings = map[string]DBMapping{
 		MSSQL:     "UNIQUEIDENTIFIER",
 		Oracle:    "RAW(16)",
 	},
-	"links_source_one-to-one":   createIntMapping("LinkInput", "Links", "INT"),
-	"links_target_one-to-one":   createIntMapping("LinkInput", "Links", "INT"),
-	"links_source_has-many":     createArrayMapping("LinkInput", "Links", "INT[]"),
-	"links_target_has-many":     createIntMapping("LinkInput", "Links", "INT"),
-	"links_source_many-to-many": createArrayMapping("LinkInput", "Links", "INT[]"),
-	"links_target_many-to-many": createArrayMapping("LinkInput", "Links", "INT[]"),
+	// Link cells hold a JSONB array of the linked rows' primary-key values; LinkIsMulti says which sides hold many
+	"links_source_one-to-one":   createLinkMapping(),
+	"links_target_one-to-one":   createLinkMapping(),
+	"links_source_has-many":     createLinkMapping(),
+	"links_target_has-many":     createLinkMapping(),
+	"links_source_many-to-many": createLinkMapping(),
+	"links_target_many-to-many": createLinkMapping(),
 	"lookup": {
 		Component: "LookupField",
 		Label:     "Lookup",

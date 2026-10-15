@@ -161,11 +161,6 @@ func (s *userManagementService) UpdatePassword(ctx context.Context, schema strin
 
 func (s *userManagementService) AddAvatar(ctx context.Context, schema string, userID string, fileHeader *multipart.FileHeader) (dto.UserResponse, error) {
 	lg := logger.Get()
-	err := s.deleteAvatarIfExists(ctx, schema, userID)
-	if err != nil {
-		return dto.UserResponse{}, err
-	}
-
 	if fileHeader == nil {
 		return dto.UserResponse{}, app_errors.InvalidPayload
 	}
@@ -176,9 +171,15 @@ func (s *userManagementService) AddAvatar(ctx context.Context, schema string, us
 		".jpg":  true,
 		".jpeg": true,
 		".png":  true,
+		".gif":  true,
 	}
 	if !allowedExtensions[ext] {
-		return dto.UserResponse{}, app_errors.NewPasswordInvalid // Consider app_errors.InvalidPayload or a new error for unsupported file type.
+		return dto.UserResponse{}, app_errors.InvalidFileFormat
+	}
+
+	// Validate before deleting so a rejected upload keeps the existing avatar.
+	if err := s.deleteAvatarIfExists(ctx, schema, userID); err != nil {
+		return dto.UserResponse{}, err
 	}
 
 	uploadReq := dto.UploadAssetRequest{

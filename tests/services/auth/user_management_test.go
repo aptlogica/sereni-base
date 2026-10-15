@@ -704,11 +704,10 @@ func TestUMAddAvatarInvalidExtension(t *testing.T) {
 	schema := "test_schema"
 	userID := uuid.New().String()
 
-	mockUser.On("GetUserByID", ctx, schema, userID).Return(tenant.User{ID: uuid.MustParse(userID)}, nil)
-
-	_, err := service.AddAvatar(ctx, schema, userID, &multipart.FileHeader{Filename: "avatar.gif"})
-	assert.Error(t, err)
-	mockUser.AssertExpectations(t)
+	_, err := service.AddAvatar(ctx, schema, userID, &multipart.FileHeader{Filename: "avatar.bmp"})
+	assert.ErrorIs(t, err, app_errors.InvalidFileFormat)
+	// Existing avatar must not be touched when the upload is rejected.
+	mockUser.AssertNotCalled(t, "GetUserByID", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestUMAddAvatarSuccess(t *testing.T) {

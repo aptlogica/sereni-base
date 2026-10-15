@@ -101,6 +101,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.StorageFileOpenFailed, AssetError.StorageFileOpenFailed},
 	{app_errors.StorageUploadFailed, AssetError.StorageUploadFailed},
 	{app_errors.AssetNotFound, AssetError.AssetNotFound},
+	{app_errors.InvalidFileFormat, AssetError.InvalidFileFormat},
 	{app_errors.MultipartFormNotFound, AssetError.MultipartFormNotFound},
 	{app_errors.FileTooLargeError, AssetError.FileTooLargeError},
 	{app_errors.MultipleFilesTooLargeError, AssetError.MultipleFilesTooLargeError},
@@ -119,6 +120,40 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.RowNotFound, TableError.RowNotFound},
 	{app_errors.InvalidColumnMetaForLookupType, TableError.InvalidColumnMetaForLookupType},
 	{app_errors.SplitNotPossible, TableError.SplitNotPossible},
+	{app_errors.SelfReferenceNotAllowed, TableError.SelfReferenceNotAllowed},
+	{app_errors.LinkCycleDetected, TableError.LinkCycleDetected},
+	{app_errors.InvalidLookupLinkColumn, TableError.InvalidLookupLinkColumn},
+	{app_errors.LinkTargetRowNotFound, TableError.LinkTargetRowNotFound},
+	{app_errors.InvalidLookupTargetColumn, TableError.InvalidLookupTargetColumn},
+	{app_errors.LinkColumnNotWritable, TableError.LinkColumnNotWritable},
+
+	// automations (triggers & webhooks)
+	{app_errors.AutomationNotFound, AutomationError.AutomationNotFound},
+	{app_errors.InvalidTriggerQuery, AutomationError.InvalidTriggerQuery},
+	{app_errors.InvalidFunctionQuery, AutomationError.InvalidFunctionQuery},
+	{app_errors.TriggerFailed, AutomationError.TriggerFailed},
+	{app_errors.TriggerHasFunction, AutomationError.TriggerHasFunction},
+	{app_errors.InvalidTriggerEvent, AutomationError.InvalidTriggerEvent},
+	{app_errors.DuplicateAutomationTitle, AutomationError.DuplicateTitle},
+
+	// primary key
+	{app_errors.PrimaryKeyRequired, PrimaryKeyError.Required},
+	{app_errors.PrimaryKeyColumnInvalid, PrimaryKeyError.ColumnInvalid},
+	{app_errors.PrimaryKeyLocked, PrimaryKeyError.Locked},
+	{app_errors.PrimaryKeyDataInvalid, PrimaryKeyError.DataInvalid},
+	{app_errors.PrimaryKeyUpdateFailed, PrimaryKeyError.UpdateFailed},
+	{app_errors.ColumnInPrimaryKey, PrimaryKeyError.ColumnInKey},
+	// table constraints (unique keys)
+	{app_errors.ConstraintNotFound, TableConstraintError.ConstraintNotFound},
+	{app_errors.ConstraintColumnNotFound, TableConstraintError.ColumnNotFound},
+	{app_errors.ConstraintColumnNotAllowed, TableConstraintError.ColumnNotAllowed},
+	{app_errors.ConstraintRepeatedColumn, TableConstraintError.RepeatedColumn},
+	{app_errors.ConstraintAlreadyExists, TableConstraintError.AlreadyExists},
+	{app_errors.ConstraintDuplicateValues, TableConstraintError.DuplicateValues},
+	{app_errors.ConstraintFailed, TableConstraintError.ConstraintFailed},
+	{app_errors.ColumnUsedInConstraint, TableConstraintError.ColumnUsedInConstraint},
+	{app_errors.UniqueKeyViolation, TableConstraintError.UniqueKeyViolation},
+	{app_errors.UniqueKeyDefaultConflict, TableConstraintError.DefaultConflict},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},
