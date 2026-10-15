@@ -44,8 +44,8 @@ github.com/go-openapi/swag/jsonutils/fixtures_test v0.28.0 h1:qV+VVUAx5Oro8WjVWp
 github.com/go-openapi/swag/jsonutils/fixtures_test v0.28.0/go.mod h1:mofwUWx70wvskwESqRJ//k/9kURmCgyJl5m5Ppoh5kY=
 github.com/go-openapi/swag/loading v0.28.0 h1:td8QZdZC9MIYGGSnSPKShKiK22I2tU5UQvuUhIBPRLU=
 github.com/go-openapi/swag/loading v0.28.0/go.mod h1:rXB0QiQX5mMveXEA7ouM4KiiM9jVJe4K6BVbwhD1M4k=
-github.com/go-openapi/swag/pools v0.28.0 h1:HPMZWSAfce3rdVTFcjFiCIBtDg9h4x2QlRrHipwhxeU=
-github.com/go-openapi/swag/pools v0.28.0/go.mod h1:kVQefhSK5RWuRe7BXsL8htgBPAMpN7HDGpGEknqugeE=
+github.com/go-openapi/swag/pools v0.29.2 h1:PlGoDRF8WtSyXkedZZkpW3f9wDhFf3u8KtaBcmgmh8c=
+github.com/go-openapi/swag/pools v0.29.2/go.mod h1:V3lhxVT4qDYRqc2MRSSbLsTYIYV/2HlHafhyEkmzLIc=
 github.com/go-openapi/swag/stringutils v0.26.0 h1:qZQngLxs5s7SLijc3N2ZO+fUq2o8LjuWAASSrJuh+xg=
 github.com/go-openapi/swag/stringutils v0.26.0/go.mod h1:sWn5uY+QIIspwPhvgnqJsH8xqFT2ZbYcvbcFanRyhFE=
 github.com/go-openapi/swag/typeutils v0.28.0 h1:nRBKSBXjDgf01VDPB3fWeD9nQuhCOVeIYAkUx2tbkyY=
@@ -54,8 +54,8 @@ github.com/go-openapi/swag/yamlutils v0.28.0 h1:TV3JXH6DS46KUroDtMLAYHGkdWf5VDq3
 github.com/go-openapi/swag/yamlutils v0.28.0/go.mod h1:x0q/yndZHEgk9Rx3DyDqzFUmHy55KTvIZldvF2dTJXs=
 github.com/go-openapi/testify/enable/yaml/v2 v2.6.0 h1:gGHwAJ0R/5jU8BEGDbfRNR3hL68dAVi84WuOApp29B0=
 github.com/go-openapi/testify/enable/yaml/v2 v2.6.0/go.mod h1:tY+St1SGq4NFl0QIqdTY4aEdbChAHxhyB77XQi9iJCo=
-github.com/go-openapi/testify/v2 v2.6.0 h1:5PKH2HE7YJ/LuRPQGvSxBRlFXNQhSetBLlGAgUEu3ug=
-github.com/go-openapi/testify/v2 v2.6.0/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
+github.com/go-openapi/testify/v2 v2.7.0 h1:bycOreEj6wfBvijg3YFogZ/sFjTCDmQnwSodSzHa3X8=
+github.com/go-openapi/testify/v2 v2.7.0/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
 github.com/go-playground/assert/v2 v2.2.0 h1:JvknZsQTYeFEAhQwI4qEt9cyV5ONwRHC+lYKSsYSR8s=
 github.com/go-playground/assert/v2 v2.2.0/go.mod h1:VDjEfimB/XKnb+ZQfWdccd7VUvScMdVu0Titje2rxJ4=
 github.com/go-playground/locales v0.14.1 h1:EWaQ/wswjilfKLTECiXz7Rh+3BjFhfDFKv/oXslEjJA=
