@@ -115,13 +115,53 @@ func TestTableConstraintHandler_CreateTableConstraint(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, w.Code)
 	})
 
-	t.Run("rejects other types for now", func(t *testing.T) {
+	t.Run("rejects an unknown type", func(t *testing.T) {
+		h, _ := newConstraintHandler(t)
+		bad := body
+		bad.Type = "primary"
+		c, w := newAutomationContext(http.MethodPost, "/table-constraint/create", bad)
+		h.CreateTableConstraint(c)
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	})
+
+	t.Run("a check constraint needs a condition", func(t *testing.T) {
 		h, _ := newConstraintHandler(t)
 		bad := body
 		bad.Type = "check"
 		c, w := newAutomationContext(http.MethodPost, "/table-constraint/create", bad)
 		h.CreateTableConstraint(c)
 		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	})
+
+	t.Run("creates a check constraint without columns", func(t *testing.T) {
+		h, svc := newConstraintHandler(t)
+		svc.EXPECT().Create(gomock.Any(), "tenant_1", gomock.Any()).
+			DoAndReturn(func(_ any, _ string, req dto.CreateTableConstraintRequest) (dto.TableConstraintResponse, error) {
+				assert.Equal(t, "age > 0", req.Condition)
+				assert.Equal(t, "number_date", req.Category)
+				return sampleConstraint, nil
+			})
+
+		check := dto.CreateTableConstraintRequest{ModelID: "m1", Type: "check", Title: "Age positive",
+			CheckInput: dto.CheckInput{Category: "number_date", Condition: "age > 0"}}
+		c, w := newAutomationContext(http.MethodPost, "/table-constraint/create", check)
+		h.CreateTableConstraint(c)
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+
+	t.Run("shows how many records break the condition", func(t *testing.T) {
+		h, svc := newConstraintHandler(t)
+		svc.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(dto.TableConstraintResponse{}, app_errors.WithMessage(app_errors.CheckExistingRows, "3 records break this condition. Fix them or change the condition."))
+
+		check := dto.CreateTableConstraintRequest{ModelID: "m1", Type: "check", Title: "Age positive", CheckInput: dto.CheckInput{Condition: "age > 0"}}
+		c, w := newAutomationContext(http.MethodPost, "/table-constraint/create", check)
+		h.CreateTableConstraint(c)
+
+		res := decodeAutomationResponse(t, w)
+		assert.Equal(t, http.StatusConflict, w.Code)
+		assert.Equal(t, "TCN_1016", res.Error.Code)
+		assert.Equal(t, "3 records break this condition. Fix them or change the condition.", res.Error.Message)
 	})
 
 	t.Run("rejects a blank or long title", func(t *testing.T) {

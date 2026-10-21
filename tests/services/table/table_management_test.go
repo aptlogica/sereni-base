@@ -548,6 +548,11 @@ func TestAddColumn_LinksAndLookup(t *testing.T) {
 	})
 }
 
+// noConstraints answers that no unique key or check constraint uses the field, for type changes
+func noConstraints(mockTable *MockTableService) {
+	mockTable.On("GetTableData", tenant.TableConstraint{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
+}
+
 func TestUpdateColumn_Variants(t *testing.T) {
 	t.Run("system not allowed", func(t *testing.T) {
 		_, _, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
@@ -563,6 +568,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("system with title allowed", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New()
 		colID := uuid.New()
@@ -588,6 +594,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("title column type update allowed", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New()
 		colID := uuid.New()
@@ -648,6 +655,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("datatype change error triggers revert", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT")}
@@ -670,6 +678,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("datatype change success", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT")}

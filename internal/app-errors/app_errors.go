@@ -189,7 +189,7 @@ var (
 // automations (triggers & webhooks)
 var (
 	// RowDeleteFailed wraps the database message of a failed row delete, e.g. from a trigger
-	RowDeleteFailed = errors.New("failed to delete record")
+	RowDeleteFailed          = errors.New("failed to delete record")
 	AutomationNotFound       = errors.New("automation not found")
 	InvalidTriggerQuery      = errors.New("invalid trigger query")
 	InvalidFunctionQuery     = errors.New("invalid function query")
@@ -257,6 +257,11 @@ var (
 	ColumnUsedInConstraint     = errors.New("column is used by a key")
 	UniqueKeyViolation         = errors.New("record repeats a unique key")
 	UniqueKeyDefaultConflict   = errors.New("default value conflicts with a unique key")
+	// check constraints
+	CheckConditionInvalid    = errors.New("check condition not allowed")
+	CheckCategoryUnknown     = errors.New("unknown check category")
+	CheckExistingRows        = errors.New("existing records break the check condition")
+	CheckConstraintViolation = errors.New("record breaks a check constraint")
 )
 
 // DetailedError keeps a known error, for mapping to a response code, and a message for the user

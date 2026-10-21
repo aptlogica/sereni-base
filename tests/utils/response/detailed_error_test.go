@@ -37,6 +37,6 @@ func TestCheckAndSendError_DetailedError(t *testing.T) {
 		var body response.StandardResponse
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 		assert.Equal(t, http.StatusNotFound, w.Code)
-		assert.Equal(t, "Unique key not found", body.Error.Message)
+		assert.Equal(t, "Constraint not found", body.Error.Message)
 	})
 }

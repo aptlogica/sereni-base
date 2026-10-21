@@ -39,6 +39,20 @@ func validateConstraintTitle(c *gin.Context, title string) bool {
 	return true
 }
 
+// validateConstraintBody sends a validation error and returns false when the body lacks what its type
+// needs: columns for a unique key, a condition for a check constraint
+func validateConstraintBody(c *gin.Context, constraintType string, columnIDs []string, condition string) bool {
+	missing := len(columnIDs) == 0
+	if constraintType == tenant.ConstraintTypeCheck {
+		missing = strings.TrimSpace(condition) == ""
+	}
+	if missing {
+		response.SendError(c, responseConst.Error.ValidationFailed)
+		return false
+	}
+	return true
+}
+
 func schemaFromContext(c *gin.Context) string {
 	schemaNameVal, _ := c.Get("schema")
 	schemaName, _ := schemaNameVal.(string)
@@ -51,7 +65,7 @@ func userFromContext(c *gin.Context) string {
 	return userID
 }
 
-// @Summary      List the unique keys of a table
+// @Summary      List the unique keys or check constraints of a table
 // @Tags         Table Constraints
 // @Produce      json
 // @Param        model_id  query     string  true   "Table (model) ID"
@@ -77,8 +91,8 @@ func (h *TableConstraintHandler) GetTableConstraints(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableConstraintSuccess.ConstraintsFetched, constraints)
 }
 
-// @Summary      Check records against a unique key
-// @Description  Reports records that already repeat values in the columns. Nothing is changed.
+// @Summary      Check records against a unique key or check condition
+// @Description  Unique key: reports records that already repeat values. Check: Postgres validates the condition and counts records that break it. Nothing is changed.
 // @Tags         Table Constraints
 // @Accept       json
 // @Produce      json
@@ -93,6 +107,9 @@ func (h *TableConstraintHandler) CheckTableConstraint(c *gin.Context) {
 		response.CheckAndSendError(c, err)
 		return
 	}
+	if !validateConstraintBody(c, req.Type, req.ColumnIDs, req.Condition) {
+		return
+	}
 
 	result, err := h.constraintService.Check(c, schemaFromContext(c), req)
 	if err != nil {
@@ -103,8 +120,8 @@ func (h *TableConstraintHandler) CheckTableConstraint(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableConstraintSuccess.ConstraintChecked, result)
 }
 
-// @Summary      Add a unique key to a table
-// @Description  Adds a UNIQUE constraint on one or more columns. Fails when records already repeat values.
+// @Summary      Add a unique key or check constraint to a table
+// @Description  Adds a UNIQUE constraint on columns, or a CHECK constraint with a condition. Fails when existing records break it.
 // @Tags         Table Constraints
 // @Accept       json
 // @Produce      json
@@ -118,6 +135,9 @@ func (h *TableConstraintHandler) CreateTableConstraint(c *gin.Context) {
 	var req dto.CreateTableConstraintRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.CheckAndSendError(c, err)
+		return
+	}
+	if !validateConstraintBody(c, req.Type, req.ColumnIDs, req.Condition) {
 		return
 	}
 
@@ -136,8 +156,8 @@ func (h *TableConstraintHandler) CreateTableConstraint(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableConstraintSuccess.ConstraintCreated, constraint)
 }
 
-// @Summary      Update a unique key
-// @Description  Saves the name and message. When the columns change, the key is replaced in Postgres.
+// @Summary      Update a unique key or check constraint
+// @Description  Saves the name. When the columns or condition change, the constraint is replaced in Postgres.
 // @Tags         Table Constraints
 // @Accept       json
 // @Produce      json
@@ -151,6 +171,11 @@ func (h *TableConstraintHandler) UpdateTableConstraint(c *gin.Context) {
 	var req dto.UpdateTableConstraintRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.CheckAndSendError(c, err)
+		return
+	}
+	// The type is stored, so the service checks the body against it; here at least one part is needed
+	if len(req.ColumnIDs) == 0 && strings.TrimSpace(req.Condition) == "" {
+		response.SendError(c, responseConst.Error.ValidationFailed)
 		return
 	}
 
@@ -169,7 +194,7 @@ func (h *TableConstraintHandler) UpdateTableConstraint(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableConstraintSuccess.ConstraintUpdated, constraint)
 }
 
-// @Summary      Delete a unique key
+// @Summary      Delete a unique key or check constraint
 // @Description  Drops the constraint from the table; records may repeat the values again.
 // @Tags         Table Constraints
 // @Produce      json
