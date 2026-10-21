@@ -63,7 +63,7 @@ func (s *tableConstraintService) List(ctx context.Context, schemaName, modelID, 
 	if err != nil {
 		return nil, err
 	}
-	installed, err := s.installedConstraints(tableIdentifier(schemaName, model.Alias))
+	installed, err := s.installedConstraints(ctx, tableIdentifier(schemaName, model.Alias))
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *tableConstraintService) Check(ctx context.Context, schemaName string, r
 	if err != nil {
 		return dto.ConstraintCheckResult{}, err
 	}
-	found, err := s.hasDuplicates(tableIdentifier(schemaName, model.Alias), keyColumns)
+	found, err := s.hasDuplicates(ctx, tableIdentifier(schemaName, model.Alias), keyColumns)
 	if err != nil {
 		return dto.ConstraintCheckResult{}, err
 	}
@@ -117,14 +117,14 @@ func (s *tableConstraintService) Create(ctx context.Context, schemaName string, 
 	}
 
 	table := tableIdentifier(schemaName, model.Alias)
-	if err := s.ensureNoDuplicates(table, keyColumns); err != nil {
+	if err := s.ensureNoDuplicates(ctx, table, keyColumns); err != nil {
 		return dto.TableConstraintResponse{}, err
 	}
 
 	id := uuid.New()
 	name := constraintName(model.Alias, id)
-	if err := s.exec(duplicateMessage(keyColumns), addUniqueSQL(table, name, keyColumns)); err != nil {
-		return dto.TableConstraintResponse{}, err
+	if _, err := s.repo.SchemaService.AddUniqueConstraint(ctx, table, dbModels.AddUniqueConstraintRequest{Name: name, Columns: columnNames(keyColumns)}); err != nil {
+		return dto.TableConstraintResponse{}, constraintError(duplicateMessage(keyColumns), err)
 	}
 
 	saved, err := s.repo.TableService.CreateRecord(tenant.TableConstraint{}.TableName(schemaName), map[string]interface{}{
@@ -138,7 +138,7 @@ func (s *tableConstraintService) Create(ctx context.Context, schemaName string, 
 		"last_modified_by": req.CreatedBy,
 	})
 	if err != nil {
-		if _, dropErr := s.repo.DB.Exec(dropConstraintSQL(table, name)); dropErr != nil {
+		if dropErr := s.repo.SchemaService.DropConstraint(ctx, table, name); dropErr != nil {
 			logger.Get().Error().Err(dropErr).Str("constraint", name).Msg("failed to drop unique key after save failed")
 		}
 		return dto.TableConstraintResponse{}, app_errors.LogDatabaseError(err, "failed to create table constraint")
@@ -176,11 +176,12 @@ func (s *tableConstraintService) Update(ctx context.Context, schemaName, id stri
 		if err := s.ensureNoSameKey(schemaName, existing.ModelID, id, req.ColumnIDs); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
-		if err := s.ensureNoDuplicates(table, keyColumns); err != nil {
+		if err := s.ensureNoDuplicates(ctx, table, keyColumns); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
-		if err := s.exec(duplicateMessage(keyColumns), dropConstraintSQL(table, existing.ConstraintName), addUniqueSQL(table, existing.ConstraintName, keyColumns)); err != nil {
-			return dto.TableConstraintResponse{}, err
+		// Drop and re-add in one transaction, so a failure keeps the old key
+		if err := s.repo.SchemaService.ApplySQL(ctx, dropConstraintSQL(table, existing.ConstraintName), addUniqueSQL(table, existing.ConstraintName, keyColumns)); err != nil {
+			return dto.TableConstraintResponse{}, constraintError(duplicateMessage(keyColumns), err)
 		}
 	}
 
@@ -211,8 +212,8 @@ func (s *tableConstraintService) Delete(ctx context.Context, schemaName, id stri
 	if err != nil {
 		return err
 	}
-	if err := s.exec("", dropConstraintSQL(tableIdentifier(schemaName, model.Alias), existing.ConstraintName)); err != nil {
-		return err
+	if err := s.repo.SchemaService.DropConstraint(ctx, tableIdentifier(schemaName, model.Alias), existing.ConstraintName); err != nil {
+		return constraintError("", err)
 	}
 	if err := s.repo.TableService.DeleteRecord(tenant.TableConstraint{}.TableName(schemaName), id); err != nil {
 		return app_errors.LogDatabaseError(err, "failed to delete table constraint")
@@ -291,8 +292,8 @@ func ensureNoDefaultConflict(columns []tenant.Column) error {
 }
 
 // ensureNoDuplicates fails when existing records already repeat values in the columns
-func (s *tableConstraintService) ensureNoDuplicates(table string, columns []tenant.Column) error {
-	found, err := s.hasDuplicates(table, columns)
+func (s *tableConstraintService) ensureNoDuplicates(ctx context.Context, table string, columns []tenant.Column) error {
+	found, err := s.hasDuplicates(ctx, table, columns)
 	if err != nil {
 		return err
 	}
@@ -304,20 +305,12 @@ func (s *tableConstraintService) ensureNoDuplicates(table string, columns []tena
 
 // hasDuplicates reports whether two records share the same values in the columns. Rows with an
 // empty value in any column never conflict, so they are skipped.
-func (s *tableConstraintService) hasDuplicates(table string, columns []tenant.Column) (bool, error) {
-	names := make([]string, len(columns))
-	notNull := make([]string, len(columns))
-	for i, c := range columns {
-		names[i] = pq.QuoteIdentifier(c.ColumnName)
-		notNull[i] = names[i] + " IS NOT NULL"
-	}
-	query := fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s WHERE %s GROUP BY %s HAVING count(*) > 1)",
-		table, strings.Join(notNull, " AND "), strings.Join(names, ", "))
-	var found bool
-	if err := s.repo.DB.QueryRow(query).Scan(&found); err != nil {
+func (s *tableConstraintService) hasDuplicates(ctx context.Context, table string, columns []tenant.Column) (bool, error) {
+	groups, err := s.repo.SchemaService.FindDuplicateRows(ctx, table, columnNames(columns), dbModels.PreCheckOptions{Limit: 1})
+	if err != nil {
 		return false, app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
 	}
-	return found, nil
+	return len(groups) > 0, nil
 }
 
 // duplicateMessage names the columns whose values repeat, e.g.
@@ -335,45 +328,33 @@ func duplicateMessage(columns []tenant.Column) string {
 }
 
 // installedConstraints returns the names of the unique and primary keys Postgres has on the table
-func (s *tableConstraintService) installedConstraints(table string) (map[string]bool, error) {
-	rows, err := s.repo.DB.Query(`SELECT conname FROM pg_constraint WHERE conrelid = $1::regclass AND contype IN ('u', 'p')`, table)
+func (s *tableConstraintService) installedConstraints(ctx context.Context, table string) (map[string]bool, error) {
+	key, err := s.repo.SchemaService.GetPrimaryKey(ctx, table)
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to read table constraints")
 	}
-	defer rows.Close()
-
-	names := map[string]bool{}
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, app_errors.LogDatabaseError(err, "failed to read table constraints")
-		}
-		names[name] = true
+	uniques, err := s.repo.SchemaService.ListUniqueConstraints(ctx, table)
+	if err != nil {
+		return nil, app_errors.LogDatabaseError(err, "failed to read table constraints")
 	}
-	return names, rows.Err()
+	names := map[string]bool{}
+	if key.Name != "" {
+		names[key.Name] = true
+	}
+	for _, u := range uniques {
+		names[u.Name] = true
+	}
+	return names, nil
 }
 
-// exec runs the statements in one transaction. A duplicate found by Postgres (records added
+// constraintError reports a failed change to a unique key. A duplicate found by Postgres (records added
 // since the check) is reported with onDuplicate; other failures carry Postgres' message.
-func (s *tableConstraintService) exec(onDuplicate string, statements ...string) error {
-	tx, err := s.repo.DB.Begin()
-	if err != nil {
-		return app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
+func constraintError(onDuplicate string, err error) error {
+	logger.Get().Error().Err(err).Msg("failed to apply table constraint")
+	if _, _, duplicate := app_errors.UniqueViolation(err); duplicate {
+		return app_errors.WithMessage(app_errors.ConstraintDuplicateValues, onDuplicate)
 	}
-	for _, stmt := range statements {
-		if _, err := tx.Exec(stmt); err != nil {
-			_ = tx.Rollback()
-			logger.Get().Error().Err(err).Str("query", stmt).Msg("failed to apply table constraint")
-			if _, _, duplicate := app_errors.UniqueViolation(err); duplicate {
-				return app_errors.WithMessage(app_errors.ConstraintDuplicateValues, onDuplicate)
-			}
-			return app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
-	}
-	return nil
+	return app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
 }
 
 func (s *tableConstraintService) getByID(schemaName, id string) (tenant.TableConstraint, error) {
@@ -419,10 +400,18 @@ func constraintName(alias string, id uuid.UUID) string {
 	return "uq_" + alias + "_" + strings.ReplaceAll(id.String(), "-", "")[:8]
 }
 
-func addUniqueSQL(table, name string, columns []tenant.Column) string {
+func columnNames(columns []tenant.Column) []string {
 	names := make([]string, len(columns))
 	for i, c := range columns {
-		names[i] = pq.QuoteIdentifier(c.ColumnName)
+		names[i] = c.ColumnName
+	}
+	return names
+}
+
+func addUniqueSQL(table, name string, columns []tenant.Column) string {
+	names := columnNames(columns)
+	for i := range names {
+		names[i] = pq.QuoteIdentifier(names[i])
 	}
 	return fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s)", table, pq.QuoteIdentifier(name), strings.Join(names, ", "))
 }

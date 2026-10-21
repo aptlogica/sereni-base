@@ -23,7 +23,6 @@ import (
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
-	"github.com/lib/pq"
 )
 
 // keyDetailRegexp reads Postgres' unique violation detail: Key (code, dept)=(HR, IN) already exists.
@@ -152,12 +151,8 @@ func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Mo
 // keyWriteError turns a Postgres key violation from a write to a user table into an exact error; other errors
 // become the usual database error
 func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, alias string, err error, msg string) error {
-	var pqErr *pq.Error
-	var violation *app_errors.KeyViolation
-	switch {
-	case errors.As(err, &violation):
-		pqErr = violation.Postgres
-	case !errors.As(err, &pqErr):
+	pqErr, ok := postgresWriteError(err)
+	if !ok {
 		var apiErr *app_errors.APIError
 		if errors.As(err, &apiErr) {
 			return err
@@ -179,20 +174,32 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 		return app_errors.LogDatabaseError(err, msg)
 	}
 
-	model, modelErr := s.modelByAlias(schemaName, alias)
-	var fields []keyField
-	if modelErr == nil {
-		fields = s.keyFields(ctx, schemaName, model, keyCols)
-	} else {
-		for _, c := range keyCols {
-			fields = append(fields, keyField{Column: c, Title: c})
-		}
-	}
-
+	fields := s.keyFieldsByAlias(ctx, schemaName, alias, keyCols)
 	if pqErr.Code == "23502" {
 		return keyEmptyError(fieldTitle(fields, pqErr.Column), fields)
 	}
 	return keyDuplicateFromDetail(fields, pqErr.Detail)
+}
+
+// postgresWriteError returns the Postgres error behind a write error, if there is one
+func postgresWriteError(err error) (*dbModels.DBError, bool) {
+	var violation *app_errors.KeyViolation
+	if errors.As(err, &violation) {
+		return violation.Postgres, true
+	}
+	return app_errors.DBError(err)
+}
+
+// keyFieldsByAlias returns the key columns of a table with their titles; column names when the table is not found
+func (s tableManagementService) keyFieldsByAlias(ctx context.Context, schemaName, alias string, keyCols []string) []keyField {
+	if model, err := s.modelByAlias(schemaName, alias); err == nil {
+		return s.keyFields(ctx, schemaName, model, keyCols)
+	}
+	fields := make([]keyField, 0, len(keyCols))
+	for _, c := range keyCols {
+		fields = append(fields, keyField{Column: c, Title: c})
+	}
+	return fields
 }
 
 // keyDuplicateFromDetail builds the duplicate key error from the detail Postgres gives, e.g. Key (a, b)=(1, 2) already exists
@@ -218,7 +225,7 @@ func keyDuplicateFromDetail(fields []keyField, detail string) error {
 
 // isUniqueKeyViolation tells a duplicate rejected by a unique key from one rejected by the primary key: the
 // constraint is a unique key of the table, or Postgres' detail names columns other than the key columns
-func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *pq.Error, keyCols []string) bool {
+func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *dbModels.DBError, keyCols []string) bool {
 	if pqErr.Constraint != "" && s.constraintByName(schemaName, pqErr.Constraint) != nil {
 		return true
 	}
