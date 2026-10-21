@@ -80,7 +80,7 @@ func (s *automationService) Create(ctx context.Context, schemaName string, req d
 	if err != nil {
 		return tenant.Automation{}, err
 	}
-	if err := s.execInTx(sql, label); err != nil {
+	if err := s.apply(ctx, sql, label); err != nil {
 		return tenant.Automation{}, err
 	}
 
@@ -98,9 +98,9 @@ func (s *automationService) Create(ctx context.Context, schemaName string, req d
 	if err != nil {
 		switch automation.Type {
 		case tenant.AutomationTypeTrigger:
-			s.dropTrigger(query, model.Alias)
+			s.dropTrigger(ctx, query, model.Alias)
 		case tenant.AutomationTypeFunction:
-			s.dropFunction(query)
+			s.dropFunction(ctx, query)
 		}
 		return tenant.Automation{}, app_errors.LogDatabaseError(err, "failed to create automation")
 	}
@@ -137,7 +137,7 @@ func (s *automationService) Update(ctx context.Context, schemaName, id string, r
 		return tenant.Automation{}, err
 	}
 	// Entries saved before labels existed: label what is installed now, while the saved query still names it
-	s.ensureLabel(automation, model.Alias)
+	s.ensureLabel(ctx, automation, model.Alias)
 
 	updated, err := s.repo.TableService.UpdateRecord(tenant.Automation{}.TableName(schemaName), id, map[string]interface{}{
 		"title":              req.Title,
@@ -203,7 +203,7 @@ func (s *automationService) Run(ctx context.Context, schemaName, id string) (ten
 	if len(statements) == 0 {
 		return automation, nil
 	}
-	if err := s.execInTx(statements...); err != nil {
+	if err := s.apply(ctx, statements...); err != nil {
 		return tenant.Automation{}, err
 	}
 	return automation, nil
@@ -245,7 +245,7 @@ func (s *automationService) Validate(ctx context.Context, schemaName string, req
 			return dto.AutomationValidationResult{}, err
 		}
 	}
-	return s.tryInTx(statements...)
+	return s.try(ctx, statements...)
 }
 
 // replaceStatements returns the statements that replace the trigger or function installed for the
@@ -257,7 +257,7 @@ func (s *automationService) replaceStatements(automation tenant.Automation, quer
 		if err != nil {
 			return nil, err
 		}
-		return []string{fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", triggerName, table), sql, label}, nil
+		return []string{dropTriggerSQL(triggerName, table), sql, label}, nil
 	case tenant.AutomationTypeFunction:
 		oldName, err := s.findFunctionInPostgres(automation)
 		if err != nil {
@@ -269,7 +269,7 @@ func (s *automationService) replaceStatements(automation tenant.Automation, quer
 			return []string{createFunctionRegexp.ReplaceAllString(sql, "CREATE OR REPLACE FUNCTION"), label}, nil
 		}
 		// Renamed: Postgres refuses to drop the old one while a trigger still uses it
-		return []string{sql, fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", oldName), label}, nil
+		return []string{sql, dropFunctionSQL(oldName), label}, nil
 	}
 	return nil, nil
 }
@@ -290,7 +290,7 @@ func (s *automationService) Delete(ctx context.Context, schemaName, id string) e
 	}
 
 	if automation.Type == tenant.AutomationTypeFunction {
-		if err := s.removeFunctionFromPostgres(schemaName, automation); err != nil {
+		if err := s.removeFunctionFromPostgres(ctx, schemaName, automation); err != nil {
 			return err
 		}
 	}
@@ -308,7 +308,7 @@ func (s *automationService) Delete(ctx context.Context, schemaName, id string) e
 }
 
 // removeFunctionFromPostgres drops the Postgres function of a function entry being deleted
-func (s *automationService) removeFunctionFromPostgres(schemaName string, automation tenant.Automation) error {
+func (s *automationService) removeFunctionFromPostgres(ctx context.Context, schemaName string, automation tenant.Automation) error {
 	shared, err := s.functionSavedElsewhere(schemaName, automation)
 	if err != nil {
 		return err
@@ -321,11 +321,7 @@ func (s *automationService) removeFunctionFromPostgres(schemaName string, automa
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
-		logger.Get().Error().Err(err).Str("function", functionName).Msg("failed to drop function")
-		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
-	}
-	return nil
+	return s.apply(ctx, dropFunctionSQL(functionName))
 }
 
 // removeTriggerFromPostgres drops the Postgres trigger of a trigger entry being deleted
@@ -338,21 +334,18 @@ func (s *automationService) removeTriggerFromPostgres(ctx context.Context, schem
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", triggerName, table)); err != nil {
-		logger.Get().Error().Err(err).Msg("failed to drop trigger")
-		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+	if err := s.apply(ctx, dropTriggerSQL(triggerName, table)); err != nil {
+		return err
 	}
 	// Triggers saved with their own function (before functions had their own tab) drop it too
 	if _, functionName, _, _ := splitTriggerContext(automation.Context); functionName != "" {
-		if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
-			logger.Get().Warn().Err(err).Str("function", functionName).Msg("trigger function not dropped")
-		}
+		s.dropFunctionIfUnused(ctx, functionName)
 	}
 	return nil
 }
 
 // dropTrigger drops the trigger in context and, for triggers saved with their own function, that function
-func (s *automationService) dropTrigger(query, tableAlias string) error {
+func (s *automationService) dropTrigger(ctx context.Context, query, tableAlias string) error {
 	_, functionName, triggerSQL, err := splitTriggerContext(query)
 	if err != nil {
 		return err
@@ -361,30 +354,39 @@ func (s *automationService) dropTrigger(query, tableAlias string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", name, table)); err != nil {
-		logger.Get().Error().Err(err).Msg("failed to drop trigger")
-		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+	if err := s.apply(ctx, dropTriggerSQL(name, table)); err != nil {
+		return err
 	}
 	if functionName != "" {
-		// Kept when another trigger still uses it
-		if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
-			logger.Get().Warn().Err(err).Str("function", functionName).Msg("trigger function not dropped")
-		}
+		s.dropFunctionIfUnused(ctx, functionName)
 	}
 	return nil
 }
 
+// dropFunctionIfUnused drops a trigger's own function; it is kept when another trigger still uses it
+func (s *automationService) dropFunctionIfUnused(ctx context.Context, functionName string) {
+	if err := s.repo.SchemaService.ApplySQL(ctx, dropFunctionSQL(functionName)); err != nil {
+		logger.Get().Warn().Err(err).Str("function", functionName).Msg("trigger function not dropped")
+	}
+}
+
 // dropFunction drops the function in context; it fails while a trigger still uses it
-func (s *automationService) dropFunction(query string) error {
+func (s *automationService) dropFunction(ctx context.Context, query string) error {
 	_, functionName, _, err := splitTriggerContext(query)
 	if err != nil || functionName == "" {
 		return app_errors.InvalidFunctionQuery
 	}
-	if _, err := s.repo.DB.Exec(fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", functionName)); err != nil {
-		logger.Get().Error().Err(err).Str("function", functionName).Msg("failed to drop function")
-		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
-	}
-	return nil
+	return s.apply(ctx, dropFunctionSQL(functionName))
+}
+
+// The names come from the saved query or from Postgres (quote_ident), so they are used as written: the
+// library's DropTrigger and DropFunction quote them, which would miss names Postgres folded to lower case
+func dropTriggerSQL(name, table string) string {
+	return fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s", name, table)
+}
+
+func dropFunctionSQL(name string) string {
+	return fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", name)
 }
 
 // functionSavedElsewhere reports whether another function entry defines the same Postgres function
@@ -488,7 +490,7 @@ func (s *automationService) findFunctionInPostgres(automation tenant.Automation)
 
 // ensureLabel labels the trigger or function an entry installed before labels existed.
 // It runs before the saved query changes, while that query still names what is installed.
-func (s *automationService) ensureLabel(automation tenant.Automation, tableAlias string) {
+func (s *automationService) ensureLabel(ctx context.Context, automation tenant.Automation, tableAlias string) {
 	switch automation.Type {
 	case tenant.AutomationTypeTrigger:
 		_, _, triggerSQL, err := splitTriggerContext(automation.Context)
@@ -513,7 +515,7 @@ func (s *automationService) ensureLabel(automation tenant.Automation, tableAlias
 	if err != nil {
 		return
 	}
-	if _, err := s.repo.DB.Exec(label); err != nil {
+	if err := s.repo.SchemaService.ApplySQL(ctx, label); err != nil {
 		logger.Get().Warn().Err(err).Str("automation", automation.ID.String()).Msg("could not label installed trigger or function")
 	}
 }
@@ -598,44 +600,45 @@ func prepareQuery(automationType, query, tableAlias string) (string, error) {
 	return "", nil
 }
 
-func (s *automationService) execInTx(statements ...string) error {
-	tx, err := s.repo.DB.Begin()
-	if err != nil {
-		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+// apply runs the statements in one transaction; on failure nothing is kept and the error carries Postgres' message
+func (s *automationService) apply(ctx context.Context, statements ...string) error {
+	statements = nonEmpty(statements)
+	if len(statements) == 0 {
+		return nil
 	}
-	for _, stmt := range statements {
-		if stmt == "" {
-			continue
-		}
-		if _, err := tx.Exec(stmt); err != nil {
-			_ = tx.Rollback()
-			logger.Get().Error().Err(err).Msg("failed to run trigger query")
-			return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+	if err := s.repo.SchemaService.ApplySQL(ctx, statements...); err != nil {
+		logger.Get().Error().Err(err).Msg("failed to run trigger query")
+		return fmt.Errorf("%w: %s", app_errors.TriggerFailed, app_errors.PostgresMessage(err))
 	}
 	return nil
 }
 
-// tryInTx runs the statements and always rolls back. A statement Postgres rejects makes the
-// result not valid, with Postgres' message; failing to start the transaction is an error.
-func (s *automationService) tryInTx(statements ...string) (dto.AutomationValidationResult, error) {
-	tx, err := s.repo.DB.Begin()
-	if err != nil {
-		return dto.AutomationValidationResult{}, fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+// try runs the statements and always rolls back. A statement Postgres rejects makes the
+// result not valid, with Postgres' message; any other failure is an error.
+func (s *automationService) try(ctx context.Context, statements ...string) (dto.AutomationValidationResult, error) {
+	statements = nonEmpty(statements)
+	if len(statements) == 0 {
+		return dto.AutomationValidationResult{Valid: true}, nil
 	}
-	defer func() { _ = tx.Rollback() }()
+	err := s.repo.SchemaService.ValidateSQL(ctx, statements...)
+	if err == nil {
+		return dto.AutomationValidationResult{Valid: true}, nil
+	}
+	if _, rejected := app_errors.DBError(err); rejected {
+		return dto.AutomationValidationResult{Valid: false, Message: app_errors.PostgresMessage(err)}, nil
+	}
+	return dto.AutomationValidationResult{}, fmt.Errorf("%w: %v", app_errors.TriggerFailed, err)
+}
+
+// nonEmpty drops the empty statements (a webhook has no label)
+func nonEmpty(statements []string) []string {
+	out := make([]string, 0, len(statements))
 	for _, stmt := range statements {
-		if stmt == "" {
-			continue
-		}
-		if _, err := tx.Exec(stmt); err != nil {
-			return dto.AutomationValidationResult{Valid: false, Message: app_errors.PostgresMessage(err)}, nil
+		if stmt != "" {
+			out = append(out, stmt)
 		}
 	}
-	return dto.AutomationValidationResult{Valid: true}, nil
+	return out
 }
 
 func (s *automationService) fetch(schemaName string, params dbModels.QueryParams) ([]tenant.Automation, error) {

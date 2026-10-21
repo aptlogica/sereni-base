@@ -23,7 +23,6 @@ import (
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
-	"github.com/lib/pq"
 )
 
 // keyDetailRegexp reads Postgres' unique violation detail: Key (code, dept)=(HR, IN) already exists.
@@ -152,12 +151,13 @@ func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Mo
 // keyWriteError turns a Postgres key violation from a write to a user table into an exact error; other errors
 // become the usual database error
 func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, alias string, err error, msg string) error {
-	var pqErr *pq.Error
+	var pqErr *dbModels.DBError
 	var violation *app_errors.KeyViolation
-	switch {
-	case errors.As(err, &violation):
+	if errors.As(err, &violation) {
 		pqErr = violation.Postgres
-	case !errors.As(err, &pqErr):
+	} else if dbErr, ok := app_errors.DBError(err); ok {
+		pqErr = dbErr
+	} else {
 		var apiErr *app_errors.APIError
 		if errors.As(err, &apiErr) {
 			return err
@@ -218,7 +218,7 @@ func keyDuplicateFromDetail(fields []keyField, detail string) error {
 
 // isUniqueKeyViolation tells a duplicate rejected by a unique key from one rejected by the primary key: the
 // constraint is a unique key of the table, or Postgres' detail names columns other than the key columns
-func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *pq.Error, keyCols []string) bool {
+func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *dbModels.DBError, keyCols []string) bool {
 	if pqErr.Constraint != "" && s.constraintByName(schemaName, pqErr.Constraint) != nil {
 		return true
 	}

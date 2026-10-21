@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"testing"
 
@@ -79,7 +80,7 @@ func newConstraintFixtureFor(t *testing.T, alias string) *constraintFixture {
 	columns.On("GetColumnByModelID", constraintSchema, "m1").
 		Return([]tenant.Column{idCol, titleCol, emailCol, codeCol, linkCol, goneCol}, nil).Maybe()
 
-	repo := &pkg.DatabaseService{TableService: table, DB: db}
+	repo := &pkg.DatabaseService{TableService: table, DB: db, SchemaService: newSchemaService(db)}
 	return &constraintFixture{svc: services.NewTableConstraintService(repo, models, columns), table: table, columns: columns, sql: sqlMock}
 }
 
@@ -107,19 +108,25 @@ func (f *constraintFixture) expectNoOtherKeys() {
 	f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byModel)).Return([]map[string]interface{}{}, nil).Once()
 }
 
-// expectDuplicates answers the duplicate check
-func (f *constraintFixture) expectDuplicates(found bool) {
-	f.sql.ExpectQuery(`^SELECT EXISTS \(SELECT 1 FROM "tenant_1"\.`).
-		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(found))
+// expectDuplicates answers the duplicate check with one repeated combination of the key columns
+func (f *constraintFixture) expectDuplicates(cols ...string) {
+	values := make([]driver.Value, 0, len(cols)+1)
+	for range cols {
+		values = append(values, "x")
+	}
+	f.sql.ExpectQuery(`^SELECT .*COUNT\(\*\) FROM "tenant_1"\.`).
+		WillReturnRows(sqlmock.NewRows(append(cols, "count")).AddRow(append(values, int64(2))...))
 }
 
-func (f *constraintFixture) expectNoDuplicates() { f.expectDuplicates(false) }
+func (f *constraintFixture) expectNoDuplicates() {
+	f.sql.ExpectQuery(`^SELECT .*COUNT\(\*\) FROM "tenant_1"\.`).WillReturnRows(sqlmock.NewRows([]string{"count"}))
+}
 
 func TestTableConstraintService_Check(t *testing.T) {
 	t.Run("names the column whose values repeat", func(t *testing.T) {
 		f := newConstraintFixture(t)
-		f.sql.ExpectQuery(`^SELECT EXISTS \(SELECT 1 FROM "tenant_1"\."employee" WHERE "email" IS NOT NULL GROUP BY "email" HAVING count\(\*\) > 1\)$`).
-			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		f.sql.ExpectQuery(`^SELECT "email", COUNT\(\*\) FROM "tenant_1"\."employee" WHERE "email" IS NOT NULL GROUP BY "email" HAVING COUNT\(\*\) > 1 ORDER BY COUNT\(\*\) DESC LIMIT \$1$`).
+			WithArgs(1).WillReturnRows(sqlmock.NewRows([]string{"email", "count"}).AddRow("a@x.com", int64(2)))
 
 		result, err := f.svc.Check(context.Background(), constraintSchema, dto.CheckTableConstraintRequest{ModelID: "m1", ColumnIDs: []string{emailCol.ID.String()}})
 
@@ -130,7 +137,7 @@ func TestTableConstraintService_Check(t *testing.T) {
 	t.Run("names all columns of a combined key", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.sql.ExpectQuery(`WHERE "email" IS NOT NULL AND "emp_code" IS NOT NULL GROUP BY "email", "emp_code"`).
-			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+			WillReturnRows(sqlmock.NewRows([]string{"email", "emp_code", "count"}).AddRow("a@x.com", "E1", int64(2)))
 
 		result, err := f.svc.Check(context.Background(), constraintSchema, dto.CheckTableConstraintRequest{
 			ModelID: "m1", ColumnIDs: []string{emailCol.ID.String(), codeCol.ID.String()},
@@ -204,10 +211,8 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`^ALTER TABLE "tenant_1"\."employee" ADD CONSTRAINT "uq_employee_[0-9a-f]{8}" UNIQUE \("emp_code", "email"\)$`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 
 		var stored map[string]interface{}
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).
@@ -243,7 +248,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 	t.Run("refuses while records repeat the values", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.expectNoOtherKeys()
-		f.expectDuplicates(true)
+		f.expectDuplicates("emp_code", "email")
 
 		_, err := f.svc.Create(context.Background(), constraintSchema, request)
 		assert.ErrorIs(t, err, app_errors.ConstraintDuplicateValues)
@@ -254,9 +259,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec("ADD CONSTRAINT").WillReturnError(&pq.Error{Code: "23505", Message: "could not create unique index"})
-		f.sql.ExpectRollback()
 
 		_, err := f.svc.Create(context.Background(), constraintSchema, request)
 		assert.ErrorIs(t, err, app_errors.ConstraintDuplicateValues)
@@ -266,9 +269,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec("ADD CONSTRAINT").WillReturnError(&pq.Error{Code: "54000", Message: "index row size exceeds maximum"})
-		f.sql.ExpectRollback()
 
 		_, err := f.svc.Create(context.Background(), constraintSchema, request)
 		assert.ErrorIs(t, err, app_errors.ConstraintFailed)
@@ -279,9 +280,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec("ADD CONSTRAINT").WillReturnError(&pq.Error{Code: "54011", Message: "cannot use more than 32 columns in an index"})
-		f.sql.ExpectRollback()
 
 		_, err := f.svc.Create(context.Background(), constraintSchema, request)
 		assert.ErrorIs(t, err, app_errors.ConstraintFailed)
@@ -294,9 +293,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec("ADD CONSTRAINT").WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 		f.sql.ExpectExec(`^ALTER TABLE "tenant_1"\."employee" DROP CONSTRAINT IF EXISTS "uq_employee_[0-9a-f]{8}"$`).WillReturnResult(sqlmock.NewResult(0, 0))
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).Return(nil, errors.New("db down"))
 
@@ -309,9 +306,7 @@ func TestTableConstraintService_Create(t *testing.T) {
 		f := newConstraintFixtureFor(t, long)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec("ADD CONSTRAINT").WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 
 		name := ""
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).
@@ -377,9 +372,7 @@ func TestTableConstraintService_Delete(t *testing.T) {
 	t.Run("drops the key in Postgres and removes it", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`DROP CONSTRAINT IF EXISTS "` + constraintPGName + `"`).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 		f.table.On("DeleteRecord", constraintsTable, constraintID).Return(nil)
 
 		require.NoError(t, f.svc.Delete(context.Background(), constraintSchema, constraintID))
@@ -388,9 +381,7 @@ func TestTableConstraintService_Delete(t *testing.T) {
 	t.Run("keeps the entry when Postgres can't drop the key", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()})}, nil)
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec("DROP CONSTRAINT").WillReturnError(&pq.Error{Message: "constraint is referenced by a foreign key"})
-		f.sql.ExpectRollback()
 
 		err := f.svc.Delete(context.Background(), constraintSchema, constraintID)
 		assert.ErrorIs(t, err, app_errors.ConstraintFailed)
@@ -412,8 +403,10 @@ func TestTableConstraintService_List(t *testing.T) {
 		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(func(p dbModels.QueryParams) bool {
 			return len(p.Filters) == 2 && p.Filters[1].Column == "type" && p.Filters[1].Value == "unique" && p.OrderBy[0] == "created_time DESC"
 		})).Return([]map[string]interface{}{savedKey(constraintID, []string{emailCol.ID.String()}), missing}, nil)
-		f.sql.ExpectQuery(`FROM pg_constraint WHERE conrelid = \$1::regclass`).WithArgs(employeeTable).
-			WillReturnRows(sqlmock.NewRows([]string{"conname"}).AddRow(constraintPGName).AddRow("employee_pkey"))
+		f.sql.ExpectQuery(`contype = \$2`).WithArgs(employeeTable, "p").
+			WillReturnRows(sqlmock.NewRows([]string{"conname", "columns"}).AddRow("employee_pkey", "{id}"))
+		f.sql.ExpectQuery(`contype = \$2`).WithArgs(employeeTable, "u").
+			WillReturnRows(sqlmock.NewRows([]string{"conname", "columns"}).AddRow(constraintPGName, "{email}"))
 
 		out, err := f.svc.List(context.Background(), constraintSchema, "m1", "unique")
 
@@ -490,9 +483,7 @@ func TestTableConstraintService_DefaultValueConflict(t *testing.T) {
 		f.withDefaults(withDefault(emailCol, "a@b.c"), codeCol)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`ADD CONSTRAINT`).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).
 			Return(savedKey(constraintID, []string{emailCol.ID.String(), codeCol.ID.String()}), nil)
 
@@ -507,9 +498,7 @@ func TestTableConstraintService_DefaultValueConflict(t *testing.T) {
 		f.withDefaults(withDefault(emailCol, "  "), codeCol)
 		f.expectNoOtherKeys()
 		f.expectNoDuplicates()
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`ADD CONSTRAINT`).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 		f.table.On("CreateRecord", constraintsTable, mock.Anything).
 			Return(savedKey(constraintID, []string{emailCol.ID.String()}), nil)
 
