@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -638,6 +639,15 @@ func (s tableManagementService) AddColumn(
 		return dto.ColumnResponse{}, err
 	}
 
+	idCfg, err := ValidateIDGeneration(columnData.UIDT, meta)
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+	if columnData.UIDT == constant.UIDTUUID {
+		// Store the settings with their defaults, so readers don't have to guess
+		meta[constant.MetaIDGenerationKey] = idCfg
+	}
+
 	now := time.Now().UTC()
 	ColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
@@ -676,6 +686,15 @@ func (s tableManagementService) AddColumn(
 
 	if _, hasDefault := meta[metaDefaultValueKey]; hasDefault {
 		if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, meta); err != nil {
+			s.rollbackLinkColumn(ctx, schemaName, column, model.Alias)
+			return dto.ColumnResponse{}, err
+		}
+	}
+
+	// A new auto uuid field gets a value in every existing record
+	if idCfg.Mode == constant.IDModeAuto {
+		col := AutoUUIDColumn{ColumnName: column.ColumnName, Version: idCfg.Version}
+		if _, err := s.backfillUUIDs(ctx, schemaName, model.Alias, col); err != nil {
 			s.rollbackLinkColumn(ctx, schemaName, column, model.Alias)
 			return dto.ColumnResponse{}, err
 		}
@@ -1600,6 +1619,11 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
+	idCfg, startsAuto, err := s.prepareIDGeneration(columnData, &req)
+	if err != nil {
+		return tenant.Column{}, err
+	}
+
 	if req.UIDT != nil && *req.UIDT != "" {
 		dt, _ := s.getDataBaseType(*req.UIDT)
 		req.DT = helpers.StringPtr(dt)
@@ -1624,7 +1648,75 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
+	if startsAuto {
+		if err := s.fillOnAutoStart(ctx, schemaName, id, columnData, column, idCfg, req.Backfill); err != nil {
+			return tenant.Column{}, err
+		}
+	}
+
 	return column, nil
+}
+
+// prepareIDGeneration checks the uuid settings of a column update and stores them with defaults filled in.
+// It reports whether the field becomes auto-generated with this update (it wasn't an auto uuid field before).
+func (s tableManagementService) prepareIDGeneration(columnData dto.ColumnResponse, req *dto.ColumnUpdate) (dto.IDGeneration, bool, error) {
+	// A nil meta leaves the column's meta, and so its uuid settings, untouched
+	if req.Meta == nil {
+		return dto.IDGeneration{}, false, nil
+	}
+	uidt := columnData.UIDT
+	if req.UIDT != nil && *req.UIDT != "" {
+		uidt = *req.UIDT
+	}
+	if uidt != constant.UIDTUUID {
+		// A field changed away from uuid keeps no uuid settings
+		delete(*req.Meta, constant.MetaIDGenerationKey)
+		return dto.IDGeneration{}, false, nil
+	}
+	cfg, err := ValidateIDGeneration(uidt, *req.Meta)
+	if err != nil {
+		return cfg, false, err
+	}
+	(*req.Meta)[constant.MetaIDGenerationKey] = cfg
+
+	wasAuto := false
+	if columnData.UIDT == constant.UIDTUUID {
+		old, _ := dto.IDGenerationFromMeta(columnData.Meta)
+		wasAuto = old.Mode == constant.IDModeAuto
+	}
+	return cfg, cfg.Mode == constant.IDModeAuto && !wasAuto, nil
+}
+
+// fillOnAutoStart gives the empty cells of a field that just became auto-generated a value, when asked to.
+// A primary key field is always filled, since every record needs a key.
+func (s tableManagementService) fillOnAutoStart(
+	ctx context.Context,
+	schemaName string,
+	id string,
+	columnData dto.ColumnResponse,
+	column tenant.Column,
+	cfg dto.IDGeneration,
+	backfill *bool,
+) error {
+	model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
+	if err != nil {
+		return err
+	}
+	keyCols, err := s.primaryKeyColumns(ctx, schemaName, model.Alias)
+	if err != nil {
+		return err
+	}
+	if (backfill == nil || !*backfill) && !slices.Contains(keyCols, column.ColumnName) {
+		return nil
+	}
+	col := AutoUUIDColumn{ColumnName: column.ColumnName, Version: cfg.Version}
+	if _, err := s.backfillUUIDs(ctx, schemaName, model.Alias, col); err != nil {
+		// Put the old settings back, so the field isn't left auto with empty cells
+		meta := columnData.Meta
+		_, _ = s.columnsService.UpdateColumn(ctx, schemaName, id, dto.ColumnUpdate{Meta: &meta})
+		return err
+	}
+	return nil
 }
 
 // applyMetaDefaultIfPresent syncs the DB default whenever the update carries meta
@@ -2089,8 +2181,18 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 
+	// Auto uuid fields get their value before the key check, so an auto uuid key counts as given
+	generated := map[string]interface{}{}
+	autoCols, err := s.autoUUIDColumns(ctx, schemaName, model.ID.String())
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	if err := FillGeneratedUUIDs(autoCols, generated); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
 	// A table with a custom primary key can't have records without key values
-	if err := s.checkKeyValues(ctx, schemaName, model, 0, map[string]interface{}{}); err != nil {
+	if err := s.checkKeyValues(ctx, schemaName, model, 0, generated); err != nil {
 		return dto.RecordResponse{}, err
 	}
 
@@ -2099,6 +2201,9 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 		"last_modified_by":   req.CreatedBy,
 		"created_time":       time.Now().UTC(),
 		"last_modified_time": time.Now().UTC(),
+	}
+	for name, value := range generated {
+		data[fmt.Sprintf(QuotedColumnFormat, name)] = value
 	}
 
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, data)
@@ -2329,6 +2434,14 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	lg := logger.Get()
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, modelAlias)
 
+	autoCols, err := s.autoUUIDColumnsByAlias(ctx, schemaName, modelAlias)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	if err := FillGeneratedUUIDs(autoCols, record); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, record)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
@@ -2344,6 +2457,17 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, schemaName string, modelAlias string, records []map[string]interface{}) ([]dto.RecordResponse, error) {
 	lg := logger.Get()
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, modelAlias)
+
+	// Columns are read once for the whole batch
+	autoCols, err := s.autoUUIDColumnsByAlias(ctx, schemaName, modelAlias)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		if err := FillGeneratedUUIDs(autoCols, record); err != nil {
+			return nil, err
+		}
+	}
 
 	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
 	if err != nil {
@@ -2740,6 +2864,20 @@ func (s tableManagementService) BulkUpdateColumns(ctx context.Context, schemaNam
 		return err
 	}
 
+	if fetchedColumn.UIDT == constant.UIDTUUID {
+		// Auto uuid fields can't be written; manual ones only take valid UUIDs
+		if cfg, _ := dto.IDGenerationFromMeta(fetchedColumn.Meta); cfg.Mode == constant.IDModeAuto {
+			return app_errors.UUIDReadOnly
+		}
+		for i := range updates {
+			value, err := UUIDCellValue(updates[i].Value)
+			if err != nil {
+				return err
+			}
+			updates[i].Value = value
+		}
+	}
+
 	if err := s.columnsService.BulkUpdate(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName, updates); err != nil {
 		return s.keyWriteError(ctx, schemaName, fetchedModel.Alias, err, "failed to bulk update column")
 	}
@@ -2755,6 +2893,11 @@ func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaNam
 	fetchedColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, columnID) // Validate column exists before reset
 	if err != nil {
 		return err
+	}
+
+	// Clearing an auto uuid field would leave records without the value the system owns
+	if cfg, _ := dto.IDGenerationFromMeta(fetchedColumn.Meta); fetchedColumn.UIDT == constant.UIDTUUID && cfg.Mode == constant.IDModeAuto {
+		return app_errors.UUIDReadOnly
 	}
 
 	if err := s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName); err != nil {

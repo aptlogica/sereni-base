@@ -321,6 +321,43 @@ func (h *TableHandler) GetColumnById(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.ColumnFetched, column)
 }
 
+// @Summary      Count empty values of a column
+// @Description  Returns how many records have an empty and a filled value in the column, e.g. before a uuid field starts filling empty records.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string          true  "Column ID"
+// @Success      200  {object}  dto.EmptyCountResponse  "Counts retrieved successfully"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — column missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/{id}/empty-count [get]
+func (h *TableHandler) GetColumnEmptyCount(c *gin.Context) {
+	id := c.Param("id")
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	counter, ok := h.tableManagementService.(interface {
+		CountEmptyCells(ctx context.Context, schemaName string, columnID string) (dto.EmptyCountResponse, error)
+	})
+	if !ok {
+		response.CheckAndSendError(c, fmt.Errorf("table service does not support CountEmptyCells"))
+		return
+	}
+
+	counts, err := counter.CountEmptyCells(c, schemaName, id)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnFetched, counts)
+}
+
 // @Summary      List all columns
 // @Description  Returns every column defined in the tenant schema.
 // @Tags         Admin Table Column

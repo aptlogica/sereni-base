@@ -210,7 +210,7 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
 		assert.ErrorIs(t, err, app_errors.DatabaseError)
-		mockTable.AssertNotCalled(t, "GetTableData", mock.Anything, mock.Anything)
+		mockTable.AssertNotCalled(t, "GetTableData", guardConstraintsTable, mock.Anything)
 	})
 }
 

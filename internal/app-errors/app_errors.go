@@ -209,6 +209,13 @@ var (
 	ColumnInPrimaryKey      = errors.New("column is part of the primary key")
 )
 
+// uuid fields
+var (
+	UUIDInvalid       = errors.New("not a valid UUID")
+	UUIDReadOnly      = errors.New("this field is generated automatically")
+	UUIDConfigInvalid = errors.New("invalid UUID generation settings")
+)
+
 // KeyViolation keeps a Postgres unique (23505) or not-null (23502) error from a write to a user table, so the
 // table service can name the key fields; it matches DatabaseError like other failed writes
 type KeyViolation struct {
