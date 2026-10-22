@@ -60,6 +60,27 @@ func UniqueViolation(err error) (constraint, detail string, ok bool) {
 	return "", "", false
 }
 
+// pqCheckViolation is the Postgres code for a row that breaks a CHECK constraint
+const pqCheckViolation = "23514"
+
+var checkViolationRegexp = regexp.MustCompile(`violates check constraint "([^"]+)"`)
+
+// CheckViolation returns the CHECK constraint a write broke
+func CheckViolation(err error) (constraint string, ok bool) {
+	if err == nil {
+		return "", false
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Constraint, pqErr.Code == pqCheckViolation
+	}
+	// Layers that keep only the text of the error
+	if match := checkViolationRegexp.FindStringSubmatch(err.Error()); match != nil {
+		return match[1], true
+	}
+	return "", false
+}
+
 // PostgresMessage is the message of a Postgres error, without the driver's prefix
 func PostgresMessage(err error) string {
 	if dbErr, ok := DBError(err); ok {

@@ -160,6 +160,9 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 		// Layers that keep only the text of a duplicate: the constraint name tells the unique key
 		return s.recordWriteError(ctx, schemaName, err, msg)
 	}
+	if _, ok := app_errors.CheckViolation(pqErr); ok {
+		return s.checkViolationError(schemaName, pqErr.Constraint)
+	}
 	if pqErr.Code != "23505" && pqErr.Code != "23502" {
 		return app_errors.LogDatabaseError(err, msg)
 	}

@@ -7,6 +7,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -18,6 +19,8 @@ import (
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
+
+	"github.com/lib/pq"
 )
 
 // duplicateDetailRegexp reads Postgres' detail of a duplicate: Key (a, b)=(1, x) already exists.
@@ -43,36 +46,40 @@ func (s tableManagementService) removeKeysUsingColumn(schemaName string, column 
 	}
 }
 
-// ensureColumnNotInKey fails when a unique key of the table uses the column
-func (s tableManagementService) ensureColumnNotInKey(schemaName string, column dto.ColumnResponse, action string) error {
+// ensureTypeFitsKey fails when the column's type changes and a constraint can't take it: a check
+// constraint using the column (its condition was written for the old type), or a unique key using
+// it when the new type can't be part of a key
+func (s tableManagementService) ensureTypeFitsKey(schemaName string, column dto.ColumnResponse, req dto.ColumnUpdate) error {
+	if req.UIDT == nil || *req.UIDT == "" || strings.EqualFold(*req.UIDT, column.UIDT) {
+		return nil
+	}
 	constraints, err := s.tableConstraints(schemaName, dbModels.QueryFilter{Column: "model_id", Operator: "eq", Value: column.ModelID.String()})
 	if err != nil {
 		return err
 	}
+	keyBlocked := tenant.KeyColumnBlockReason(tenant.Column{ColumnName: column.ColumnName, UIDT: *req.UIDT}) != ""
 	for _, c := range constraints {
-		if slices.Contains(c.ColumnIDs, column.ID.String()) {
+		if !slices.Contains(c.ColumnIDs, column.ID.String()) {
+			continue
+		}
+		if c.Type == tenant.ConstraintTypeCheck {
 			return app_errors.WithMessage(app_errors.ColumnUsedInConstraint,
-				fmt.Sprintf("%s is part of the unique key %q. Remove it from the key before %s.", column.Title, c.Title, action))
+				fmt.Sprintf("%s is used by the check constraint %q. Delete it before changing the field type.", column.Title, c.Title))
+		}
+		if keyBlocked {
+			return app_errors.WithMessage(app_errors.ColumnUsedInConstraint,
+				fmt.Sprintf("%s is part of the unique key %q. Remove it from the key before changing its type.", column.Title, c.Title))
 		}
 	}
 	return nil
 }
 
-// ensureTypeFitsKey fails when the column is in a unique key and its new type can't be part of one
-func (s tableManagementService) ensureTypeFitsKey(schemaName string, column dto.ColumnResponse, req dto.ColumnUpdate) error {
-	if req.UIDT == nil || *req.UIDT == "" || strings.EqualFold(*req.UIDT, column.UIDT) {
-		return nil
-	}
-	changed := tenant.Column{ColumnName: column.ColumnName, UIDT: *req.UIDT}
-	if tenant.KeyColumnBlockReason(changed) == "" {
-		return nil
-	}
-	return s.ensureColumnNotInKey(schemaName, column, "changing its type")
-}
-
 // recordWriteError turns a duplicate rejected by a unique key into a message naming the values;
 // other errors are logged and reported as database errors
 func (s tableManagementService) recordWriteError(ctx context.Context, schemaName string, err error, msg string) error {
+	if name, ok := app_errors.CheckViolation(err); ok {
+		return s.checkViolationError(schemaName, name)
+	}
 	name, detail, ok := app_errors.UniqueViolation(err)
 	if !ok {
 		return app_errors.LogDatabaseError(err, msg)
@@ -97,6 +104,46 @@ func (s tableManagementService) uniqueViolationMessage(ctx context.Context, sche
 		return fmt.Sprintf("%sTwo records can't have the same %s.", prefix, joinTitles(columns))
 	}
 	return prefix + "This record repeats the values of a unique key."
+}
+
+// checkViolationError says which check constraint rejected the record and its condition, e.g.
+// Value not allowed. The check constraint "Age 18–100" failed: age BETWEEN 18 AND 100
+func (s tableManagementService) checkViolationError(schemaName, constraintName string) error {
+	logger.Get().Info().Str("constraint", constraintName).Msg("record rejected by check constraint")
+	check := s.constraintByName(schemaName, constraintName)
+	if check == nil {
+		return app_errors.WithMessage(app_errors.CheckConstraintViolation,
+			fmt.Sprintf("Value not allowed by the check constraint %q.", constraintName))
+	}
+	message := fmt.Sprintf("Value not allowed. The check constraint %q failed", check.Title)
+	if condition := s.checkConditionText(schemaName, constraintName); condition != "" {
+		message += ": " + condition
+	} else {
+		message += "."
+	}
+	return app_errors.WithMessage(app_errors.CheckConstraintViolation, message)
+}
+
+// checkConditionText is the condition of a check constraint as the user wrote it (kept in the
+// constraint's comment), else as Postgres has it; "" when it can't be read
+func (s tableManagementService) checkConditionText(schemaName, constraintName string) string {
+	if s.repo.DB == nil {
+		return ""
+	}
+	var comment, definition string
+	err := s.repo.DB.QueryRow(`SELECT coalesce(obj_description(oid, 'pg_constraint'), ''), pg_get_constraintdef(oid)
+		FROM pg_constraint WHERE conname = $1 AND contype = 'c' AND connamespace = $2::regnamespace LIMIT 1`,
+		constraintName, pq.QuoteIdentifier(schemaName)).Scan(&comment, &definition)
+	if err != nil {
+		return ""
+	}
+	var label struct {
+		Condition string `json:"condition"`
+	}
+	if json.Unmarshal([]byte(comment), &label) == nil && label.Condition != "" {
+		return label.Condition
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(strings.TrimSuffix(definition, " NOT VALID"), "CHECK ("), ")")
 }
 
 // constraintByName returns the unique key with the Postgres name, or nil when it can't be read

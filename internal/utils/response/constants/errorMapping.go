@@ -154,6 +154,10 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.ColumnUsedInConstraint, TableConstraintError.ColumnUsedInConstraint},
 	{app_errors.UniqueKeyViolation, TableConstraintError.UniqueKeyViolation},
 	{app_errors.UniqueKeyDefaultConflict, TableConstraintError.DefaultConflict},
+	{app_errors.CheckConditionInvalid, TableConstraintError.CheckConditionInvalid},
+	{app_errors.CheckCategoryUnknown, TableConstraintError.CheckCategoryUnknown},
+	{app_errors.CheckExistingRows, TableConstraintError.CheckExistingRows},
+	{app_errors.CheckConstraintViolation, TableConstraintError.CheckViolation},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},

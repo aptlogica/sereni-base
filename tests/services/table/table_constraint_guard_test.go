@@ -13,6 +13,9 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/aptlogica/go-postgres-rest/pkg"
+	services "github.com/aptlogica/sereni-base/internal/services/table"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
@@ -305,4 +308,76 @@ func TestUpdateColumn_DefaultValueGuardErrorsAndSeveralKeys(t *testing.T) {
 
 		assert.ErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
 	})
+}
+func TestRecordWrites_CheckConstraint(t *testing.T) {
+	checkViolation := &pq.Error{Code: "23514", Constraint: "ck_tbl_1a2b3c4d",
+		Message: `new row for relation "tbl" violates check constraint "ck_tbl_1a2b3c4d"`}
+
+	t.Run("names the check constraint by its title", func(t *testing.T) {
+		_, mockTable, _, _, _, _, _, _, svc := setupTableManagementService()
+		mockTable.On("CreateRecord", mock.Anything, mock.Anything).Return(nil, fmt.Errorf("failed to insert record: %w", checkViolation))
+		row := uniqueKeyRow(uuid.NewString(), []string{})
+		row["type"], row["title"] = "check", "Age 18–100"
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{row}, nil)
+
+		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{"age": 12})
+
+		assert.ErrorIs(t, err, app_errors.CheckConstraintViolation)
+		// No database to read the condition from: the title alone
+		assert.Equal(t, `Value not allowed. The check constraint "Age 18–100" failed.`, detailedMessage(t, err))
+	})
+
+	t.Run("adds the condition the user wrote", func(t *testing.T) {
+		db, sqlMock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer db.Close()
+		mockTable := &MockTableService{}
+		mockBulk := &MockBulkService{}
+		expectKeyDefaults(mockTable)
+		repo := &pkg.DatabaseService{TableService: mockTable, BulkService: mockBulk, DB: db}
+		svc := services.NewTableManagementService("postgres", repo, &MockModelService{}, &MockColumnService{}, &MockViewService{}, &MockRelationshipService{}, &MockAssetManagementService{})
+
+		mockBulk.On("BulkInsert", mock.Anything, mock.Anything).Return(nil, checkViolation)
+		row := uniqueKeyRow(uuid.NewString(), []string{})
+		row["type"], row["title"] = "check", "Age 18–100"
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{row}, nil)
+		sqlMock.ExpectQuery(`SELECT coalesce\(obj_description`).WithArgs("ck_tbl_1a2b3c4d", `"schema"`).
+			WillReturnRows(sqlmock.NewRows([]string{"comment", "def"}).
+				AddRow(`{"category":"number_date","condition":"age BETWEEN 18 AND 100"}`, "CHECK (((age >= 18) AND (age <= 100)))"))
+
+		_, err = svc.CreateRowsWithRecordsBulk(context.Background(), "schema", "tbl", []map[string]interface{}{{}})
+
+		assert.Equal(t, `Value not allowed. The check constraint "Age 18–100" failed: age BETWEEN 18 AND 100`, detailedMessage(t, err))
+		assert.NoError(t, sqlMock.ExpectationsWereMet())
+	})
+
+	t.Run("uses the Postgres name for constraints added outside the app", func(t *testing.T) {
+		_, mockTable, mockBulk, _, _, _, _, _, svc := setupTableManagementService()
+		mockBulk.On("BulkInsert", mock.Anything, mock.Anything).Return(nil, checkViolation)
+		mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		_, err := svc.CreateRowsWithRecordsBulk(context.Background(), "schema", "tbl", []map[string]interface{}{{}})
+
+		assert.ErrorIs(t, err, app_errors.CheckConstraintViolation)
+		assert.Equal(t, `Value not allowed by the check constraint "ck_tbl_1a2b3c4d".`, detailedMessage(t, err))
+	})
+}
+
+func TestUpdateColumn_TypeChangeBlockedByCheckConstraint(t *testing.T) {
+	_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+
+	modelID := uuid.New().String()
+	col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.NewString(), ColumnName: "age", Title: "Age", UIDT: "number", DT: helpers.StringPtr("INTEGER")}
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
+	row := uniqueKeyRow(modelID, []string{col.ID.String()})
+	row["type"], row["title"] = "check", "Age 18–100"
+	mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{row}, nil)
+
+	// Any type change, even to one a unique key could use
+	text := "text"
+	_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{UIDT: &text})
+
+	assert.ErrorIs(t, err, app_errors.ColumnUsedInConstraint)
+	assert.Equal(t, `Age is used by the check constraint "Age 18–100". Delete it before changing the field type.`, detailedMessage(t, err))
+	mockColumn.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

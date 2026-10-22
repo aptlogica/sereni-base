@@ -26,7 +26,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// Postgres names are at most 63 bytes: "uq_" + alias + "_" + 8 hex characters
+// Postgres names are at most 63 bytes: "uq_" (or "ck_") + alias + "_" + 8 hex characters
 const maxConstraintAliasLength = 50
 
 type tableConstraintService struct {
@@ -63,6 +63,9 @@ func (s *tableConstraintService) List(ctx context.Context, schemaName, modelID, 
 	if err != nil {
 		return nil, err
 	}
+	if constraintType == tenant.ConstraintTypeCheck {
+		return s.listChecks(tableIdentifier(schemaName, model.Alias), constraints, columns)
+	}
 	installed, err := s.installedConstraints(ctx, tableIdentifier(schemaName, model.Alias))
 	if err != nil {
 		return nil, err
@@ -79,11 +82,19 @@ func (s *tableConstraintService) List(ctx context.Context, schemaName, modelID, 
 	return out, nil
 }
 
-// Check looks for records that already repeat values in the columns; nothing is changed
+// Check looks for records that already repeat values in the columns, or, for a check constraint,
+// has Postgres validate the condition and counts the records that break it; nothing is changed
 func (s *tableConstraintService) Check(ctx context.Context, schemaName string, req dto.CheckTableConstraintRequest) (dto.ConstraintCheckResult, error) {
 	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
 	if err != nil {
 		return dto.ConstraintCheckResult{}, err
+	}
+	if req.Type == tenant.ConstraintTypeCheck {
+		in, err := checkInput(req.CheckInput)
+		if err != nil {
+			return dto.ConstraintCheckResult{}, err
+		}
+		return s.testCheck(tableIdentifier(schemaName, model.Alias), in.Condition)
 	}
 	keyColumns, _, err := s.resolveColumns(ctx, schemaName, req.ModelID, req.ColumnIDs)
 	if err != nil {
@@ -101,6 +112,9 @@ func (s *tableConstraintService) Check(ctx context.Context, schemaName string, r
 
 // Create adds the unique key in Postgres, then stores it; if storing fails the key is dropped again
 func (s *tableConstraintService) Create(ctx context.Context, schemaName string, req dto.CreateTableConstraintRequest) (dto.TableConstraintResponse, error) {
+	if req.Type == tenant.ConstraintTypeCheck {
+		return s.createCheck(ctx, schemaName, req)
+	}
 	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
 	if err != nil {
 		return dto.TableConstraintResponse{}, err
@@ -157,6 +171,12 @@ func (s *tableConstraintService) Update(ctx context.Context, schemaName, id stri
 	existing, err := s.getByID(schemaName, id)
 	if err != nil {
 		return dto.TableConstraintResponse{}, err
+	}
+	if existing.Type == tenant.ConstraintTypeCheck {
+		return s.updateCheck(ctx, schemaName, existing, req)
+	}
+	if len(req.ColumnIDs) == 0 {
+		return dto.TableConstraintResponse{}, app_errors.WithMessage(app_errors.ConstraintColumnNotFound, "Choose at least one column")
 	}
 	model, err := s.modelService.GetModelByID(ctx, schemaName, existing.ModelID)
 	if err != nil {
@@ -273,6 +293,10 @@ func (s *tableConstraintService) ensureNoSameKey(schemaName, modelID, exceptID s
 		return err
 	}
 	for _, other := range others {
+		// Check constraints use columns too, but they don't make them unique
+		if other.Type == tenant.ConstraintTypeCheck {
+			continue
+		}
 		if other.ID.String() != exceptID && sameColumnSet(other.ColumnIDs, columnIDs) {
 			return app_errors.WithMessage(app_errors.ConstraintAlreadyExists, fmt.Sprintf("%q already covers these columns", other.Title))
 		}
