@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/aptlogica/go-postgres-rest v0.2.0
+	github.com/aptlogica/go-postgres-rest v0.2.1-0.20261021090054-742e854e81c3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/universal-translator v0.18.1
 	github.com/go-playground/validator/v10 v10.30.3

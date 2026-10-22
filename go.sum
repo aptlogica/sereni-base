@@ -4,6 +4,8 @@ github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
 github.com/aptlogica/go-postgres-rest v0.2.0 h1:QPzxaCIzV3qGEwJSI4d8G582faCzqaIrDdOkX68j6Ng=
 github.com/aptlogica/go-postgres-rest v0.2.0/go.mod h1:naKWx5pmadCX9TOm5FcBu74ABb6ZGW4DBwPN92h6ZxY=
+github.com/aptlogica/go-postgres-rest v0.2.1-0.20261021090054-742e854e81c3 h1:TG84joektMKeZd8q78NGw8cr9KRWgYP7iVfegNU03Qo=
+github.com/aptlogica/go-postgres-rest v0.2.1-0.20261021090054-742e854e81c3/go.mod h1:i4lJS9eKLQanHcnOqLYiTVo5fy2tZKU3HRqPQOfp6LY=
 github.com/bytedance/gopkg v0.1.4 h1:oZnQwnX82KAIWb7033bEwtxvTqXcYMxDBaQxo5JJHWM=
 github.com/bytedance/gopkg v0.1.4/go.mod h1:v1zWfPm21Fb+OsyXN2VAHdL6TBb2L88anLQgdyje6R4=
 github.com/bytedance/sonic v1.15.4 h1:FgtV/4aBHpla9AxuMpuuzVUpa/Cf3izufkxNmnEzdI8=

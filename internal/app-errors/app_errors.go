@@ -8,8 +8,8 @@ package app_errors
 import (
 	"errors"
 
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
-	"github.com/lib/pq"
 )
 
 // var (
@@ -212,7 +212,7 @@ var (
 // KeyViolation keeps a Postgres unique (23505) or not-null (23502) error from a write to a user table, so the
 // table service can name the key fields; it matches DatabaseError like other failed writes
 type KeyViolation struct {
-	Postgres *pq.Error
+	Postgres *dbModels.DBError
 }
 
 func (e *KeyViolation) Error() string { return e.Postgres.Error() }
@@ -221,10 +221,9 @@ func (e *KeyViolation) Unwrap() error { return DatabaseError }
 
 // DatabaseOrKeyError logs a failed write; key violations are returned as *KeyViolation, others as DatabaseError
 func DatabaseOrKeyError(err error, msg string) error {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && (pqErr.Code == "23505" || pqErr.Code == "23502") {
+	if dbErr, ok := DBError(err); ok && (dbErr.Code == "23505" || dbErr.Code == "23502") {
 		logger.Get().Warn().Err(err).Msg(msg)
-		return &KeyViolation{Postgres: pqErr}
+		return &KeyViolation{Postgres: dbErr}
 	}
 	return LogDatabaseError(err, msg)
 }

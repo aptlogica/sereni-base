@@ -7,14 +7,13 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/lib/pq"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
@@ -88,7 +87,7 @@ func (s *primaryKeyService) Update(ctx context.Context, schemaName, modelID stri
 	if err := s.validateData(t, newCols); err != nil {
 		return dto.PrimaryKeyResponse{}, err
 	}
-	if err := s.replaceKey(t, newCols); err != nil {
+	if err := s.replaceKey(ctx, t, newCols); err != nil {
 		return dto.PrimaryKeyResponse{}, err
 	}
 
@@ -102,7 +101,7 @@ func (s *primaryKeyService) EnsureColumnNotInKey(ctx context.Context, schemaName
 	if err != nil {
 		return err
 	}
-	keyCols, err := PrimaryKeyColumns(s.repo, quotedTable(schemaName, model.Alias))
+	keyCols, err := PrimaryKeyColumns(ctx, s.repo, quotedTable(schemaName, model.Alias))
 	if err != nil {
 		return err
 	}
@@ -113,21 +112,12 @@ func (s *primaryKeyService) EnsureColumnNotInKey(ctx context.Context, schemaName
 }
 
 // PrimaryKeyColumns returns the primary key column names of a quoted "schema"."table", in key order
-func PrimaryKeyColumns(repo *pkg.DatabaseService, table string) ([]string, error) {
-	rows, err := repo.DB.Query(constant.PrimaryKeyColumnsQuery, table)
+func PrimaryKeyColumns(ctx context.Context, repo *pkg.DatabaseService, table string) ([]string, error) {
+	key, err := repo.SchemaService.GetPrimaryKey(ctx, table)
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to read primary key")
 	}
-	defer rows.Close()
-	cols := []string{}
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, app_errors.LogDatabaseError(err, "failed to read primary key")
-		}
-		cols = append(cols, name)
-	}
-	return cols, rows.Err()
+	return key.Columns, nil
 }
 
 func (s *primaryKeyService) load(ctx context.Context, schemaName, modelID string) (keyTable, error) {
@@ -149,7 +139,7 @@ func (s *primaryKeyService) load(ctx context.Context, schemaName, modelID string
 			t.links = append(t.links, col.Title)
 		}
 	}
-	if t.keyCols, err = PrimaryKeyColumns(s.repo, t.table); err != nil {
+	if t.keyCols, err = PrimaryKeyColumns(ctx, s.repo, t.table); err != nil {
 		return keyTable{}, err
 	}
 	return t, nil
@@ -450,8 +440,8 @@ func formatKeyValue(v interface{}) string {
 
 // replaceKey swaps the primary key in one transaction. id stays NOT NULL and UNIQUE when it leaves the key,
 // because rows are still addressed by id.
-func (s *primaryKeyService) replaceKey(t keyTable, newCols []string) error {
-	keyName, idUnique, err := s.constraints(t.table)
+func (s *primaryKeyService) replaceKey(ctx context.Context, t keyTable, newCols []string) error {
+	keyName, idUnique, err := s.constraints(ctx, t.table)
 	if err != nil {
 		return err
 	}
@@ -481,19 +471,10 @@ func (s *primaryKeyService) replaceKey(t keyTable, newCols []string) error {
 	}
 	statements = append(statements, fmt.Sprintf("ALTER TABLE %s ADD PRIMARY KEY (%s)", t.table, strings.Join(quoted, ", ")))
 
-	tx, err := s.repo.DB.Begin()
-	if err != nil {
-		return fmt.Errorf("%w: %v", app_errors.PrimaryKeyUpdateFailed, err)
-	}
-	for _, stmt := range statements {
-		if _, err := tx.Exec(stmt); err != nil {
-			_ = tx.Rollback()
-			logger.Get().Error().Err(err).Str("statement", stmt).Msg("failed to update primary key")
-			return fmt.Errorf("%w: %s", app_errors.PrimaryKeyUpdateFailed, postgresMessage(t, err))
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%w: %v", app_errors.PrimaryKeyUpdateFailed, err)
+	// The library's SetPrimaryKey keeps NOT NULL on fields leaving the key, so the statements are built here
+	if err := s.repo.SchemaService.ApplySQL(ctx, statements...); err != nil {
+		logger.Get().Error().Err(err).Strs("statements", statements).Msg("failed to update primary key")
+		return fmt.Errorf("%w: %s", app_errors.PrimaryKeyUpdateFailed, postgresMessage(t, err))
 	}
 	return nil
 }
@@ -501,32 +482,41 @@ func (s *primaryKeyService) replaceKey(t keyTable, newCols []string) error {
 // postgresMessage turns a Postgres error into an exact message, e.g. for records changed since validation:
 // Duplicate key values: Key (code, region)=(HR, IN) is duplicated.
 func postgresMessage(t keyTable, err error) string {
-	var pqErr *pq.Error
-	if !errors.As(err, &pqErr) {
+	dbErr, ok := dbModels.AsDBError(err)
+	if !ok {
 		return err.Error()
 	}
-	message := pqErr.Message
-	switch pqErr.Code {
-	case "23505": // unique_violation
+	message := dbErr.Message
+	switch dbErr.Kind {
+	case dbModels.DBErrorUnique, dbModels.DBErrorPrimaryKey:
 		message = "Duplicate key values"
-	case "23502": // not_null_violation
-		if pqErr.Column != "" {
-			message = fmt.Sprintf("%s is empty in some records", t.title(pqErr.Column))
+	case dbModels.DBErrorNotNull:
+		if dbErr.Column != "" {
+			message = fmt.Sprintf("%s is empty in some records", t.title(dbErr.Column))
 		}
 	}
-	if pqErr.Detail != "" {
-		message += ": " + pqErr.Detail
+	if dbErr.Detail != "" {
+		message += ": " + dbErr.Detail
 	}
 	return message
 }
 
 // constraints returns the primary key constraint name and the name of a UNIQUE constraint on id alone
-func (s *primaryKeyService) constraints(table string) (keyName, idUnique string, err error) {
-	var key, unique sql.NullString
-	if err := s.repo.DB.QueryRow(constant.PrimaryKeyConstraintsQuery, table).Scan(&key, &unique); err != nil {
+func (s *primaryKeyService) constraints(ctx context.Context, table string) (keyName, idUnique string, err error) {
+	key, err := s.repo.SchemaService.GetPrimaryKey(ctx, table)
+	if err != nil {
 		return "", "", app_errors.LogDatabaseError(err, "failed to read table constraints")
 	}
-	return key.String, unique.String, nil
+	uniques, err := s.repo.SchemaService.ListUniqueConstraints(ctx, table)
+	if err != nil {
+		return "", "", app_errors.LogDatabaseError(err, "failed to read table constraints")
+	}
+	for _, u := range uniques {
+		if len(u.Columns) == 1 && u.Columns[0] == constant.PrimaryKeyIDColumn {
+			return key.Name, u.Name, nil
+		}
+	}
+	return key.Name, "", nil
 }
 
 func quotedTable(schemaName, tableName string) string {

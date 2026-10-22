@@ -17,6 +17,7 @@ import (
 	services "github.com/aptlogica/sereni-base/internal/services/core"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -64,7 +65,7 @@ func newAutomationFixture(t *testing.T) *automationFixture {
 	models := &automationModelService{}
 	models.On("GetModelByID", automationSchema, "m1").Return(tenant.Model{Alias: "employee"}, nil).Maybe()
 
-	repo := &pkg.DatabaseService{TableService: table, DB: db}
+	repo := &pkg.DatabaseService{TableService: table, DB: db, SchemaService: newSchemaService(db)}
 	return &automationFixture{svc: services.NewAutomationService(repo, models), table: table, models: models, sql: sqlMock}
 }
 
@@ -165,9 +166,7 @@ func TestAutomationService_Create(t *testing.T) {
 	t.Run("stores a webhook without running any SQL", func(t *testing.T) {
 		f := newAutomationFixture(t)
 		f.expectTitles()
-		// An empty transaction: there is no query to run for a webhook
-		f.sql.ExpectBegin()
-		f.sql.ExpectCommit()
+		// There is no query to run for a webhook, so no transaction either
 		f.table.On("CreateRecord", automationsTable, mock.Anything).Return(savedAutomation("webhook", `{"url":"x"}`), nil)
 
 		_, err := f.svc.Create(context.Background(), automationSchema, dto.CreateAutomationRequest{
@@ -229,7 +228,9 @@ func TestAutomationService_Create(t *testing.T) {
 		f.sql.ExpectExec(exact(triggerQuery)).WillReturnResult(ok())
 		f.sql.ExpectExec("^COMMENT ON TRIGGER").WillReturnResult(ok())
 		f.sql.ExpectCommit()
+		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+		f.sql.ExpectCommit()
 		f.table.On("CreateRecord", automationsTable, mock.Anything).Return(nil, errors.New("db down"))
 
 		_, err := f.svc.Create(context.Background(), automationSchema, dto.CreateAutomationRequest{
@@ -245,7 +246,9 @@ func TestAutomationService_Create(t *testing.T) {
 		f.sql.ExpectExec(exact(functionQuery)).WillReturnResult(ok())
 		f.sql.ExpectExec("^COMMENT ON FUNCTION").WillReturnResult(ok())
 		f.sql.ExpectCommit()
+		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
+		f.sql.ExpectCommit()
 		f.table.On("CreateRecord", automationsTable, mock.Anything).Return(nil, errors.New("db down"))
 
 		_, err := f.svc.Create(context.Background(), automationSchema, dto.CreateAutomationRequest{
@@ -359,7 +362,9 @@ func TestAutomationService_Update(t *testing.T) {
 		f.expectTitles()
 		f.expectGetByID("trigger", triggerQuery)
 		f.expectLabelledTrigger("")
+		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(`COMMENT ON TRIGGER log_salary ON "public"."employee" IS '` + automationLabel + `'`)).WillReturnResult(ok())
+		f.sql.ExpectCommit()
 		f.table.On("UpdateRecord", automationsTable, automationID, mock.Anything).Return(savedAutomation("trigger", triggerQuery), nil)
 
 		_, err := f.svc.Update(context.Background(), automationSchema, automationID, dto.UpdateAutomationRequest{
@@ -373,7 +378,9 @@ func TestAutomationService_Update(t *testing.T) {
 		f.expectTitles()
 		f.expectGetByID("function", functionQuery)
 		f.expectLabelledFunction("")
+		f.sql.ExpectBegin()
 		f.sql.ExpectExec(exact(`COMMENT ON FUNCTION log_fn() IS '` + automationLabel + `'`)).WillReturnResult(ok())
+		f.sql.ExpectCommit()
 		f.table.On("UpdateRecord", automationsTable, automationID, mock.Anything).Return(savedAutomation("function", functionQuery), nil)
 
 		_, err := f.svc.Update(context.Background(), automationSchema, automationID, dto.UpdateAutomationRequest{Title: "x", Context: functionQuery})
@@ -514,7 +521,7 @@ func TestAutomationService_Validate(t *testing.T) {
 	t.Run("returns Postgres' message and rolls back", func(t *testing.T) {
 		f := newAutomationFixture(t)
 		f.sql.ExpectBegin()
-		f.sql.ExpectExec(exact(triggerQuery)).WillReturnError(errors.New("pq: function log_fn() does not exist"))
+		f.sql.ExpectExec(exact(triggerQuery)).WillReturnError(&pq.Error{Message: "function log_fn() does not exist"})
 		f.sql.ExpectRollback()
 
 		out, err := f.svc.Validate(context.Background(), automationSchema, dto.ValidateAutomationRequest{
@@ -637,7 +644,9 @@ func TestAutomationService_Delete(t *testing.T) {
 			f := newAutomationFixture(t)
 			f.expectGetByID("trigger", triggerQuery)
 			f.expectLabelledTrigger("log_salary")
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+			f.sql.ExpectCommit()
 			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
 			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
@@ -647,8 +656,12 @@ func TestAutomationService_Delete(t *testing.T) {
 			f := newAutomationFixture(t)
 			f.expectGetByID("trigger", functionQuery+"; "+triggerQuery)
 			f.expectLabelledTrigger("")
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+			f.sql.ExpectCommit()
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
+			f.sql.ExpectCommit()
 			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
 			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
@@ -658,7 +671,9 @@ func TestAutomationService_Delete(t *testing.T) {
 			f := newAutomationFixture(t)
 			f.expectGetByID("trigger", triggerQuery)
 			f.expectLabelledTrigger("log_salary")
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec("^DROP TRIGGER").WillReturnError(errors.New("permission denied"))
+			f.sql.ExpectRollback()
 
 			err := f.svc.Delete(context.Background(), automationSchema, automationID)
 			assert.ErrorIs(t, err, app_errors.TriggerFailed)
@@ -669,8 +684,12 @@ func TestAutomationService_Delete(t *testing.T) {
 			f := newAutomationFixture(t)
 			f.expectGetByID("trigger", functionQuery+"; "+triggerQuery)
 			f.expectLabelledTrigger("log_salary")
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP TRIGGER IF EXISTS log_salary ON "public"."employee"`)).WillReturnResult(ok())
+			f.sql.ExpectCommit()
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnError(errors.New("other objects depend on it"))
+			f.sql.ExpectRollback()
 			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
 			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
@@ -707,7 +726,9 @@ func TestAutomationService_Delete(t *testing.T) {
 			f.expectGetByID("function", functionQuery)
 			f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{savedAutomation("function", functionQuery)}, nil)
 			f.expectLabelledFunction("log_fn")
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnResult(ok())
+			f.sql.ExpectCommit()
 			f.table.On("DeleteRecord", automationsTable, automationID).Return(nil)
 
 			require.NoError(t, f.svc.Delete(context.Background(), automationSchema, automationID))
@@ -729,7 +750,9 @@ func TestAutomationService_Delete(t *testing.T) {
 			f.expectGetByID("function", functionQuery)
 			f.table.On("GetTableData", automationsTable, functionsQuery).Return([]map[string]interface{}{}, nil)
 			f.expectLabelledFunction("")
+			f.sql.ExpectBegin()
 			f.sql.ExpectExec(exact(`DROP FUNCTION IF EXISTS log_fn()`)).WillReturnError(errors.New("cannot drop function log_fn() because other objects depend on it"))
+			f.sql.ExpectRollback()
 
 			err := f.svc.Delete(context.Background(), automationSchema, automationID)
 			assert.ErrorIs(t, err, app_errors.TriggerFailed)

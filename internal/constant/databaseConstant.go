@@ -1099,18 +1099,6 @@ var DroppedFunctions = []string{
 	"key_fill_defaults() CASCADE",
 }
 
-// PrimaryKeyColumnsQuery returns the primary key column names of a quoted "schema"."table", in key order
-const PrimaryKeyColumnsQuery = `SELECT unnest(public.link_key_columns($1))`
-
-// PrimaryKeyConstraintsQuery returns the primary key constraint name and the name of a UNIQUE constraint on id alone
-const PrimaryKeyConstraintsQuery = `
-	SELECT
-		(SELECT conname::text FROM pg_constraint WHERE conrelid = to_regclass($1) AND contype = 'p'),
-		(SELECT c.conname::text FROM pg_constraint c
-		 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attname = 'id'
-		 WHERE c.conrelid = to_regclass($1) AND c.contype = 'u' AND c.conkey = ARRAY[a.attnum]
-		 LIMIT 1)`
-
 // LinkColumnsToMigrateQuery lists link columns still stored as row ids (INT / INT[]) with their table and target table
 const LinkColumnsToMigrateQuery = `
 	SELECT c.id::text, c.column_name, m.alias, COALESCE(tm.alias, ''), t.typcategory = 'A'

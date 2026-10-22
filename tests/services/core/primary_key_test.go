@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -84,16 +85,13 @@ func newKeyFixture(t *testing.T, columns ...tenant.Column) *keyFixture {
 	models.On("GetModelByID", keySchema, keyModelID.String()).Return(tenant.Model{ID: keyModelID, Alias: "org"}, nil)
 	cols := &keyColumnService{}
 	cols.On("GetColumnByModelID", keySchema, keyModelID.String()).Return(columns, nil)
-	repo := &pkg.DatabaseService{DB: db}
+	repo := &pkg.DatabaseService{DB: db, SchemaService: newSchemaService(db)}
 	return &keyFixture{svc: services.NewPrimaryKeyService(repo, models, cols), sql: sqlMock, columns: cols}
 }
 
 func (f *keyFixture) expectKey(cols ...string) {
-	rows := sqlmock.NewRows([]string{"unnest"})
-	for _, c := range cols {
-		rows.AddRow(c)
-	}
-	f.sql.ExpectQuery(regexp.QuoteMeta("SELECT unnest(public.link_key_columns($1))")).WithArgs(keyTable).WillReturnRows(rows)
+	f.sql.ExpectQuery(`contype = \$2`).WithArgs(keyTable, "p").
+		WillReturnRows(sqlmock.NewRows([]string{"conname", "columns"}).AddRow("org_pkey", "{"+strings.Join(cols, ",")+"}"))
 }
 
 // expectCounts answers the validation counts: empty values per key column, records with any empty key
@@ -110,8 +108,18 @@ func (f *keyFixture) expectCounts(perColumn []int64, nulls, duplicateGroups int6
 	f.sql.ExpectQuery(`SELECT count\(\*\) FILTER`).WillReturnRows(sqlmock.NewRows(names).AddRow(values...))
 }
 
+// expectConstraints answers the primary key name and the UNIQUE constraints, with one on id alone when idUnique is set
 func (f *keyFixture) expectConstraints(key, idUnique interface{}) {
-	f.sql.ExpectQuery(`contype = 'p'`).WithArgs(keyTable).WillReturnRows(sqlmock.NewRows([]string{"key", "unique"}).AddRow(key, idUnique))
+	keyRows := sqlmock.NewRows([]string{"conname", "columns"})
+	if key != nil {
+		keyRows.AddRow(key, "{id}")
+	}
+	f.sql.ExpectQuery(`contype = \$2`).WithArgs(keyTable, "p").WillReturnRows(keyRows)
+	uniqueRows := sqlmock.NewRows([]string{"conname", "columns"})
+	if idUnique != nil {
+		uniqueRows.AddRow(idUnique, "{id}")
+	}
+	f.sql.ExpectQuery(`contype = \$2`).WithArgs(keyTable, "u").WillReturnRows(uniqueRows)
 }
 
 func exactExec(stmt string) string { return "^" + regexp.QuoteMeta(stmt) + "$" }
