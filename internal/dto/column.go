@@ -114,6 +114,13 @@ func IDGenerationFromMeta(meta map[string]interface{}) (IDGeneration, bool) {
 	if !ok || raw == nil {
 		return IDGeneration{Mode: "manual"}, true
 	}
+	// Settings stored by the service itself are already typed; settings read back from the database are a map
+	if cfg, typed := raw.(IDGeneration); typed {
+		if cfg.Mode == "" {
+			cfg.Mode = "manual"
+		}
+		return cfg, true
+	}
 	obj, ok := raw.(map[string]interface{})
 	if !ok {
 		return IDGeneration{}, false
