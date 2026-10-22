@@ -120,6 +120,62 @@ func TestTableConstraintService_CheckCondition(t *testing.T) {
 		assert.Equal(t, `PostgreSQL: column "agee" does not exist`, detailedMessage(err))
 	})
 
+	t.Run("says record, not records, for one", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.expectTest(checkCondition, 1)
+
+		result, err := f.svc.Check(context.Background(), constraintSchema, check(checkCondition))
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Violations)
+		assert.Equal(t, "1 record breaks this condition. Fix it or change the condition.", result.Message)
+	})
+
+	t.Run("treats a doubled quote as part of the text", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		condition := `name <> 'it''s;'`
+		f.expectTest(condition, 0)
+
+		result, err := f.svc.Check(context.Background(), constraintSchema, check(condition))
+
+		require.NoError(t, err)
+		assert.True(t, result.Valid)
+	})
+
+	t.Run("fails when the transaction can't start", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.sql.ExpectBegin().WillReturnError(errors.New("connection refused"))
+
+		_, err := f.svc.Check(context.Background(), constraintSchema, check(checkCondition))
+
+		assert.ErrorIs(t, err, app_errors.ConstraintFailed)
+	})
+
+	t.Run("fails when a limit can't be set", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(`^SET LOCAL statement_timeout`).WillReturnError(errors.New("boom"))
+		f.sql.ExpectRollback()
+
+		_, err := f.svc.Check(context.Background(), constraintSchema, check(checkCondition))
+
+		assert.ErrorIs(t, err, app_errors.ConstraintFailed)
+	})
+
+	t.Run("fails when the records can't be counted", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(`^SET LOCAL statement_timeout`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectExec(`^SET LOCAL lock_timeout`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectExec(`ADD CONSTRAINT "ck_sereni_test"`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectQuery(`^SELECT count`).WillReturnError(errors.New("boom"))
+		f.sql.ExpectRollback()
+
+		_, err := f.svc.Check(context.Background(), constraintSchema, check(checkCondition))
+
+		assert.ErrorIs(t, err, app_errors.ConstraintFailed)
+	})
+
 	t.Run("allows ; -- and now() inside quoted text", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		condition := `status IN ('a;b', 'c--d', 'now()') AND "Order" > 0`
@@ -266,9 +322,7 @@ func TestTableConstraintService_UpdateCheck(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byID)).Return([]map[string]interface{}{savedCheck("Code not empty", codeCol.ID.String())}, nil)
 		f.expectInstalledChecks(installed)
-		f.sql.ExpectBegin()
 		f.sql.ExpectExec(`^COMMENT ON CONSTRAINT "` + checkPGName + `"`).WillReturnResult(sqlmock.NewResult(0, 0))
-		f.sql.ExpectCommit()
 		f.table.On("UpdateRecord", constraintsTable, constraintID, mock.Anything).Return(savedCheck("Code not empty", codeCol.ID.String()), nil)
 
 		out, err := f.svc.Update(context.Background(), constraintSchema, constraintID, dto.UpdateTableConstraintRequest{
@@ -315,9 +369,7 @@ func TestTableConstraintService_UniqueKeyIgnoresChecks(t *testing.T) {
 	f.table.On("GetTableData", constraintsTable, mock.MatchedBy(byModel)).
 		Return([]map[string]interface{}{savedCheck("Email not empty", emailCol.ID.String())}, nil).Once()
 	f.expectNoDuplicates()
-	f.sql.ExpectBegin()
 	f.sql.ExpectExec(`UNIQUE \("email"\)`).WillReturnResult(sqlmock.NewResult(0, 0))
-	f.sql.ExpectCommit()
 	f.table.On("CreateRecord", constraintsTable, mock.Anything).Return(savedKey(constraintID, []string{emailCol.ID.String()}), nil)
 
 	_, err := f.svc.Create(context.Background(), constraintSchema, dto.CreateTableConstraintRequest{

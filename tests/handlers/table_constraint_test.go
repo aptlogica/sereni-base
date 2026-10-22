@@ -160,7 +160,7 @@ func TestTableConstraintHandler_CreateTableConstraint(t *testing.T) {
 
 		res := decodeAutomationResponse(t, w)
 		assert.Equal(t, http.StatusConflict, w.Code)
-		assert.Equal(t, "TCN_1016", res.Error.Code)
+		assert.Equal(t, "TCN_1017", res.Error.Code)
 		assert.Equal(t, "3 records break this condition. Fix them or change the condition.", res.Error.Message)
 	})
 

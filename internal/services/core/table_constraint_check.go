@@ -114,20 +114,11 @@ func scanCondition(condition string) ([]byte, string) {
 			i = end
 			continue
 		}
-		next := byte(0)
-		if i+1 < len(condition) {
-			next = condition[i+1]
+		message, delta := scanChar(condition, i)
+		if message != "" {
+			return nil, message
 		}
-		switch {
-		case ch == ';', ch == '-' && next == '-', ch == '/' && next == '*':
-			return nil, `The condition can't contain ";" or comments.`
-		case ch == '$':
-			return nil, "Dollar quoting isn't allowed."
-		case ch == '(':
-			depth++
-		case ch == ')':
-			depth--
-		}
+		depth += delta
 		if depth < 0 {
 			return nil, unbalancedMessage
 		}
@@ -137,6 +128,26 @@ func scanCondition(condition string) ([]byte, string) {
 		return nil, unbalancedMessage
 	}
 	return code, ""
+}
+
+// scanChar checks the unquoted character at index i: the reason it isn't allowed, and how it changes the parentheses depth
+func scanChar(condition string, i int) (string, int) {
+	ch := condition[i]
+	next := byte(0)
+	if i+1 < len(condition) {
+		next = condition[i+1]
+	}
+	switch {
+	case ch == ';', ch == '-' && next == '-', ch == '/' && next == '*':
+		return `The condition can't contain ";" or comments.`, 0
+	case ch == '$':
+		return "Dollar quoting isn't allowed.", 0
+	case ch == '(':
+		return "", 1
+	case ch == ')':
+		return "", -1
+	}
+	return "", 0
 }
 
 // closingQuote returns the index of the quote that closes the one at start (” and "" are escapes), or -1
@@ -377,7 +388,7 @@ func (s *tableConstraintService) updateCheck(ctx context.Context, schemaName str
 			return dto.TableConstraintResponse{}, err
 		}
 	case current.input.Category != in.Category:
-		if err := s.exec("", checkCommentSQL(table, existing.ConstraintName, in)); err != nil {
+		if _, err := s.repo.DB.Exec(checkCommentSQL(table, existing.ConstraintName, in)); err != nil {
 			return dto.TableConstraintResponse{}, err
 		}
 	}

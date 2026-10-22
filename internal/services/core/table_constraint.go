@@ -66,7 +66,7 @@ func (s *tableConstraintService) List(ctx context.Context, schemaName, modelID, 
 	if constraintType == tenant.ConstraintTypeCheck {
 		return s.listChecks(tableIdentifier(schemaName, model.Alias), constraints, columns)
 	}
-	installed, err := s.installedConstraints(tableIdentifier(schemaName, model.Alias))
+	installed, err := s.installedConstraints(ctx, tableIdentifier(schemaName, model.Alias))
 	if err != nil {
 		return nil, err
 	}
