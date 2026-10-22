@@ -2406,11 +2406,9 @@ func (s tableManagementService) normalizeRecords(records []map[string]interface{
 	return normalizedRecord
 }
 
+// allowInsert reports whether a value can be written to the column of a new record; the rule is the same as for updating
 func (s tableManagementService) allowInsert(columnData dto.ColumnResponse) bool {
-	if *columnData.System {
-		return isLegacyTitle(columnData)
-	}
-	return true
+	return s.allowUpdate(columnData)
 }
 
 func (s tableManagementService) getRowByID(ctx context.Context, tableName string, rowID interface{}) (map[string]interface{}, error) {
