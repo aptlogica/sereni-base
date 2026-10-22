@@ -143,6 +143,10 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.PrimaryKeyDataInvalid, PrimaryKeyError.DataInvalid},
 	{app_errors.PrimaryKeyUpdateFailed, PrimaryKeyError.UpdateFailed},
 	{app_errors.ColumnInPrimaryKey, PrimaryKeyError.ColumnInKey},
+	// uuid fields
+	{app_errors.UUIDInvalid, UUIDError.Invalid},
+	{app_errors.UUIDReadOnly, UUIDError.ReadOnly},
+	{app_errors.UUIDConfigInvalid, UUIDError.ConfigInvalid},
 	// table constraints (unique keys)
 	{app_errors.ConstraintNotFound, TableConstraintError.ConstraintNotFound},
 	{app_errors.ConstraintColumnNotFound, TableConstraintError.ColumnNotFound},

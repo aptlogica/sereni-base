@@ -50,6 +50,7 @@ var ErrorCodes = MergeMaps(
 	AutomationErrorCodes,
 	PrimaryKeyErrorCodes,
 	TableConstraintErrorCodes,
+	UUIDErrorCodes,
 )
 
 var SuccessCodes = MergeMaps(

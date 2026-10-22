@@ -799,6 +799,7 @@ func TestRowsAndLinks(t *testing.T) {
 
 		modelID := uuid.New().String()
 		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl"}, nil)
+		expectNoAutoUUIDColumns(mockColumn)
 
 		stubTable.CreateRecordFn = func(tableName string, data map[string]interface{}) (map[string]interface{}, error) {
 			return map[string]interface{}{"id": 1}, nil
@@ -1884,6 +1885,7 @@ func TestCreateRowsWithValues_Success(t *testing.T) {
 	model := tenant.Model{ID: uuid.MustParse(modelID), Alias: "tbl"}
 
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", colTextID).
 		Return(tenant.Column{ID: uuid.MustParse(colTextID), ModelID: modelID, BaseID: baseID, ColumnName: "text_col", UIDT: "text", DT: helpers.StringPtr("TEXT")}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", colArrayID).

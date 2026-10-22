@@ -19,6 +19,7 @@ import (
 
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -764,8 +765,13 @@ func (s tableManagementService) ValidateColumnsAllowed(ctx context.Context, sche
 	}
 
 	uidtByID := make(map[string]string, len(cols))
+	// Auto-generated uuid fields are owned by the system, so data tools can't change them
+	autoUUID := make(map[string]struct{})
 	for _, col := range cols {
 		uidtByID[col.ID.String()] = col.UIDT
+		if cfg, _ := dto.IDGenerationFromMeta(col.Meta); col.UIDT == constant.UIDTUUID && cfg.Mode == constant.IDModeAuto {
+			autoUUID[col.ID.String()] = struct{}{}
+		}
 	}
 
 	blocked := map[string]struct{}{
@@ -790,6 +796,9 @@ func (s tableManagementService) ValidateColumnsAllowed(ctx context.Context, sche
 		}
 		if _, blockedType := blocked[strings.ToLower(uidt)]; blockedType {
 			return app_errors.UpdateNotAllowed
+		}
+		if _, auto := autoUUID[id]; auto {
+			return app_errors.UUIDReadOnly
 		}
 	}
 
