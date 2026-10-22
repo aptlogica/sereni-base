@@ -29,9 +29,6 @@ const primaryKeySampleLimit = 10
 
 const duplicateKeyReadFailed = "failed to read duplicate key values"
 
-// System columns that may be key fields; the audit columns are filled in by the system
-var primaryKeySystemColumns = []string{constant.PrimaryKeyIDColumn, "title"}
-
 type primaryKeyService struct {
 	repo          *pkg.DatabaseService
 	modelService  interfaces.ModelService
@@ -230,9 +227,10 @@ func (t keyTable) response() dto.PrimaryKeyResponse {
 
 // keyEligibility reports whether a field may be a key field and, if not, why
 func keyEligibility(col tenant.Column) (bool, string) {
-	// System columns are stored with virtual = true, but id and title are real columns
+	// System columns are stored with virtual = true, but id is a real column, and so is the Title column
+	// that tables created before Title became an ordinary column still have. The audit columns are filled in by the system.
 	if col.System {
-		if slices.Contains(primaryKeySystemColumns, col.ColumnName) {
+		if col.ColumnName == constant.PrimaryKeyIDColumn || col.IsLegacyTitle() {
 			return true, ""
 		}
 		return false, "Filled in automatically by the system"
@@ -315,8 +313,8 @@ func (s *primaryKeyService) validateData(t keyTable, cols []string) error {
 
 func (s *primaryKeyService) nullRecords(t keyTable, anyNull, missing string) ([]dto.PrimaryKeyRecord, error) {
 	rows, err := s.repo.DB.Query(fmt.Sprintf(
-		`SELECT id::bigint, COALESCE(title::text, ''), array_remove(ARRAY[%s], NULL)::text[] FROM %s WHERE %s ORDER BY id LIMIT %d`,
-		missing, t.table, anyNull, primaryKeySampleLimit))
+		`SELECT id::bigint, %s, array_remove(ARRAY[%s], NULL)::text[] FROM %s WHERE %s ORDER BY id LIMIT %d`,
+		t.labelSQL(), missing, t.table, anyNull, primaryKeySampleLimit))
 	if err != nil {
 		return nil, app_errors.LogDatabaseError(err, "failed to read records without key values")
 	}
@@ -332,6 +330,15 @@ func (s *primaryKeyService) nullRecords(t keyTable, anyNull, missing string) ([]
 		records = append(records, r)
 	}
 	return records, rows.Err()
+}
+
+// labelSQL is the SQL that reads the label of a record, used to name it in messages: the value of
+// the table's first text column, or an empty string when it has none
+func (t keyTable) labelSQL() string {
+	if col, ok := tenant.FirstTextColumn(t.columns); ok {
+		return fmt.Sprintf("COALESCE(%s::text, '')", quoteIdent(col.ColumnName))
+	}
+	return "''::text"
 }
 
 func (s *primaryKeyService) duplicates(table, keyObject, anyNull string) ([]dto.PrimaryKeyDuplicate, error) {

@@ -193,25 +193,8 @@ func TestNumericDecimalAndBoundsValidation(t *testing.T) {
 	assert.Len(t, derrs2, 1)
 }
 
-func TestProcessTitleAndDataCellBehavior(t *testing.T) {
+func TestProcessDataCellBehavior(t *testing.T) {
 	svc := newImportServiceForTest(t, nil, nil, nil)
-
-	// Title cell numeric conversion
-	cfg := dto.ColumnConfig{UIDT: "number", ColumnName: "Title"}
-	val, errs := svc.ProcessTitleCell("Title", cfg, "42")
-	assert.Nil(t, errs)
-	assert.Equal(t, int64(42), val)
-
-	// Title with default value
-	cfg2 := dto.ColumnConfig{UIDT: "number", Meta: map[string]interface{}{"default_value": "7"}}
-	v2, e2 := svc.ProcessTitleCell("Title", cfg2, "")
-	assert.Nil(t, e2)
-	assert.Equal(t, int64(7), v2)
-
-	// Invalid title value
-	cfg3 := dto.ColumnConfig{UIDT: "number"}
-	_, errs3 := svc.ProcessTitleCell("Title", cfg3, "bad")
-	assert.NotNil(t, errs3)
 
 	// Data cell basic
 	colResp := dto.ColumnResponse{ColumnName: "col_a"}

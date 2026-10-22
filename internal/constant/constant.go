@@ -189,15 +189,6 @@ var SystemColumns = []dto.AddColumnRequest{
 		System:      helpers.BoolPtr(true),
 	},
 	{
-		Title:       "Title",
-		Description: "",
-		UIDT:        "text",
-		DT:          "TEXT",
-		OrderIndex:  helpers.Float64Ptr(1),
-		Virtual:     helpers.BoolPtr(false),
-		System:      helpers.BoolPtr(true),
-	},
-	{
 		Title:       "Created Time",
 		Description: "",
 		UIDT:        "datetime",

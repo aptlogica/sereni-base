@@ -95,7 +95,6 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 		Req:           createTableReq,
 		Headers:       headers,
 		ColumnConfigs: req.Config.Columns,
-		Primary:       req.Config.PrimaryColumn,
 		TableResp:     tableResp,
 	}, lg)
 	if err != nil {
@@ -107,7 +106,6 @@ func (s *importService) ImportWithConfig(ctx context.Context, schemaName string,
 	newRecords, errorRows, errorMessages := s.BuildRecordsWithConfigAndErrors(dto.BuildRecordsWithConfigAndErrorsParams{
 		DataRows:      dataRows,
 		ColumnConfigs: req.Config.Columns,
-		Primary:       req.Config.PrimaryColumn,
 		ColumnMap:     columnMap,
 		Req:           createTableReq,
 		Headers:       headers,
@@ -289,7 +287,7 @@ func (s *importService) ParseCSV(file *multipart.FileHeader, lg *zerolog.Logger)
 
 func (s *importService) CreateTable(ctx context.Context, schemaName string, req dto.CreateTableRequest, lg *zerolog.Logger, tableTitle string) (dto.TableResponse, error) {
 	lg.Info().Str("tableName", tableTitle).Str("schemaName", schemaName).Msg("Creating table with defaults")
-	tableResp, err := s.tableService.CreateTableWithDefaults(ctx, req, schemaName)
+	tableResp, err := s.tableService.CreateTableWithDefaultsImport(ctx, req, schemaName)
 	if err != nil {
 		lg.Error().Stack().Err(err).Str("tableName", tableTitle).Str("schemaName", schemaName).Msg("Failed to create table with defaults")
 		return dto.TableResponse{}, err
@@ -892,49 +890,28 @@ func (s *importService) AddColumnsWithConfig(params dto.AddColumnsWithConfigPara
 	return columnMap, nil
 }
 
-// UpdateTitleColumnWithConfig updates the existing Title column with provided config metadata
-func (s *importService) UpdateTitleColumnWithConfig(params dto.AddColumnsWithConfigParams, cfg dto.ColumnConfig, header string, lg *zerolog.Logger) error {
-	// find the existing Title column id
-	titleColID := ""
-	for _, c := range params.TableResp.Columns {
-		if c.Title == "Title" {
-			titleColID = c.ID.String()
-			break
+// AvoidSystemColumnTitle renames an imported column whose title is the title of a system column of the
+// table (Id, Created Time, ...), compared without regard to case, so the table never has two columns
+// with the same title: "Id" becomes "Id (1)".
+func (s *importService) AvoidSystemColumnTitle(title string, existing []dto.ColumnResponse) string {
+	taken := map[string]bool{}
+	for _, col := range constant.SystemColumns {
+		taken[strings.ToLower(strings.TrimSpace(col.Title))] = true
+	}
+	for _, col := range existing {
+		if col.System != nil && *col.System {
+			taken[strings.ToLower(strings.TrimSpace(col.Title))] = true
 		}
 	}
-	if titleColID == "" {
-		lg.Warn().Msg("Title column not found to update with config")
-		return nil
+	if !taken[strings.ToLower(strings.TrimSpace(title))] {
+		return title
 	}
-
-	// prepare update with meta/type/title
-	colType := cfg.UIDT
-	if colType == "" {
-		colType = "text"
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s (%d)", strings.TrimSpace(title), i)
+		if !taken[strings.ToLower(candidate)] {
+			return candidate
+		}
 	}
-	colDT := s.GetDatabaseType(colType)
-
-	meta := map[string]interface{}{}
-	if cfg.Meta != nil {
-		meta = cfg.Meta
-	}
-
-	metaPtr := meta
-	titleStr := cfg.Title
-	if titleStr == "" {
-		titleStr = header
-	}
-	updateReq := dto.ColumnUpdate{
-		Title: &titleStr,
-		UIDT:  &colType,
-		DT:    &colDT,
-		Meta:  &metaPtr,
-	}
-	if _, err := s.tableService.UpdateColumn(params.Ctx, params.SchemaName, titleColID, updateReq); err != nil {
-		lg.Error().Stack().Err(err).Str("column", titleColID).Msg("Failed to update Title column with config meta")
-		return err
-	}
-	return nil
 }
 
 // CreateColumnFromConfig constructs AddColumnRequest and calls tableService.AddColumn
@@ -948,6 +925,7 @@ func (s *importService) CreateColumnFromConfig(params dto.AddColumnsWithConfigPa
 	if colTitle == "" {
 		colTitle = header
 	}
+	colTitle = s.AvoidSystemColumnTitle(colTitle, params.TableResp.Columns)
 
 	colDT := s.GetDatabaseType(colType)
 
@@ -978,29 +956,15 @@ func (s *importService) CreateColumnFromConfig(params dto.AddColumnsWithConfigPa
 	return colResp, nil
 }
 
-// AddColumnForHeader processes a single header: update title column or create new column
+// AddColumnForHeader processes a single header: it creates a column for it when the header is in the config
 func (s *importService) AddColumnForHeader(params dto.AddColumnsWithConfigParams, header string, i int, configMap map[string]dto.ColumnConfig, lg *zerolog.Logger) (dto.ColumnResponse, bool, error) {
 	if header == "" {
 		return dto.ColumnResponse{}, false, nil
 	}
 
 	cfg, exists := configMap[header]
-	primaryMatch := false
-	if params.Primary != nil && params.Primary.ColumnName == header {
-		primaryMatch = true
-		cfg = *params.Primary
-		exists = true
-	}
-
 	if !exists {
 		lg.Debug().Str("columnName", header).Msg("Skipping column not in config")
-		return dto.ColumnResponse{}, false, nil
-	}
-
-	if primaryMatch {
-		if err := s.UpdateTitleColumnWithConfig(params, cfg, header, lg); err != nil {
-			return dto.ColumnResponse{}, false, err
-		}
 		return dto.ColumnResponse{}, false, nil
 	}
 
@@ -1462,27 +1426,20 @@ func (s *importService) PopulateRecordFromCells(record map[string]interface{}, r
 	return rowErrors, recordValid
 }
 
-// ProcessCellByType processes a cell based on whether it's primary or non-primary
+// ProcessCellByType processes a cell of the row against the column config of its header
 func (s *importService) ProcessCellByType(record map[string]interface{}, colIdx int, cellVal string, params dto.BuildRecordsWithConfigAndErrorsParams, configMap map[string]dto.ColumnConfig) []string {
 	header := params.Headers[colIdx]
 	cfg, configExists := configMap[header]
 
-	// Handle primary column
-	if params.Primary != nil && params.Primary.ColumnName == header {
-		cfg = *params.Primary
-		return s.ApplyPrimaryCell(record, header, cfg, cellVal)
-	}
-
-	// Handle non-primary column
-	errs, applied := s.ApplyNonPrimary(record, header, cfg, configExists, params, colIdx, cellVal)
+	errs, applied := s.ApplyDataCell(record, header, cfg, configExists, params, colIdx, cellVal)
 	if len(errs) > 0 || applied {
 		return errs
 	}
 	return nil
 }
 
-// ApplyNonPrimary handles non-primary column processing for a single cell
-func (s *importService) ApplyNonPrimary(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool) {
+// ApplyDataCell handles column processing for a single cell
+func (s *importService) ApplyDataCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool) {
 	if !configExists {
 		return nil, false
 	}
@@ -1495,16 +1452,6 @@ func (s *importService) ApplyNonPrimary(record map[string]interface{}, header st
 	return s.HandleDataCellForRow(record, header, cfg, colResp, cellVal)
 }
 
-// ApplyPrimaryCell validates and applies the primary/title cell to the record
-func (s *importService) ApplyPrimaryCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, cellVal string) []string {
-	if val, errs := s.ProcessTitleCell(header, cfg, cellVal); len(errs) > 0 {
-		return errs
-	} else if val != nil {
-		record["title"] = val
-	}
-	return nil
-}
-
 // HandleDataCellForRow validates a non-primary data cell and applies it to the record if valid
 func (s *importService) HandleDataCellForRow(record map[string]interface{}, header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) ([]string, bool) {
 	if key, val, errs, ok := s.ProcessDataCell(header, cfg, colResp, cellVal); len(errs) > 0 {
@@ -1514,32 +1461,6 @@ func (s *importService) HandleDataCellForRow(record map[string]interface{}, head
 		return nil, true
 	}
 	return nil, false
-}
-
-// ProcessTitleCell handles validation and conversion for the primary/title column
-func (s *importService) ProcessTitleCell(header string, cfg dto.ColumnConfig, cellVal string) (interface{}, []string) {
-	defaultVal := s.GetDefaultValue(&cfg)
-
-	// Determine which value to use
-	var primaryValue string
-	if cellVal != "" {
-		primaryValue = cellVal
-	} else if defaultVal != "" {
-		primaryValue = defaultVal
-	}
-
-	// If both cell and default are empty, title remains unset
-	if primaryValue == "" {
-		return nil, nil
-	}
-
-	// Validate primary column type conversion
-	conversionErr := s.ValidateConversion(primaryValue, cfg.UIDT)
-	if conversionErr != "" {
-		return nil, []string{"Primary column: " + conversionErr}
-	}
-
-	return s.ConvertValue(primaryValue, cfg.UIDT), nil
 }
 
 // ProcessDataCell handles validation and conversion for non-primary data cells
@@ -1568,7 +1489,7 @@ func (s *importService) ProcessDataCell(header string, cfg dto.ColumnConfig, col
 }
 
 // ValidateColumnConfig validates that all column configs have required fields and valid source names
-func (s *importService) ValidateColumnConfig(columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
+func (s *importService) ValidateColumnConfig(columnConfigs []dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
 	if len(columnConfigs) == 0 {
 		lg.Error().Msg("No columns provided in config")
 		return fmt.Errorf("at least one column must be configured")
@@ -1582,40 +1503,11 @@ func (s *importService) ValidateColumnConfig(columnConfigs []dto.ColumnConfig, p
 		}
 	}
 
-	if err := s.ValidatePrimaryConfig(primary, headers, lg); err != nil {
-		return err
-	}
-
 	if err := s.ValidateEachColumnConfig(columnConfigs, validHeaders, lg); err != nil {
 		return err
 	}
 
 	lg.Info().Int("columnCount", len(columnConfigs)).Msg("Column config validation passed")
-	return nil
-}
-
-// ValidatePrimaryConfig checks the primary column configuration
-func (s *importService) ValidatePrimaryConfig(primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error {
-	if primary == nil {
-		lg.Error().Msg("primary_column is required in import config")
-		return fmt.Errorf("primary_column is required in import config")
-	}
-	if primary.ColumnName == "" {
-		lg.Error().Msg("PrimaryColumn provided but ColumnName is empty")
-		return fmt.Errorf("primary_column: column_name is required")
-	}
-
-	primaryValid := false
-	for _, h := range headers {
-		if h == primary.ColumnName {
-			primaryValid = true
-			break
-		}
-	}
-	if !primaryValid {
-		lg.Error().Str("primaryColumn", primary.ColumnName).Msg("PrimaryColumn does not match any CSV header")
-		return fmt.Errorf("primary_column '%s' not found in CSV headers", primary.ColumnName)
-	}
 	return nil
 }
 
@@ -1847,7 +1739,7 @@ func (s *importService) PrepareImportData(ctx context.Context, schemaName string
 	stats := &dto.ImportStatistics{}
 
 	// Validate column config
-	if err := s.ValidateColumnConfig(req.Config.Columns, req.Config.PrimaryColumn, headers, lg); err != nil {
+	if err := s.ValidateColumnConfig(req.Config.Columns, headers, lg); err != nil {
 		return nil, nil, stats, "", err
 	}
 

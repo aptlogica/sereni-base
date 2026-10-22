@@ -39,11 +39,13 @@ type tableManagementService struct {
 }
 
 const (
-	SchemaTableFormat     = "\"%s\".\"%s\""
-	QuotedColumnFormat    = "\"%s\""
-	ErrConvertViewStruct  = "Failed to convert view struct"
-	columnActionBatchSize = 1000
-	dateOutputLayout      = "2006-01-02"
+	defaultTitleColumnTitle = "Title"
+	defaultTitleColumnOrder = 1
+	SchemaTableFormat       = "\"%s\".\"%s\""
+	QuotedColumnFormat      = "\"%s\""
+	ErrConvertViewStruct    = "Failed to convert view struct"
+	columnActionBatchSize   = 1000
+	dateOutputLayout        = "2006-01-02"
 )
 
 // relationRecordParams holds parameters for creating relation record
@@ -66,6 +68,8 @@ type targetColumnParams struct {
 	RelationID      uuid.UUID
 	RelationType    string
 	InverseTitle    string
+	// DisplayColumnID is the column of the source table that the partner column shows
+	DisplayColumnID string
 	Now             time.Time
 }
 
@@ -129,6 +133,15 @@ func (s tableManagementService) createDefaultView(ctx context.Context, schemaNam
 	return s.CreateView(ctx, schemaName, viewData)
 }
 
+// systemColumnOrder is the order index of a system column: the one it declares, else its position in the list.
+// The declared index matters because Title, added after the system columns, takes index 1.
+func systemColumnOrder(column dto.AddColumnRequest, position int) *float64 {
+	if column.OrderIndex != nil {
+		return helpers.Float64Ptr(*column.OrderIndex)
+	}
+	return helpers.Float64Ptr(float64(position))
+}
+
 func (s tableManagementService) insertSystemColumns(schemaName string, tableData tenant.Model, columnsData []dto.AddColumnRequest) ([]dto.ColumnResponse, error) {
 	var colDataList []dto.ColumnInsertion
 	now := time.Now().UTC()
@@ -152,7 +165,7 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 			Virtual:     true,
 			System:      systemValue,
 			Deleted:     false,
-			OrderIndex:  helpers.Float64Ptr(float64(index)),
+			OrderIndex:  systemColumnOrder(column, index),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 			CreatedBy:   tableData.CreatedBy,
@@ -231,6 +244,12 @@ func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tab
 		return dto.TableResponse{}, err
 	}
 
+	titleColumn, err := s.addDefaultTitleColumn(ctx, schemaName, insertedModel)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+	columnsResponse = insertTitleColumn(columnsResponse, titleColumn)
+
 	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
 	if err != nil {
 		return dto.TableResponse{}, err
@@ -253,6 +272,38 @@ func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tab
 	}
 
 	return tableResponse, nil
+}
+
+// addDefaultTitleColumn gives a new table a Title column. It is an ordinary text column, created the same
+// way as one a user adds, so it can be renamed, retyped or deleted, and its column name is generated like any other.
+func (s tableManagementService) addDefaultTitleColumn(ctx context.Context, schemaName string, model tenant.Model) (dto.ColumnResponse, error) {
+	return s.AddColumn(ctx, schemaName, dto.AddColumnRequest{
+		ModelID:    model.ID,
+		BaseID:     model.BaseID,
+		Title:      defaultTitleColumnTitle,
+		UIDT:       uidtText,
+		OrderIndex: helpers.Float64Ptr(defaultTitleColumnOrder),
+		Virtual:    helpers.BoolPtr(false),
+		System:     helpers.BoolPtr(false),
+		CreatedBy:  model.CreatedBy,
+	})
+}
+
+// insertTitleColumn puts the Title column into the column list at its order index
+func insertTitleColumn(columns []dto.ColumnResponse, title dto.ColumnResponse) []dto.ColumnResponse {
+	out := make([]dto.ColumnResponse, 0, len(columns)+1)
+	inserted := false
+	for _, col := range columns {
+		if !inserted && col.OrderIndex != nil && title.OrderIndex != nil && *col.OrderIndex > *title.OrderIndex {
+			out = append(out, title)
+			inserted = true
+		}
+		out = append(out, col)
+	}
+	if !inserted {
+		out = append(out, title)
+	}
+	return out
 }
 
 func (s tableManagementService) createModel(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (tenant.Model, error) {
@@ -726,6 +777,21 @@ func (s tableManagementService) addColumnWithRelation(
 	isSelf := relationWith == columnData.ModelID.String()
 	inverseTitle := s.extractInverseTitle(sourceMeta)
 
+	// The display column of each side is checked before anything is created, so a bad value leaves nothing behind
+	inverseDisplayRequest := popInverseDisplayColumn(sourceMeta)
+	sourceDisplayColumn, err := s.resolveDisplayColumnID(ctx, schemaName, relationWith, displayColumnID(sourceMeta))
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+	setDisplayColumnMeta(sourceMeta, sourceDisplayColumn)
+	partnerDisplayColumn := ""
+	if !isSelf {
+		partnerDisplayColumn, err = s.resolveDisplayColumnID(ctx, schemaName, columnData.ModelID.String(), inverseDisplayRequest)
+		if err != nil {
+			return dto.ColumnResponse{}, err
+		}
+	}
+
 	sourcColumn, sourceModelData, err := s.createSourceColumnForRelation(ctx, schemaName, columnData, sourceMeta, relationId, relationType, now)
 	if err != nil {
 		return dto.ColumnResponse{}, err
@@ -741,6 +807,7 @@ func (s tableManagementService) addColumnWithRelation(
 			RelationID:      relationId,
 			RelationType:    relationType,
 			InverseTitle:    inverseTitle,
+			DisplayColumnID: partnerDisplayColumn,
 			Now:             now,
 		})
 		if err != nil {
@@ -869,6 +936,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		"entity_role": entityRoleTarget,
 		"relation_id": params.RelationID,
 	}
+	setDisplayColumnMeta(targetMeta, params.DisplayColumnID)
 
 	targetTitle := params.InverseTitle
 	if targetTitle == "" {
@@ -1362,12 +1430,15 @@ func (s tableManagementService) DeleteView(
 	return s.viewService.DeleteView(ctx, schemaName, id)
 }
 
+// isLegacyTitle reports whether the column is the system Title column of a table created before Title
+// became an ordinary column. That column stays writable until a migration makes it a normal one.
+func isLegacyTitle(columnData dto.ColumnResponse) bool {
+	return columnData.System != nil && *columnData.System && columnData.ColumnName == tenant.LegacyTitleColumnName
+}
+
 func (s tableManagementService) allowUpdate(columnData dto.ColumnResponse) bool {
 	if *columnData.System {
-		if columnData.ColumnName == "title" {
-			return true
-		}
-		return false
+		return isLegacyTitle(columnData)
 	}
 	return true
 }
@@ -1421,6 +1492,13 @@ func (s tableManagementService) updateColumnForLink(
 		UpdatedAt:   req.UpdatedAt,
 	}
 
+	// The display column is the one thing in meta that can change; the rest of meta is kept as it is
+	displayMeta, err := s.linkMetaWithDisplayColumn(ctx, schemaName, columnData, req)
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+	linkUpdateReq.Meta = displayMeta
+
 	updatedColumn, err := s.columnsService.UpdateColumn(ctx, schemaName, columnData.ID.String(), linkUpdateReq)
 	if err != nil {
 		return dto.ColumnResponse{}, err
@@ -1440,6 +1518,42 @@ func (s tableManagementService) updateColumnForLink(
 	}
 
 	return updatedColumnResponse, nil
+}
+
+// linkMetaWithDisplayColumn returns the link's meta with the requested display column applied, or nil
+// when the request does not carry one. An empty id clears it, so the link falls back to the first text column.
+func (s tableManagementService) linkMetaWithDisplayColumn(
+	ctx context.Context,
+	schemaName string,
+	columnData dto.ColumnResponse,
+	req dto.ColumnUpdate,
+) (*map[string]interface{}, error) {
+	if req.Meta == nil {
+		return nil, nil
+	}
+	requested, present := (*req.Meta)[metaDisplayColumnKey]
+	if !present {
+		return nil, nil
+	}
+	columnID, _ := requested.(string)
+	columnID = strings.TrimSpace(columnID)
+
+	info, ok := parseLinkMeta(columnData.Meta)
+	if !ok || info.With == "" {
+		return nil, app_errors.InvalidColumnMetaForLinkType
+	}
+	if columnID != "" {
+		if err := s.validateDisplayColumn(ctx, schemaName, info.With, columnID); err != nil {
+			return nil, err
+		}
+	}
+
+	merged := make(map[string]interface{}, len(columnData.Meta)+1)
+	for k, v := range columnData.Meta {
+		merged[k] = v
+	}
+	setDisplayColumnMeta(merged, columnID)
+	return &merged, nil
 }
 
 // renamePartnerLinkColumn sets the title of the other column of a link (the inverse field).
@@ -1612,6 +1726,10 @@ func (s tableManagementService) updatePlainColumn(
 	}
 
 	if err := s.ensureTypeFitsKey(schemaName, columnData, req); err != nil {
+		return tenant.Column{}, err
+	}
+
+	if err := s.ensureTypeFitsDisplayColumn(ctx, schemaName, columnData, req); err != nil {
 		return tenant.Column{}, err
 	}
 
@@ -2168,6 +2286,8 @@ func (s tableManagementService) DeleteColumn(
 	}
 	// The column is dropped with CASCADE, which also drops unique keys using it; remove their entries too
 	s.removeKeysUsingColumn(schemaName, columnData)
+	// Links that showed this column as their label fall back to the first text column
+	s.clearDisplayColumnReferences(ctx, schemaName, columnData)
 	return nil
 }
 
@@ -2288,10 +2408,7 @@ func (s tableManagementService) normalizeRecords(records []map[string]interface{
 
 func (s tableManagementService) allowInsert(columnData dto.ColumnResponse) bool {
 	if *columnData.System {
-		if strings.Contains(strings.ToLower(columnData.ColumnName), "title") {
-			return true
-		}
-		return false
+		return isLegacyTitle(columnData)
 	}
 	return true
 }

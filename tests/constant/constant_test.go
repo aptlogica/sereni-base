@@ -209,7 +209,8 @@ func TestSystemColumns(t *testing.T) {
 		t.Fatal("SystemColumns should not be empty")
 	}
 
-	expectedColumns := 6 // Id, Title, Created Time, Last Modified Time, Created By, Last Modified By
+	// Id and the four audit columns. Title is an ordinary column, added after them when a table is created.
+	expectedColumns := 5
 	if len(constant.SystemColumns) != expectedColumns {
 		t.Errorf("SystemColumns count = %d, want %d", len(constant.SystemColumns), expectedColumns)
 	}
@@ -241,6 +242,13 @@ func TestSystemColumns(t *testing.T) {
 				t.Errorf("Column %s has nil System", col.Title)
 			}
 		})
+	}
+
+	// Index 1 is left for the Title column that a new table gets
+	for _, col := range constant.SystemColumns {
+		if col.OrderIndex != nil && *col.OrderIndex == 1 {
+			t.Errorf("Column %s uses order index 1, which belongs to Title", col.Title)
+		}
 	}
 
 	// Test order index uniqueness and sequential ordering

@@ -54,6 +54,7 @@ func setupColumnDelete(t *testing.T) (tenant.Column, *MockTableService, *MockCol
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", "cid").Return(nil)
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
+	mockColumn.On("GetAllColumns", mock.Anything, "schema").Return([]tenant.Column{}, nil).Maybe()
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(modelID)}, nil)
 	mockTable.On("GetByFunction", mock.Anything, "public.reorder_columns_after_delete", mock.Anything).Return([]map[string]interface{}{}, nil)
 	mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)

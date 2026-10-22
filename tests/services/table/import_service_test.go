@@ -38,6 +38,11 @@ func (m *MockTableManagementService) CreateTableWithDefaults(ctx context.Context
 	return args.Get(0).(dto.TableResponse), args.Error(1)
 }
 
+func (m *MockTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	args := m.Called(ctx, tableData, schemaName)
+	return args.Get(0).(dto.TableResponse), args.Error(1)
+}
+
 func (m *MockTableManagementService) UpdateColumn(ctx context.Context, schemaName string, id string, req dto.ColumnUpdate) (dto.ColumnResponse, error) {
 	args := m.Called(ctx, schemaName, id, req)
 	return args.Get(0).(dto.ColumnResponse), args.Error(1)
@@ -375,12 +380,7 @@ func (a importAdapter) Import(ctx context.Context, schema string, create dto.Cre
 				uidt := inferTypeFromRows(dataRows, i)
 				cols = append(cols, dto.ColumnConfig{ColumnName: h, Title: h, UIDT: uidt})
 			}
-			// Default primary to first header
-			var primary *dto.ColumnConfig
-			if len(cols) > 0 {
-				primary = &cols[0]
-			}
-			req.Config = dto.ImportConfig{Columns: cols, PrimaryColumn: primary}
+			req.Config = dto.ImportConfig{Columns: cols}
 		}
 	}
 
@@ -582,7 +582,7 @@ func TestImport_AntivirusPass(t *testing.T) {
 
 	mockAV.On("ScanReader", mock.Anything, "data.csv", mock.Anything).
 		Return(antivirusInterfaces.ScanResult{Clean: true}, nil)
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").
 		Return(resp, errors.New("stop"))
 
 	svcReal := services.NewImportService(mockTable, mockBase, mockAV)
@@ -619,7 +619,7 @@ func TestImport_EnsureBaseSuccess(t *testing.T) {
 		Return(tenant.Base{ID: newBaseID}, nil)
 
 	var captured dto.CreateTableRequest
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").
 		Run(func(args mock.Arguments) { captured = args.Get(1).(dto.CreateTableRequest) }).
 		Return(dto.TableResponse{}, errors.New("stop"))
 
@@ -672,7 +672,7 @@ func TestImport_CreateTableError(t *testing.T) {
 	mockBase := &MockBaseManagementService{}
 
 	file := makeFileHeader(t, "data.csv", "Title\nA\n")
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").
 		Return(dto.TableResponse{}, errors.New("fail"))
 
 	svcReal := services.NewImportService(mockTable, mockBase, nil)
@@ -682,25 +682,19 @@ func TestImport_CreateTableError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestImport_UpdateTitleColumnNoTitleName(t *testing.T) {
+// An empty header is skipped; the other columns become normal columns.
+func TestImport_EmptyHeaderSkipped(t *testing.T) {
 	mockTable := &MockTableManagementService{}
 	mockBase := &MockBaseManagementService{}
 
 	file := makeFileHeader(t, "data.csv", ",ColA\n,1\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
-	// Mock UpdateColumn in case the empty header still triggers the update
-	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
-		Return(dto.ColumnResponse{}, nil).Maybe()
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
-		Return(dto.ColumnResponse{}, errors.New("add fail"))
-
-	// In the current ImportWithConfig flow a rows insertion may be attempted;
-	// ensure mock handles it to keep behavior stable for this test.
+		Return(dto.ColumnResponse{ColumnName: "cola"}, nil)
 	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
 		Return([]dto.RecordResponse{}, errors.New("insert fail"))
-
 	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
 
 	svcReal := services.NewImportService(mockTable, mockBase, nil)
@@ -708,36 +702,45 @@ func TestImport_UpdateTitleColumnNoTitleName(t *testing.T) {
 	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T"}, file)
 
 	assert.NoError(t, err)
+	// one column for the one non-empty header, and nothing edits the table's own columns
+	mockTable.AssertNumberOfCalls(t, "AddColumn", 1)
+	mockTable.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestImport_UpdateTitleColumnNoTitleFound(t *testing.T) {
-	mockTable := &MockTableManagementService{}
-	mockBase := &MockBaseManagementService{}
-
-	file := makeFileHeader(t, "data.csv", "Name,ColA\nA,1\n")
-	resp := baseTableResponse()
-	resp.Columns = []dto.ColumnResponse{{Title: "NotTitle", ID: uuid.New()}}
-
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
-	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
-		Return(dto.ColumnResponse{}, errors.New("add fail"))
-
-	svcReal := services.NewImportService(mockTable, mockBase, nil)
-	svc := importAdapter{svc: svcReal}
-	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T"}, file)
-
-	assert.Error(t, err)
-}
-
-func TestImport_UpdateTitleColumnError(t *testing.T) {
+// The import asks for a table without a Title column: every column of the file becomes a column.
+func TestImport_CreatesTableWithoutTitleColumn(t *testing.T) {
 	mockTable := &MockTableManagementService{}
 	mockBase := &MockBaseManagementService{}
 
 	file := makeFileHeader(t, "data.csv", "Name\nA\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
-	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything,
+		mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
+		Return(dto.ColumnResponse{ColumnName: "name"}, nil)
+	mockTable.On("CreateRowsWithRecordsBulk", mock.Anything, "schema", resp.Model.Alias, mock.Anything).
+		Return([]dto.RecordResponse{}, nil)
+	mockTable.On("GetTableByID", mock.Anything, resp.Model.ID.String(), "schema").Return(resp, nil)
+
+	svcReal := services.NewImportService(mockTable, mockBase, nil)
+	svc := importAdapter{svc: svcReal}
+	_, err := svc.Import(context.Background(), "schema", dto.CreateTableRequest{BaseID: "base", Title: "T"}, file)
+
+	assert.NoError(t, err)
+	mockTable.AssertCalled(t, "AddColumn", mock.Anything, "schema", mock.Anything)
+}
+
+// The first header is a column like any other, so a failure to add it fails the import.
+func TestImport_AddColumnFailsForFirstHeader(t *testing.T) {
+	mockTable := &MockTableManagementService{}
+	mockBase := &MockBaseManagementService{}
+
+	file := makeFileHeader(t, "data.csv", "Name\nA\n")
+	resp := baseTableResponse()
+
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
 		Return(dto.ColumnResponse{}, errors.New("fail"))
 
 	svcReal := services.NewImportService(mockTable, mockBase, nil)
@@ -754,7 +757,7 @@ func TestImport_AddColumnsError(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,ColA\nA,1\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
@@ -774,7 +777,7 @@ func TestImport_InsertBatchError(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,ColA\nA,1\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
@@ -800,7 +803,7 @@ func TestImport_RefreshTableError(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,ColA\nA,1\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.On("AddColumn", mock.Anything, "schema", mock.Anything).
@@ -832,7 +835,7 @@ func TestImport_SuccessAndTypes(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", csv)
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -855,7 +858,7 @@ func TestImport_SuccessAndTypes(t *testing.T) {
 	assert.Len(t, captured, 2)
 
 	row := captured[0]
-	assert.Equal(t, "Task", row["title"])
+	assert.Equal(t, "Task", row["\"title\""])
 	assert.Equal(t, true, row["\"bool_col\""])
 	assert.Equal(t, int64(123), row["\"int_col\""])
 	assert.Equal(t, 12.5, row["\"dec_col\""])
@@ -874,7 +877,7 @@ func TestImport_UpdateTypeFlags_NumericType(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Number\nA,123\nB,456\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -904,7 +907,7 @@ func TestImport_UpdateTypeFlags_BooleanType(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,IsActive\nA,true\nB,false\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -934,7 +937,7 @@ func TestImport_UpdateTypeFlags_DateType(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,CreatedDate\nA,2006-01-02\nB,2007-01-02\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -964,7 +967,7 @@ func TestImport_UpdateTypeFlags_MixedTypes(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Mixed\nA,hello\nB,world\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -994,7 +997,7 @@ func TestImport_UpdateTypeFlags_EmailType(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Email\nA,user@example.com\nB,admin@example.com\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).
 		Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
@@ -1026,7 +1029,7 @@ func TestImport_ValidationErrors_InvalidNumber(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Age\nJohn,abc\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1051,7 +1054,7 @@ func TestImport_ValidationErrors_InvalidEmail(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Email\nJohn,invalidemail\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1075,7 +1078,7 @@ func TestImport_ValidationErrors_InvalidBoolean(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Active\nJohn,maybe\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1099,7 +1102,7 @@ func TestImport_ValidationErrors_InvalidJSON(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Metadata\nJohn,{invalid}\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1123,7 +1126,7 @@ func TestImport_ValidationErrors_InvalidDecimal(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Price\nItem,notanumber\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1148,7 +1151,7 @@ func TestImport_MultipleValidationErrors(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", csvData)
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1172,7 +1175,7 @@ func TestImport_CSVEscaping_CommaInValue(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Description\n\"Full Name, Inc\",\"Good, affordable\"\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1196,7 +1199,7 @@ func TestImport_LargeNumbers(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Amount\nTransaction,9999999999999999\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1220,7 +1223,7 @@ func TestImport_SpecialCharactersAndUnicode(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,Description\nProduct,中文 Special @#$%\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1245,7 +1248,7 @@ func TestImport_MixedBooleanFormats(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", csvData)
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1269,7 +1272,7 @@ func TestImport_EmptyAndNullValues(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", "Title,OptionalField\nItem,\n")
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil
@@ -1294,7 +1297,7 @@ func TestImport_DecimalVsIntegerNumbers(t *testing.T) {
 	file := makeFileHeader(t, "data.csv", csvData)
 	resp := baseTableResponse()
 
-	mockTable.On("CreateTableWithDefaults", mock.Anything, mock.Anything, "schema").Return(resp, nil)
+	mockTable.On("CreateTableWithDefaultsImport", mock.Anything, mock.Anything, "schema").Return(resp, nil)
 	mockTable.On("UpdateColumn", mock.Anything, "schema", mock.Anything, mock.Anything).Return(dto.ColumnResponse{}, nil)
 	mockTable.AddColumnFn = func(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {
 		return dto.ColumnResponse{ID: uuid.New(), ColumnName: helpers.ToSnakeCase(columnData.Title)}, nil

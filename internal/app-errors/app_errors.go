@@ -184,6 +184,8 @@ var (
 	LinkTargetRowNotFound          = errors.New("linked record not found")
 	InvalidLookupTargetColumn      = errors.New("lookup field not allowed")
 	LinkColumnNotWritable          = errors.New("field is not directly writable")
+	InvalidDisplayColumn           = errors.New("field can't be used as the display column")
+	DisplayColumnInUse             = errors.New("field is used as a display column by a link")
 )
 
 // automations (triggers & webhooks)

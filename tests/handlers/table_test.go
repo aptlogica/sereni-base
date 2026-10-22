@@ -194,7 +194,8 @@ func TestTableHandler_ImportTable_InvalidConfigJSON(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
-func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
+// primary_column is no longer used: the field is ignored and the import goes ahead.
+func TestTableHandler_ImportTable_IgnoresPrimaryColumn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	orig := config.AppConfig
 	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
@@ -205,6 +206,8 @@ func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(dto.ImportTableResponse{}, nil)
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
 
 	body := &bytes.Buffer{}
@@ -224,7 +227,7 @@ func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
 	c.Set("user_id", "user123")
 
 	handler.ImportTableWithConfig(c)
-	assert.NotEqual(t, http.StatusCreated, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
 func TestTableHandler_ImportTable_FileTooLarge(t *testing.T) {
@@ -261,7 +264,7 @@ func TestTableHandler_ImportTable_FileTooLarge(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
-func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testing.T) {
+func TestTableHandler_ImportTable_OrderIndexParsing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -272,9 +275,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	// Expect ImportWithConfig and inspect the request
 	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			if req.Config.PrimaryColumn == nil {
-				return dto.ImportTableResponse{}, errors.New("primary not set")
-			}
 			// order index should be parsed to float64
 			if req.OrderIndex != 2.0 && req.OrderIndex != 2.5 {
 				return dto.ImportTableResponse{}, errors.New("order index parse failed")
@@ -295,7 +295,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	io.WriteString(part, "col1,col2\nval1,val2")
 	writer.WriteField("base_id", uuid.New().String())
 	writer.WriteField("config", `{"columns":[{"column_name":"id"}]}`)
-	writer.WriteField("primary_column", "id")
 	writer.WriteField("order_index", "2")
 	writer.WriteField("title", "myfile.csv")
 	writer.Close()
@@ -317,9 +316,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	mockImportService = mocks.NewMockImportService(ctrl)
 	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			if req.Config.PrimaryColumn == nil {
-				return dto.ImportTableResponse{}, errors.New("primary not set")
-			}
 			if req.OrderIndex != 2.5 {
 				return dto.ImportTableResponse{}, errors.New("order index parse failed")
 			}
@@ -337,7 +333,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	io.WriteString(part, "col1,col2\nval1,val2")
 	writer.WriteField("base_id", uuid.New().String())
 	writer.WriteField("config", `{"columns":[{"column_name":"id"}]}`)
-	writer.WriteField("primary_column", "id")
 	writer.WriteField("order_index", "2.5")
 	writer.WriteField("title", "myfile.csv")
 	writer.Close()
