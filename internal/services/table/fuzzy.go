@@ -1,5 +1,7 @@
 // Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
 // Licensed under the Apache License, Version 2.0
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
 
 package services
 
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rivo/uniseg"
 )
@@ -184,6 +187,47 @@ func SimilarityScoreWeighted(a, b string, reorderWeight float64) float64 {
 // 	return Search(query, items, func(s string) string { return s }, threshold)
 // }
 
+// fuzzyMatchPair records two row indices whose selected columns fuzzy-match.
+type fuzzyMatchPair struct {
+	i, j int
+}
+
+// fuzzyUnionFind groups row indices into connected components of fuzzy similarity.
+type fuzzyUnionFind struct {
+	parent []int
+}
+
+func newFuzzyUnionFind(n int) *fuzzyUnionFind {
+	parent := make([]int, n)
+	for i := range parent {
+		parent[i] = i
+	}
+	return &fuzzyUnionFind{parent: parent}
+}
+
+func (u *fuzzyUnionFind) find(i int) int {
+	root := i
+	for root != u.parent[root] {
+		root = u.parent[root]
+	}
+	// Path compression
+	curr := i
+	for curr != root {
+		next := u.parent[curr]
+		u.parent[curr] = root
+		curr = next
+	}
+	return root
+}
+
+func (u *fuzzyUnionFind) union(i, j int) {
+	rootI := u.find(i)
+	rootJ := u.find(j)
+	if rootI != rootJ {
+		u.parent[rootI] = rootJ
+	}
+}
+
 // FindFuzzyDuplicates clusters allRows into groups of fuzzy duplicates based on threshold
 // and selectedColumns, sorts each group using the keepRule, and returns the slice of
 // duplicate row IDs to be updated or removed.
@@ -198,36 +242,24 @@ func FindFuzzyDuplicates(
 	}
 
 	// 1. Group records into connected components of fuzzy similarity.
-	parent := make([]int, len(allRows))
-	for i := range parent {
-		parent[i] = i
+	uf := newFuzzyUnionFind(len(allRows))
+	graphemesCache := buildFuzzyGraphemesCache(allRows, selectedColumns)
+	matches := collectFuzzyMatches(allRows, graphemesCache, selectedColumns, threshold)
+
+	// Apply unions sequentially on the collected matches
+	for _, pair := range matches {
+		uf.union(pair.i, pair.j)
 	}
 
-	var find func(int) int
-	find = func(i int) int {
-		root := i
-		for root != parent[root] {
-			root = parent[root]
-		}
-		// Path compression
-		curr := i
-		for curr != root {
-			next := parent[curr]
-			parent[curr] = root
-			curr = next
-		}
-		return root
-	}
+	// 2. Collect entries into their respective groups.
+	groupMap := groupFuzzyRows(allRows, selectedColumns, uf)
 
-	union := func(i, j int) {
-		rootI := find(i)
-		rootJ := find(j)
-		if rootI != rootJ {
-			parent[rootI] = rootJ
-		}
-	}
+	// 3. For each group, determine which one to keep and which ones are duplicates.
+	return collectFuzzyDuplicateIDs(allRows, groupMap, keepRule)
+}
 
-	// Pre-calculate graphemes for selected columns of all rows
+// buildFuzzyGraphemesCache pre-calculates graphemes for selected columns of all rows.
+func buildFuzzyGraphemesCache(allRows []map[string]interface{}, selectedColumns []string) []map[string][]string {
 	graphemesCache := make([]map[string][]string, len(allRows))
 	for i := range allRows {
 		colMap := make(map[string][]string)
@@ -237,12 +269,28 @@ func FindFuzzyDuplicates(
 		}
 		graphemesCache[i] = colMap
 	}
+	return graphemesCache
+}
 
-	type matchPair struct {
-		i, j int
+// isFuzzyRowEmpty reports whether every selected column of row is nil or blank.
+func isFuzzyRowEmpty(row map[string]interface{}, selectedColumns []string) bool {
+	for _, col := range selectedColumns {
+		val := row[col]
+		if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
+			return false
+		}
 	}
+	return true
+}
 
-	var matches []matchPair
+// collectFuzzyMatches compares all row pairs in parallel and returns the matching pairs.
+func collectFuzzyMatches(
+	allRows []map[string]interface{},
+	graphemesCache []map[string][]string,
+	selectedColumns []string,
+	threshold float64,
+) []fuzzyMatchPair {
+	var matches []fuzzyMatchPair
 	var mu sync.Mutex
 
 	numWorkers := runtime.NumCPU()
@@ -257,87 +305,7 @@ func FindFuzzyDuplicates(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var localMatches []matchPair
-			n := len(allRows)
-
-			for {
-				i := int(atomic.AddInt64(&nextI, 1) - 1)
-				if i >= n {
-					break
-				}
-
-				emptyI := true
-				for _, col := range selectedColumns {
-					val := allRows[i][col]
-					if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
-						emptyI = false
-						break
-					}
-				}
-				if emptyI {
-					continue
-				}
-
-				for j := i + 1; j < n; j++ {
-					emptyJ := true
-					for _, col := range selectedColumns {
-						val := allRows[j][col]
-						if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
-							emptyJ = false
-							break
-						}
-					}
-					if emptyJ {
-						continue
-					}
-
-					match := true
-					for _, col := range selectedColumns {
-						gI := graphemesCache[i][col]
-						gJ := graphemesCache[j][col]
-
-						if len(gI) == 0 && len(gJ) == 0 {
-							continue
-						}
-						if len(gI) == 0 || len(gJ) == 0 {
-							match = false
-							break
-						}
-
-						// Length pruning check:
-						minPos := (threshold - 0.25) / 0.75
-						if minPos < 0 {
-							minPos = 0
-						}
-						maxLen := len(gI)
-						if len(gJ) > maxLen {
-							maxLen = len(gJ)
-						}
-						maxEditDist := (1.0 - minPos) * float64(maxLen)
-						lenDiff := len(gI) - len(gJ)
-						if lenDiff < 0 {
-							lenDiff = -lenDiff
-						}
-						if float64(lenDiff) > maxEditDist {
-							match = false
-							break
-						}
-
-						pos := positionalSimilarity(gI, gJ)
-						set := multisetSimilarity(gI, gJ)
-						score := (1.0-DefaultReorderWeight)*pos + DefaultReorderWeight*set
-
-						if score < threshold {
-							match = false
-							break
-						}
-					}
-					if match {
-						localMatches = append(localMatches, matchPair{i: i, j: j})
-					}
-				}
-			}
-
+			localMatches := fuzzyMatchWorker(allRows, graphemesCache, selectedColumns, threshold, &nextI)
 			if len(localMatches) > 0 {
 				mu.Lock()
 				matches = append(matches, localMatches...)
@@ -347,32 +315,118 @@ func FindFuzzyDuplicates(
 	}
 
 	wg.Wait()
+	return matches
+}
 
-	// Apply unions sequentially on the collected matches
-	for _, pair := range matches {
-		union(pair.i, pair.j)
+// fuzzyMatchWorker claims row indices from nextI until exhausted and returns its matches.
+func fuzzyMatchWorker(
+	allRows []map[string]interface{},
+	graphemesCache []map[string][]string,
+	selectedColumns []string,
+	threshold float64,
+	nextI *int64,
+) []fuzzyMatchPair {
+	var localMatches []fuzzyMatchPair
+	n := len(allRows)
+
+	for {
+		i := int(atomic.AddInt64(nextI, 1) - 1)
+		if i >= n {
+			break
+		}
+		localMatches = appendFuzzyMatchesForRow(localMatches, allRows, graphemesCache, selectedColumns, threshold, i)
+	}
+	return localMatches
+}
+
+// appendFuzzyMatchesForRow appends every pair (i, j) with j > i whose rows fuzzy-match.
+func appendFuzzyMatchesForRow(
+	localMatches []fuzzyMatchPair,
+	allRows []map[string]interface{},
+	graphemesCache []map[string][]string,
+	selectedColumns []string,
+	threshold float64,
+	i int,
+) []fuzzyMatchPair {
+	if isFuzzyRowEmpty(allRows[i], selectedColumns) {
+		return localMatches
 	}
 
-	// 2. Collect entries into their respective groups.
+	for j := i + 1; j < len(allRows); j++ {
+		if isFuzzyRowEmpty(allRows[j], selectedColumns) {
+			continue
+		}
+		if fuzzyRowsMatch(graphemesCache[i], graphemesCache[j], selectedColumns, threshold) {
+			localMatches = append(localMatches, fuzzyMatchPair{i: i, j: j})
+		}
+	}
+	return localMatches
+}
+
+// fuzzyRowsMatch reports whether every selected column of two rows meets the threshold.
+func fuzzyRowsMatch(rowI, rowJ map[string][]string, selectedColumns []string, threshold float64) bool {
+	for _, col := range selectedColumns {
+		if !fuzzyColumnMatches(rowI[col], rowJ[col], threshold) {
+			return false
+		}
+	}
+	return true
+}
+
+// fuzzyColumnMatches compares one column's graphemes; two empty values count as a match.
+func fuzzyColumnMatches(gI, gJ []string, threshold float64) bool {
+	if len(gI) == 0 && len(gJ) == 0 {
+		return true
+	}
+	if len(gI) == 0 || len(gJ) == 0 {
+		return false
+	}
+	if exceedsFuzzyLengthBound(gI, gJ, threshold) {
+		return false
+	}
+
+	pos := positionalSimilarity(gI, gJ)
+	set := multisetSimilarity(gI, gJ)
+	score := (1.0-DefaultReorderWeight)*pos + DefaultReorderWeight*set
+
+	return score >= threshold
+}
+
+// exceedsFuzzyLengthBound is the length pruning check: it reports whether the length
+// difference alone already makes reaching the threshold impossible.
+func exceedsFuzzyLengthBound(gI, gJ []string, threshold float64) bool {
+	minPos := (threshold - 0.25) / 0.75
+	if minPos < 0 {
+		minPos = 0
+	}
+	maxLen := len(gI)
+	if len(gJ) > maxLen {
+		maxLen = len(gJ)
+	}
+	maxEditDist := (1.0 - minPos) * float64(maxLen)
+	lenDiff := len(gI) - len(gJ)
+	if lenDiff < 0 {
+		lenDiff = -lenDiff
+	}
+	return float64(lenDiff) > maxEditDist
+}
+
+// groupFuzzyRows maps each component root to its row indices; empty rows stay alone.
+func groupFuzzyRows(allRows []map[string]interface{}, selectedColumns []string, uf *fuzzyUnionFind) map[int][]int {
 	groupMap := make(map[int][]int)
 	for i := range allRows {
-		emptyRow := true
-		for _, col := range selectedColumns {
-			val := allRows[i][col]
-			if val != nil && strings.TrimSpace(fmt.Sprintf("%v", val)) != "" {
-				emptyRow = false
-				break
-			}
-		}
-
 		root := i
-		if !emptyRow {
-			root = find(i)
+		if !isFuzzyRowEmpty(allRows[i], selectedColumns) {
+			root = uf.find(i)
 		}
 		groupMap[root] = append(groupMap[root], i)
 	}
+	return groupMap
+}
 
-	// 3. For each group, determine which one to keep and which ones are duplicates.
+// collectFuzzyDuplicateIDs sorts each group by keepRule and returns the IDs of every
+// member except the keeper.
+func collectFuzzyDuplicateIDs(allRows []map[string]interface{}, groupMap map[int][]int, keepRule string) []interface{} {
 	var duplicateRowIDs []interface{}
 
 	for _, indices := range groupMap {
@@ -382,44 +436,7 @@ func FindFuzzyDuplicates(
 
 		// Sort the group members according to the keepRule to decide the keeper
 		sort.SliceStable(indices, func(x, y int) bool {
-			rowA, rowB := allRows[indices[x]], allRows[indices[y]]
-
-			if keepRule == "keep_latest_updated" {
-				timeAStr := fmt.Sprintf("%v", rowA["last_modified_time"])
-				timeBStr := fmt.Sprintf("%v", rowB["last_modified_time"])
-				if timeAStr != timeBStr {
-					return timeAStr > timeBStr // Descending: newer first
-				}
-			}
-
-			idA := rowA["id"]
-			idB := rowB["id"]
-
-			numA, errA := getFloat64(idA)
-			numB, errB := getFloat64(idB)
-			if errA == nil && errB == nil {
-				if numA != numB {
-					if keepRule == "keep_last" {
-						return numA > numB // Descending: larger first
-					}
-					return numA < numB // Ascending: smaller first
-				}
-			}
-
-			strA := fmt.Sprintf("%v", idA)
-			strB := fmt.Sprintf("%v", idB)
-			if strA != strB {
-				if keepRule == "keep_last" {
-					return strA > strB
-				}
-				return strA < strB
-			}
-
-			// Fallback to original record indices
-			if keepRule == "keep_last" {
-				return indices[y] < indices[x] // Descending index
-			}
-			return indices[x] < indices[y] // Ascending index
+			return fuzzyKeepRuleLess(allRows, indices, keepRule, x, y)
 		})
 
 		// All other members in sorted group are duplicates
@@ -430,6 +447,61 @@ func FindFuzzyDuplicates(
 
 	return duplicateRowIDs
 }
+
+// fuzzyKeepRuleLess orders group members so the record to keep comes first.
+func fuzzyKeepRuleLess(allRows []map[string]interface{}, indices []int, keepRule string, x, y int) bool {
+	rowA, rowB := allRows[indices[x]], allRows[indices[y]]
+
+	if keepRule == "keep_latest_updated" {
+		if less, decided := compareFuzzyLastModified(rowA, rowB); decided {
+			return less
+		}
+	}
+
+	if less, decided := compareFuzzyIDs(rowA["id"], rowB["id"], keepRule); decided {
+		return less
+	}
+
+	// Fallback to original record indices
+	if keepRule == "keep_last" {
+		return indices[y] < indices[x] // Descending index
+	}
+	return indices[x] < indices[y] // Ascending index
+}
+
+// compareFuzzyLastModified orders newer records first; decided is false on a tie.
+func compareFuzzyLastModified(rowA, rowB map[string]interface{}) (less bool, decided bool) {
+	timeAStr := fmt.Sprintf("%v", rowA["last_modified_time"])
+	timeBStr := fmt.Sprintf("%v", rowB["last_modified_time"])
+	if timeAStr != timeBStr {
+		return timeAStr > timeBStr, true // Descending: newer first
+	}
+	return false, false
+}
+
+// compareFuzzyIDs orders by numeric ID when both parse, then by string ID; decided is
+// false when the IDs are equal.
+func compareFuzzyIDs(idA, idB interface{}, keepRule string) (less bool, decided bool) {
+	numA, errA := getFloat64(idA)
+	numB, errB := getFloat64(idB)
+	if errA == nil && errB == nil && numA != numB {
+		if keepRule == "keep_last" {
+			return numA > numB, true // Descending: larger first
+		}
+		return numA < numB, true // Ascending: smaller first
+	}
+
+	strA := fmt.Sprintf("%v", idA)
+	strB := fmt.Sprintf("%v", idB)
+	if strA != strB {
+		if keepRule == "keep_last" {
+			return strA > strB, true
+		}
+		return strA < strB, true
+	}
+	return false, false
+}
+
 func getFloat64(val interface{}) (float64, error) {
 	if val == nil {
 		return 0, fmt.Errorf("nil value")
@@ -454,8 +526,16 @@ func getStringVal(val interface{}) string {
 	if val == nil {
 		return ""
 	}
-	if s, ok := val.(string); ok {
-		return s
+	// Mirror the API's JSON encoding so scores match the client-side preview.
+	switch v := val.(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64) // avoid %v's "1.5e+06"
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case time.Time:
+		return v.Format(time.RFC3339Nano)
 	}
 	return fmt.Sprintf("%v", val)
 }
