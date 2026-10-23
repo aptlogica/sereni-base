@@ -24,7 +24,14 @@ func TestCreateTableWithDefaults_Success(t *testing.T) {
 	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
 	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
 	mockTable.On("CreateTable", mock.Anything).Return(nil)
-	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockTable.On("AddColumn", mock.Anything, mock.Anything).Return(nil)
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	var titleInsert dto.ColumnInsertion
+	titleOrder := float64(1)
+	titleDT := "TEXT"
+	mockColumn.On("Create", mock.Anything, mock.Anything, "schema").Run(func(args mock.Arguments) {
+		titleInsert = args.Get(1).(dto.ColumnInsertion)
+	}).Return(tenant.Column{ID: uuid.New(), Title: "Title", ColumnName: "title_1_abcd", UIDT: "text", DT: &titleDT, OrderIndex: &titleOrder, BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
 	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
 
 	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
@@ -35,6 +42,67 @@ func TestCreateTableWithDefaults_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, model.ID, resp.Model.ID)
+
+	// Title is an ordinary text column, made the way a user adds one: not system, not virtual, named like any column
+	assert.Equal(t, "Title", titleInsert.Title)
+	assert.Equal(t, "text", titleInsert.UIDT)
+	assert.False(t, titleInsert.System)
+	assert.False(t, titleInsert.Virtual)
+	assert.Equal(t, float64(1), *titleInsert.OrderIndex)
+	assert.Regexp(t, `^title_\d+_[0-9a-f]{4}$`, titleInsert.ColumnName)
+	// and it comes back with the table, after Id
+	if assert.Len(t, resp.Columns, 2) {
+		assert.Equal(t, "Id", resp.Columns[0].Title)
+		assert.Equal(t, "Title", resp.Columns[1].Title)
+	}
+
+	// Link fields pointing at the new table stay in step with its keys
+	mockTable.AssertCalled(t, "GetByFunction", mock.Anything, "public.link_install_key_sync",
+		map[string]interface{}{"p_schema": "schema", "p_table": "tbl"})
+}
+
+func TestCreateTableWithDefaults_TriggerInstallFailureIsNotFatal(t *testing.T) {
+	_, mockTable, _, mockModel, mockColumn, mockView, _, _, svc := setupTableManagementService()
+	mockTable.ExpectedCalls = nil
+
+	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
+	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
+	mockTable.On("CreateTable", mock.Anything).Return(nil)
+	mockTable.On("GetByFunction", mock.Anything, "public.link_install_key_sync", mock.Anything).Return(nil, errors.New("denied"))
+	titleDT := "TEXT"
+	mockTable.On("AddColumn", mock.Anything, mock.Anything).Return(nil)
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockColumn.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.Column{ID: uuid.New(), Title: "Title", ColumnName: "title_1_abcd", UIDT: "text", DT: &titleDT, BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
+	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
+	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+
+	assert.NoError(t, err)
+}
+
+// The table made for an import has no Title: every column of the file becomes a column.
+func TestCreateTableWithDefaultsImport_HasNoTitleColumn(t *testing.T) {
+	_, mockTable, _, mockModel, mockColumn, mockView, _, _, svc := setupTableManagementService()
+
+	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
+	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
+	mockTable.On("CreateTable", mock.Anything).Return(nil)
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
+	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	resp, err := svc.CreateTableWithDefaultsImport(context.Background(),
+		dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+
+	assert.NoError(t, err)
+	assert.Len(t, resp.Columns, 1)
+	mockColumn.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockTable.AssertNotCalled(t, "AddColumn", mock.Anything, mock.Anything)
 }
 
 func TestCreateTableWithDefaults_Errors(t *testing.T) {
@@ -80,7 +148,7 @@ func TestCreateTableWithDefaults_Errors(t *testing.T) {
 		mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{}, nil)
 		mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{}, errors.New("fail"))
 
-		_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
+		_, err := svc.CreateTableWithDefaultsImport(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
 
 		assert.Error(t, err)
 	})
@@ -95,7 +163,7 @@ func TestCreateTableWithDefaults_Errors(t *testing.T) {
 		mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New()}, nil)
 		mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(tenant.Model{}, errors.New("fail"))
 
-		_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
+		_, err := svc.CreateTableWithDefaultsImport(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
 
 		assert.Error(t, err)
 	})
@@ -108,13 +176,12 @@ func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
 	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
 	mockTable.On("CreateTable", mock.Anything).Return(nil)
 
-	// Capture the columns being inserted to verify System field
+	// Capture the columns being inserted to verify System field and order
 	var insertedColumns []dto.ColumnInsertion
 	mockColumn.On("BulkInsert", mock.Anything, "schema").Run(func(args mock.Arguments) {
 		insertedColumns = args.Get(0).([]dto.ColumnInsertion)
 	}).Return([]tenant.Column{
 		{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String(), System: true},
-		{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String(), System: false},
 	}, nil)
 
 	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
@@ -122,30 +189,22 @@ func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
 	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 
-	resp, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+	resp, err := svc.CreateTableWithDefaultsImport(context.Background(),
+		dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
 
 	assert.NoError(t, err)
 	assert.Equal(t, model.ID, resp.Model.ID)
 
-	// Verify that the System field is properly set based on column definitions
-	// Find the Title column (should have System: true)
-	var titleColumn *dto.ColumnInsertion
-	for i := range insertedColumns {
-		if insertedColumns[i].Title == "Title" {
-			titleColumn = &insertedColumns[i]
-			break
-		}
-	}
-
-	assert.NotNil(t, titleColumn, "Title column should be inserted")
-	assert.True(t, titleColumn.System, "Title column should have System: true")
-
-	// Verify other system columns have System: true
+	// Id and the four audit columns are system columns; Title is not one of them
+	assert.Len(t, insertedColumns, 5)
+	orders := map[string]float64{}
 	for _, col := range insertedColumns {
-		if col.Title == "Id" || col.Title == "Created Time" || col.Title == "Created By" || col.Title == "Title" {
-			assert.True(t, col.System, "Column %s should have System: true", col.Title)
-		}
+		assert.NotEqual(t, "Title", col.Title, "Title is an ordinary column, not a system column")
+		assert.True(t, col.System, "Column %s should have System: true", col.Title)
+		orders[col.Title] = *col.OrderIndex
 	}
+	// They keep the order they declare, so index 1 stays free for Title
+	assert.Equal(t, map[string]float64{"Id": 0, "Created Time": 2, "Last Modified Time": 3, "Created By": 4, "Last Modified By": 5}, orders)
 }
 
 func TestCreateTableWithDefaultsImport_Success(t *testing.T) {
@@ -203,7 +262,7 @@ func TestGetRecordsWithLookups_Normalize(t *testing.T) {
 	_, mockTable, _, _, _, _, _, _, svc := setupTableManagementService()
 
 	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).
-		Return([]map[string]interface{}{{"get_table_data_with_relation": []interface{}{map[string]interface{}{"a": 1}}}}, nil)
+		Return([]map[string]interface{}{{"get_table_data_with_lookups": []interface{}{map[string]interface{}{"a": 1}}}}, nil)
 
 	getRecords, ok := svc.(interface {
 		GetRecordsWithLookups(ctx context.Context, schemaName string, tableName string, columnsData []dto.ColumnResponse) (dto.RecordsResponse, error)
@@ -471,6 +530,7 @@ func TestAddColumn_LinksAndLookup(t *testing.T) {
 		mockColumn.On("Create", mock.Anything, mock.MatchedBy(func(req dto.ColumnInsertion) bool { return req.ModelID == sourceModelID }), "schema").Return(sourceCol, nil)
 		mockColumn.On("Create", mock.Anything, mock.MatchedBy(func(req dto.ColumnInsertion) bool { return req.ModelID == targetModelID }), "schema").Return(targetCol, nil)
 		mockColumn.On("GetMaxOrderIndexOfColumn", mock.Anything, "schema", targetModelID.String()).Return(float64(1), nil)
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", mock.Anything).Return([]tenant.Column{}, nil).Maybe()
 
 		mockModel.On("GetModelByID", mock.Anything, "schema", sourceModelID.String()).Return(tenant.Model{ID: sourceModelID, Alias: "src", Title: "Src"}, nil)
 		mockModel.On("GetModelByID", mock.Anything, "schema", targetModelID.String()).Return(tenant.Model{ID: targetModelID, Alias: "tgt", Title: "Tgt"}, nil)
@@ -504,7 +564,12 @@ func TestAddColumn_LinksAndLookup(t *testing.T) {
 
 		lookupColumn := tenant.Column{ID: uuid.New(), ModelID: lookupModelID, BaseID: uuid.New().String(), ColumnName: "src_col", UIDT: "text"}
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupColumnID).Return(lookupColumn, nil)
-		mockModel.On("GetModelByID", mock.Anything, "schema", lookupModelID).Return(tenant.Model{ID: uuid.MustParse(lookupModelID), Alias: "lk"}, nil)
+		mockModel.On("GetModelByID", mock.Anything, "schema", lookupModelID).Return(tenant.Model{ID: uuid.MustParse(lookupModelID), Alias: "lk"}, nil).Maybe()
+
+		// The lookup reads through this link column on its own table.
+		linkCol := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID, ColumnName: "link", UIDT: "links", DT: helpers.StringPtr("INT[]"),
+			Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "source", "relation": map[string]interface{}{"with": lookupModelID, "type": "has-many"}}}
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID.String()).Return([]tenant.Column{linkCol}, nil)
 
 		createdColumn := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID, ColumnName: "lk_src_col", UIDT: "lookup"}
 		mockColumn.On("Create", mock.Anything, mock.Anything, "schema").Return(createdColumn, nil)
@@ -519,6 +584,11 @@ func TestAddColumn_LinksAndLookup(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, modelID, resp.ModelID)
 	})
+}
+
+// noConstraints answers that no unique key or check constraint uses the field, for type changes
+func noConstraints(mockTable *MockTableService) {
+	mockTable.On("GetTableData", tenant.TableConstraint{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 }
 
 func TestUpdateColumn_Variants(t *testing.T) {
@@ -536,6 +606,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("system with title allowed", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New()
 		colID := uuid.New()
@@ -561,6 +632,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("title column type update allowed", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New()
 		colID := uuid.New()
@@ -594,10 +666,14 @@ func TestUpdateColumn_Variants(t *testing.T) {
 		lookupID := uuid.New().String()
 		newLookupID := uuid.New().String()
 
+		linkedModelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID, ColumnName: "lk", UIDT: "lookup", Meta: map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID}}
-		lookupCol := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.New().String(), ColumnName: "src"}
+		lookupCol := tenant.Column{ID: uuid.New(), ModelID: linkedModelID, BaseID: uuid.New().String(), ColumnName: "src"}
 		updatedCol := tenant.Column{ID: col.ID, ModelID: col.ModelID, BaseID: baseID, ColumnName: "lk", UIDT: "lookup", Meta: map[string]interface{}{"lookup_column_id": newLookupID, "relation_id": relationID}}
-		newLookupCol := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.New().String(), ColumnName: "new"}
+		newLookupCol := tenant.Column{ID: uuid.New(), ModelID: linkedModelID, BaseID: uuid.New().String(), ColumnName: "new"}
+		linkCol := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID, ColumnName: "link", UIDT: "links", DT: helpers.StringPtr("INT[]"),
+			Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "source", "relation": map[string]interface{}{"with": linkedModelID, "type": "has-many"}}}
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID.String()).Return([]tenant.Column{linkCol}, nil)
 
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupID).Return(lookupCol, nil)
@@ -617,6 +693,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("datatype change error triggers revert", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT")}
@@ -639,6 +716,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("datatype change success", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT")}
@@ -684,6 +762,8 @@ func TestDeleteColumn_Variants(t *testing.T) {
 
 		lookupCol := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.New().String(), ColumnName: "src"}
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupID).Return(lookupCol, nil)
+		// Side lookup for the lookup's link column; none found falls back to the source side.
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
 
 		rel := tenant.Relation{ID: uuid.MustParse(relationID), SourceModelID: modelID}
 		mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(rel, nil)
@@ -757,6 +837,7 @@ func TestRowsAndLinks(t *testing.T) {
 
 		modelID := uuid.New().String()
 		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl"}, nil)
+		expectNoAutoUUIDColumns(mockColumn)
 
 		stubTable.CreateRecordFn = func(tableName string, data map[string]interface{}) (map[string]interface{}, error) {
 			return map[string]interface{}{"id": 1}, nil
@@ -824,6 +905,7 @@ func TestRowsAndLinks(t *testing.T) {
 			return map[string]interface{}{"id": id}, nil
 		}
 
+		stubTable.GetByFunctionFn = linkFunctionsSucceed
 		svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 		_, err := svc.UpdateRawDataForLinks(context.Background(), "schema", dto.UpdateRowDataLinksRequest{
@@ -1032,19 +1114,24 @@ func TestGetRecordsWithLookups_Relations(t *testing.T) {
 	mockAsset := &MockAssetManagementService{}
 
 	relationID := uuid.New().String()
-	lookupRelID := relationID
 	otherModelID := uuid.New().String()
+	linkColumnID := uuid.New()
+	foreignColumnID := uuid.New().String()
 
 	columnsData := []dto.ColumnResponse{
-		{UIDT: "lookup", Meta: map[string]interface{}{"relation_id": lookupRelID}},
-		{UIDT: "links", ColumnName: "link_col", Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "source"}},
+		{ID: uuid.New(), UIDT: "lookup", ColumnName: "lk_abc_name", Meta: map[string]interface{}{"relation_id": relationID, "lookup_column_id": foreignColumnID, "link_column_id": linkColumnID.String()}},
+		{ID: linkColumnID, UIDT: "links", ColumnName: "link_col", DT: "INT", Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "source", "relation": map[string]interface{}{"with": otherModelID, "type": "one-to-one"}}},
 	}
 
-	mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(tenant.Relation{RelationType: "one-to-one", SourceLookupColumns: []string{"name"}, TargetModelID: otherModelID}, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", foreignColumnID).Return(tenant.Column{ModelID: otherModelID, ColumnName: "name"}, nil)
 	mockModel.On("GetModelByID", mock.Anything, "schema", otherModelID).Return(tenant.Model{Alias: "target"}, nil)
 
+	var gotFunction string
+	var gotRelationData []map[string]interface{}
 	stubTable.GetByFunctionFn = func(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error) {
-		return []map[string]interface{}{{"get_table_data_with_relation": []map[string]interface{}{{"id": 1}}}}, nil
+		gotFunction = functionName
+		gotRelationData, _ = args["relation_data"].([]map[string]interface{})
+		return []map[string]interface{}{{"get_table_data_with_lookups": []map[string]interface{}{{"id": 1}}}}, nil
 	}
 
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
@@ -1058,6 +1145,15 @@ func TestGetRecordsWithLookups_Relations(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, records.Records, 1)
+	assert.Equal(t, "public.get_table_data_with_lookups", gotFunction)
+	if assert.Len(t, gotRelationData, 1) {
+		entry := gotRelationData[0]
+		assert.Equal(t, "link_col", entry["source_column_name"])
+		assert.Equal(t, "target", entry["target_table_name"])
+		assert.Equal(t, "one-to-one", entry["relation"])
+		assert.Equal(t, false, entry["is_array"])
+		assert.Equal(t, []map[string]interface{}{{"column": "name", "alias": "lk_abc_name"}}, entry["targets"])
+	}
 }
 
 func TestHelperBehavior_Misc(t *testing.T) {
@@ -1167,6 +1263,7 @@ func TestUpdateRawDataForLinks_HasManyVariants(t *testing.T) {
 		return map[string]interface{}{"id": id}, nil
 	}
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	for i := 1; i <= 6; i++ {
@@ -1229,6 +1326,7 @@ func TestUpdateRawDataForLinks_HasManyExisting(t *testing.T) {
 		return map[string]interface{}{"id": id}, nil
 	}
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	_, err := svc.UpdateRawDataForLinks(context.Background(), "schema", dto.UpdateRowDataLinksRequest{
@@ -1283,6 +1381,7 @@ func TestDeleteRow_WithLinks(t *testing.T) {
 	}
 	stubTable.DeleteRecordFn = func(tableName string, id interface{}) error { return nil }
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	err := svc.DeleteRow(context.Background(), "schema", dto.DeleteRowDataRequest{ModelID: sourceModelID, RowId: 1})
@@ -1298,6 +1397,7 @@ func TestDeleteTable_WithColumnsAndViews(t *testing.T) {
 
 	col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text"}
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{col}, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", col.ID.String()).Return(col, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", col.ID.String()).Return(nil)
 
 	view := tenant.View{ID: uuid.New(), ModelID: modelID}
@@ -1323,6 +1423,8 @@ func TestDeleteColumn_NonLookup(t *testing.T) {
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl", ID: uuid.MustParse(modelID)}, nil)
 	mockTable.On("GetByFunction", mock.Anything, "public.reorder_columns_after_delete", mock.Anything).Return([]map[string]interface{}{}, nil)
 	mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)
+	// No unique key uses the column
+	mockTable.On("GetTableData", tenant.TableConstraint{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil)
 
 	err := svc.DeleteColumn(context.Background(), "schema", "cid")
 	assert.NoError(t, err)
@@ -1415,19 +1517,22 @@ func TestGetRecordsWithLookups_TargetRole(t *testing.T) {
 	mockAsset := &MockAssetManagementService{}
 
 	relationID := uuid.New().String()
-	lookupRelID := relationID
 	sourceModelID := uuid.New().String()
+	foreignColumnID := uuid.New().String()
 
+	// Legacy lookup (no link_column_id) through the target-side link column of a has-many.
 	columnsData := []dto.ColumnResponse{
-		{UIDT: "lookup", Meta: map[string]interface{}{"relation_id": lookupRelID}},
-		{UIDT: "links", ColumnName: "link_col", Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "target"}},
+		{ID: uuid.New(), UIDT: "lookup", ColumnName: "source_title", Meta: map[string]interface{}{"relation_id": relationID, "lookup_column_id": foreignColumnID}},
+		{ID: uuid.New(), UIDT: "links", ColumnName: "link_col", DT: "INT", Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "target", "relation": map[string]interface{}{"with": sourceModelID, "type": "has-many"}}},
 	}
 
-	mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(tenant.Relation{RelationType: "one-to-one", TargetLookupColumns: []string{"title"}, SourceModelID: sourceModelID}, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", foreignColumnID).Return(tenant.Column{ModelID: sourceModelID, ColumnName: "title"}, nil)
 	mockModel.On("GetModelByID", mock.Anything, "schema", sourceModelID).Return(tenant.Model{Alias: "source"}, nil)
 
+	var gotRelationData []map[string]interface{}
 	stubTable.GetByFunctionFn = func(ctx context.Context, functionName string, args map[string]interface{}) ([]map[string]interface{}, error) {
-		return []map[string]interface{}{{"get_table_data_with_relation": []map[string]interface{}{{"id": 1}}}}, nil
+		gotRelationData, _ = args["relation_data"].([]map[string]interface{})
+		return []map[string]interface{}{{"get_table_data_with_lookups": []map[string]interface{}{{"id": 1}}}}, nil
 	}
 
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
@@ -1440,6 +1545,11 @@ func TestGetRecordsWithLookups_TargetRole(t *testing.T) {
 	records, err := getRecords.GetRecordsWithLookups(context.Background(), "schema", "tbl", columnsData)
 	assert.NoError(t, err)
 	assert.Len(t, records.Records, 1)
+	if assert.Len(t, gotRelationData, 1) {
+		assert.Equal(t, "source", gotRelationData[0]["target_table_name"])
+		assert.Equal(t, "has-many", gotRelationData[0]["relation"])
+		assert.Equal(t, []map[string]interface{}{{"column": "title", "alias": "source_title"}}, gotRelationData[0]["targets"])
+	}
 }
 
 func TestInsertRowData_SystemColumn(t *testing.T) {
@@ -1478,6 +1588,7 @@ func TestDeleteTable_WithLinkColumn(t *testing.T) {
 
 	linkCol := tenant.Column{ID: uuid.MustParse(sourceColID), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "link", UIDT: "links", Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "source"}}
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{linkCol}, nil)
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", sourceColID).Return(linkCol, nil)
 
 	mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(tenant.Relation{ID: uuid.MustParse(relationID), SourceColumnID: sourceColID, TargetColumnID: targetColID, SourceModelID: modelID, TargetModelID: targetModelID, RelationType: "one-to-one"}, nil)
 	mockColumn.On("DeleteColumn", mock.Anything, "schema", sourceColID).Return(nil)
@@ -1536,6 +1647,7 @@ func TestConvertToInt64Array_Variants(t *testing.T) {
 		return map[string]interface{}{"id": id}, nil
 	}
 
+	stubTable.GetByFunctionFn = linkFunctionsSucceed
 	svc := setupTableManagementServiceWithStubs(stubTable, stubBulk, mockModel, mockColumn, mockView, mockRel, mockAsset)
 
 	_, err := svc.UpdateRawDataForLinks(context.Background(), "schema", dto.UpdateRowDataLinksRequest{
@@ -1614,22 +1726,39 @@ func TestUpdateColumnForLookup_TargetBranch(t *testing.T) {
 	relationID := uuid.New().String()
 	lookupID := uuid.New().String()
 
+	sourceModelID := uuid.New().String()
+	// Legacy lookup (no link_column_id) that reads through the target-side link column.
 	col := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID, ColumnName: "lk", UIDT: "lookup", Meta: map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID}}
-	lookupCol := tenant.Column{ID: uuid.New(), ModelID: uuid.New().String(), BaseID: uuid.New().String(), ColumnName: "src"}
+	lookupCol := tenant.Column{ID: uuid.New(), ModelID: sourceModelID, BaseID: uuid.New().String(), ColumnName: "src"}
 	updatedCol := tenant.Column{ID: col.ID, ModelID: col.ModelID, BaseID: baseID, ColumnName: "lk", UIDT: "lookup", Meta: map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID}}
+	linkCol := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID, ColumnName: "link", UIDT: "links", DT: helpers.StringPtr("INT"),
+		Meta: map[string]interface{}{"relation_id": relationID, "entity_role": "target", "relation": map[string]interface{}{"with": sourceModelID, "type": "has-many"}}}
 
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupID).Return(lookupCol, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID.String()).Return([]tenant.Column{linkCol}, nil)
 	mockColumn.On("UpdateColumn", mock.Anything, "schema", col.ID.String(), mock.Anything).Return(updatedCol, nil)
-	mockModel.On("GetModelByID", mock.Anything, "schema", lookupCol.ModelID).Return(tenant.Model{Alias: "lk"}, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", lookupCol.ModelID).Return(tenant.Model{Alias: "lk"}, nil).Maybe()
 
 	rel := tenant.Relation{ID: uuid.MustParse(relationID), TargetModelID: modelID.String(), TargetLookupColumns: []string{"src", "other"}}
 	mockRel.On("GetRelationByID", mock.Anything, relationID, "schema").Return(rel, nil)
-	mockRel.On("UpdateRelation", mock.Anything, relationID, mock.Anything, "schema").Return(tenant.Relation{}, nil)
+	var relationUpdates []dto.RelationUpdate
+	mockRel.On("UpdateRelation", mock.Anything, relationID, mock.Anything, "schema").Run(func(args mock.Arguments) {
+		relationUpdates = append(relationUpdates, args.Get(2).(dto.RelationUpdate))
+	}).Return(tenant.Relation{}, nil)
 
-	updateMeta := map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID}
+	// Adding link_column_id re-records the lookup; both updates must stay on the target side.
+	updateMeta := map[string]interface{}{"lookup_column_id": lookupID, "relation_id": relationID, "link_column_id": linkCol.ID.String()}
 	_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: &updateMeta})
 	assert.NoError(t, err)
+	if assert.Len(t, relationUpdates, 2) {
+		for _, u := range relationUpdates {
+			assert.Nil(t, u.SourceLookupColumns)
+			assert.NotNil(t, u.TargetLookupColumns)
+		}
+		assert.Equal(t, []string{"other"}, relationUpdates[0].TargetLookupColumns)
+		assert.Equal(t, []string{"src", "other", "src"}, relationUpdates[1].TargetLookupColumns)
+	}
 }
 
 func TestUpdateColumnForLink(t *testing.T) {
@@ -1649,7 +1778,7 @@ func TestUpdateColumnForLink(t *testing.T) {
 		ModelID:    modelID.String(),
 		BaseID:     baseID,
 		ColumnName: "link_col",
-		UIDT:       "link",
+		UIDT:       "links",
 		Title:      "Original Title",
 		Meta:       map[string]interface{}{"relation_id": uuid.New().String()},
 	}
@@ -1660,7 +1789,7 @@ func TestUpdateColumnForLink(t *testing.T) {
 		ModelID:     modelID.String(),
 		BaseID:      baseID,
 		ColumnName:  "link_col",
-		UIDT:        "link",
+		UIDT:        "links",
 		Title:       newTitle,
 		Description: &newDescription,
 		Meta:        col.Meta, // Meta should remain unchanged for link updates
@@ -1794,6 +1923,7 @@ func TestCreateRowsWithValues_Success(t *testing.T) {
 	model := tenant.Model{ID: uuid.MustParse(modelID), Alias: "tbl"}
 
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", colTextID).
 		Return(tenant.Column{ID: uuid.MustParse(colTextID), ModelID: modelID, BaseID: baseID, ColumnName: "text_col", UIDT: "text", DT: helpers.StringPtr("TEXT")}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", colArrayID).
@@ -2068,6 +2198,8 @@ func TestDeleteLookupColumnAndReorder_Success(t *testing.T) {
 	}
 
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", lookupSourceColumnID.String()).Return(sourceLookupCol, nil)
+	// No link column with link_column_id: the legacy fallback reads through the source side.
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID.String()).Return([]tenant.Column{}, nil)
 	mockRel.On("GetRelationByID", mock.Anything, relationID.String(), "schema").Return(relation, nil)
 	mockRel.On("UpdateRelation", mock.Anything, relationID.String(), mock.MatchedBy(func(req dto.RelationUpdate) bool {
 		columns, ok := req.SourceLookupColumns.([]string)

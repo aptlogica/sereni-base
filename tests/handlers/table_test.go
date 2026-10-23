@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/config"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers"
+	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/tests/handlers/mocks"
 
 	"github.com/gin-gonic/gin"
@@ -192,7 +194,8 @@ func TestTableHandler_ImportTable_InvalidConfigJSON(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
-func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
+// primary_column is no longer used: the field is ignored and the import goes ahead.
+func TestTableHandler_ImportTable_IgnoresPrimaryColumn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	orig := config.AppConfig
 	config.AppConfig = &config.Config{Import: config.ImportConfig{MaxSize: 2097152}}
@@ -203,6 +206,8 @@ func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
 
 	mockTableService := mocks.NewMockTableManagementService(ctrl)
 	mockImportService := mocks.NewMockImportService(ctrl)
+	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(dto.ImportTableResponse{}, nil)
 	handler := handlers.NewTableHandler(mockTableService, mockImportService)
 
 	body := &bytes.Buffer{}
@@ -222,7 +227,7 @@ func TestTableHandler_ImportTable_PrimaryColumnNotFound(t *testing.T) {
 	c.Set("user_id", "user123")
 
 	handler.ImportTableWithConfig(c)
-	assert.NotEqual(t, http.StatusCreated, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
 func TestTableHandler_ImportTable_FileTooLarge(t *testing.T) {
@@ -259,7 +264,7 @@ func TestTableHandler_ImportTable_FileTooLarge(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, w.Code)
 }
 
-func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testing.T) {
+func TestTableHandler_ImportTable_OrderIndexParsing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -270,9 +275,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	// Expect ImportWithConfig and inspect the request
 	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			if req.Config.PrimaryColumn == nil {
-				return dto.ImportTableResponse{}, errors.New("primary not set")
-			}
 			// order index should be parsed to float64
 			if req.OrderIndex != 2.0 && req.OrderIndex != 2.5 {
 				return dto.ImportTableResponse{}, errors.New("order index parse failed")
@@ -293,7 +295,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	io.WriteString(part, "col1,col2\nval1,val2")
 	writer.WriteField("base_id", uuid.New().String())
 	writer.WriteField("config", `{"columns":[{"column_name":"id"}]}`)
-	writer.WriteField("primary_column", "id")
 	writer.WriteField("order_index", "2")
 	writer.WriteField("title", "myfile.csv")
 	writer.Close()
@@ -315,9 +316,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	mockImportService = mocks.NewMockImportService(ctrl)
 	mockImportService.EXPECT().ImportWithConfig(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string) (dto.ImportTableResponse, error) {
-			if req.Config.PrimaryColumn == nil {
-				return dto.ImportTableResponse{}, errors.New("primary not set")
-			}
 			if req.OrderIndex != 2.5 {
 				return dto.ImportTableResponse{}, errors.New("order index parse failed")
 			}
@@ -335,7 +333,6 @@ func TestTableHandler_ImportTable_PrimaryColumnFound_OrderIndexParsing(t *testin
 	io.WriteString(part, "col1,col2\nval1,val2")
 	writer.WriteField("base_id", uuid.New().String())
 	writer.WriteField("config", `{"columns":[{"column_name":"id"}]}`)
-	writer.WriteField("primary_column", "id")
 	writer.WriteField("order_index", "2.5")
 	writer.WriteField("title", "myfile.csv")
 	writer.Close()
@@ -2922,6 +2919,30 @@ func TestTableHandler_DeleteRow_ServiceError(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, w.Code)
 }
 
+func TestTableHandler_DeleteRow_ReturnsDatabaseReason(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().DeleteRow(gomock.Any(), "test", gomock.Any()).
+		Return(fmt.Errorf("%w: %v", app_errors.RowDeleteFailed, errors.New(`pq: record "old" has no field "name"`)))
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	body, _ := json.Marshal(dto.DeleteRowDataRequest{ModelID: uuid.New().String(), RowId: 1})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("DELETE", "/rows", bytes.NewBuffer(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("schema", "test")
+
+	handler.DeleteRow(c)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `record \"old\" has no field \"name\"`)
+	assert.NotContains(t, w.Body.String(), "pq:")
+}
+
 func TestTableHandler_DeleteTable_ServiceError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -3611,4 +3632,33 @@ func TestTableHandler_ExtractSubstring(t *testing.T) {
 		handler.ExtractSubstring(c)
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
+}
+
+// GET /view/ lists views across the tenant; the handler must drop views of tables the
+// caller has no membership on, as decided by the filter NewModelAccessFilter stores.
+func TestTableHandler_GetAllViews_FiltersInaccessibleTables(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	visibleModel, hiddenModel := uuid.New(), uuid.New()
+	visibleView, hiddenView := uuid.New(), uuid.New()
+	mockTableService := mocks.NewMockTableManagementService(ctrl)
+	mockTableService.EXPECT().GetAllViews(gomock.Any(), "test").Return([]dto.ViewResponse{
+		{ID: visibleView, ModelID: visibleModel},
+		{ID: hiddenView, ModelID: hiddenModel},
+	}, nil)
+	handler := handlers.NewTableHandler(mockTableService, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/views", nil)
+	c.Set("schema", "test")
+	c.Set(middleware.ModelAccessFilterKey, func(modelID string) bool { return modelID == visibleModel.String() })
+
+	handler.GetAllViews(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), visibleView.String())
+	assert.NotContains(t, w.Body.String(), hiddenView.String())
 }

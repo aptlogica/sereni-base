@@ -164,10 +164,11 @@ func (b *BaseUpdate) Map() map[string]interface{} {
 }
 
 type CreateBaseRequest struct {
-	Title       string  `db:"title" json:"title,omitempty"`
-	Description *string `db:"description" json:"description,omitempty"`
-	WorkspaceID string  `db:"workspace_id" json:"workspace_id,omitempty"`
-	CreatedBy   string  `json:"created_by,omitempty"`
+	Title       string                 `db:"title" json:"title,omitempty"`
+	Description *string                `db:"description" json:"description,omitempty"`
+	WorkspaceID string                 `db:"workspace_id" json:"workspace_id,omitempty"`
+	Meta        map[string]interface{} `db:"meta" json:"meta,omitempty"`
+	CreatedBy   string                 `json:"created_by,omitempty"`
 }
 
 type BaseResponse struct {
@@ -179,10 +180,10 @@ type BaseResponse struct {
 
 	// Database connection (for external sources)
 	Type   string                 `db:"type" json:"type,omitempty" mapstructure:"type"`
-	Config map[string]interface{} `db:"config" json:"config,omitempty" mapstructure:"config"`
+	Config map[string]interface{} `db:"config" json:"config" mapstructure:"config"`
 
 	// Settings and metadata
-	Settings map[string]interface{} `db:"settings" json:"settings,omitempty" mapstructure:"settings"`
+	Settings map[string]interface{} `db:"settings" json:"settings" mapstructure:"settings"`
 	Meta     map[string]interface{} `db:"meta" json:"meta" mapstructure:"meta"`
 
 	// Status and visibility

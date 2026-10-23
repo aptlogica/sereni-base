@@ -323,3 +323,97 @@ func TestUserHandler_GetUserRolesAndAccess_Success(t *testing.T) {
 	handler.GetUserRolesAndAccess(c)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+// helpers for profile field length tests
+func buildProfileForm(fields map[string]string) (*bytes.Buffer, string) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for k, v := range fields {
+		_ = writer.WriteField(k, v)
+	}
+	_ = writer.Close()
+	return body, writer.FormDataContentType()
+}
+
+func longString(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = 'a'
+	}
+	return string(b)
+}
+
+// TestUserHandler_UpdateUserProfile_FieldTooLong verifies that any profile string field
+// exceeding 100 characters is rejected with HTTP 422 before reaching the service layer.
+func TestUserHandler_UpdateUserProfile_FieldTooLong(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	over := longString(101)
+	exact := longString(100)
+
+	cases := []struct {
+		name       string
+		formFields map[string]string
+		wantStatus int
+	}{
+		{
+			name:       "first_name over 100 chars → 422",
+			formFields: map[string]string{"first_name": over},
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "last_name over 100 chars → 422",
+			formFields: map[string]string{"last_name": over},
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "display_name over 100 chars → 422",
+			formFields: map[string]string{"display_name": over},
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "country over 100 chars → 422",
+			formFields: map[string]string{"country": over},
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "first_name exactly 100 chars → 200",
+			formFields: map[string]string{"first_name": exact},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "all fields within 100 chars → 200",
+			formFields: map[string]string{"first_name": "Alice", "last_name": "Smith", "display_name": "ASmith"},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			// Only set up the mock expectation for cases that should reach the service
+			mockService := mocks.NewMockUserManagementService(ctrl)
+			if tc.wantStatus == http.StatusOK {
+				mockService.EXPECT().
+					UpdateUserProfile(gomock.Any(), "test", "u1", gomock.Any()).
+					Return(dto.UserResponse{}, nil)
+			}
+			handler := handlers.NewUserHandler(mockService)
+
+			body, contentType := buildProfileForm(tc.formFields)
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("PATCH", "/users/u1", body)
+			c.Request.Header.Set("Content-Type", contentType)
+			c.Params = gin.Params{{Key: "id", Value: "u1"}}
+			c.Set("schema", "test")
+
+			handler.UpdateUserProfile(c)
+			assert.Equal(t, tc.wantStatus, w.Code, tc.name)
+		})
+	}
+}

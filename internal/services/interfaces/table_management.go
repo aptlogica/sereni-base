@@ -15,6 +15,8 @@ import (
 type TableManagementService interface {
 	// table operations
 	CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error)
+	// CreateTableWithDefaultsImport creates a table for an import: system columns only, without the default Title column
+	CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error)
 	UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error)
 	GetTableByID(ctx context.Context, id string, schemaName string) (dto.TableResponse, error)
 	GetAllTables(ctx context.Context, schemaName string) ([]dto.TableResponse, error)

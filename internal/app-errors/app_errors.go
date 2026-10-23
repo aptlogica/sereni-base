@@ -8,6 +8,7 @@ package app_errors
 import (
 	"errors"
 
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 )
 
@@ -155,6 +156,7 @@ var (
 	StorageFileOpenFailed      = errors.New("failed to open file for storage")
 	StorageUploadFailed        = errors.New("failed to upload file to storage")
 	AssetNotFound              = errors.New("asset not found")
+	InvalidFileFormat          = errors.New("invalid file format")
 	FileTooLargeError          = errors.New("File is too large. Limit is 5MB.")
 	MultipleFilesTooLargeError = errors.New("One or more files exceed the 5MB size limit.")
 	TooManyFilesError          = errors.New("Too many files uploaded. Only 5 files are allowed.")
@@ -176,7 +178,114 @@ var (
 	RowNotFound                    = errors.New("row not found")
 	InvalidColumnMetaForLookupType = errors.New("invalid column meta for lookup type")
 	SplitNotPossible               = errors.New("split is not possible")
+	SelfReferenceNotAllowed        = errors.New("self reference not allowed")
+	LinkCycleDetected              = errors.New("link would create a cycle")
+	InvalidLookupLinkColumn        = errors.New("invalid lookup link field")
+	LinkTargetRowNotFound          = errors.New("linked record not found")
+	InvalidLookupTargetColumn      = errors.New("lookup field not allowed")
+	LinkColumnNotWritable          = errors.New("field is not directly writable")
+	InvalidDisplayColumn           = errors.New("field can't be used as the display column")
+	DisplayColumnInUse             = errors.New("field is used as a display column by a link")
 )
+
+// automations (triggers & webhooks)
+var (
+	// RowDeleteFailed wraps the database message of a failed row delete, e.g. from a trigger
+	RowDeleteFailed          = errors.New("failed to delete record")
+	AutomationNotFound       = errors.New("automation not found")
+	InvalidTriggerQuery      = errors.New("invalid trigger query")
+	InvalidFunctionQuery     = errors.New("invalid function query")
+	TriggerFailed            = errors.New("failed to run trigger query")
+	TriggerHasFunction       = errors.New("trigger query contains a function")
+	InvalidTriggerEvent      = errors.New("invalid trigger timing or events")
+	DuplicateAutomationTitle = errors.New("automation title already exists")
+)
+
+// primary key
+var (
+	PrimaryKeyRequired      = errors.New("at least one primary key column is required")
+	PrimaryKeyColumnInvalid = errors.New("column cannot be part of the primary key")
+	PrimaryKeyLocked        = errors.New("primary key is locked by link fields")
+	PrimaryKeyDataInvalid   = errors.New("existing records do not satisfy the primary key")
+	PrimaryKeyUpdateFailed  = errors.New("failed to update primary key")
+	ColumnInPrimaryKey      = errors.New("column is part of the primary key")
+)
+
+// uuid fields
+var (
+	UUIDInvalid       = errors.New("not a valid UUID")
+	UUIDReadOnly      = errors.New("this field is generated automatically")
+	UUIDConfigInvalid = errors.New("invalid UUID generation settings")
+)
+
+// KeyViolation keeps a Postgres unique (23505) or not-null (23502) error from a write to a user table, so the
+// table service can name the key fields; it matches DatabaseError like other failed writes
+type KeyViolation struct {
+	Postgres *dbModels.DBError
+}
+
+func (e *KeyViolation) Error() string { return e.Postgres.Error() }
+
+func (e *KeyViolation) Unwrap() error { return DatabaseError }
+
+// DatabaseOrKeyError logs a failed write; key violations are returned as *KeyViolation, others as DatabaseError
+func DatabaseOrKeyError(err error, msg string) error {
+	if dbErr, ok := DBError(err); ok && (dbErr.Code == "23505" || dbErr.Code == "23502") {
+		logger.Get().Warn().Err(err).Msg(msg)
+		return &KeyViolation{Postgres: dbErr}
+	}
+	return LogDatabaseError(err, msg)
+}
+
+// PrimaryKeyViolation carries the records that block a primary key change; it matches PrimaryKeyDataInvalid
+type PrimaryKeyViolation struct {
+	// Message states exactly what failed
+	Message string
+	Details interface{}
+}
+
+func (e *PrimaryKeyViolation) Error() string {
+	if e.Message == "" {
+		return PrimaryKeyDataInvalid.Error()
+	}
+	return e.Message
+}
+
+func (e *PrimaryKeyViolation) Unwrap() error { return PrimaryKeyDataInvalid }
+
+// table constraints (unique keys)
+var (
+	ConstraintNotFound         = errors.New("constraint not found")
+	ConstraintColumnNotFound   = errors.New("column not found in this table")
+	ConstraintColumnNotAllowed = errors.New("column can't be part of a key")
+	ConstraintRepeatedColumn   = errors.New("column repeated in key")
+	ConstraintAlreadyExists    = errors.New("a key on these columns already exists")
+	ConstraintDuplicateValues  = errors.New("records repeat values in these columns")
+	ConstraintFailed           = errors.New("failed to apply constraint")
+	ColumnUsedInConstraint     = errors.New("column is used by a key")
+	UniqueKeyViolation         = errors.New("record repeats a unique key")
+	UniqueKeyDefaultConflict   = errors.New("default value conflicts with a unique key")
+	// check constraints
+	CheckConditionInvalid    = errors.New("check condition not allowed")
+	CheckCategoryUnknown     = errors.New("unknown check category")
+	CheckExistingRows        = errors.New("existing records break the check condition")
+	CheckConstraintViolation = errors.New("record breaks a check constraint")
+)
+
+// DetailedError keeps a known error, for mapping to a response code, and a message for the user
+type DetailedError struct {
+	Err     error
+	Message string
+}
+
+func (e *DetailedError) Error() string { return e.Err.Error() + ": " + e.Message }
+
+func (e *DetailedError) Unwrap() error { return e.Err }
+
+// WithMessage returns err with a message for the user
+func WithMessage(err error, message string) error {
+	return &DetailedError{Err: err, Message: message}
+}
 
 // APIError represents an error response from an external API
 type APIError struct {

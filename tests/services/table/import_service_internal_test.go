@@ -61,10 +61,10 @@ type importServiceTestAPI interface {
 	ValidateJSONField(cellVal string, columnName string) []string
 	ValidateTextField(cellVal string, columnName string, fieldType string, meta map[string]interface{}) []string
 	BuildRecordsWithConfigAndErrors(params dto.BuildRecordsWithConfigAndErrorsParams, lg *zerolog.Logger) ([]map[string]interface{}, [][]string, []string)
-	ProcessTitleCell(header string, cfg dto.ColumnConfig, cellVal string) (interface{}, []string)
 	ProcessDataCell(header string, cfg dto.ColumnConfig, colResp dto.ColumnResponse, cellVal string) (string, interface{}, []string, bool)
-	ApplyNonPrimary(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool)
-	ValidateColumnConfig(columnConfigs []dto.ColumnConfig, primary *dto.ColumnConfig, headers []string, lg *zerolog.Logger) error
+	AvoidSystemColumnTitle(title string, existing []dto.ColumnResponse) string
+	ApplyDataCell(record map[string]interface{}, header string, cfg dto.ColumnConfig, configExists bool, params dto.BuildRecordsWithConfigAndErrorsParams, i int, cellVal string) ([]string, bool)
+	ValidateColumnConfig(columnConfigs []dto.ColumnConfig, headers []string, lg *zerolog.Logger) error
 	PrepareImportData(ctx context.Context, schemaName string, req dto.ImportWithConfigRequest, file *multipart.FileHeader, tableTitle string, lg *zerolog.Logger) ([]string, [][]string, *dto.ImportStatistics, string, error)
 	CreateTableForImport(ctx context.Context, schemaName string, createTableReq dto.CreateTableRequest, lg *zerolog.Logger, createdBase bool, baseID string) (dto.TableResponse, func(), error)
 }
@@ -87,6 +87,10 @@ type importTableServiceWithCreate struct {
 	createTable func(ctx context.Context, req dto.CreateTableRequest, schemaName string) (dto.TableResponse, error)
 }
 
+func (s importTableServiceWithCreate) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	return s.CreateTableWithDefaults(ctx, tableData, schemaName)
+}
+
 func (s importTableServiceWithCreate) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	if s.createTable != nil {
 		return s.createTable(ctx, tableData, schemaName)
@@ -94,6 +98,9 @@ func (s importTableServiceWithCreate) CreateTableWithDefaults(ctx context.Contex
 	return dto.TableResponse{}, nil
 }
 
+func (s importTableServiceStub) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	return dto.TableResponse{}, nil
+}
 func (s importTableServiceStub) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	return dto.TableResponse{}, nil
 }
@@ -495,17 +502,13 @@ func TestImportServiceBuildRecordsWithConfigBranches(t *testing.T) {
 	params := dto.BuildRecordsWithConfigAndErrorsParams{
 		Headers: []string{"Title", "Age", "Ignored", "MissingMap"},
 		Req:     dto.CreateTableRequest{CreatedBy: "user"},
-		Primary: &dto.ColumnConfig{
-			ColumnName: "Title",
-			UIDT:       "text",
-			Meta:       map[string]interface{}{"default_value": titleDefault},
-		},
 		ColumnConfigs: []dto.ColumnConfig{
 			{ColumnName: "Title", UIDT: "text", Meta: map[string]interface{}{"default_value": titleDefault}},
 			{ColumnName: "Age", UIDT: "number", Meta: map[string]interface{}{"default_value": numberDefault}},
 			{ColumnName: "MissingMap", UIDT: "text"},
 		},
 		ColumnMap: map[int]dto.ColumnResponse{
+			0: {ColumnName: "title"},
 			1: {ColumnName: "age"},
 		},
 		DataRows: [][]string{
@@ -520,14 +523,11 @@ func TestImportServiceBuildRecordsWithConfigBranches(t *testing.T) {
 	require.Len(t, records, 3)
 	require.Len(t, errorRows, 1)
 	require.Len(t, errorMessages, 1)
-	assert.Equal(t, "Alice", records[0]["title"])
+	assert.Equal(t, "Alice", records[0]["\"title\""])
 	assert.Equal(t, int64(42), records[0]["\"age\""])
-	assert.Equal(t, titleDefault, records[1]["title"])
+	assert.Equal(t, titleDefault, records[1]["\"title\""])
 	assert.Equal(t, int64(18), records[1]["\"age\""])
 	assert.Contains(t, errorMessages[0], "Column type 'number'")
-
-	_, errs := svc.ProcessTitleCell("Title", dto.ColumnConfig{UIDT: "number"}, "not-number")
-	assert.NotEmpty(t, errs)
 
 	key, val, errs, ok := svc.ProcessDataCell("Age", dto.ColumnConfig{UIDT: "number"}, dto.ColumnResponse{ColumnName: "age"}, "")
 	assert.False(t, ok)
@@ -535,7 +535,7 @@ func TestImportServiceBuildRecordsWithConfigBranches(t *testing.T) {
 	assert.Nil(t, val)
 	assert.Empty(t, errs)
 
-	errs, applied := svc.ApplyNonPrimary(map[string]interface{}{}, "Unknown", dto.ColumnConfig{}, false, params, 1, "x")
+	errs, applied := svc.ApplyDataCell(map[string]interface{}{}, "Unknown", dto.ColumnConfig{}, false, params, 1, "x")
 	assert.False(t, applied)
 	assert.Empty(t, errs)
 }
@@ -545,15 +545,12 @@ func TestImportServiceConfigValidationBranches(t *testing.T) {
 	lg := logger.Get()
 	headers := []string{"Title", "Age"}
 
-	assert.Error(t, svc.ValidateColumnConfig(nil, nil, headers, lg))
-	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{ColumnName: "Title"}}, nil, headers, lg))
-	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{ColumnName: "Title"}}, &dto.ColumnConfig{}, headers, lg))
-	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{ColumnName: "Title"}}, &dto.ColumnConfig{ColumnName: "Missing"}, headers, lg))
-	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{}}, &dto.ColumnConfig{ColumnName: "Title"}, headers, lg))
-	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{ColumnName: "Missing"}}, &dto.ColumnConfig{ColumnName: "Title"}, headers, lg))
+	assert.Error(t, svc.ValidateColumnConfig(nil, headers, lg))
+	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{}}, headers, lg))
+	assert.Error(t, svc.ValidateColumnConfig([]dto.ColumnConfig{{ColumnName: "Missing"}}, headers, lg))
+	// no primary column is needed: every column is just a column
 	assert.NoError(t, svc.ValidateColumnConfig(
 		[]dto.ColumnConfig{{ColumnName: "Title"}, {ColumnName: "Age", Title: "Age", UIDT: "number"}},
-		&dto.ColumnConfig{ColumnName: "Title"},
 		headers,
 		lg,
 	))
@@ -567,7 +564,6 @@ func TestImportServicePrepareImportDataBranches(t *testing.T) {
 		BaseID:    "base",
 		CreatedBy: "user",
 		Config: dto.ImportConfig{
-			PrimaryColumn: &dto.ColumnConfig{ColumnName: "Title", UIDT: "text"},
 			Columns: []dto.ColumnConfig{
 				{ColumnName: "Title", UIDT: "text"},
 				{ColumnName: "Age", UIDT: "number"},
@@ -664,4 +660,24 @@ func TestImportServiceCreateTableForImportCleanup(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, cleanup)
 	assert.Equal(t, 2, deleteBaseCalls)
+}
+
+func TestImportServiceAvoidSystemColumnTitle(t *testing.T) {
+	svc := newImportServiceForTest(t, nil, nil, nil)
+	yes := true
+
+	// a header that is the title of a system column is renamed, whatever its case
+	assert.Equal(t, "Id (1)", svc.AvoidSystemColumnTitle("Id", nil))
+	assert.Equal(t, "id (1)", svc.AvoidSystemColumnTitle("id", nil))
+	assert.Equal(t, "created time (1)", svc.AvoidSystemColumnTitle("created time", nil))
+	assert.Equal(t, "Created By (1)", svc.AvoidSystemColumnTitle("Created By", nil))
+	assert.Equal(t, "Last Modified Time (1)", svc.AvoidSystemColumnTitle(" Last Modified Time ", nil))
+
+	// other headers, Title included, are left alone
+	assert.Equal(t, "Title", svc.AvoidSystemColumnTitle("Title", nil))
+	assert.Equal(t, "Name", svc.AvoidSystemColumnTitle("Name", nil))
+
+	// the table's own system columns count too, and the new name is free
+	existing := []dto.ColumnResponse{{Title: "Id (1)", System: &yes}}
+	assert.Equal(t, "Id (2)", svc.AvoidSystemColumnTitle("Id", existing))
 }

@@ -150,7 +150,7 @@ These are prompted and configured when you run `make setup`:
 | `OWNER_FIRST_NAME` | `Admin` | Admin user first name | Owner setup |
 | `OWNER_LAST_NAME` | `User` | Admin user last name | Owner setup |
 | `OWNER_EMAIL` | `admin@example.com` | Admin login email | Owner setup |
-| `OWNER_PASSWORD` | `Admin@123` | Admin login password | Owner setup |
+| `OWNER_PASSWORD` | *(randomly generated)* | Admin login password; min 8 chars, known defaults are rejected | Owner setup |
 
 ### Pre-filled System Variables
 
@@ -290,7 +290,7 @@ Enter IP/domain [localhost]:
 First Name [Admin]:
 Last Name [User]:
 Email [admin@example.com]:
-Password [Admin@123]:
+Password [<randomly generated>]:
 ```
 
 ### Step 4: Access the application
@@ -364,7 +364,7 @@ Default login credentials will be displayed at the end of setup.
 | Field | Value |
 |-------|-------|
 | Email | `admin@example.com` |
-| Password | `Admin@123` |
+| Password | Generated during setup and printed at the end (see `OWNER_PASSWORD` in `.env`) |
 
 > **Security Notice**: Change these credentials immediately in production environments.
 

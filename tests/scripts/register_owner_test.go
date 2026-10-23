@@ -48,6 +48,19 @@ func (m *MockTableServiceOwner) DeleteRecord(tableName string, id interface{}) e
 	return args.Error(0)
 }
 
+func (m *MockTableServiceOwner) UpdateByColumns(tableName string, where dbModels.ComplexFilter, data map[string]any) (map[string]interface{}, error) {
+	args := m.Called(tableName, where, data)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+func (m *MockTableServiceOwner) DeleteByColumns(tableName string, where dbModels.ComplexFilter) (int64, error) {
+	args := m.Called(tableName, where)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockTableServiceOwner) GetTables(schema string) ([]dbModels.Table, error) {
 	args := m.Called(schema)
 	if args.Get(0) == nil {
@@ -911,4 +924,25 @@ func TestRegisterOwnerWithAllValidationErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// GHSA-q8fx-q2c9-c6hc: publicly known default owner passwords must never be accepted.
+func TestValidateOwnerConfig_RejectsDefaultPasswords(t *testing.T) {
+	cfgWith := func(password string) *config.Config {
+		return &config.Config{OwnerRegistration: config.OwnerRegistrationConfig{
+			Email: "owner@example.com", Password: password, FirstName: "John", LastName: "Doe",
+		}}
+	}
+
+	for _, password := range []string{"Admin@123", "CHANGEME_OWNER_PASSWORD", "short", "1234567"} {
+		t.Run("rejects "+password, func(t *testing.T) {
+			err := scripts.ValidateOwnerConfig(cfgWith(password))
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "password")
+		})
+	}
+
+	t.Run("accepts a non-default password of minimum length", func(t *testing.T) {
+		assert.NoError(t, scripts.ValidateOwnerConfig(cfgWith("4f9c2a7e")))
+	})
 }

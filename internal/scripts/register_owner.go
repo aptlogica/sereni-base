@@ -98,7 +98,19 @@ func ValidateOwnerConfig(cfg *config.Config) error {
 	if cfg.OwnerRegistration.LastName == "" {
 		return fmt.Errorf("owner last name is required in config.yaml")
 	}
+	if knownDefaultOwnerPasswords[cfg.OwnerRegistration.Password] || len(cfg.OwnerRegistration.Password) < minOwnerPasswordLength {
+		return fmt.Errorf("owner password must be a non-default value of at least %d characters; set OWNER_PASSWORD", minOwnerPasswordLength)
+	}
 	return nil
+}
+
+// minOwnerPasswordLength matches the min=8 rule applied to user passwords elsewhere.
+const minOwnerPasswordLength = 8
+
+// knownDefaultOwnerPasswords are values that shipped in templates or code and are publicly known.
+var knownDefaultOwnerPasswords = map[string]bool{
+	"Admin@123":               true,
+	"CHANGEME_OWNER_PASSWORD": true,
 }
 
 type coreServices struct {

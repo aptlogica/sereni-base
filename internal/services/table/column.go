@@ -318,7 +318,7 @@ func (s *columnService) BulkUpdate(ctx context.Context, schemaName string, table
 	)
 	if err != nil {
 		fmt.Printf("DEBUG: Bulk update failed for column %s in table %s: %v\n", columnName, tableName, err)
-		return app_errors.LogDatabaseError(err, "failed to perform bulk update on columns")
+		return app_errors.DatabaseOrKeyError(err, "failed to perform bulk update on columns")
 	}
 
 	return nil
@@ -349,7 +349,7 @@ func (s *columnService) BulkUpdateByColumns(ctx context.Context, schemaName stri
 		args,
 	)
 	if err != nil {
-		return app_errors.LogDatabaseError(err, "failed to perform multi-column bulk update")
+		return app_errors.DatabaseOrKeyError(err, "failed to perform multi-column bulk update")
 	}
 
 	return nil
@@ -372,7 +372,7 @@ func (s *columnService) ResetColumn(ctx context.Context, schemaName string, tabl
 		args,
 	)
 	if err != nil {
-		return app_errors.LogDatabaseError(err, "failed to reset column values")
+		return app_errors.DatabaseOrKeyError(err, "failed to reset column values")
 	}
 
 	return nil

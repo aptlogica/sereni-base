@@ -193,6 +193,464 @@ var DefinedFunctions = []Function{
 			$$;
 		`,
 	},
+	// --- Link functions --------------------------------------------------------------------------
+	// Link cells hold a JSONB array of the linked rows' primary-key values, e.g.
+	// [{"org_code": "IN", "dept_code": "HR"}]; a default table's key is {"id": 12}. Callers still pass
+	// row ids; the functions read each row's key from its primary key constraint. p_table values are
+	// already-quoted "schema"."table" names taken from metadata; column names are quoted here with %I.
+	{
+		// Primary-key columns of a table, in key order (falls back to id).
+		FunctionName:   "link_key_columns",
+		FunctionParams: "p_table TEXT",
+		FunctionSQL: `
+			RETURNS TEXT[]
+			LANGUAGE sql STABLE AS
+			$$
+				SELECT COALESCE(
+					(SELECT array_agg(a.attname::text ORDER BY k.ord)
+					 FROM pg_constraint c
+					 CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+					 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+					 WHERE c.conrelid = to_regclass(p_table) AND c.contype = 'p'),
+					ARRAY['id']);
+			$$;
+		`,
+	},
+	{
+		// SQL expression that builds the key object of the row aliased p_alias.
+		FunctionName:   "link_key_expr",
+		FunctionParams: "p_table TEXT, p_alias TEXT",
+		FunctionSQL: `
+			RETURNS TEXT
+			LANGUAGE sql STABLE AS
+			$$
+				SELECT 'jsonb_build_object(' || string_agg(format('%L, %I.%I', c, p_alias, c), ', ') || ')'
+				FROM unnest(public.link_key_columns(p_table)) AS c;
+			$$;
+		`,
+	},
+	{
+		// SQL condition joining two aliases of the same table on its key columns.
+		FunctionName:   "link_key_join",
+		FunctionParams: "p_table TEXT, p_left TEXT, p_right TEXT",
+		FunctionSQL: `
+			RETURNS TEXT
+			LANGUAGE sql STABLE AS
+			$$
+				SELECT string_agg(format('%I.%I = %I.%I', p_left, c, p_right, c), ' AND ')
+				FROM unnest(public.link_key_columns(p_table)) AS c;
+			$$;
+		`,
+	},
+	{
+		// Key object of one row.
+		FunctionName:   "link_row_key",
+		FunctionParams: "p_table TEXT, p_row BIGINT",
+		FunctionSQL: `
+			RETURNS JSONB
+			LANGUAGE plpgsql STABLE AS
+			$$
+			DECLARE
+				row_key JSONB;
+			BEGIN
+				EXECUTE format('SELECT %s FROM %s t WHERE t.id = $1', public.link_key_expr(p_table, 't'), p_table)
+					INTO row_key USING p_row;
+				RETURN row_key;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Locks a row for the rest of the calling statement and reports whether it exists.
+		FunctionName:   "link_lock_row",
+		FunctionParams: "p_table TEXT, p_row BIGINT",
+		FunctionSQL: `
+			RETURNS BOOLEAN
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				locked_id BIGINT;
+			BEGIN
+				EXECUTE format('SELECT id::bigint FROM %s WHERE id = $1 FOR UPDATE', p_table)
+					INTO locked_id USING p_row;
+				RETURN locked_id IS NOT NULL;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Adds (p_link) or removes p_key in one row's link column. Single-valued sides hold at most one key.
+		FunctionName:   "link_apply_change",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_is_array BOOLEAN, p_row BIGINT, p_key JSONB, p_link BOOLEAN, p_updated_by TEXT",
+		FunctionSQL: `
+			RETURNS VOID
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				set_expr TEXT;
+				where_expr TEXT := 'id = $2';
+				audit TEXT := ', last_modified_time = $3';
+			BEGIN
+				IF p_is_array AND p_link THEN
+					set_expr := format(
+						'%1$I = CASE WHEN COALESCE(%1$I, ''[]''::jsonb) @> jsonb_build_array($1) THEN %1$I ELSE COALESCE(%1$I, ''[]''::jsonb) || jsonb_build_array($1) END',
+						p_column);
+				ELSIF p_link THEN
+					set_expr := format('%I = jsonb_build_array($1)', p_column);
+				ELSE
+					set_expr := format(
+						'%1$I = (SELECT jsonb_agg(x.e ORDER BY x.o) FROM jsonb_array_elements(%1$I) WITH ORDINALITY AS x(e, o) WHERE x.e <> $1)',
+						p_column);
+					where_expr := format('id = $2 AND %I @> jsonb_build_array($1)', p_column);
+				END IF;
+
+				IF COALESCE(p_updated_by, '') <> '' THEN
+					audit := audit || ', last_modified_by = $4';
+				END IF;
+
+				EXECUTE format('UPDATE %s SET %s%s WHERE %s', p_table, set_expr, audit, where_expr)
+					USING p_key, p_row, (now() AT TIME ZONE 'UTC'), p_updated_by;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Returns (and locks) the rows whose link column holds p_key.
+		FunctionName:   "link_rows_holding",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_key JSONB",
+		FunctionSQL: `
+			RETURNS SETOF BIGINT
+			LANGUAGE plpgsql AS
+			$$
+			BEGIN
+				RETURN QUERY EXECUTE format('SELECT id::bigint FROM %s WHERE %I @> jsonb_build_array($1) FOR UPDATE', p_table, p_column)
+					USING p_key;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Would making p_parent the parent of p_child create a loop? p_column points from a child to its parent.
+		FunctionName:   "link_cycle_parent",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_parent BIGINT, p_child BIGINT",
+		FunctionSQL: `
+			RETURNS BOOLEAN
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				result BOOLEAN;
+			BEGIN
+				IF p_parent = p_child THEN
+					RETURN TRUE;
+				END IF;
+				EXECUTE format(
+					'WITH RECURSIVE ancestors(k) AS (
+						SELECT e FROM %2$s t, jsonb_array_elements(t.%1$I) AS e WHERE t.id = $1
+						UNION
+						SELECT e FROM ancestors a
+						CROSS JOIN LATERAL jsonb_populate_record(NULL::%2$s, a.k) AS r
+						JOIN %2$s t ON %3$s
+						CROSS JOIN LATERAL jsonb_array_elements(t.%1$I) AS e
+					)
+					SELECT EXISTS (SELECT 1 FROM ancestors WHERE k = $2)',
+					p_column, p_table, public.link_key_join(p_table, 't', 'r'))
+					INTO result USING p_parent, public.link_row_key(p_table, p_child);
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Would adding p_child to p_parent's children (a multi-valued column) create a loop?
+		FunctionName:   "link_cycle_children",
+		FunctionParams: "p_table TEXT, p_column TEXT, p_parent BIGINT, p_child BIGINT",
+		FunctionSQL: `
+			RETURNS BOOLEAN
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				result BOOLEAN;
+				key_expr TEXT := public.link_key_expr(p_table, 't');
+			BEGIN
+				IF p_parent = p_child THEN
+					RETURN TRUE;
+				END IF;
+				EXECUTE format(
+					'WITH RECURSIVE ancestors(id, k) AS (
+						SELECT t.id::bigint, %3$s FROM %2$s t WHERE t.%1$I @> jsonb_build_array($1)
+						UNION
+						SELECT t.id::bigint, %3$s FROM %2$s t JOIN ancestors a ON t.%1$I @> jsonb_build_array(a.k)
+					)
+					SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $2)',
+					p_column, p_table, key_expr)
+					INTO result USING public.link_row_key(p_table, p_parent), p_child;
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Links or unlinks two rows. Returns 'ok', 'source_not_found', 'target_not_found' or 'cycle';
+		// every non-ok status is returned before anything is written.
+		FunctionName:   "link_rows",
+		FunctionParams: "p_relation_type TEXT, p_single_column BOOLEAN, p_is_self BOOLEAN, p_action TEXT, p_source_table TEXT, p_source_column TEXT, p_source_is_array BOOLEAN, p_target_table TEXT, p_target_column TEXT, p_target_is_array BOOLEAN, p_source_row BIGINT, p_target_row BIGINT, p_updated_by TEXT",
+		FunctionSQL: `
+			RETURNS TEXT
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				is_link BOOLEAN := p_action = 'link';
+				holder BIGINT;
+				has_cycle BOOLEAN;
+				source_key JSONB;
+				target_key JSONB;
+			BEGIN
+				-- Lock both rows in a fixed order so opposite link calls can't deadlock.
+				IF p_target_table COLLATE "C" < p_source_table COLLATE "C"
+					OR (p_target_table = p_source_table AND p_target_row < p_source_row) THEN
+					IF NOT public.link_lock_row(p_target_table, p_target_row) THEN RETURN 'target_not_found'; END IF;
+					IF NOT public.link_lock_row(p_source_table, p_source_row) THEN RETURN 'source_not_found'; END IF;
+				ELSE
+					IF NOT public.link_lock_row(p_source_table, p_source_row) THEN RETURN 'source_not_found'; END IF;
+					IF NOT public.link_lock_row(p_target_table, p_target_row) THEN RETURN 'target_not_found'; END IF;
+				END IF;
+
+				-- Link cells store the other row's primary-key values, not its id.
+				source_key := public.link_row_key(p_source_table, p_source_row);
+				target_key := public.link_row_key(p_target_table, p_target_row);
+
+				-- One-way self-link: only the edited row's cell changes.
+				IF p_single_column THEN
+					IF NOT is_link THEN
+						PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, target_key, FALSE, p_updated_by);
+						RETURN 'ok';
+					END IF;
+					IF p_relation_type = 'has-many'
+						AND public.link_cycle_children(p_source_table, p_source_column, p_source_row, p_target_row) THEN
+						RETURN 'cycle';
+					END IF;
+					IF p_relation_type IN ('one-to-one', 'has-many') THEN
+						FOR holder IN SELECT * FROM public.link_rows_holding(p_source_table, p_source_column, target_key) LOOP
+							IF holder <> p_source_row THEN
+								PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, holder, target_key, FALSE, p_updated_by);
+							END IF;
+						END LOOP;
+					END IF;
+					PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, target_key, TRUE, p_updated_by);
+					RETURN 'ok';
+				END IF;
+
+				IF NOT is_link THEN
+					PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, target_key, FALSE, p_updated_by);
+					PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, p_target_row, source_key, FALSE, p_updated_by);
+					RETURN 'ok';
+				END IF;
+
+				-- Two-column self-link has-many: the single-valued side points from a child to its parent.
+				IF p_is_self AND p_relation_type = 'has-many' THEN
+					IF NOT p_source_is_array THEN
+						has_cycle := public.link_cycle_parent(p_source_table, p_source_column, p_target_row, p_source_row);
+					ELSE
+						has_cycle := public.link_cycle_parent(p_target_table, p_target_column, p_source_row, p_target_row);
+					END IF;
+					IF has_cycle THEN
+						RETURN 'cycle';
+					END IF;
+				END IF;
+
+				-- Cardinality: one-to-one partners and has-many parents release the record first.
+				IF p_relation_type = 'one-to-one' OR (p_relation_type = 'has-many' AND p_source_is_array) THEN
+					FOR holder IN SELECT * FROM public.link_rows_holding(p_source_table, p_source_column, target_key) LOOP
+						PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, holder, target_key, FALSE, p_updated_by);
+						PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, p_target_row, public.link_row_key(p_source_table, holder), FALSE, p_updated_by);
+					END LOOP;
+				END IF;
+				IF p_relation_type = 'one-to-one' OR (p_relation_type = 'has-many' AND p_target_is_array) THEN
+					FOR holder IN SELECT * FROM public.link_rows_holding(p_target_table, p_target_column, source_key) LOOP
+						PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, holder, source_key, FALSE, p_updated_by);
+						PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, public.link_row_key(p_target_table, holder), FALSE, p_updated_by);
+					END LOOP;
+				END IF;
+
+				PERFORM public.link_apply_change(p_source_table, p_source_column, p_source_is_array, p_source_row, target_key, TRUE, p_updated_by);
+				PERFORM public.link_apply_change(p_target_table, p_target_column, p_target_is_array, p_target_row, source_key, TRUE, p_updated_by);
+				RETURN 'ok';
+			END;
+			$$;
+		`,
+	},
+	{
+		// Lookup values: each target's column is read from the rows whose keys the link cell holds.
+		FunctionName:   "get_table_data_with_lookups",
+		FunctionParams: "schema_name TEXT, source_table_name TEXT, relation_data JSON[]",
+		FunctionSQL: `
+			RETURNS JSON
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				rel JSON;
+				target JSON;
+				source_column_name TEXT;
+				target_table TEXT;
+				relation TEXT;
+				is_many BOOLEAN;
+				key_join TEXT;
+				from_sql TEXT;
+				expr TEXT;
+				relation_sql TEXT := '';
+				query TEXT;
+				result JSON;
+			BEGIN
+				FOR rel IN SELECT * FROM unnest(COALESCE(relation_data, ARRAY[]::JSON[]))
+				LOOP
+					source_column_name := rel->>'source_column_name';
+					target_table       := format('%I.%I', schema_name, rel->>'target_table_name');
+					relation           := rel->>'relation';
+					is_many            := COALESCE((rel->>'is_array')::BOOLEAN, FALSE) OR relation IN ('has-many', 'many-to-many');
+					key_join           := public.link_key_join(target_table, 't', 'r');
+					from_sql := format(
+						'FROM jsonb_array_elements(s.%I) WITH ORDINALITY AS x(k, o)
+						 CROSS JOIN LATERAL jsonb_populate_record(NULL::%s, x.k) AS r
+						 JOIN %s t ON %s',
+						source_column_name, target_table, target_table, key_join);
+
+					FOR target IN SELECT * FROM json_array_elements(rel->'targets')
+					LOOP
+						IF is_many THEN
+							expr := format('(SELECT COALESCE(JSON_AGG(t.%I ORDER BY x.o), ''[]''::JSON) %s) AS %I',
+								target->>'column', from_sql, target->>'alias');
+						ELSE
+							expr := format('(SELECT t.%I %s ORDER BY x.o LIMIT 1) AS %I',
+								target->>'column', from_sql, target->>'alias');
+						END IF;
+						relation_sql := relation_sql || ', ' || expr;
+					END LOOP;
+				END LOOP;
+
+				query := format(
+					'SELECT COALESCE(JSON_AGG(row_to_json(row)), ''[]''::JSON)
+					 FROM (
+						 SELECT s.* %s
+						 FROM %I.%I s
+						 ORDER BY s.created_time
+					 ) row',
+					relation_sql,
+					schema_name, source_table_name
+				);
+
+				EXECUTE query INTO result;
+
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Statement trigger on every dynamic table: when rows are deleted or their key values change,
+		// rewrite (or remove) the stored keys in every link column that points at this table.
+		FunctionName:   "link_key_sync",
+		FunctionParams: "",
+		FunctionSQL: `
+			RETURNS TRIGGER
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				this_table TEXT := format('%I.%I', TG_TABLE_SCHEMA, TG_TABLE_NAME);
+				this_model TEXT;
+				old_key TEXT := public.link_key_expr(this_table, 'o');
+				new_key TEXT := public.link_key_expr(this_table, 'n');
+				changes JSONB;
+				ref RECORD;
+			BEGIN
+				EXECUTE format('SELECT id::text FROM %I.models WHERE alias = $1 LIMIT 1', TG_TABLE_SCHEMA)
+					INTO this_model USING TG_TABLE_NAME;
+				IF this_model IS NULL THEN
+					RETURN NULL;
+				END IF;
+
+				IF TG_OP = 'UPDATE' THEN
+					EXECUTE format(
+						'SELECT jsonb_agg(jsonb_build_object(''old'', %1$s, ''new'', %2$s))
+						 FROM link_old_rows o JOIN link_new_rows n ON n.id = o.id
+						 WHERE %1$s IS DISTINCT FROM %2$s', old_key, new_key)
+						INTO changes;
+				ELSE
+					EXECUTE format('SELECT jsonb_agg(jsonb_build_object(''old'', %s)) FROM link_old_rows o', old_key)
+						INTO changes;
+				END IF;
+				IF changes IS NULL THEN
+					RETURN NULL;
+				END IF;
+
+				FOR ref IN EXECUTE format(
+					'SELECT m.alias, c.column_name
+					 FROM %1$I.columns c JOIN %1$I.models m ON m.id::text = c.model_id::text
+					 WHERE c.uidt = ''links'' AND NOT COALESCE(c.deleted, FALSE) AND c.meta->''relation''->>''with'' = $1', TG_TABLE_SCHEMA)
+					USING this_model
+				LOOP
+					-- Matched keys are replaced by the new key on UPDATE and dropped on DELETE.
+					EXECUTE format(
+						'UPDATE %1$I.%2$I s SET %3$I = (
+							SELECT jsonb_agg(COALESCE(ch->''new'', x.e) ORDER BY x.o)
+							FROM jsonb_array_elements(s.%3$I) WITH ORDINALITY AS x(e, o)
+							LEFT JOIN jsonb_array_elements($1) AS ch ON ch->''old'' = x.e
+							WHERE ch IS NULL OR ch ? ''new''
+						), last_modified_time = (now() AT TIME ZONE ''UTC'')
+						WHERE EXISTS (SELECT 1 FROM jsonb_array_elements($1) AS ch WHERE s.%3$I @> jsonb_build_array(ch->''old''))',
+						TG_TABLE_SCHEMA, ref.alias, ref.column_name)
+						USING changes;
+				END LOOP;
+				RETURN NULL;
+			END;
+			$$;
+		`,
+	},
+	{
+		// Installs the key-sync triggers on one dynamic table (idempotent).
+		FunctionName:   "link_install_key_sync",
+		FunctionParams: "p_schema TEXT, p_table TEXT",
+		FunctionSQL: `
+			RETURNS VOID
+			LANGUAGE plpgsql AS
+			$$
+			BEGIN
+				EXECUTE format('DROP TRIGGER IF EXISTS sb_link_key_update ON %I.%I', p_schema, p_table);
+				EXECUTE format('DROP TRIGGER IF EXISTS sb_link_key_delete ON %I.%I', p_schema, p_table);
+				EXECUTE format(
+					'CREATE TRIGGER sb_link_key_update AFTER UPDATE ON %I.%I
+					 REFERENCING OLD TABLE AS link_old_rows NEW TABLE AS link_new_rows
+					 FOR EACH STATEMENT EXECUTE FUNCTION public.link_key_sync()', p_schema, p_table);
+				EXECUTE format(
+					'CREATE TRIGGER sb_link_key_delete AFTER DELETE ON %I.%I
+					 REFERENCING OLD TABLE AS link_old_rows
+					 FOR EACH STATEMENT EXECUTE FUNCTION public.link_key_sync()', p_schema, p_table);
+			END;
+			$$;
+		`,
+	},
+	{
+		// Migration helper: converts stored row ids into key objects of p_table, keeping their order.
+		FunctionName:   "link_ids_to_keys",
+		FunctionParams: "p_table TEXT, p_ids BIGINT[]",
+		FunctionSQL: `
+			RETURNS JSONB
+			LANGUAGE plpgsql AS
+			$$
+			DECLARE
+				result JSONB;
+			BEGIN
+				IF p_ids IS NULL OR cardinality(p_ids) = 0 THEN
+					RETURN NULL;
+				END IF;
+				EXECUTE format(
+					'SELECT jsonb_agg(%s ORDER BY x.o) FROM unnest($1) WITH ORDINALITY AS x(id, o) JOIN %s t ON t.id = x.id',
+					public.link_key_expr(p_table, 't'), p_table)
+					INTO result USING p_ids;
+				RETURN result;
+			END;
+			$$;
+		`,
+	},
 	{
 		FunctionName:   "reorder_columns_after_delete",
 		FunctionParams: "p_schema_name TEXT, p_model_id TEXT, p_order_index INT",
@@ -629,3 +1087,34 @@ var DefinedFunctions = []Function{
 		`,
 	},
 }
+
+// DroppedFunctions are signatures replaced by a new signature or no longer used; they are dropped
+// before DefinedFunctions are installed so stale overloads are not left behind.
+var DroppedFunctions = []string{
+	"link_apply_change(TEXT, TEXT, BOOLEAN, BIGINT, BIGINT, BOOLEAN, TEXT)",
+	"link_rows_holding(TEXT, TEXT, BOOLEAN, BIGINT)",
+	// Link cleanup on row delete is done by the link_key_sync trigger
+	"remove_link_back_references(JSON[], BIGINT[], TEXT)",
+	// Placeholder key values for new rows are no longer generated; CASCADE drops its sb_key_defaults triggers
+	"key_fill_defaults() CASCADE",
+}
+
+// LinkColumnsToMigrateQuery lists link columns still stored as row ids (INT / INT[]) with their table and target table
+const LinkColumnsToMigrateQuery = `
+	SELECT c.id::text, c.column_name, m.alias, COALESCE(tm.alias, ''), t.typcategory = 'A'
+	FROM %[1]s.columns c
+	JOIN %[1]s.models m ON m.id::text = c.model_id::text
+	LEFT JOIN %[1]s.models tm ON tm.id::text = c.meta->'relation'->>'with'
+	JOIN pg_attribute a ON a.attrelid = to_regclass(format('%%I.%%I', '%[2]s', m.alias)) AND a.attname = c.column_name
+	JOIN pg_type t ON t.oid = a.atttypid
+	WHERE c.uidt = 'links' AND NOT COALESCE(c.deleted, FALSE)
+	  AND a.atttypid IN ('integer'::regtype, 'bigint'::regtype, 'integer[]'::regtype, 'bigint[]'::regtype)`
+
+// InstallKeySyncTriggersQuery installs the link key-sync triggers on every table that does not have them yet
+const InstallKeySyncTriggersQuery = `
+	SELECT public.link_install_key_sync('%[2]s', m.alias)
+	FROM %[1]s.models m
+	WHERE to_regclass(format('%%I.%%I', '%[2]s', m.alias)) IS NOT NULL
+	  AND NOT EXISTS (
+		SELECT 1 FROM pg_trigger
+		WHERE tgrelid = to_regclass(format('%%I.%%I', '%[2]s', m.alias)) AND tgname = 'sb_link_key_delete')`

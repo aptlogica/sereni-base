@@ -7,6 +7,7 @@ package tenant
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aptlogica/go-postgres-rest/pkg/models"
@@ -120,4 +121,79 @@ func (tbl Column) TableSchema(prefix string) models.CreateTableRequest {
 			createColumnFK(prefix, "base_id", "bases"),
 		},
 	}
+}
+
+// LegacyTitleColumnName is the physical name of the Title column that tables created before
+// Title became an ordinary column still have.
+const LegacyTitleColumnName = "title"
+
+// IsLegacyTitle reports whether the column is the system Title column of a table created before
+// Title became an ordinary column. Such a column is writable and may be a key field until a
+// migration turns it into a normal column.
+func (c Column) IsLegacyTitle() bool {
+	return c.System && c.ColumnName == LegacyTitleColumnName
+}
+
+// IsDisplayColumnType reports whether a field of this type can be the label of a record.
+// Links, lookups, rollups, attachments and JSON have no single readable value.
+func IsDisplayColumnType(uidt string) bool {
+	switch strings.ToLower(uidt) {
+	case "links", "lookup", "rollup", "attachment", "json":
+		return false
+	}
+	return true
+}
+
+// IsDisplayColumn reports whether the column can label a record: a plain, live field. System fields
+// are left out, except the Id column and the Title column of tables created before Title became an ordinary column.
+func (c Column) IsDisplayColumn() bool {
+	if c.Deleted || !IsDisplayColumnType(c.UIDT) {
+		return false
+	}
+	return !c.System || c.IsLegacyTitle() || c.IsIDColumn()
+}
+
+// IsIDColumn reports whether the column is the system Id column every table has. A new link shows it
+// as the label of linked records unless another column is chosen.
+func (c Column) IsIDColumn() bool {
+	return c.System && c.ColumnName == "id"
+}
+
+// IDColumn returns the system Id column of a table.
+func IDColumn(columns []Column) (Column, bool) {
+	for _, col := range columns {
+		if col.IsIDColumn() && !col.Deleted {
+			return col, true
+		}
+	}
+	return Column{}, false
+}
+
+// IsTextColumn reports whether the column is a single or long text field that can label a record.
+func (c Column) IsTextColumn() bool {
+	uidt := strings.ToLower(c.UIDT)
+	return (uidt == "text" || uidt == "longtext") && c.IsDisplayColumn()
+}
+
+// FirstTextColumn returns the first text column of a table by order index. It labels a record
+// when no display column is chosen, and in messages about a record of its own table.
+func FirstTextColumn(columns []Column) (Column, bool) {
+	var first Column
+	found := false
+	for _, col := range columns {
+		if !col.IsTextColumn() {
+			continue
+		}
+		if !found || columnOrder(col) < columnOrder(first) {
+			first, found = col, true
+		}
+	}
+	return first, found
+}
+
+func columnOrder(c Column) float64 {
+	if c.OrderIndex == nil {
+		return 1e18
+	}
+	return *c.OrderIndex
 }

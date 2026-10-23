@@ -238,3 +238,17 @@ func (rg *roleGuardImpl) Check(c *gin.Context) (bool, error) {
 func (rg *roleGuardImpl) Middleware() gin.HandlerFunc {
 	return DefaultMiddleware(rg)
 }
+
+// NewSelfOrRoleGuard allows the request when the :id path param is the authenticated user.
+// Otherwise the user must hold one of requiredRoles; pass nil to allow self only.
+func NewSelfOrRoleGuard(requiredRoles []string, accessMemberSvc interfaces.AccessMemberService) gin.HandlerFunc {
+	roleCheck := NewRoleGuard(requiredRoles, accessMemberSvc, "").Middleware()
+	return func(c *gin.Context) {
+		userIDVal, _ := c.Get(GuardContext.UserIDKey)
+		if userID, _ := userIDVal.(string); userID != "" && userID == c.Param("id") {
+			c.Next()
+			return
+		}
+		roleCheck(c)
+	}
+}

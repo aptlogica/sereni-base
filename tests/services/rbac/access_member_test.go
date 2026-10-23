@@ -21,6 +21,21 @@ type MockTableService struct {
 	mock.Mock
 }
 
+
+func (m *MockTableService) UpdateByColumns(tableName string, where dbModels.ComplexFilter, data map[string]any) (map[string]interface{}, error) {
+	args := m.Called(tableName, where, data)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+
+func (m *MockTableService) DeleteByColumns(tableName string, where dbModels.ComplexFilter) (int64, error) {
+	args := m.Called(tableName, where)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+
 func (m *MockTableService) GetTableData(tableName string, params dbModels.QueryParams) ([]map[string]interface{}, error) {
 	args := m.Called(tableName, params)
 	if args.Get(0) == nil {
@@ -819,4 +834,41 @@ func TestUpdateRoleForUser_UpdateError(t *testing.T) {
 
 	assert.Error(t, err)
 	mockTable.AssertExpectations(t)
+}
+
+func TestGetAccessMemberByID(t *testing.T) {
+	const table = "\"test_schema\".access_members"
+	memberID := uuid.New()
+
+	t.Run("returns the row", func(t *testing.T) {
+		mockTable := new(MockTableService)
+		mockTable.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{
+			{"id": memberID.String(), "user_id": "u1", "scope_type": "workspace", "scope_id": "ws-1", "role_id": "r1"},
+		}, nil)
+
+		member, err := services.GetAccessMemberByID(&pkg.DatabaseService{TableService: mockTable}, "test_schema", memberID.String())
+
+		assert.NoError(t, err)
+		assert.Equal(t, memberID, member.ID)
+		assert.Equal(t, "workspace", member.ScopeType)
+		assert.Equal(t, "ws-1", *member.ScopeID)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		mockTable := new(MockTableService)
+		mockTable.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+		_, err := services.GetAccessMemberByID(&pkg.DatabaseService{TableService: mockTable}, "test_schema", memberID.String())
+
+		assert.ErrorIs(t, err, app_errors.ErrRecordNotFound)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		mockTable := new(MockTableService)
+		mockTable.On("GetTableData", table, mock.Anything).Return(nil, errors.New("db down"))
+
+		_, err := services.GetAccessMemberByID(&pkg.DatabaseService{TableService: mockTable}, "test_schema", memberID.String())
+
+		assert.Error(t, err)
+	})
 }
