@@ -38,7 +38,7 @@ type columnSplitStrategy struct {
 }
 
 const (
-	columnUpdatesFailed = "failed to apply column updates"
+	columnUpdatesFailed                                  = "failed to apply column updates"
 	removeFormattingRowSkipped removeFormattingRowStatus = iota
 	removeFormattingRowUpdated
 	errFixedLengthPositive                 = "fixed_length value must be greater than zero"

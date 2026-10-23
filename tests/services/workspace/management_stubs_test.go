@@ -187,6 +187,9 @@ type StubTableManagementService struct {
 func (s *StubTableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	return dto.TableResponse{}, nil
 }
+func (s *StubTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	return dto.TableResponse{}, nil
+}
 func (s *StubTableManagementService) UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error) {
 	return dto.TableResponse{}, nil
 }

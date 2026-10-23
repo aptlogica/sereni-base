@@ -68,10 +68,27 @@ func (m *MockColumnService) GetColumnByID(ctx context.Context, schemaName string
 	return args.Get(0).(tenant.Column), args.Error(1)
 }
 func (m *MockColumnService) GetColumnByModelID(ctx context.Context, schemaName, modelID string) ([]tenant.Column, error) {
+	if !m.expects("GetColumnByModelID") {
+		return []tenant.Column{}, nil
+	}
 	args := m.Called(ctx, schemaName, modelID)
 	return args.Get(0).([]tenant.Column), args.Error(1)
 }
+// expects reports whether a test registered an answer for the method. The display column lookups run on
+// every link create and column delete; a test that does not care about them gets an empty list.
+func (m *MockColumnService) expects(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *MockColumnService) GetAllColumns(ctx context.Context, schemaName string) ([]tenant.Column, error) {
+	if !m.expects("GetAllColumns") {
+		return []tenant.Column{}, nil
+	}
 	args := m.Called(ctx, schemaName)
 	return args.Get(0).([]tenant.Column), args.Error(1)
 }

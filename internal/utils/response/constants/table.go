@@ -87,6 +87,8 @@ var TableError = struct {
 	InvalidLookupLinkColumn        ResponseCode
 	LinkTargetRowNotFound          ResponseCode
 	InvalidLookupTargetColumn      ResponseCode
+	InvalidDisplayColumn           ResponseCode
+	DisplayColumnInUse             ResponseCode
 	LinkColumnNotWritable          ResponseCode
 }{
 	BaseIDRequired:                 "TBL_1001",
@@ -169,6 +171,8 @@ var TableError = struct {
 	LinkTargetRowNotFound:          "TBL_1078",
 	InvalidLookupTargetColumn:      "TBL_1079",
 	LinkColumnNotWritable:          "TBL_1080",
+	InvalidDisplayColumn:           "TBL_1081",
+	DisplayColumnInUse:             "TBL_1082",
 }
 
 var TableErrorCodes = map[ResponseCode]MetaResponse{
@@ -561,6 +565,16 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Field is not directly writable",
 		Description: "Link and lookup fields cannot be written through this endpoint; use the link endpoint instead",
+	},
+	TableError.InvalidDisplayColumn: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Field can't be used as the display column",
+		Description: "The display column must be a plain field of the linked table; links, lookups, rollups, attachments, JSON and system fields can't be used",
+	},
+	TableError.DisplayColumnInUse: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Field is used as a display column",
+		Description: "A link field shows this field as its label, so its type can't be changed to links, lookup, rollup, attachment or JSON",
 	},
 }
 

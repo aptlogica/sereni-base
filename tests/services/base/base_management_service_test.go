@@ -111,6 +111,11 @@ func (m *MockTableManagementService) CreateTableWithDefaults(ctx context.Context
 	return args.Get(0).(dto.TableResponse), args.Error(1)
 }
 
+func (m *MockTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	args := m.Called(ctx, tableData, schemaName)
+	return args.Get(0).(dto.TableResponse), args.Error(1)
+}
+
 func (m *MockTableManagementService) UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error) {
 	args := m.Called(ctx, id, tableData, schemaName)
 	return args.Get(0).(dto.TableResponse), args.Error(1)

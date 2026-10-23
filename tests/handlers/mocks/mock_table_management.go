@@ -155,6 +155,21 @@ func (mr *MockTableManagementServiceMockRecorder) CreateRowsWithRecordsBulk(ctx,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRowsWithRecordsBulk", reflect.TypeOf((*MockTableManagementService)(nil).CreateRowsWithRecordsBulk), ctx, schemaName, modelAlias, records)
 }
 
+// CreateTableWithDefaultsImport mocks base method.
+func (m *MockTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateTableWithDefaultsImport", ctx, tableData, schemaName)
+	ret0, _ := ret[0].(dto.TableResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateTableWithDefaultsImport indicates an expected call of CreateTableWithDefaultsImport.
+func (mr *MockTableManagementServiceMockRecorder) CreateTableWithDefaultsImport(ctx, tableData, schemaName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTableWithDefaultsImport", reflect.TypeOf((*MockTableManagementService)(nil).CreateTableWithDefaultsImport), ctx, tableData, schemaName)
+}
+
 // CreateTableWithDefaults mocks base method.
 func (m *MockTableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	m.ctrl.T.Helper()

@@ -1372,15 +1372,6 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 		return
 	}
 
-	// Map the provided primary column name to its matching column config.
-	primaryName := c.PostForm("primary_column")
-	if primaryName != "" {
-		if err := setPrimaryColumn(&importConfig, primaryName); err != nil {
-			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "primary_column not found in config columns")
-			return
-		}
-	}
-
 	// Build import request from context values and config
 	req := buildImportRequestFromContext(c, importConfig)
 
@@ -1412,18 +1403,6 @@ func parseImportConfig(configJSON string) (dto.ImportConfig, error) {
 		return importConfig, err
 	}
 	return importConfig, nil
-}
-
-// setPrimaryColumn finds the named column in importConfig and sets PrimaryColumn
-func setPrimaryColumn(importConfig *dto.ImportConfig, primaryName string) error {
-	for _, col := range importConfig.Columns {
-		if col.ColumnName == primaryName {
-			copyCol := col
-			importConfig.PrimaryColumn = &copyCol
-			return nil
-		}
-	}
-	return errors.New("primary_column not found in config columns")
 }
 
 // buildImportRequestFromContext builds dto.ImportWithConfigRequest from the gin context and parsed config

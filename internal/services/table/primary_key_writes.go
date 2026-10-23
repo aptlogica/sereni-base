@@ -99,11 +99,11 @@ func (s tableManagementService) checkKeyValues(ctx context.Context, schemaName s
 	if len(empty) > 0 {
 		return keyMissingError(empty, fields)
 	}
-	return s.checkKeyClash(schemaName, model, rowID, keyCols, fields, values)
+	return s.checkKeyClash(ctx, schemaName, model, rowID, keyCols, fields, values)
 }
 
 // checkKeyClash rejects a record whose key equals another record's, naming the record that already holds it
-func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Model, rowID int, keyCols []string, fields []keyField, values map[string]interface{}) error {
+func (s tableManagementService) checkKeyClash(ctx context.Context, schemaName string, model tenant.Model, rowID int, keyCols []string, fields []keyField, values map[string]interface{}) error {
 	insert := rowID <= 0
 	// A new record's id is new, so a key that includes id can't be used by another record
 	if s.repo.DB == nil || (insert && slices.Contains(keyCols, constant.PrimaryKeyIDColumn)) {
@@ -125,15 +125,16 @@ func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Mo
 		}
 		pairs = append(pairs, fmt.Sprintf("'%s', o.%s", strings.ReplaceAll(c, "'", "''"), col))
 	}
+	label := s.recordLabelSQL(ctx, schemaName, model, "o")
 	var query string
 	if insert {
-		query = fmt.Sprintf(`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o WHERE %s LIMIT 1`,
-			strings.Join(pairs, ", "), table, strings.Join(conditions, " AND "))
+		query = fmt.Sprintf(`SELECT o.id::bigint, %s, jsonb_build_object(%s) FROM %s o WHERE %s LIMIT 1`,
+			label, strings.Join(pairs, ", "), table, strings.Join(conditions, " AND "))
 	} else {
 		args = append(args, rowID)
 		query = fmt.Sprintf(
-			`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o JOIN %s cur ON cur.id = $%d WHERE o.id <> $%d AND %s LIMIT 1`,
-			strings.Join(pairs, ", "), table, table, len(args), len(args), strings.Join(conditions, " AND "))
+			`SELECT o.id::bigint, %s, jsonb_build_object(%s) FROM %s o JOIN %s cur ON cur.id = $%d WHERE o.id <> $%d AND %s LIMIT 1`,
+			label, strings.Join(pairs, ", "), table, table, len(args), len(args), strings.Join(conditions, " AND "))
 	}
 
 	var otherID int64
@@ -191,6 +192,18 @@ func postgresWriteError(err error) (*dbModels.DBError, bool) {
 		return violation.Postgres, true
 	}
 	return app_errors.DBError(err)
+}
+
+// recordLabelSQL is the SQL that reads the label of a record of the table, used to name it in messages:
+// the value of its first text column, or an empty string when the table has none.
+func (s tableManagementService) recordLabelSQL(ctx context.Context, schemaName string, model tenant.Model, rowAlias string) string {
+	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, model.ID.String())
+	if err == nil {
+		if col, ok := tenant.FirstTextColumn(columns); ok {
+			return fmt.Sprintf("COALESCE(%s.%s::text, '')", rowAlias, quoteIdentifier(col.ColumnName))
+		}
+	}
+	return "''::text"
 }
 
 // keyFieldsByAlias returns the key columns of a table with their titles; column names when the table is not found

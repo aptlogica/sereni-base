@@ -23,6 +23,8 @@ func TestRelationErrorCodes(t *testing.T) {
 		{app_errors.LinkTargetRowNotFound, constants.TableError.LinkTargetRowNotFound, "TBL_1078", http.StatusNotFound},
 		{app_errors.InvalidLookupTargetColumn, constants.TableError.InvalidLookupTargetColumn, "TBL_1079", http.StatusBadRequest},
 		{app_errors.LinkColumnNotWritable, constants.TableError.LinkColumnNotWritable, "TBL_1080", http.StatusBadRequest},
+		{app_errors.InvalidDisplayColumn, constants.TableError.InvalidDisplayColumn, "TBL_1081", http.StatusBadRequest},
+		{app_errors.DisplayColumnInUse, constants.TableError.DisplayColumnInUse, "TBL_1082", http.StatusConflict},
 	}
 
 	for _, c := range cases {

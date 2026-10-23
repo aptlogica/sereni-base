@@ -90,8 +90,8 @@ var keyBlockedTypes = map[string]string{
 }
 
 // KeyColumnBlockReason says why a column can't be part of a key, or "" when it can.
-// Title is a system column but allowed: links and lookups show it. Computed fields are
-// recognised by type, not by the virtual flag, which is also set on columns made with a table.
+// The Title column of tables created before Title became an ordinary column is a system column but
+// allowed. Computed fields are recognised by type, not by the virtual flag, which is also set on columns made with a table.
 func KeyColumnBlockReason(c Column) string {
 	if c.ColumnName == "id" {
 		return "it is already unique"
@@ -99,7 +99,7 @@ func KeyColumnBlockReason(c Column) string {
 	if kind, ok := keyBlockedTypes[strings.ToLower(c.UIDT)]; ok {
 		return kind + " can't be part of a key"
 	}
-	if c.System && c.ColumnName != "title" {
+	if c.System && !c.IsLegacyTitle() {
 		return "system fields can't be part of a key"
 	}
 	return ""

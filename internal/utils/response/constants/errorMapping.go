@@ -126,6 +126,8 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.LinkTargetRowNotFound, TableError.LinkTargetRowNotFound},
 	{app_errors.InvalidLookupTargetColumn, TableError.InvalidLookupTargetColumn},
 	{app_errors.LinkColumnNotWritable, TableError.LinkColumnNotWritable},
+	{app_errors.InvalidDisplayColumn, TableError.InvalidDisplayColumn},
+	{app_errors.DisplayColumnInUse, TableError.DisplayColumnInUse},
 
 	// automations (triggers & webhooks)
 	{app_errors.AutomationNotFound, AutomationError.AutomationNotFound},

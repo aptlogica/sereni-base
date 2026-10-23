@@ -30,8 +30,6 @@ type ColumnConfig struct {
 type ImportConfig struct {
 	Settings ImportSettings `json:"settings"`
 	Columns  []ColumnConfig `json:"columns"`
-	// PrimaryColumn allows specifying which column should be treated as the primary/title column
-	PrimaryColumn *ColumnConfig `json:"primary_column,omitempty" mapstructure:"primary_column"`
 }
 
 type ImportTableRequest struct {
@@ -75,14 +73,12 @@ type AddColumnsWithConfigParams struct {
 	Req           CreateTableRequest
 	Headers       []string
 	ColumnConfigs []ColumnConfig
-	Primary       *ColumnConfig
 	TableResp     TableResponse
 }
 
 type BuildRecordsWithConfigAndErrorsParams struct {
 	DataRows      [][]string
 	ColumnConfigs []ColumnConfig
-	Primary       *ColumnConfig
 	ColumnMap     map[int]ColumnResponse
 	Req           CreateTableRequest
 	Headers       []string
