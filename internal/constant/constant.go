@@ -516,6 +516,7 @@ var AllowedConversions = map[string][]string{
 	"longText": {
 		"text",
 		"json", // if JSON-parsable
+		"uuid",
 	},
 
 	// --- Numeric-ish family ---

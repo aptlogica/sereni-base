@@ -428,3 +428,20 @@ func TestUITypeMappings(t *testing.T) {
 		}
 	}
 }
+
+// hasConversion reports whether from can be converted to target
+func hasConversion(from, target string) bool {
+	for _, t := range constant.AllowedConversions[from] {
+		if t == target {
+			return true
+		}
+	}
+	return false
+}
+
+// A uuid field turned into long text can be turned back without losing its values
+func TestAllowedConversions_UUIDRoundTripThroughLongText(t *testing.T) {
+	if !hasConversion("uuid", "longText") || !hasConversion("longText", "uuid") {
+		t.Error("uuid <-> longText should both be allowed")
+	}
+}
