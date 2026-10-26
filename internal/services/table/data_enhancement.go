@@ -2900,3 +2900,228 @@ func (s tableManagementService) DeleteOriginalColumnsIfNeeded(ctx context.Contex
 	}
 	return nil
 }
+
+func (s tableManagementService) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	lg := logger.Get()
+
+	model, err := s.modelService.GetModelByID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.FuzzyDuplicatesResponse{}, err
+	}
+
+	columnsData, err := s.GetColumnsByModelID(ctx, schemaName, req.ModelID)
+	if err != nil {
+		return dto.FuzzyDuplicatesResponse{}, err
+	}
+
+	selectedColumns, err := s.GetSelectedColumnsFromRequest(columnsData, req.Columns)
+	if err != nil {
+		return dto.FuzzyDuplicatesResponse{}, err
+	}
+
+	// Verify update timestamp column if keeping latest updated
+	hasTimestamp, err := s.resolveFuzzyHasTimestamp(ctx, schemaName, model.Alias, req.KeepRule)
+	if err != nil {
+		return dto.FuzzyDuplicatesResponse{}, err
+	}
+
+	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
+
+	// Get all data without pagination
+	params := dbModels.QueryParams{Select: buildFuzzySelectColumns(hasTimestamp, selectedColumns)}
+	allRows, err := s.repo.TableService.GetTableData(tableName, params)
+	if err != nil {
+		return dto.FuzzyDuplicatesResponse{}, app_errors.LogDatabaseError(err, "failed to fetch rows for fuzzy duplication")
+	}
+
+	if len(allRows) == 0 {
+		return dto.FuzzyDuplicatesResponse{}, nil
+	}
+
+	duplicateRowIDs, clearColumnRowIDs := resolveFuzzyTargetRowIDs(req, allRows, selectedColumns, fuzzyThresholdValue(req.Threshold))
+
+	totalDuplicateRows := int64(len(duplicateRowIDs) + len(clearColumnRowIDs))
+	var affectedRows int64
+
+	if len(duplicateRowIDs) > 0 || len(clearColumnRowIDs) > 0 {
+		affectedRows, err = s.applyFuzzyDuplicateChanges(ctx, tableName, selectedColumns, duplicateRowIDs, clearColumnRowIDs)
+		if err != nil {
+			return dto.FuzzyDuplicatesResponse{}, err
+		}
+	}
+
+	lg.Info().
+		Str("model_id", req.ModelID).
+		Int("columns_selected", len(selectedColumns)).
+		Int64("total_rows_affected", affectedRows).
+		Int64("total_duplicate_rows", totalDuplicateRows).
+		Str("duplicate", req.Duplicate).
+		Str("keep_rule", req.KeepRule).
+		Str("threshold", req.Threshold).
+		Msg("Fuzzy duplicates action completed")
+
+	return dto.FuzzyDuplicatesResponse{TotalRowsAffected: affectedRows, TotalDuplicateRows: totalDuplicateRows}, nil
+}
+
+// resolveFuzzyHasTimestamp reports whether last_modified_time must be fetched; for
+// keep_latest_updated it fails when the table has no such column.
+func (s tableManagementService) resolveFuzzyHasTimestamp(ctx context.Context, schemaName, modelAlias, keepRule string) (bool, error) {
+	if keepRule != "keep_latest_updated" {
+		return false, nil
+	}
+	supported, err := s.HasUpdateTimestampColumn(ctx, schemaName, modelAlias)
+	if err != nil {
+		return false, err
+	}
+	if !supported {
+		return false, fmt.Errorf("%w: keep_latest_updated requires last_modified_time column on table %s", app_errors.InvalidPayload, modelAlias)
+	}
+	return true, nil
+}
+
+// buildFuzzySelectColumns fetches all records for the columns and id/timestamp.
+func buildFuzzySelectColumns(hasTimestamp bool, selectedColumns []string) []string {
+	selectColumns := []string{"id"}
+	if hasTimestamp {
+		selectColumns = append(selectColumns, "last_modified_time")
+	}
+	return append(selectColumns, selectedColumns...)
+}
+
+// fuzzyThresholdValue maps string threshold to float64 value: low -> 0.9, medium -> 0.8, high -> 0.7
+func fuzzyThresholdValue(threshold string) float64 {
+	switch threshold {
+	case "low":
+		return 0.9
+	case "high":
+		return 0.7
+	default:
+		return 0.8
+	}
+}
+
+// resolveFuzzyTargetRowIDs returns the row IDs to delete and the row IDs whose selected
+// columns are cleared, from the manual row actions or from automatic fuzzy detection.
+func resolveFuzzyTargetRowIDs(
+	req dto.FuzzyDuplicatesRequest,
+	allRows []map[string]interface{},
+	selectedColumns []string,
+	thresholdVal float64,
+) (duplicateRowIDs []interface{}, clearColumnRowIDs []interface{}) {
+	if req.DeduplicationMode == "manual" || (req.DeduplicationMode == "" && len(req.RowActions) > 0) {
+		for rowID, action := range req.RowActions {
+			if action == "delete" {
+				duplicateRowIDs = append(duplicateRowIDs, rowID)
+			} else if action == "clear" {
+				clearColumnRowIDs = append(clearColumnRowIDs, rowID)
+			}
+		}
+		return duplicateRowIDs, clearColumnRowIDs
+	}
+
+	dupIDs := FindFuzzyDuplicates(allRows, selectedColumns, req.KeepRule, thresholdVal)
+	if req.Duplicate == "remove_row" {
+		duplicateRowIDs = dupIDs
+	} else if req.Duplicate == "remove_duplicates" {
+		clearColumnRowIDs = dupIDs
+	}
+	return duplicateRowIDs, clearColumnRowIDs
+}
+
+// applyFuzzyDuplicateChanges deletes and clears the given rows in one transaction and
+// returns the total number of affected rows.
+func (s tableManagementService) applyFuzzyDuplicateChanges(
+	ctx context.Context,
+	tableName string,
+	selectedColumns []string,
+	duplicateRowIDs []interface{},
+	clearColumnRowIDs []interface{},
+) (int64, error) {
+	tx, startErr := s.repo.DB.Begin()
+	if startErr != nil {
+		return 0, app_errors.LogDatabaseError(startErr, "failed to start transaction for fuzzy duplicates update")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			_ = tx.Rollback()
+			panic(r)
+		}
+	}()
+
+	var affectedRows int64
+
+	if len(duplicateRowIDs) > 0 {
+		affected, err := execFuzzyChunkedByID(ctx, tx, duplicateRowIDs, func(inClause string) string {
+			return fmt.Sprintf(`DELETE FROM %s WHERE id IN (%s)`, tableName, inClause)
+		}, "failed to delete fuzzy duplicate rows")
+		if err != nil {
+			return 0, err
+		}
+		affectedRows += affected
+	}
+
+	if len(clearColumnRowIDs) > 0 {
+		setClauseStr := buildFuzzyClearSetClause(selectedColumns)
+		affected, err := execFuzzyChunkedByID(ctx, tx, clearColumnRowIDs, func(inClause string) string {
+			return fmt.Sprintf(`UPDATE %s SET %s WHERE id IN (%s)`, tableName, setClauseStr, inClause)
+		}, "failed to clear fuzzy duplicate column values")
+		if err != nil {
+			return 0, err
+		}
+		affectedRows += affected
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, app_errors.LogDatabaseError(err, "failed to commit fuzzy duplicates transaction")
+	}
+	return affectedRows, nil
+}
+
+// buildFuzzyClearSetClause builds "col = NULL" assignments for every selected column.
+func buildFuzzyClearSetClause(selectedColumns []string) string {
+	setClauses := make([]string, len(selectedColumns))
+	for idx, col := range selectedColumns {
+		setClauses[idx] = fmt.Sprintf("%s = NULL", quoteIdentifier(col))
+	}
+	return strings.Join(setClauses, ", ")
+}
+
+// execFuzzyChunkedByID runs buildQuery for row IDs in chunks of 500, rolling back the
+// transaction on the first failure, and returns the summed affected row count.
+func execFuzzyChunkedByID(
+	ctx context.Context,
+	tx *sql.Tx,
+	rowIDs []interface{},
+	buildQuery func(inClause string) string,
+	errMsg string,
+) (int64, error) {
+	var affectedRows int64
+	chunkSize := 500
+	for i := 0; i < len(rowIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(rowIDs) {
+			end = len(rowIDs)
+		}
+		inClause, args := buildFuzzyInClause(rowIDs[i:end])
+		res, err := tx.ExecContext(ctx, buildQuery(inClause), args...)
+		if err != nil {
+			_ = tx.Rollback()
+			return 0, app_errors.LogDatabaseError(err, errMsg)
+		}
+		affected, _ := res.RowsAffected()
+		affectedRows += affected
+	}
+	return affectedRows, nil
+}
+
+// buildFuzzyInClause returns "$1, $2, ..." placeholders and matching args for chunk.
+func buildFuzzyInClause(chunk []interface{}) (string, []interface{}) {
+	inPlaceholders := make([]string, len(chunk))
+	args := make([]interface{}, len(chunk))
+	for idx, val := range chunk {
+		inPlaceholders[idx] = fmt.Sprintf("$%d", idx+1)
+		args[idx] = val
+	}
+	return strings.Join(inPlaceholders, ", "), args
+}

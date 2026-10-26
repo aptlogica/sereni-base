@@ -727,5 +727,18 @@ func TestDataEnhancementValidators(t *testing.T) {
 		{name: "ColumnSplitModelIDInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
 		{name: "ColumnSplitColumnIDInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "ColumnID", tag: "uuid", want: responseConst.TableError.ColumnIdInvalid},
 		{name: "ColumnSplitSplitByInvalid", fn: handlersValidators.ColumnSplitRequestValidationError, field: "SplitBy", tag: "required", want: responseConst.TableError.MetaRequired},
+
+		{name: "FuzzyDuplicatesModelIDRequired", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "ModelID", tag: "required", want: responseConst.TableError.ModelIDRequired},
+		{name: "FuzzyDuplicatesModelIDInvalid", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "ModelID", tag: "uuid", want: responseConst.TableError.ModelIDInvalid},
+		{name: "FuzzyDuplicatesColumnsRequired", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Columns", tag: "required", want: responseConst.TableError.ColumnNameRequired},
+		{name: "FuzzyDuplicatesColumnsMin", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Columns", tag: "min", want: responseConst.TableError.ColumnNameRequired},
+		{name: "FuzzyDuplicatesColumnItemInvalid", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Columns[0]", tag: "uuid", want: responseConst.TableError.ColumnNameInvalid},
+		{name: "FuzzyDuplicatesDuplicateRequired", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Duplicate", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "FuzzyDuplicatesDuplicateInvalid", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Duplicate", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "FuzzyDuplicatesKeepRuleRequired", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "KeepRule", tag: "required", want: responseConst.TableError.ActionRequired},
+		{name: "FuzzyDuplicatesKeepRuleInvalid", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "KeepRule", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "FuzzyDuplicatesThresholdRequired", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Threshold", tag: "required", want: responseConst.TableError.ActionInvalid},
+		{name: "FuzzyDuplicatesThresholdInvalid", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Threshold", tag: "oneof", want: responseConst.TableError.ActionInvalid},
+		{name: "FuzzyDuplicatesUnknown", fn: handlersValidators.FuzzyDuplicatesRequestValidationError, field: "Foo", tag: "required", want: responseConst.Error.ValidationFailed},
 	})
 }

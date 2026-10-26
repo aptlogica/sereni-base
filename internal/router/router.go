@@ -430,6 +430,7 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/remove-duplicates", updateByBody, handlers.Table.RemoveDuplicates)
 		column.POST("/merge-columns", updateByBody, handlers.Table.MergeColumns)
 		column.POST("/extract-substring", updateByBody, handlers.Table.ExtractSubstring)
+		column.POST("/fuzzy-duplicates",updateByBody,handlers.Table.FuzzyDuplicates)
 	}
 }
 
