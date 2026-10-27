@@ -35,3 +35,8 @@ Makefile @aptlogica/sereni-base-maintainers
 /sonar-project.properties @aptlogica/sereni-base-maintainers
 go.mod @aptlogica/sereni-base-maintainers
 go.sum @aptlogica/sereni-base-maintainers
+
+# Claude Code skills and quality scripts (executable instructions; review as code)
+/.claude/ @aptlogica/sereni-base-maintainers
+/scripts/ @aptlogica/sereni-base-maintainers
+/CLAUDE.md @aptlogica/sereni-base-maintainers
