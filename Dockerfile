@@ -1,7 +1,7 @@
 # ==============================================================================
 # Build Stage
 # ==============================================================================
-FROM golang:1.27.1-alpine3.24 AS builder
+FROM golang:1.27.3-alpine3.24 AS builder
 RUN go version
 
 # Install build dependencies

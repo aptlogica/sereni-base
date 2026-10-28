@@ -187,6 +187,9 @@ type StubTableManagementService struct {
 func (s *StubTableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	return dto.TableResponse{}, nil
 }
+func (s *StubTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	return dto.TableResponse{}, nil
+}
 func (s *StubTableManagementService) UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error) {
 	return dto.TableResponse{}, nil
 }
@@ -332,6 +335,10 @@ func (s *StubTableManagementService) ValidateColumnsAllowed(ctx context.Context,
 
 func (s *StubTableManagementService) ValidateColumnAllowedForSplit(ctx context.Context, schemaName string, modelID string, columnID string) error {
 	return nil
+}
+
+func (s *StubTableManagementService) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	return dto.FuzzyDuplicatesResponse{}, nil
 }
 
 // StubRBACManagementService provides optional function overrides for RBACManagementService.

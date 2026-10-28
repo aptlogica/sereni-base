@@ -21,6 +21,10 @@ var TableConstraintError = struct {
 	UniqueKeyViolation     ResponseCode
 	TypeRequired           ResponseCode
 	DefaultConflict        ResponseCode
+	CheckConditionInvalid  ResponseCode
+	CheckCategoryUnknown   ResponseCode
+	CheckExistingRows      ResponseCode
+	CheckViolation         ResponseCode
 }{
 	ConstraintNotFound:     "TCN_1001",
 	TitleRequired:          "TCN_1002",
@@ -35,23 +39,27 @@ var TableConstraintError = struct {
 	UniqueKeyViolation:     "TCN_1012",
 	TypeRequired:           "TCN_1013",
 	DefaultConflict:        "TCN_1014",
+	CheckConditionInvalid:  "TCN_1015",
+	CheckCategoryUnknown:   "TCN_1016",
+	CheckExistingRows:      "TCN_1017",
+	CheckViolation:         "TCN_1018",
 }
 
 var TableConstraintErrorCodes = map[ResponseCode]MetaResponse{
 	TableConstraintError.ConstraintNotFound: {
 		HTTPStatus:  http.StatusNotFound,
-		Message:     "Unique key not found",
-		Description: "The requested unique key could not be found",
+		Message:     "Constraint not found",
+		Description: "The requested constraint could not be found",
 	},
 	TableConstraintError.TitleRequired: {
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Name is required",
-		Description: "The name of the unique key is required",
+		Description: "The name of the constraint is required",
 	},
 	TableConstraintError.TitleTooLong: {
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Name too long",
-		Description: "The name of the unique key exceeds the maximum allowed length",
+		Description: "The name of the constraint exceeds the maximum allowed length",
 	},
 	TableConstraintError.ColumnNotFound: {
 		HTTPStatus:  http.StatusBadRequest,
@@ -80,8 +88,8 @@ var TableConstraintErrorCodes = map[ResponseCode]MetaResponse{
 	},
 	TableConstraintError.ConstraintFailed: {
 		HTTPStatus:  http.StatusBadRequest,
-		Message:     "Unique key could not be applied",
-		Description: "Postgres could not apply the unique key",
+		Message:     "Constraint could not be applied",
+		Description: "Postgres could not apply the constraint",
 	},
 	TableConstraintError.ColumnUsedInConstraint: {
 		HTTPStatus:  http.StatusConflict,
@@ -103,6 +111,26 @@ var TableConstraintErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Type is required",
 		Description: "The constraint type is required, e.g. unique",
 	},
+	TableConstraintError.CheckConditionInvalid: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Condition not allowed",
+		Description: "The check condition is empty, too long or contains text that isn't allowed",
+	},
+	TableConstraintError.CheckCategoryUnknown: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Unknown category",
+		Description: "The check category is not one of the known categories",
+	},
+	TableConstraintError.CheckExistingRows: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Records break this condition",
+		Description: "Fix the records or change the condition before adding the check constraint",
+	},
+	TableConstraintError.CheckViolation: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Value not allowed",
+		Description: "The record breaks a check constraint of the table",
+	},
 }
 
 var TableConstraintSuccess = struct {
@@ -122,23 +150,23 @@ var TableConstraintSuccess = struct {
 var TableConstraintSuccessCodes = map[ResponseCode]MetaResponse{
 	TableConstraintSuccess.ConstraintCreated: {
 		HTTPStatus:  http.StatusCreated,
-		Message:     "Unique key created successfully",
-		Description: "The unique key has been added to the table",
+		Message:     "Constraint created successfully",
+		Description: "The constraint has been added to the table",
 	},
 	TableConstraintSuccess.ConstraintsFetched: {
 		HTTPStatus:  http.StatusOK,
-		Message:     "Unique keys fetched successfully",
-		Description: "The unique keys of the table have been fetched",
+		Message:     "Constraints fetched successfully",
+		Description: "The constraints of the table have been fetched",
 	},
 	TableConstraintSuccess.ConstraintUpdated: {
 		HTTPStatus:  http.StatusOK,
-		Message:     "Unique key updated successfully",
-		Description: "The unique key has been updated",
+		Message:     "Constraint updated successfully",
+		Description: "The constraint has been updated",
 	},
 	TableConstraintSuccess.ConstraintDeleted: {
 		HTTPStatus:  http.StatusOK,
-		Message:     "Unique key deleted successfully",
-		Description: "The unique key has been removed from the table",
+		Message:     "Constraint deleted successfully",
+		Description: "The constraint has been removed from the table",
 	},
 	TableConstraintSuccess.ConstraintChecked: {
 		HTTPStatus:  http.StatusOK,

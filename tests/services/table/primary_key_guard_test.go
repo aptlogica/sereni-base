@@ -23,6 +23,8 @@ func keyFixture(t *testing.T) (*relFixture, tenant.Column) {
 	}
 	f.table.On("GetByFunction", mock.Anything, "public.link_key_columns", map[string]interface{}{"p_table": `"schema"."org"`}).
 		Return([]map[string]interface{}{{"link_key_columns": "{code,dept}"}}, nil).Maybe()
+	// No unique keys or check constraints use the field
+	f.table.On("GetTableData", tenant.TableConstraint{}.TableName(relSchema), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 	f = withService(f)
 
 	modelID := uuid.New()
@@ -69,6 +71,7 @@ func TestUpdateColumn_TypeChangeBlockedWhileInPrimaryKey(t *testing.T) {
 			column: &MockColumnService{}, view: &MockViewService{}, rel: &MockRelationshipService{},
 		}
 		f.table.On("GetByFunction", mock.Anything, "public.link_key_columns", mock.Anything).Return(nil, errors.New("down"))
+		f.table.On("GetTableData", tenant.TableConstraint{}.TableName(relSchema), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		f = withService(f)
 		modelID := uuid.New()
 		col := plainCol(uuid.New(), modelID.String(), "code", "text")

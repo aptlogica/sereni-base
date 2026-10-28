@@ -111,6 +111,11 @@ func (m *MockTableManagementService) CreateTableWithDefaults(ctx context.Context
 	return args.Get(0).(dto.TableResponse), args.Error(1)
 }
 
+func (m *MockTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	args := m.Called(ctx, tableData, schemaName)
+	return args.Get(0).(dto.TableResponse), args.Error(1)
+}
+
 func (m *MockTableManagementService) UpdateTable(ctx context.Context, id string, tableData dto.UpdateTableRequest, schemaName string) (dto.TableResponse, error) {
 	args := m.Called(ctx, id, tableData, schemaName)
 	return args.Get(0).(dto.TableResponse), args.Error(1)
@@ -211,6 +216,14 @@ func (m *MockTableManagementService) RemoveDuplicates(ctx context.Context, schem
 		return dto.RemoveDuplicatesResponse{}, args.Error(1)
 	}
 	return args.Get(0).(dto.RemoveDuplicatesResponse), args.Error(1)
+}
+
+func (m *MockTableManagementService) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	args := m.Called(ctx, schemaName, req)
+	if args.Get(0) == nil {
+		return dto.FuzzyDuplicatesResponse{}, args.Error(1)
+	}
+	return args.Get(0).(dto.FuzzyDuplicatesResponse), args.Error(1)
 }
 
 func (m *MockTableManagementService) AddColumn(ctx context.Context, schemaName string, columnData dto.AddColumnRequest) (dto.ColumnResponse, error) {

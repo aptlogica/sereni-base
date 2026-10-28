@@ -155,6 +155,21 @@ func (mr *MockTableManagementServiceMockRecorder) CreateRowsWithRecordsBulk(ctx,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRowsWithRecordsBulk", reflect.TypeOf((*MockTableManagementService)(nil).CreateRowsWithRecordsBulk), ctx, schemaName, modelAlias, records)
 }
 
+// CreateTableWithDefaultsImport mocks base method.
+func (m *MockTableManagementService) CreateTableWithDefaultsImport(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateTableWithDefaultsImport", ctx, tableData, schemaName)
+	ret0, _ := ret[0].(dto.TableResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateTableWithDefaultsImport indicates an expected call of CreateTableWithDefaultsImport.
+func (mr *MockTableManagementServiceMockRecorder) CreateTableWithDefaultsImport(ctx, tableData, schemaName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTableWithDefaultsImport", reflect.TypeOf((*MockTableManagementService)(nil).CreateTableWithDefaultsImport), ctx, tableData, schemaName)
+}
+
 // CreateTableWithDefaults mocks base method.
 func (m *MockTableManagementService) CreateTableWithDefaults(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (dto.TableResponse, error) {
 	m.ctrl.T.Helper()
@@ -686,4 +701,19 @@ func (m *MockTableManagementService) UpdateView(ctx context.Context, schemaName,
 func (mr *MockTableManagementServiceMockRecorder) UpdateView(ctx, schemaName, id, req interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateView", reflect.TypeOf((*MockTableManagementService)(nil).UpdateView), ctx, schemaName, id, req)
+}
+
+// FuzzyDuplicates mocks base method.
+func (m *MockTableManagementService) FuzzyDuplicates(ctx context.Context, schemaName string, req dto.FuzzyDuplicatesRequest) (dto.FuzzyDuplicatesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FuzzyDuplicates", ctx, schemaName, req)
+	ret0, _ := ret[0].(dto.FuzzyDuplicatesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FuzzyDuplicates indicates an expected call of FuzzyDuplicates.
+func (mr *MockTableManagementServiceMockRecorder) FuzzyDuplicates(ctx, schemaName, req interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FuzzyDuplicates", reflect.TypeOf((*MockTableManagementService)(nil).FuzzyDuplicates), ctx, schemaName, req)
 }

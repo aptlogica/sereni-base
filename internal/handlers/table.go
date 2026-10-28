@@ -321,6 +321,43 @@ func (h *TableHandler) GetColumnById(c *gin.Context) {
 	response.SendSuccess(c, responseConst.TableSuccess.ColumnFetched, column)
 }
 
+// @Summary      Count empty values of a column
+// @Description  Returns how many records have an empty and a filled value in the column, e.g. before a uuid field starts filling empty records.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id   path      string          true  "Column ID"
+// @Success      200  {object}  dto.EmptyCountResponse  "Counts retrieved successfully"
+// @Failure      401  {object}  models.ErrorResponse  "Unauthorized"
+// @Failure      403  {object}  models.ErrorResponse  "Forbidden"
+// @Failure      404  {object}  models.ErrorResponse  "Not Found — column missing"
+// @Failure      500  {object}  models.ErrorResponse  "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/{id}/empty-count [get]
+func (h *TableHandler) GetColumnEmptyCount(c *gin.Context) {
+	id := c.Param("id")
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	counter, ok := h.tableManagementService.(interface {
+		CountEmptyCells(ctx context.Context, schemaName string, columnID string) (dto.EmptyCountResponse, error)
+	})
+	if !ok {
+		response.CheckAndSendError(c, fmt.Errorf("table service does not support CountEmptyCells"))
+		return
+	}
+
+	counts, err := counter.CountEmptyCells(c, schemaName, id)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.ColumnFetched, counts)
+}
+
 // @Summary      List all columns
 // @Description  Returns every column defined in the tenant schema.
 // @Tags         Admin Table Column
@@ -1335,15 +1372,6 @@ func (h *TableHandler) ImportTableWithConfig(c *gin.Context) {
 		return
 	}
 
-	// Map the provided primary column name to its matching column config.
-	primaryName := c.PostForm("primary_column")
-	if primaryName != "" {
-		if err := setPrimaryColumn(&importConfig, primaryName); err != nil {
-			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "primary_column not found in config columns")
-			return
-		}
-	}
-
 	// Build import request from context values and config
 	req := buildImportRequestFromContext(c, importConfig)
 
@@ -1375,18 +1403,6 @@ func parseImportConfig(configJSON string) (dto.ImportConfig, error) {
 		return importConfig, err
 	}
 	return importConfig, nil
-}
-
-// setPrimaryColumn finds the named column in importConfig and sets PrimaryColumn
-func setPrimaryColumn(importConfig *dto.ImportConfig, primaryName string) error {
-	for _, col := range importConfig.Columns {
-		if col.ColumnName == primaryName {
-			copyCol := col
-			importConfig.PrimaryColumn = &copyCol
-			return nil
-		}
-	}
-	return errors.New("primary_column not found in config columns")
 }
 
 // buildImportRequestFromContext builds dto.ImportWithConfigRequest from the gin context and parsed config
@@ -1906,6 +1922,49 @@ func (h *TableHandler) RemoveDuplicates(c *gin.Context) {
 	}
 
 	result, err := h.tableManagementService.RemoveDuplicates(c, schemaName, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	response.SendSuccess(c, responseConst.TableSuccess.RemoveDuplicates, result)
+}
+
+// @Summary      Remove duplicate rows or clear duplicate values using fuzzy logic in selected columns
+// @Description  Deduplicates rows using fuzzy similarity matching. Supports removing duplicate rows or keeping duplicate rows while clearing duplicate values in selected columns.
+// @Tags         Admin Table Column
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        request  body      dto.FuzzyDuplicatesRequest  true  "Model ID, target column IDs, duplicate handling, keep rule, and threshold"
+// @Success      200      {object}  models.SuccessResponse     "Deduplication summary returned in success.data"
+// @Failure      400      {object}  models.ErrorResponse       "Bad Request — invalid payload"
+// @Failure      401      {object}  models.ErrorResponse       "Unauthorized"
+// @Failure      403      {object}  models.ErrorResponse       "Forbidden"
+// @Failure      404      {object}  models.ErrorResponse       "Not Found — model/column missing"
+// @Failure      500      {object}  models.ErrorResponse       "Internal Server Error"
+// @Security     BearerAuth
+// @Router       /column/fuzzy-duplicates [post]
+func (h *TableHandler) FuzzyDuplicates(c *gin.Context) {
+	var req dto.FuzzyDuplicatesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			response.SendError(c, validators.FuzzyDuplicatesRequestValidationError(ve[0]))
+			return
+		}
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+
+	if err := h.tableManagementService.ValidateColumnsAllowed(c, schemaName, req.ModelID, req.Columns); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	result, err := h.tableManagementService.FuzzyDuplicates(c, schemaName, req)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return

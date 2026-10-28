@@ -403,6 +403,9 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.GET("/:id",
 			objectGuard(middlewares, appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, columnParam),
 			handlers.Table.GetColumnById)
+		column.GET("/:id/empty-count",
+			objectGuard(middlewares, appConstant.ResourceCodes.Table, appConstant.ActionCodes.Read, columnParam),
+			handlers.Table.GetColumnEmptyCount)
 		// Lists every column in the tenant
 		column.GET("/", adminOnly(middlewares), handlers.Table.GetAllColumns)
 
@@ -427,6 +430,7 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/remove-duplicates", updateByBody, handlers.Table.RemoveDuplicates)
 		column.POST("/merge-columns", updateByBody, handlers.Table.MergeColumns)
 		column.POST("/extract-substring", updateByBody, handlers.Table.ExtractSubstring)
+		column.POST("/fuzzy-duplicates",updateByBody,handlers.Table.FuzzyDuplicates)
 	}
 }
 

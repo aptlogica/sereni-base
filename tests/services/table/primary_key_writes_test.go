@@ -79,7 +79,7 @@ func apiError(t *testing.T, err error) *app_errors.APIError {
 	return apiErr
 }
 
-var duplicateQuery = regexp.QuoteMeta(`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object('code', o."code", 'yr', o."yr") FROM "schema"."org" o JOIN "schema"."org" cur ON cur.id = $2 WHERE o.id <> $2 AND o."code" = $1 AND o."yr" = cur."yr" LIMIT 1`)
+var duplicateQuery = regexp.QuoteMeta(`SELECT o.id::bigint, COALESCE(o."code"::text, ''), jsonb_build_object('code', o."code", 'yr', o."yr") FROM "schema"."org" o JOIN "schema"."org" cur ON cur.id = $2 WHERE o.id <> $2 AND o."code" = $1 AND o."yr" = cur."yr" LIMIT 1`)
 
 func TestInsertRowData_KeyFieldChecks(t *testing.T) {
 	t.Run("an empty key field is named", func(t *testing.T) {
@@ -218,7 +218,7 @@ func TestUpdateRowValues_SavesTheWholeRecordAtOnce(t *testing.T) {
 	})
 }
 
-var insertDuplicateQuery = regexp.QuoteMeta(`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object('code', o."code", 'yr', o."yr") FROM "schema"."org" o WHERE o."code" = $1 AND o."yr" = $2 LIMIT 1`)
+var insertDuplicateQuery = regexp.QuoteMeta(`SELECT o.id::bigint, COALESCE(o."code"::text, ''), jsonb_build_object('code', o."code", 'yr', o."yr") FROM "schema"."org" o WHERE o."code" = $1 AND o."yr" = $2 LIMIT 1`)
 
 func (w *writeFixture) insert(rows ...map[string]interface{}) ([]dto.RecordResponse, error) {
 	return w.svc.(rowValuesService).CreateRowsWithValues(context.Background(), relSchema, w.modelID.String(), rows, "u1", "u1")

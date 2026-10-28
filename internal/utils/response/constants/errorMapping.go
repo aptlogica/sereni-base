@@ -126,6 +126,8 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.LinkTargetRowNotFound, TableError.LinkTargetRowNotFound},
 	{app_errors.InvalidLookupTargetColumn, TableError.InvalidLookupTargetColumn},
 	{app_errors.LinkColumnNotWritable, TableError.LinkColumnNotWritable},
+	{app_errors.InvalidDisplayColumn, TableError.InvalidDisplayColumn},
+	{app_errors.DisplayColumnInUse, TableError.DisplayColumnInUse},
 
 	// automations (triggers & webhooks)
 	{app_errors.AutomationNotFound, AutomationError.AutomationNotFound},
@@ -143,6 +145,10 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.PrimaryKeyDataInvalid, PrimaryKeyError.DataInvalid},
 	{app_errors.PrimaryKeyUpdateFailed, PrimaryKeyError.UpdateFailed},
 	{app_errors.ColumnInPrimaryKey, PrimaryKeyError.ColumnInKey},
+	// uuid fields
+	{app_errors.UUIDInvalid, UUIDError.Invalid},
+	{app_errors.UUIDReadOnly, UUIDError.ReadOnly},
+	{app_errors.UUIDConfigInvalid, UUIDError.ConfigInvalid},
 	// table constraints (unique keys)
 	{app_errors.ConstraintNotFound, TableConstraintError.ConstraintNotFound},
 	{app_errors.ConstraintColumnNotFound, TableConstraintError.ColumnNotFound},
@@ -154,6 +160,10 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.ColumnUsedInConstraint, TableConstraintError.ColumnUsedInConstraint},
 	{app_errors.UniqueKeyViolation, TableConstraintError.UniqueKeyViolation},
 	{app_errors.UniqueKeyDefaultConflict, TableConstraintError.DefaultConflict},
+	{app_errors.CheckConditionInvalid, TableConstraintError.CheckConditionInvalid},
+	{app_errors.CheckCategoryUnknown, TableConstraintError.CheckCategoryUnknown},
+	{app_errors.CheckExistingRows, TableConstraintError.CheckExistingRows},
+	{app_errors.CheckConstraintViolation, TableConstraintError.CheckViolation},
 
 	// New mappings
 	{app_errors.ErrInvalidDateOfBirth, Error.InvalidDateOfBirth},

@@ -8,8 +8,8 @@ package app_errors
 import (
 	"errors"
 
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
-	"github.com/lib/pq"
 )
 
 // var (
@@ -184,12 +184,14 @@ var (
 	LinkTargetRowNotFound          = errors.New("linked record not found")
 	InvalidLookupTargetColumn      = errors.New("lookup field not allowed")
 	LinkColumnNotWritable          = errors.New("field is not directly writable")
+	InvalidDisplayColumn           = errors.New("field can't be used as the display column")
+	DisplayColumnInUse             = errors.New("field is used as a display column by a link")
 )
 
 // automations (triggers & webhooks)
 var (
 	// RowDeleteFailed wraps the database message of a failed row delete, e.g. from a trigger
-	RowDeleteFailed = errors.New("failed to delete record")
+	RowDeleteFailed          = errors.New("failed to delete record")
 	AutomationNotFound       = errors.New("automation not found")
 	InvalidTriggerQuery      = errors.New("invalid trigger query")
 	InvalidFunctionQuery     = errors.New("invalid function query")
@@ -209,10 +211,17 @@ var (
 	ColumnInPrimaryKey      = errors.New("column is part of the primary key")
 )
 
+// uuid fields
+var (
+	UUIDInvalid       = errors.New("not a valid UUID")
+	UUIDReadOnly      = errors.New("this field is generated automatically")
+	UUIDConfigInvalid = errors.New("invalid UUID generation settings")
+)
+
 // KeyViolation keeps a Postgres unique (23505) or not-null (23502) error from a write to a user table, so the
 // table service can name the key fields; it matches DatabaseError like other failed writes
 type KeyViolation struct {
-	Postgres *pq.Error
+	Postgres *dbModels.DBError
 }
 
 func (e *KeyViolation) Error() string { return e.Postgres.Error() }
@@ -221,10 +230,9 @@ func (e *KeyViolation) Unwrap() error { return DatabaseError }
 
 // DatabaseOrKeyError logs a failed write; key violations are returned as *KeyViolation, others as DatabaseError
 func DatabaseOrKeyError(err error, msg string) error {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && (pqErr.Code == "23505" || pqErr.Code == "23502") {
+	if dbErr, ok := DBError(err); ok && (dbErr.Code == "23505" || dbErr.Code == "23502") {
 		logger.Get().Warn().Err(err).Msg(msg)
-		return &KeyViolation{Postgres: pqErr}
+		return &KeyViolation{Postgres: dbErr}
 	}
 	return LogDatabaseError(err, msg)
 }
@@ -257,6 +265,11 @@ var (
 	ColumnUsedInConstraint     = errors.New("column is used by a key")
 	UniqueKeyViolation         = errors.New("record repeats a unique key")
 	UniqueKeyDefaultConflict   = errors.New("default value conflicts with a unique key")
+	// check constraints
+	CheckConditionInvalid    = errors.New("check condition not allowed")
+	CheckCategoryUnknown     = errors.New("unknown check category")
+	CheckExistingRows        = errors.New("existing records break the check condition")
+	CheckConstraintViolation = errors.New("record breaks a check constraint")
 )
 
 // DetailedError keeps a known error, for mapping to a response code, and a message for the user

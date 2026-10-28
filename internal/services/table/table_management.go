@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,11 +39,13 @@ type tableManagementService struct {
 }
 
 const (
-	SchemaTableFormat     = "\"%s\".\"%s\""
-	QuotedColumnFormat    = "\"%s\""
-	ErrConvertViewStruct  = "Failed to convert view struct"
-	columnActionBatchSize = 1000
-	dateOutputLayout      = "2006-01-02"
+	defaultTitleColumnTitle = "Title"
+	defaultTitleColumnOrder = 1
+	SchemaTableFormat       = "\"%s\".\"%s\""
+	QuotedColumnFormat      = "\"%s\""
+	ErrConvertViewStruct    = "Failed to convert view struct"
+	columnActionBatchSize   = 1000
+	dateOutputLayout        = "2006-01-02"
 )
 
 // relationRecordParams holds parameters for creating relation record
@@ -65,6 +68,8 @@ type targetColumnParams struct {
 	RelationID      uuid.UUID
 	RelationType    string
 	InverseTitle    string
+	// DisplayColumnID is the column of the source table that the partner column shows
+	DisplayColumnID string
 	Now             time.Time
 }
 
@@ -128,6 +133,15 @@ func (s tableManagementService) createDefaultView(ctx context.Context, schemaNam
 	return s.CreateView(ctx, schemaName, viewData)
 }
 
+// systemColumnOrder is the order index of a system column: the one it declares, else its position in the list.
+// The declared index matters because Title, added after the system columns, takes index 1.
+func systemColumnOrder(column dto.AddColumnRequest, position int) *float64 {
+	if column.OrderIndex != nil {
+		return helpers.Float64Ptr(*column.OrderIndex)
+	}
+	return helpers.Float64Ptr(float64(position))
+}
+
 func (s tableManagementService) insertSystemColumns(schemaName string, tableData tenant.Model, columnsData []dto.AddColumnRequest) ([]dto.ColumnResponse, error) {
 	var colDataList []dto.ColumnInsertion
 	now := time.Now().UTC()
@@ -151,7 +165,7 @@ func (s tableManagementService) insertSystemColumns(schemaName string, tableData
 			Virtual:     true,
 			System:      systemValue,
 			Deleted:     false,
-			OrderIndex:  helpers.Float64Ptr(float64(index)),
+			OrderIndex:  systemColumnOrder(column, index),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 			CreatedBy:   tableData.CreatedBy,
@@ -230,6 +244,12 @@ func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tab
 		return dto.TableResponse{}, err
 	}
 
+	titleColumn, err := s.addDefaultTitleColumn(ctx, schemaName, insertedModel)
+	if err != nil {
+		return dto.TableResponse{}, err
+	}
+	columnsResponse = insertTitleColumn(columnsResponse, titleColumn)
+
 	viewResponse, err := s.createDefaultView(ctx, schemaName, insertedModel)
 	if err != nil {
 		return dto.TableResponse{}, err
@@ -252,6 +272,38 @@ func (s tableManagementService) CreateTableWithDefaults(ctx context.Context, tab
 	}
 
 	return tableResponse, nil
+}
+
+// addDefaultTitleColumn gives a new table a Title column. It is an ordinary text column, created the same
+// way as one a user adds, so it can be renamed, retyped or deleted, and its column name is generated like any other.
+func (s tableManagementService) addDefaultTitleColumn(ctx context.Context, schemaName string, model tenant.Model) (dto.ColumnResponse, error) {
+	return s.AddColumn(ctx, schemaName, dto.AddColumnRequest{
+		ModelID:    model.ID,
+		BaseID:     model.BaseID,
+		Title:      defaultTitleColumnTitle,
+		UIDT:       uidtText,
+		OrderIndex: helpers.Float64Ptr(defaultTitleColumnOrder),
+		Virtual:    helpers.BoolPtr(false),
+		System:     helpers.BoolPtr(false),
+		CreatedBy:  model.CreatedBy,
+	})
+}
+
+// insertTitleColumn puts the Title column into the column list at its order index
+func insertTitleColumn(columns []dto.ColumnResponse, title dto.ColumnResponse) []dto.ColumnResponse {
+	out := make([]dto.ColumnResponse, 0, len(columns)+1)
+	inserted := false
+	for _, col := range columns {
+		if !inserted && col.OrderIndex != nil && title.OrderIndex != nil && *col.OrderIndex > *title.OrderIndex {
+			out = append(out, title)
+			inserted = true
+		}
+		out = append(out, col)
+	}
+	if !inserted {
+		out = append(out, title)
+	}
+	return out
 }
 
 func (s tableManagementService) createModel(ctx context.Context, tableData dto.CreateTableRequest, schemaName string) (tenant.Model, error) {
@@ -638,6 +690,15 @@ func (s tableManagementService) AddColumn(
 		return dto.ColumnResponse{}, err
 	}
 
+	idCfg, err := ValidateIDGeneration(columnData.UIDT, meta)
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+	if columnData.UIDT == constant.UIDTUUID {
+		// Store the settings with their defaults, so readers don't have to guess
+		meta[constant.MetaIDGenerationKey] = idCfg
+	}
+
 	now := time.Now().UTC()
 	ColumnCreatedata := dto.ColumnInsertion{
 		ID:          uuid.New(),
@@ -681,6 +742,15 @@ func (s tableManagementService) AddColumn(
 		}
 	}
 
+	// A new auto uuid field gets a value in every existing record
+	if idCfg.Mode == constant.IDModeAuto {
+		col := AutoUUIDColumn{ColumnName: column.ColumnName, Version: idCfg.Version}
+		if _, err := s.backfillUUIDs(ctx, schemaName, model.Alias, col); err != nil {
+			s.rollbackLinkColumn(ctx, schemaName, column, model.Alias)
+			return dto.ColumnResponse{}, err
+		}
+	}
+
 	var columnResponse dto.ColumnResponse
 	if err := helpers.StructToStruct(column, &columnResponse); err != nil {
 		lg := logger.Get()
@@ -707,6 +777,21 @@ func (s tableManagementService) addColumnWithRelation(
 	isSelf := relationWith == columnData.ModelID.String()
 	inverseTitle := s.extractInverseTitle(sourceMeta)
 
+	// The display column of each side is checked before anything is created, so a bad value leaves nothing behind
+	inverseDisplayRequest := popInverseDisplayColumn(sourceMeta)
+	sourceDisplayColumn, err := s.resolveDisplayColumnID(ctx, schemaName, relationWith, displayColumnID(sourceMeta))
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+	setDisplayColumnMeta(sourceMeta, sourceDisplayColumn)
+	partnerDisplayColumn := ""
+	if !isSelf {
+		partnerDisplayColumn, err = s.resolveDisplayColumnID(ctx, schemaName, columnData.ModelID.String(), inverseDisplayRequest)
+		if err != nil {
+			return dto.ColumnResponse{}, err
+		}
+	}
+
 	sourcColumn, sourceModelData, err := s.createSourceColumnForRelation(ctx, schemaName, columnData, sourceMeta, relationId, relationType, now)
 	if err != nil {
 		return dto.ColumnResponse{}, err
@@ -722,6 +807,7 @@ func (s tableManagementService) addColumnWithRelation(
 			RelationID:      relationId,
 			RelationType:    relationType,
 			InverseTitle:    inverseTitle,
+			DisplayColumnID: partnerDisplayColumn,
 			Now:             now,
 		})
 		if err != nil {
@@ -850,6 +936,7 @@ func (s tableManagementService) createTargetColumnForRelation(
 		"entity_role": entityRoleTarget,
 		"relation_id": params.RelationID,
 	}
+	setDisplayColumnMeta(targetMeta, params.DisplayColumnID)
 
 	targetTitle := params.InverseTitle
 	if targetTitle == "" {
@@ -1343,12 +1430,15 @@ func (s tableManagementService) DeleteView(
 	return s.viewService.DeleteView(ctx, schemaName, id)
 }
 
+// isLegacyTitle reports whether the column is the system Title column of a table created before Title
+// became an ordinary column. That column stays writable until a migration makes it a normal one.
+func isLegacyTitle(columnData dto.ColumnResponse) bool {
+	return columnData.System != nil && *columnData.System && columnData.ColumnName == tenant.LegacyTitleColumnName
+}
+
 func (s tableManagementService) allowUpdate(columnData dto.ColumnResponse) bool {
 	if *columnData.System {
-		if columnData.ColumnName == "title" {
-			return true
-		}
-		return false
+		return isLegacyTitle(columnData)
 	}
 	return true
 }
@@ -1402,6 +1492,13 @@ func (s tableManagementService) updateColumnForLink(
 		UpdatedAt:   req.UpdatedAt,
 	}
 
+	// The display column is the one thing in meta that can change; the rest of meta is kept as it is
+	displayMeta, err := s.linkMetaWithDisplayColumn(ctx, schemaName, columnData, req)
+	if err != nil {
+		return dto.ColumnResponse{}, err
+	}
+	linkUpdateReq.Meta = displayMeta
+
 	updatedColumn, err := s.columnsService.UpdateColumn(ctx, schemaName, columnData.ID.String(), linkUpdateReq)
 	if err != nil {
 		return dto.ColumnResponse{}, err
@@ -1421,6 +1518,42 @@ func (s tableManagementService) updateColumnForLink(
 	}
 
 	return updatedColumnResponse, nil
+}
+
+// linkMetaWithDisplayColumn returns the link's meta with the requested display column applied, or nil
+// when the request does not carry one. An empty id clears it, so the link falls back to the first text column.
+func (s tableManagementService) linkMetaWithDisplayColumn(
+	ctx context.Context,
+	schemaName string,
+	columnData dto.ColumnResponse,
+	req dto.ColumnUpdate,
+) (*map[string]interface{}, error) {
+	if req.Meta == nil {
+		return nil, nil
+	}
+	requested, present := (*req.Meta)[metaDisplayColumnKey]
+	if !present {
+		return nil, nil
+	}
+	columnID, _ := requested.(string)
+	columnID = strings.TrimSpace(columnID)
+
+	info, ok := parseLinkMeta(columnData.Meta)
+	if !ok || info.With == "" {
+		return nil, app_errors.InvalidColumnMetaForLinkType
+	}
+	if columnID != "" {
+		if err := s.validateDisplayColumn(ctx, schemaName, info.With, columnID); err != nil {
+			return nil, err
+		}
+	}
+
+	merged := make(map[string]interface{}, len(columnData.Meta)+1)
+	for k, v := range columnData.Meta {
+		merged[k] = v
+	}
+	setDisplayColumnMeta(merged, columnID)
+	return &merged, nil
 }
 
 // renamePartnerLinkColumn sets the title of the other column of a link (the inverse field).
@@ -1596,7 +1729,16 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
+	if err := s.ensureTypeFitsDisplayColumn(ctx, schemaName, columnData, req); err != nil {
+		return tenant.Column{}, err
+	}
+
 	if err := s.ensureDefaultFitsKey(ctx, schemaName, columnData, req); err != nil {
+		return tenant.Column{}, err
+	}
+
+	idCfg, startsAuto, err := s.prepareIDGeneration(columnData, &req)
+	if err != nil {
 		return tenant.Column{}, err
 	}
 
@@ -1624,7 +1766,75 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
+	if startsAuto {
+		if err := s.fillOnAutoStart(ctx, schemaName, id, columnData, column, idCfg, req.Backfill); err != nil {
+			return tenant.Column{}, err
+		}
+	}
+
 	return column, nil
+}
+
+// prepareIDGeneration checks the uuid settings of a column update and stores them with defaults filled in.
+// It reports whether the field becomes auto-generated with this update (it wasn't an auto uuid field before).
+func (s tableManagementService) prepareIDGeneration(columnData dto.ColumnResponse, req *dto.ColumnUpdate) (dto.IDGeneration, bool, error) {
+	// A nil meta leaves the column's meta, and so its uuid settings, untouched
+	if req.Meta == nil {
+		return dto.IDGeneration{}, false, nil
+	}
+	uidt := columnData.UIDT
+	if req.UIDT != nil && *req.UIDT != "" {
+		uidt = *req.UIDT
+	}
+	if uidt != constant.UIDTUUID {
+		// A field changed away from uuid keeps no uuid settings
+		delete(*req.Meta, constant.MetaIDGenerationKey)
+		return dto.IDGeneration{}, false, nil
+	}
+	cfg, err := ValidateIDGeneration(uidt, *req.Meta)
+	if err != nil {
+		return cfg, false, err
+	}
+	(*req.Meta)[constant.MetaIDGenerationKey] = cfg
+
+	wasAuto := false
+	if columnData.UIDT == constant.UIDTUUID {
+		old, _ := dto.IDGenerationFromMeta(columnData.Meta)
+		wasAuto = old.Mode == constant.IDModeAuto
+	}
+	return cfg, cfg.Mode == constant.IDModeAuto && !wasAuto, nil
+}
+
+// fillOnAutoStart gives the empty cells of a field that just became auto-generated a value, when asked to.
+// A primary key field is always filled, since every record needs a key.
+func (s tableManagementService) fillOnAutoStart(
+	ctx context.Context,
+	schemaName string,
+	id string,
+	columnData dto.ColumnResponse,
+	column tenant.Column,
+	cfg dto.IDGeneration,
+	backfill *bool,
+) error {
+	model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
+	if err != nil {
+		return err
+	}
+	keyCols, err := s.primaryKeyColumns(ctx, schemaName, model.Alias)
+	if err != nil {
+		return err
+	}
+	if (backfill == nil || !*backfill) && !slices.Contains(keyCols, column.ColumnName) {
+		return nil
+	}
+	col := AutoUUIDColumn{ColumnName: column.ColumnName, Version: cfg.Version}
+	if _, err := s.backfillUUIDs(ctx, schemaName, model.Alias, col); err != nil {
+		// Put the old settings back, so the field isn't left auto with empty cells
+		meta := columnData.Meta
+		_, _ = s.columnsService.UpdateColumn(ctx, schemaName, id, dto.ColumnUpdate{Meta: &meta})
+		return err
+	}
+	return nil
 }
 
 // applyMetaDefaultIfPresent syncs the DB default whenever the update carries meta
@@ -2076,6 +2286,8 @@ func (s tableManagementService) DeleteColumn(
 	}
 	// The column is dropped with CASCADE, which also drops unique keys using it; remove their entries too
 	s.removeKeysUsingColumn(schemaName, columnData)
+	// Links that showed this column as their label fall back to the first text column
+	s.clearDisplayColumnReferences(ctx, schemaName, columnData)
 	return nil
 }
 
@@ -2089,8 +2301,18 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 
+	// Auto uuid fields get their value before the key check, so an auto uuid key counts as given
+	generated := map[string]interface{}{}
+	autoCols, err := s.autoUUIDColumns(ctx, schemaName, model.ID.String())
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	if err := FillGeneratedUUIDs(autoCols, generated); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
 	// A table with a custom primary key can't have records without key values
-	if err := s.checkKeyValues(ctx, schemaName, model, 0, map[string]interface{}{}); err != nil {
+	if err := s.checkKeyValues(ctx, schemaName, model, 0, generated); err != nil {
 		return dto.RecordResponse{}, err
 	}
 
@@ -2099,6 +2321,9 @@ func (s tableManagementService) CreateRow(ctx context.Context, schemaName string
 		"last_modified_by":   req.CreatedBy,
 		"created_time":       time.Now().UTC(),
 		"last_modified_time": time.Now().UTC(),
+	}
+	for name, value := range generated {
+		data[fmt.Sprintf(QuotedColumnFormat, name)] = value
 	}
 
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, data)
@@ -2181,14 +2406,9 @@ func (s tableManagementService) normalizeRecords(records []map[string]interface{
 	return normalizedRecord
 }
 
+// allowInsert reports whether a value can be written to the column of a new record; the rule is the same as for updating
 func (s tableManagementService) allowInsert(columnData dto.ColumnResponse) bool {
-	if *columnData.System {
-		if strings.Contains(strings.ToLower(columnData.ColumnName), "title") {
-			return true
-		}
-		return false
-	}
-	return true
+	return s.allowUpdate(columnData)
 }
 
 func (s tableManagementService) getRowByID(ctx context.Context, tableName string, rowID interface{}) (map[string]interface{}, error) {
@@ -2329,6 +2549,14 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	lg := logger.Get()
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, modelAlias)
 
+	autoCols, err := s.autoUUIDColumnsByAlias(ctx, schemaName, modelAlias)
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	if err := FillGeneratedUUIDs(autoCols, record); err != nil {
+		return dto.RecordResponse{}, err
+	}
+
 	createdRecord, err := s.repo.TableService.CreateRecord(tableName, record)
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to create row with records")
@@ -2344,6 +2572,17 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, schemaName string, modelAlias string, records []map[string]interface{}) ([]dto.RecordResponse, error) {
 	lg := logger.Get()
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, modelAlias)
+
+	// Columns are read once for the whole batch
+	autoCols, err := s.autoUUIDColumnsByAlias(ctx, schemaName, modelAlias)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		if err := FillGeneratedUUIDs(autoCols, record); err != nil {
+			return nil, err
+		}
+	}
 
 	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
 	if err != nil {
@@ -2740,6 +2979,20 @@ func (s tableManagementService) BulkUpdateColumns(ctx context.Context, schemaNam
 		return err
 	}
 
+	if fetchedColumn.UIDT == constant.UIDTUUID {
+		// Auto uuid fields can't be written; manual ones only take valid UUIDs
+		if cfg, _ := dto.IDGenerationFromMeta(fetchedColumn.Meta); cfg.Mode == constant.IDModeAuto {
+			return app_errors.UUIDReadOnly
+		}
+		for i := range updates {
+			value, err := UUIDCellValue(updates[i].Value)
+			if err != nil {
+				return err
+			}
+			updates[i].Value = value
+		}
+	}
+
 	if err := s.columnsService.BulkUpdate(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName, updates); err != nil {
 		return s.keyWriteError(ctx, schemaName, fetchedModel.Alias, err, "failed to bulk update column")
 	}
@@ -2755,6 +3008,11 @@ func (s tableManagementService) ResetColumnValues(ctx context.Context, schemaNam
 	fetchedColumn, err := s.columnsService.GetColumnByID(ctx, schemaName, columnID) // Validate column exists before reset
 	if err != nil {
 		return err
+	}
+
+	// Clearing an auto uuid field would leave records without the value the system owns
+	if cfg, _ := dto.IDGenerationFromMeta(fetchedColumn.Meta); fetchedColumn.UIDT == constant.UIDTUUID && cfg.Mode == constant.IDModeAuto {
+		return app_errors.UUIDReadOnly
 	}
 
 	if err := s.columnsService.ResetColumn(ctx, schemaName, fetchedModel.Alias, fetchedColumn.ColumnName); err != nil {

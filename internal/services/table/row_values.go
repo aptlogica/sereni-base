@@ -13,6 +13,7 @@ import (
 	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -105,6 +106,18 @@ func (s tableManagementService) rowValuesByName(ctx context.Context, schemaName 
 		if !s.allowInsert(columnData) {
 			return nil, app_errors.UpdateNotAllowed
 		}
+		if columnData.UIDT == constant.UIDTUUID {
+			// Auto uuid fields are created by the system; manual ones must hold a valid UUID
+			if cfg, _ := dto.IDGenerationFromMeta(columnData.Meta); cfg.Mode == constant.IDModeAuto {
+				return nil, app_errors.UUIDReadOnly
+			}
+			value, err := UUIDCellValue(values[columnID])
+			if err != nil {
+				return nil, err
+			}
+			byName[columnData.ColumnName] = value
+			continue
+		}
 		byName[columnData.ColumnName] = cellValue(columnData, values[columnID])
 	}
 	return byName, nil
@@ -122,6 +135,14 @@ func (s tableManagementService) insertRowValues(
 ) (dto.RecordResponse, error) {
 	byName, err := s.rowValuesByName(ctx, schemaName, values)
 	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	// Generated before the key check, so an auto uuid key field counts as given
+	autoCols, err := s.autoUUIDColumns(ctx, schemaName, model.ID.String())
+	if err != nil {
+		return dto.RecordResponse{}, err
+	}
+	if err := FillGeneratedUUIDs(autoCols, byName); err != nil {
 		return dto.RecordResponse{}, err
 	}
 	if err := s.checkKeyValues(ctx, schemaName, model, 0, byName); err != nil {

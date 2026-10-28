@@ -105,6 +105,7 @@ func TestAddLinkColumn_SelfLinkCreatesSingleColumn(t *testing.T) {
 		created = args.Get(1).(dto.ColumnInsertion)
 	}).Return(tenant.Column{ID: srcID, ModelID: modelID.String(), BaseID: baseID.String(), ColumnName: "reports_1", UIDT: "links", DT: helpers.StringPtr("INT[]")}, nil).Once()
 	f.model.On("GetModelByID", mock.Anything, relSchema, modelID.String()).Return(tenant.Model{ID: modelID, Alias: "emp", Title: "Employees"}, nil)
+	f.column.On("GetColumnByModelID", mock.Anything, relSchema, modelID.String()).Return([]tenant.Column{}, nil).Maybe()
 	f.table.On("AddColumn", mock.Anything, mock.Anything).Return(nil).Once()
 	var relation dto.RelationInsertion
 	f.rel.On("Create", mock.Anything, mock.Anything, relSchema).Run(func(args mock.Arguments) {
@@ -154,6 +155,7 @@ func TestAddLinkColumn_TwoTablesInverseTitle(t *testing.T) {
 			f.column.On("Create", mock.Anything, mock.MatchedBy(func(r dto.ColumnInsertion) bool { return r.ModelID == tgtModel }), relSchema).
 				Run(func(a mock.Arguments) { targetReq = a.Get(1).(dto.ColumnInsertion) }).Return(tgtCol, nil)
 			f.column.On("GetMaxOrderIndexOfColumn", mock.Anything, relSchema, tgtModel.String()).Return(float64(4), nil)
+			f.column.On("GetColumnByModelID", mock.Anything, relSchema, mock.Anything).Return([]tenant.Column{}, nil).Maybe()
 			f.model.On("GetModelByID", mock.Anything, relSchema, srcModel.String()).Return(tenant.Model{ID: srcModel, Alias: "src", Title: "Src"}, nil)
 			f.model.On("GetModelByID", mock.Anything, relSchema, tgtModel.String()).Return(tenant.Model{ID: tgtModel, Alias: "tgt", Title: "Tgt"}, nil)
 			f.table.On("AddColumn", mock.Anything, mock.Anything).Return(nil)
@@ -182,6 +184,7 @@ func TestAddLinkColumn_RollbackOnFailure(t *testing.T) {
 		f.column.On("Create", mock.Anything, mock.MatchedBy(func(r dto.ColumnInsertion) bool { return r.ModelID == tgtModel && srcModel != tgtModel }), relSchema).Return(tgtCol, targetErr)
 		f.column.On("GetMaxOrderIndexOfColumn", mock.Anything, relSchema, tgtModel.String()).Return(float64(1), nil)
 		f.column.On("DeleteColumn", mock.Anything, relSchema, mock.Anything).Return(nil)
+		f.column.On("GetColumnByModelID", mock.Anything, relSchema, mock.Anything).Return([]tenant.Column{}, nil).Maybe()
 		f.model.On("GetModelByID", mock.Anything, relSchema, srcModel.String()).Return(tenant.Model{ID: srcModel, Alias: "src", Title: "Src"}, nil)
 		f.model.On("GetModelByID", mock.Anything, relSchema, tgtModel.String()).Return(tenant.Model{ID: tgtModel, Alias: "tgt", Title: "Tgt"}, nil)
 		f.table.On("AddColumn", mock.Anything, mock.Anything).Return(nil)

@@ -23,7 +23,6 @@ import (
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
-	"github.com/lib/pq"
 )
 
 // keyDetailRegexp reads Postgres' unique violation detail: Key (code, dept)=(HR, IN) already exists.
@@ -100,11 +99,11 @@ func (s tableManagementService) checkKeyValues(ctx context.Context, schemaName s
 	if len(empty) > 0 {
 		return keyMissingError(empty, fields)
 	}
-	return s.checkKeyClash(schemaName, model, rowID, keyCols, fields, values)
+	return s.checkKeyClash(ctx, schemaName, model, rowID, keyCols, fields, values)
 }
 
 // checkKeyClash rejects a record whose key equals another record's, naming the record that already holds it
-func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Model, rowID int, keyCols []string, fields []keyField, values map[string]interface{}) error {
+func (s tableManagementService) checkKeyClash(ctx context.Context, schemaName string, model tenant.Model, rowID int, keyCols []string, fields []keyField, values map[string]interface{}) error {
 	insert := rowID <= 0
 	// A new record's id is new, so a key that includes id can't be used by another record
 	if s.repo.DB == nil || (insert && slices.Contains(keyCols, constant.PrimaryKeyIDColumn)) {
@@ -126,15 +125,16 @@ func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Mo
 		}
 		pairs = append(pairs, fmt.Sprintf("'%s', o.%s", strings.ReplaceAll(c, "'", "''"), col))
 	}
+	label := s.recordLabelSQL(ctx, schemaName, model, "o")
 	var query string
 	if insert {
-		query = fmt.Sprintf(`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o WHERE %s LIMIT 1`,
-			strings.Join(pairs, ", "), table, strings.Join(conditions, " AND "))
+		query = fmt.Sprintf(`SELECT o.id::bigint, %s, jsonb_build_object(%s) FROM %s o WHERE %s LIMIT 1`,
+			label, strings.Join(pairs, ", "), table, strings.Join(conditions, " AND "))
 	} else {
 		args = append(args, rowID)
 		query = fmt.Sprintf(
-			`SELECT o.id::bigint, COALESCE(o.title::text, ''), jsonb_build_object(%s) FROM %s o JOIN %s cur ON cur.id = $%d WHERE o.id <> $%d AND %s LIMIT 1`,
-			strings.Join(pairs, ", "), table, table, len(args), len(args), strings.Join(conditions, " AND "))
+			`SELECT o.id::bigint, %s, jsonb_build_object(%s) FROM %s o JOIN %s cur ON cur.id = $%d WHERE o.id <> $%d AND %s LIMIT 1`,
+			label, strings.Join(pairs, ", "), table, table, len(args), len(args), strings.Join(conditions, " AND "))
 	}
 
 	var otherID int64
@@ -152,18 +152,17 @@ func (s tableManagementService) checkKeyClash(schemaName string, model tenant.Mo
 // keyWriteError turns a Postgres key violation from a write to a user table into an exact error; other errors
 // become the usual database error
 func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, alias string, err error, msg string) error {
-	var pqErr *pq.Error
-	var violation *app_errors.KeyViolation
-	switch {
-	case errors.As(err, &violation):
-		pqErr = violation.Postgres
-	case !errors.As(err, &pqErr):
+	pqErr, ok := postgresWriteError(err)
+	if !ok {
 		var apiErr *app_errors.APIError
 		if errors.As(err, &apiErr) {
 			return err
 		}
 		// Layers that keep only the text of a duplicate: the constraint name tells the unique key
 		return s.recordWriteError(ctx, schemaName, err, msg)
+	}
+	if _, ok := app_errors.CheckViolation(pqErr); ok {
+		return s.checkViolationError(schemaName, pqErr.Constraint)
 	}
 	if pqErr.Code != "23505" && pqErr.Code != "23502" {
 		return app_errors.LogDatabaseError(err, msg)
@@ -179,20 +178,44 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 		return app_errors.LogDatabaseError(err, msg)
 	}
 
-	model, modelErr := s.modelByAlias(schemaName, alias)
-	var fields []keyField
-	if modelErr == nil {
-		fields = s.keyFields(ctx, schemaName, model, keyCols)
-	} else {
-		for _, c := range keyCols {
-			fields = append(fields, keyField{Column: c, Title: c})
-		}
-	}
-
+	fields := s.keyFieldsByAlias(ctx, schemaName, alias, keyCols)
 	if pqErr.Code == "23502" {
 		return keyEmptyError(fieldTitle(fields, pqErr.Column), fields)
 	}
 	return keyDuplicateFromDetail(fields, pqErr.Detail)
+}
+
+// postgresWriteError returns the Postgres error behind a write error, if there is one
+func postgresWriteError(err error) (*dbModels.DBError, bool) {
+	var violation *app_errors.KeyViolation
+	if errors.As(err, &violation) {
+		return violation.Postgres, true
+	}
+	return app_errors.DBError(err)
+}
+
+// recordLabelSQL is the SQL that reads the label of a record of the table, used to name it in messages:
+// the value of its first text column, or an empty string when the table has none.
+func (s tableManagementService) recordLabelSQL(ctx context.Context, schemaName string, model tenant.Model, rowAlias string) string {
+	columns, err := s.columnsService.GetColumnByModelID(ctx, schemaName, model.ID.String())
+	if err == nil {
+		if col, ok := tenant.FirstTextColumn(columns); ok {
+			return fmt.Sprintf("COALESCE(%s.%s::text, '')", rowAlias, quoteIdentifier(col.ColumnName))
+		}
+	}
+	return "''::text"
+}
+
+// keyFieldsByAlias returns the key columns of a table with their titles; column names when the table is not found
+func (s tableManagementService) keyFieldsByAlias(ctx context.Context, schemaName, alias string, keyCols []string) []keyField {
+	if model, err := s.modelByAlias(schemaName, alias); err == nil {
+		return s.keyFields(ctx, schemaName, model, keyCols)
+	}
+	fields := make([]keyField, 0, len(keyCols))
+	for _, c := range keyCols {
+		fields = append(fields, keyField{Column: c, Title: c})
+	}
+	return fields
 }
 
 // keyDuplicateFromDetail builds the duplicate key error from the detail Postgres gives, e.g. Key (a, b)=(1, 2) already exists
@@ -218,7 +241,7 @@ func keyDuplicateFromDetail(fields []keyField, detail string) error {
 
 // isUniqueKeyViolation tells a duplicate rejected by a unique key from one rejected by the primary key: the
 // constraint is a unique key of the table, or Postgres' detail names columns other than the key columns
-func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *pq.Error, keyCols []string) bool {
+func (s tableManagementService) isUniqueKeyViolation(schemaName string, pqErr *dbModels.DBError, keyCols []string) bool {
 	if pqErr.Constraint != "" && s.constraintByName(schemaName, pqErr.Constraint) != nil {
 		return true
 	}

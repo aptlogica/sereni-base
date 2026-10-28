@@ -97,6 +97,45 @@ type ColumnUpdate struct {
 	OrderIndex  *float64                `db:"order_index" json:"order_index,omitempty"`
 	UpdatedBy   string                  `db:"last_modified_by" json:"last_modified_by,omitempty"`
 	UpdatedAt   time.Time               `db:"last_modified_time" json:"last_modified_time,omitempty"`
+	// Backfill fills the empty cells of a uuid field that becomes auto-generated; it is not stored
+	Backfill *bool `db:"-" json:"backfill,omitempty"`
+}
+
+// IDGeneration is the uuid generation setting kept in column meta under "idGeneration"
+type IDGeneration struct {
+	Mode    string `json:"mode" mapstructure:"mode"`
+	Version string `json:"version,omitempty" mapstructure:"version"`
+}
+
+// IDGenerationFromMeta reads meta.idGeneration; a column without one is manual.
+// The second return is false when the meta has the key but it isn't an object.
+func IDGenerationFromMeta(meta map[string]interface{}) (IDGeneration, bool) {
+	raw, ok := meta["idGeneration"]
+	if !ok || raw == nil {
+		return IDGeneration{Mode: "manual"}, true
+	}
+	// Settings stored by the service itself are already typed; settings read back from the database are a map
+	if cfg, typed := raw.(IDGeneration); typed {
+		if cfg.Mode == "" {
+			cfg.Mode = "manual"
+		}
+		return cfg, true
+	}
+	obj, ok := raw.(map[string]interface{})
+	if !ok {
+		return IDGeneration{}, false
+	}
+	cfg := IDGeneration{}
+	if cfg.Mode, ok = obj["mode"].(string); !ok && obj["mode"] != nil {
+		return IDGeneration{}, false
+	}
+	if cfg.Version, ok = obj["version"].(string); !ok && obj["version"] != nil {
+		return IDGeneration{}, false
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "manual"
+	}
+	return cfg, true
 }
 
 // Map converts ColumnUpdate → map[string]interface{} for DB update
@@ -211,6 +250,12 @@ type ColumnResponse struct {
 	UpdatedBy   string                 `json:"last_modified_by" mapstructure:"last_modified_by"`
 	CreatedAt   time.Time              `json:"created_time" mapstructure:"created_time"`
 	UpdatedAt   time.Time              `json:"last_modified_time" mapstructure:"last_modified_time"`
+}
+
+// EmptyCountResponse is how many records have an empty and a filled value in one column
+type EmptyCountResponse struct {
+	Empty  int64 `json:"empty"`
+	Filled int64 `json:"filled"`
 }
 
 type ReorderColumnRequest struct {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -84,16 +85,13 @@ func newKeyFixture(t *testing.T, columns ...tenant.Column) *keyFixture {
 	models.On("GetModelByID", keySchema, keyModelID.String()).Return(tenant.Model{ID: keyModelID, Alias: "org"}, nil)
 	cols := &keyColumnService{}
 	cols.On("GetColumnByModelID", keySchema, keyModelID.String()).Return(columns, nil)
-	repo := &pkg.DatabaseService{DB: db}
+	repo := &pkg.DatabaseService{DB: db, SchemaService: newSchemaService(db)}
 	return &keyFixture{svc: services.NewPrimaryKeyService(repo, models, cols), sql: sqlMock, columns: cols}
 }
 
 func (f *keyFixture) expectKey(cols ...string) {
-	rows := sqlmock.NewRows([]string{"unnest"})
-	for _, c := range cols {
-		rows.AddRow(c)
-	}
-	f.sql.ExpectQuery(regexp.QuoteMeta("SELECT unnest(public.link_key_columns($1))")).WithArgs(keyTable).WillReturnRows(rows)
+	f.sql.ExpectQuery(`contype = \$2`).WithArgs(keyTable, "p").
+		WillReturnRows(sqlmock.NewRows([]string{"conname", "columns"}).AddRow("org_pkey", "{"+strings.Join(cols, ",")+"}"))
 }
 
 // expectCounts answers the validation counts: empty values per key column, records with any empty key
@@ -110,8 +108,18 @@ func (f *keyFixture) expectCounts(perColumn []int64, nulls, duplicateGroups int6
 	f.sql.ExpectQuery(`SELECT count\(\*\) FILTER`).WillReturnRows(sqlmock.NewRows(names).AddRow(values...))
 }
 
+// expectConstraints answers the primary key name and the UNIQUE constraints, with one on id alone when idUnique is set
 func (f *keyFixture) expectConstraints(key, idUnique interface{}) {
-	f.sql.ExpectQuery(`contype = 'p'`).WithArgs(keyTable).WillReturnRows(sqlmock.NewRows([]string{"key", "unique"}).AddRow(key, idUnique))
+	keyRows := sqlmock.NewRows([]string{"conname", "columns"})
+	if key != nil {
+		keyRows.AddRow(key, "{id}")
+	}
+	f.sql.ExpectQuery(`contype = \$2`).WithArgs(keyTable, "p").WillReturnRows(keyRows)
+	uniqueRows := sqlmock.NewRows([]string{"conname", "columns"})
+	if idUnique != nil {
+		uniqueRows.AddRow(idUnique, "{id}")
+	}
+	f.sql.ExpectQuery(`contype = \$2`).WithArgs(keyTable, "u").WillReturnRows(uniqueRows)
 }
 
 func exactExec(stmt string) string { return "^" + regexp.QuoteMeta(stmt) + "$" }
@@ -254,7 +262,7 @@ func TestPrimaryKeyService_UpdateRejectsBadData(t *testing.T) {
 		f := newKeyFixture(t, colID, colTitle, colCode, colDept)
 		f.expectKey("id")
 		f.expectCounts([]int64{1, 2}, 2, 1)
-		f.sql.ExpectQuery(regexp.QuoteMeta(`SELECT id::bigint, COALESCE(title::text, ''), array_remove(ARRAY[CASE WHEN "code" IS NULL THEN 'code' END, CASE WHEN "dept" IS NULL THEN 'dept' END], NULL)::text[] FROM "public"."org" WHERE "code" IS NULL OR "dept" IS NULL ORDER BY id LIMIT 10`)).
+		f.sql.ExpectQuery(regexp.QuoteMeta(`SELECT id::bigint, COALESCE("title"::text, ''), array_remove(ARRAY[CASE WHEN "code" IS NULL THEN 'code' END, CASE WHEN "dept" IS NULL THEN 'dept' END], NULL)::text[] FROM "public"."org" WHERE "code" IS NULL OR "dept" IS NULL ORDER BY id LIMIT 10`)).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "missing"}).AddRow(4, "Acme", "{code,dept}").AddRow(9, "", "{dept}"))
 		f.sql.ExpectQuery(regexp.QuoteMeta(`SELECT jsonb_build_object('code', "code", 'dept', "dept") AS k, count(*), (array_agg(id::bigint ORDER BY id))[1:10] FROM "public"."org" WHERE NOT ("code" IS NULL OR "dept" IS NULL) GROUP BY 1 HAVING count(*) > 1`)).
 			WillReturnRows(sqlmock.NewRows([]string{"k", "count", "ids"}).AddRow([]byte(`{"code":"IN","dept":"HR"}`), 3, "{1,5,7}"))
@@ -420,4 +428,68 @@ func TestPrimaryKeyService_EnsureColumnNotInKey(t *testing.T) {
 
 	f.expectKey("code", "dept")
 	assert.NoError(t, f.svc.EnsureColumnNotInKey(context.Background(), keySchema, keyModelID.String(), "title"))
+}
+
+// Records are named in messages by the first text column of their table: the Title of a new table is an
+// ordinary column with a generated name, a table without any text column names its records by id alone.
+func TestPrimaryKeyService_LabelsRecordsByFirstTextColumn(t *testing.T) {
+	nullQuery := func(label string) string {
+		return regexp.QuoteMeta(`SELECT id::bigint, ` + label + `, array_remove(ARRAY[CASE WHEN "dept" IS NULL THEN 'dept' END], NULL)::text[] FROM "public"."org" WHERE "dept" IS NULL ORDER BY id LIMIT 10`)
+	}
+	// the key and the counts are asked first, then the records without key values
+	prepare := func(f *keyFixture) {
+		f.expectKey("id")
+		f.expectCounts([]int64{1}, 1, 0)
+	}
+	run := func(f *keyFixture) error {
+		_, err := f.svc.Update(context.Background(), keySchema, keyModelID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{colDept.ID.String()}})
+		return err
+	}
+
+	t.Run("an ordinary Title with a generated name", func(t *testing.T) {
+		title := keyColumn("title_1761123456_ab12", "text", false)
+		title.Title = "Title"
+		f := newKeyFixture(t, colID, title, colDept)
+		prepare(f)
+		f.sql.ExpectQuery(nullQuery(`COALESCE("title_1761123456_ab12"::text, '')`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "missing"}).AddRow(4, "Acme", "{dept}"))
+
+		err := run(f)
+
+		assert.ErrorIs(t, err, app_errors.PrimaryKeyDataInvalid)
+		assert.Contains(t, err.Error(), "#4 Acme")
+	})
+
+	t.Run("the first text column by order index", func(t *testing.T) {
+		later, earlier := keyColumn("notes", "text", false), keyColumn("name", "text", false)
+		one, five := float64(1), float64(5)
+		later.OrderIndex, earlier.OrderIndex = &five, &one
+		f := newKeyFixture(t, colID, later, earlier, colDept)
+		prepare(f)
+		f.sql.ExpectQuery(nullQuery(`COALESCE("name"::text, '')`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "missing"}).AddRow(4, "Acme", "{dept}"))
+
+		assert.ErrorIs(t, run(f), app_errors.PrimaryKeyDataInvalid)
+	})
+
+	t.Run("a table without a text column names records by id", func(t *testing.T) {
+		f := newKeyFixture(t, colID, colDept, colOpened)
+		prepare(f)
+		f.sql.ExpectQuery(nullQuery(`''::text`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title", "missing"}).AddRow(4, "", "{dept}"))
+
+		err := run(f)
+
+		assert.ErrorIs(t, err, app_errors.PrimaryKeyDataInvalid)
+		assert.Contains(t, err.Error(), "(#4)")
+	})
+
+	t.Run("an ordinary Title can be a key field", func(t *testing.T) {
+		title := keyColumn("title_1761123456_ab12", "text", false)
+		assert.Empty(t, tenant.KeyColumnBlockReason(title))
+
+		// and so can the system Title of a table created before Title became an ordinary column
+		assert.Empty(t, tenant.KeyColumnBlockReason(colTitle))
+		assert.NotEmpty(t, tenant.KeyColumnBlockReason(colCreated))
+	})
 }

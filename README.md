@@ -1,11 +1,11 @@
 # SereniBase
 
 
-### Open-Source Self-Hosted Backend Platform � PostgreSQL + Auto REST APIs + JWT + Storage + ClamAV
+### Open-Source Self-Hosted Backend Platform — PostgreSQL + Auto REST APIs + JWT + Storage + ClamAV
 
 A production-ready, self-hosted backend platform built on PostgreSQL. Every table you create automatically
 generates a documented REST API. JWT authentication, S3/RustFS file storage with ClamAV malware scanning, and
-SMTP email delivery run as independent microservices � deploy together with a single `docker-compose up`, or
+SMTP email delivery run as independent microservices — deploy together with a single `docker-compose up`, or
 standalone as needed. Licensed under the Apache License 2.0. Full data sovereignty.
 
 
@@ -47,7 +47,7 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 
 
 ---
-## ?? Live Demo
+## 🚀 Live Demo
 
 ![SereniBase Demo](https://assets.aptlogica.com/sereni-base-demo.gif)
 
@@ -64,19 +64,19 @@ standalone as needed. Licensed under the Apache License 2.0. Full data sovereign
 | Password | Generated during setup and printed at the end (also stored as `OWNER_PASSWORD` in `.env`) |
 | Live Demo (no install) | https://demo.serenibase.com |
 
-? **If this project helps you, please consider giving it a star!**  
-?? https://github.com/aptlogica/sereni-base
+⭐ **If this project helps you, please consider giving it a star!**  
+👉 https://github.com/aptlogica/sereni-base
 
 ---
 
-## ?? What is [SereniBase](https://www.aptlogica.com/sereni-base/)?
+## 🚀 What is [SereniBase](https://www.aptlogica.com/sereni-base/)?
 
 A backend operating system. Not another tool.
 
 Instead of stitching together separate services, developers get a unified backend where database, APIs, auth, storage, email, and security are already designed to work together.
 
-- Create a table ? get a REST API. Instantly. No code.
-- JWT auth, S3 storage, SMTP email, ClamAV scanning � all running as microservices.
+- Create a table → get a REST API. Instantly. No code.
+- JWT auth, S3 storage, SMTP email, ClamAV scanning — all running as microservices.
 - Integrate seamlessly with your existing systems via REST API or TypeScript SDK.
 - Visual UI for teams + TypeScript SDK for developers.
 - Self-hosted or cloud-ready. Full data sovereignty. Zero vendor lock-in.
@@ -86,31 +86,31 @@ Instead of stitching together separate services, developers get a unified backen
 
 ---
 
-## ?? Why SereniBase?
+##  🔥 Why SereniBase?
 
-Most no-code tools work� until they don�t.
+Most no-code tools work… until they don’t.
 
 | Problem | SereniBase Solution |
 |--------|-------------------|
-| Vendor lock-in | ? Self-hosted |
-| Limited extensibility | ? Open-source & modular |
-| Expensive scaling | ? Infrastructure-based cost |
-| Privacy concerns | ? Full data ownership |
-| No built-in file security | ? ClamAV antivirus scans every upload before storage |
-| Separate email service needed | ? SMTP microservice with Redis queue and retry � included |
-| Assembling disconnected tools | ? Database + API + Auth + Storage + Email + Security � one stack |
+| Vendor lock-in | ✅ Self-hosted |
+| Limited extensibility | ✅ Open-source & modular |
+| Expensive scaling | ✅ Infrastructure-based cost |
+| Privacy concerns | ✅ Full data ownership |
+| No built-in file security | ✅ ClamAV antivirus scans every upload before storage |
+| Separate email service needed | ✅ SMTP microservice with Redis queue and retry — included |
+| Assembling disconnected tools | ✅ Database + API + Auth + Storage + Email + Security — one stack |
 
 ---
 
 
-## ? Key Features
+## ⚡ Key Features
 
-- ??? No-Code + Developer Friendly  
-- ?? REST API (OpenAPI/Swagger)  
-- ?? Microservices Architecture  
-- ?? Multi-Tenant Workspaces  
-- ? Dynamic Schema (no migrations)  
-- ?? Enterprise Security (RBAC, audit logs)  
+- 🗄️ No-Code + Developer Friendly  
+- 🔌 REST API (OpenAPI/Swagger)  
+- 🧩 Microservices Architecture  
+- 🏢 Multi-Tenant Workspaces  
+- ⚡ Dynamic Schema (no migrations)  
+- 🔐 Enterprise Security (RBAC, audit logs)
 
 ---
 ## Services Architecture
@@ -171,7 +171,7 @@ The setup wizard will:
 
 Default credentials are configured via environment variables. See `.env.example` for setup.
 
-> **?? Security:** Never use default credentials in production. Always configure secure values via environment variables.
+> **⚠️ Security:** Never use default credentials in production. Always configure secure values via environment variables.
 
 ## Commands Reference
 

@@ -2,6 +2,7 @@ package table_test
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
@@ -10,6 +11,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	services "github.com/aptlogica/sereni-base/internal/services/table"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -66,10 +68,27 @@ func (m *MockColumnService) GetColumnByID(ctx context.Context, schemaName string
 	return args.Get(0).(tenant.Column), args.Error(1)
 }
 func (m *MockColumnService) GetColumnByModelID(ctx context.Context, schemaName, modelID string) ([]tenant.Column, error) {
+	if !m.expects("GetColumnByModelID") {
+		return []tenant.Column{}, nil
+	}
 	args := m.Called(ctx, schemaName, modelID)
 	return args.Get(0).([]tenant.Column), args.Error(1)
 }
+// expects reports whether a test registered an answer for the method. The display column lookups run on
+// every link create and column delete; a test that does not care about them gets an empty list.
+func (m *MockColumnService) expects(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *MockColumnService) GetAllColumns(ctx context.Context, schemaName string) ([]tenant.Column, error) {
+	if !m.expects("GetAllColumns") {
+		return []tenant.Column{}, nil
+	}
 	args := m.Called(ctx, schemaName)
 	return args.Get(0).([]tenant.Column), args.Error(1)
 }
@@ -192,6 +211,14 @@ func expectKeyDefaults(mockTable *MockTableService) {
 		Return([]map[string]interface{}{{"link_key_columns": "{id}"}}, nil).Maybe()
 	mockTable.On("GetByFunction", mock.Anything, "public.link_install_key_sync", mock.Anything).
 		Return([]map[string]interface{}{{}}, nil).Maybe()
+	// Inserts by table alias look up the model for its auto uuid fields; no model means none
+	mockTable.On("GetTableData", mock.MatchedBy(func(table string) bool { return strings.HasSuffix(table, ".models") }), mock.Anything).
+		Return([]map[string]interface{}{}, nil).Maybe()
+}
+
+// expectNoAutoUUIDColumns lets inserts into a model without an id read its (empty) column list
+func expectNoAutoUUIDColumns(mockColumn *MockColumnService) {
+	mockColumn.On("GetColumnByModelID", mock.Anything, mock.Anything, uuid.Nil.String()).Return([]tenant.Column{}, nil).Maybe()
 }
 
 // Helper to build a table management service with mocks.
@@ -206,6 +233,7 @@ func setupTableManagementService() (*pkg.DatabaseService, *MockTableService, *Mo
 
 	db := &pkg.DatabaseService{TableService: mockTable, BulkService: mockBulk}
 	expectKeyDefaults(mockTable)
+	expectNoAutoUUIDColumns(mockColumn)
 
 	svc := services.NewTableManagementService("postgres", db, mockModel, mockColumn, mockView, mockRel, mockAsset)
 

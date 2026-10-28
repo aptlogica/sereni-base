@@ -24,7 +24,14 @@ func TestCreateTableWithDefaults_Success(t *testing.T) {
 	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
 	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
 	mockTable.On("CreateTable", mock.Anything).Return(nil)
-	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockTable.On("AddColumn", mock.Anything, mock.Anything).Return(nil)
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	var titleInsert dto.ColumnInsertion
+	titleOrder := float64(1)
+	titleDT := "TEXT"
+	mockColumn.On("Create", mock.Anything, mock.Anything, "schema").Run(func(args mock.Arguments) {
+		titleInsert = args.Get(1).(dto.ColumnInsertion)
+	}).Return(tenant.Column{ID: uuid.New(), Title: "Title", ColumnName: "title_1_abcd", UIDT: "text", DT: &titleDT, OrderIndex: &titleOrder, BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
 	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
 
 	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
@@ -35,6 +42,20 @@ func TestCreateTableWithDefaults_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, model.ID, resp.Model.ID)
+
+	// Title is an ordinary text column, made the way a user adds one: not system, not virtual, named like any column
+	assert.Equal(t, "Title", titleInsert.Title)
+	assert.Equal(t, "text", titleInsert.UIDT)
+	assert.False(t, titleInsert.System)
+	assert.False(t, titleInsert.Virtual)
+	assert.Equal(t, float64(1), *titleInsert.OrderIndex)
+	assert.Regexp(t, `^title_\d+_[0-9a-f]{4}$`, titleInsert.ColumnName)
+	// and it comes back with the table, after Id
+	if assert.Len(t, resp.Columns, 2) {
+		assert.Equal(t, "Id", resp.Columns[0].Title)
+		assert.Equal(t, "Title", resp.Columns[1].Title)
+	}
+
 	// Link fields pointing at the new table stay in step with its keys
 	mockTable.AssertCalled(t, "GetByFunction", mock.Anything, "public.link_install_key_sync",
 		map[string]interface{}{"p_schema": "schema", "p_table": "tbl"})
@@ -48,7 +69,10 @@ func TestCreateTableWithDefaults_TriggerInstallFailureIsNotFatal(t *testing.T) {
 	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
 	mockTable.On("CreateTable", mock.Anything).Return(nil)
 	mockTable.On("GetByFunction", mock.Anything, "public.link_install_key_sync", mock.Anything).Return(nil, errors.New("denied"))
-	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	titleDT := "TEXT"
+	mockTable.On("AddColumn", mock.Anything, mock.Anything).Return(nil)
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockColumn.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.Column{ID: uuid.New(), Title: "Title", ColumnName: "title_1_abcd", UIDT: "text", DT: &titleDT, BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
 	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
 	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
@@ -57,6 +81,28 @@ func TestCreateTableWithDefaults_TriggerInstallFailureIsNotFatal(t *testing.T) {
 	_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
 
 	assert.NoError(t, err)
+}
+
+// The table made for an import has no Title: every column of the file becomes a column.
+func TestCreateTableWithDefaultsImport_HasNoTitleColumn(t *testing.T) {
+	_, mockTable, _, mockModel, mockColumn, mockView, _, _, svc := setupTableManagementService()
+
+	model := tenant.Model{ID: uuid.New(), BaseID: uuid.New(), WorkspaceID: uuid.New(), Alias: "tbl", CreatedBy: "user", Title: "Table"}
+	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
+	mockTable.On("CreateTable", mock.Anything).Return(nil)
+	mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String()}}, nil)
+	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
+	mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
+	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
+
+	resp, err := svc.CreateTableWithDefaultsImport(context.Background(),
+		dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+
+	assert.NoError(t, err)
+	assert.Len(t, resp.Columns, 1)
+	mockColumn.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockTable.AssertNotCalled(t, "AddColumn", mock.Anything, mock.Anything)
 }
 
 func TestCreateTableWithDefaults_Errors(t *testing.T) {
@@ -102,7 +148,7 @@ func TestCreateTableWithDefaults_Errors(t *testing.T) {
 		mockColumn.On("BulkInsert", mock.Anything, "schema").Return([]tenant.Column{}, nil)
 		mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{}, errors.New("fail"))
 
-		_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
+		_, err := svc.CreateTableWithDefaultsImport(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
 
 		assert.Error(t, err)
 	})
@@ -117,7 +163,7 @@ func TestCreateTableWithDefaults_Errors(t *testing.T) {
 		mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New()}, nil)
 		mockModel.On("GetModelByID", mock.Anything, "schema", model.ID.String()).Return(tenant.Model{}, errors.New("fail"))
 
-		_, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
+		_, err := svc.CreateTableWithDefaultsImport(context.Background(), dto.CreateTableRequest{Title: "T"}, "schema")
 
 		assert.Error(t, err)
 	})
@@ -130,13 +176,12 @@ func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
 	mockModel.On("Create", mock.Anything, mock.Anything, "schema").Return(model, nil)
 	mockTable.On("CreateTable", mock.Anything).Return(nil)
 
-	// Capture the columns being inserted to verify System field
+	// Capture the columns being inserted to verify System field and order
 	var insertedColumns []dto.ColumnInsertion
 	mockColumn.On("BulkInsert", mock.Anything, "schema").Run(func(args mock.Arguments) {
 		insertedColumns = args.Get(0).([]dto.ColumnInsertion)
 	}).Return([]tenant.Column{
 		{ID: uuid.New(), Title: "Id", ColumnName: "id", BaseID: model.BaseID.String(), ModelID: model.ID.String(), System: true},
-		{ID: uuid.New(), Title: "Title", ColumnName: "title", BaseID: model.BaseID.String(), ModelID: model.ID.String(), System: false},
 	}, nil)
 
 	mockView.On("Create", mock.Anything, mock.Anything, "schema").Return(tenant.View{ID: uuid.New(), Title: "Default", BaseID: model.BaseID.String(), ModelID: model.ID.String()}, nil)
@@ -144,30 +189,22 @@ func TestInsertSystemColumns_SystemFieldRespected(t *testing.T) {
 	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", model.ID.String()).Return([]tenant.Column{}, nil)
 	mockTable.On("GetByFunction", mock.Anything, mock.Anything, mock.Anything).Return([]map[string]interface{}{}, nil)
 
-	resp, err := svc.CreateTableWithDefaults(context.Background(), dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
+	resp, err := svc.CreateTableWithDefaultsImport(context.Background(),
+		dto.CreateTableRequest{BaseID: model.BaseID.String(), WorkspaceID: "ws", Title: "Table", CreatedBy: "user"}, "schema")
 
 	assert.NoError(t, err)
 	assert.Equal(t, model.ID, resp.Model.ID)
 
-	// Verify that the System field is properly set based on column definitions
-	// Find the Title column (should have System: true)
-	var titleColumn *dto.ColumnInsertion
-	for i := range insertedColumns {
-		if insertedColumns[i].Title == "Title" {
-			titleColumn = &insertedColumns[i]
-			break
-		}
-	}
-
-	assert.NotNil(t, titleColumn, "Title column should be inserted")
-	assert.True(t, titleColumn.System, "Title column should have System: true")
-
-	// Verify other system columns have System: true
+	// Id and the four audit columns are system columns; Title is not one of them
+	assert.Len(t, insertedColumns, 5)
+	orders := map[string]float64{}
 	for _, col := range insertedColumns {
-		if col.Title == "Id" || col.Title == "Created Time" || col.Title == "Created By" || col.Title == "Title" {
-			assert.True(t, col.System, "Column %s should have System: true", col.Title)
-		}
+		assert.NotEqual(t, "Title", col.Title, "Title is an ordinary column, not a system column")
+		assert.True(t, col.System, "Column %s should have System: true", col.Title)
+		orders[col.Title] = *col.OrderIndex
 	}
+	// They keep the order they declare, so index 1 stays free for Title
+	assert.Equal(t, map[string]float64{"Id": 0, "Created Time": 2, "Last Modified Time": 3, "Created By": 4, "Last Modified By": 5}, orders)
 }
 
 func TestCreateTableWithDefaultsImport_Success(t *testing.T) {
@@ -493,6 +530,7 @@ func TestAddColumn_LinksAndLookup(t *testing.T) {
 		mockColumn.On("Create", mock.Anything, mock.MatchedBy(func(req dto.ColumnInsertion) bool { return req.ModelID == sourceModelID }), "schema").Return(sourceCol, nil)
 		mockColumn.On("Create", mock.Anything, mock.MatchedBy(func(req dto.ColumnInsertion) bool { return req.ModelID == targetModelID }), "schema").Return(targetCol, nil)
 		mockColumn.On("GetMaxOrderIndexOfColumn", mock.Anything, "schema", targetModelID.String()).Return(float64(1), nil)
+		mockColumn.On("GetColumnByModelID", mock.Anything, "schema", mock.Anything).Return([]tenant.Column{}, nil).Maybe()
 
 		mockModel.On("GetModelByID", mock.Anything, "schema", sourceModelID.String()).Return(tenant.Model{ID: sourceModelID, Alias: "src", Title: "Src"}, nil)
 		mockModel.On("GetModelByID", mock.Anything, "schema", targetModelID.String()).Return(tenant.Model{ID: targetModelID, Alias: "tgt", Title: "Tgt"}, nil)
@@ -548,6 +586,11 @@ func TestAddColumn_LinksAndLookup(t *testing.T) {
 	})
 }
 
+// noConstraints answers that no unique key or check constraint uses the field, for type changes
+func noConstraints(mockTable *MockTableService) {
+	mockTable.On("GetTableData", tenant.TableConstraint{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
+}
+
 func TestUpdateColumn_Variants(t *testing.T) {
 	t.Run("system not allowed", func(t *testing.T) {
 		_, _, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
@@ -563,6 +606,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("system with title allowed", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New()
 		colID := uuid.New()
@@ -588,6 +632,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("title column type update allowed", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New()
 		colID := uuid.New()
@@ -648,6 +693,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("datatype change error triggers revert", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT")}
@@ -670,6 +716,7 @@ func TestUpdateColumn_Variants(t *testing.T) {
 
 	t.Run("datatype change success", func(t *testing.T) {
 		_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		noConstraints(mockTable)
 
 		modelID := uuid.New().String()
 		col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.New().String(), ColumnName: "c", UIDT: "text", DT: helpers.StringPtr("TEXT")}
@@ -790,6 +837,7 @@ func TestRowsAndLinks(t *testing.T) {
 
 		modelID := uuid.New().String()
 		mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(tenant.Model{Alias: "tbl"}, nil)
+		expectNoAutoUUIDColumns(mockColumn)
 
 		stubTable.CreateRecordFn = func(tableName string, data map[string]interface{}) (map[string]interface{}, error) {
 			return map[string]interface{}{"id": 1}, nil
@@ -1875,6 +1923,7 @@ func TestCreateRowsWithValues_Success(t *testing.T) {
 	model := tenant.Model{ID: uuid.MustParse(modelID), Alias: "tbl"}
 
 	mockModel.On("GetModelByID", mock.Anything, "schema", modelID).Return(model, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", colTextID).
 		Return(tenant.Column{ID: uuid.MustParse(colTextID), ModelID: modelID, BaseID: baseID, ColumnName: "text_col", UIDT: "text", DT: helpers.StringPtr("TEXT")}, nil)
 	mockColumn.On("GetColumnByID", mock.Anything, "schema", colArrayID).
