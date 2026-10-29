@@ -271,6 +271,28 @@ func TestTableConstraintService_CreateCheck(t *testing.T) {
 		f.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
 	})
 
+	t.Run("a check that uses only system columns has no default to conflict with", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(codeCol, "X"))
+		f.expectApply(false, checkCondition, "created_time")
+		f.table.On("CreateRecord", constraintsTable, mock.Anything).Return(savedCheck("Code not empty"), nil)
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, request)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("allows a check when one of its columns has no default", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(codeCol, "X"), emailCol)
+		f.expectApply(false, checkCondition, "emp_code", "email")
+		f.table.On("CreateRecord", constraintsTable, mock.Anything).Return(savedCheck("Code not empty", codeCol.ID.String(), emailCol.ID.String()), nil)
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, request)
+
+		require.NoError(t, err)
+	})
+
 	t.Run("rejects a check on a column that has a default value and adds nothing", func(t *testing.T) {
 		f := newConstraintFixture(t)
 		f.withDefaults(withDefault(codeCol, "X"))
