@@ -215,8 +215,8 @@ func (s tableManagementService) tableConstraints(schemaName string, filter dbMod
 	return constraints, nil
 }
 
-// ensureDefaultFitsKey fails when the update sets a default on a column whose unique key would
-// then have a default on all its columns. Removing or leaving the default is always allowed.
+// ensureDefaultFitsKey fails when the update sets a default on a column whose unique key or check
+// constraint would then have a default on all its columns. Removing or leaving the default is always allowed.
 func (s tableManagementService) ensureDefaultFitsKey(ctx context.Context, schemaName string, column dto.ColumnResponse, req dto.ColumnUpdate) error {
 	if req.Meta == nil || !tenant.HasDefaultValue(tenant.Column{Meta: *req.Meta}) {
 		return nil
@@ -246,7 +246,11 @@ func (s tableManagementService) ensureDefaultFitsKey(ctx context.Context, schema
 	}
 	for _, key := range keys {
 		if othersAllHaveDefault(key.ColumnIDs, columnID, byID) {
-			return app_errors.WithMessage(app_errors.UniqueKeyDefaultConflict, tenant.UniqueDefaultConflictMessage)
+			message := tenant.UniqueDefaultConflictMessage
+			if key.Type == tenant.ConstraintTypeCheck {
+				message = tenant.CheckDefaultConflictMessage
+			}
+			return app_errors.WithMessage(app_errors.UniqueKeyDefaultConflict, message)
 		}
 	}
 	return nil

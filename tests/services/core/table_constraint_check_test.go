@@ -10,6 +10,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
@@ -267,6 +268,26 @@ func TestTableConstraintService_CreateCheck(t *testing.T) {
 
 		assert.ErrorIs(t, err, app_errors.CheckExistingRows)
 		assert.Equal(t, "2 records break this condition. Fix them or change the condition.", detailedMessage(err))
+		f.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
+	})
+
+	t.Run("rejects a check on a column that has a default value and adds nothing", func(t *testing.T) {
+		f := newConstraintFixture(t)
+		f.withDefaults(withDefault(codeCol, "X"))
+		f.sql.ExpectBegin()
+		f.sql.ExpectExec(`^SET LOCAL statement_timeout`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectExec(`^SET LOCAL lock_timeout`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectExec(`ADD CONSTRAINT "ck_employee_[0-9a-f]{8}"`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectExec(`^COMMENT ON CONSTRAINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+		f.sql.ExpectQuery(`^SELECT a\.attname FROM pg_constraint`).WithArgs(employeeTable, sqlmock.AnyArg()).
+			WillReturnRows(sqlmock.NewRows([]string{"attname"}).AddRow("emp_code"))
+		// Not committed: the constraint goes away with the transaction
+		f.sql.ExpectRollback()
+
+		_, err := f.svc.Create(context.Background(), constraintSchema, request)
+
+		assert.ErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+		assert.Equal(t, tenant.CheckCreateDefaultConflictMessage, detailedMessage(err))
 		f.table.AssertNotCalled(t, "CreateRecord", mock.Anything, mock.Anything)
 	})
 

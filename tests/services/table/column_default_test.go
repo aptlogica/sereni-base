@@ -3,16 +3,21 @@ package table_test
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/aptlogica/go-postgres-rest/pkg"
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	services "github.com/aptlogica/sereni-base/internal/services/table"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func modifyColumnReq(t *testing.T, args mock.Arguments) dbModels.ModifyColumnRequest {
@@ -39,19 +44,42 @@ func TestAddColumn_AppliesMetaDefaultValue(t *testing.T) {
 		{"invalid number", "INTEGER", "1; DROP TABLE x", "", true},
 		{"invalid bool", "BOOLEAN", "maybe", "", true},
 		{"unsupported value type", "TEXT", []string{"a"}, "", true},
+		{"single select", "TEXT", "2", "'2'", false},
+		{"multi select array", "TEXT[]", []interface{}{"12", "13"}, `'{"12","13"}'`, false},
+		{"array escapes quotes", "TEXT[]", []interface{}{`a"b`, "O'Brien"}, `'{"a\"b","O''Brien"}'`, false},
+		{"array on non-multiSelect array column", "JSONB[]", []interface{}{"a"}, "", true},
+		{"array on non-array column", "TEXT", []interface{}{"a"}, "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, mockTable, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+			db, sqlMock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { db.Close() })
+			mockTable, mockModel, mockColumn := &MockTableService{}, &MockModelService{}, &MockColumnService{}
+			repo := &pkg.DatabaseService{TableService: mockTable, BulkService: &MockBulkService{}, DB: db}
+			svc := services.NewTableManagementService("postgres", repo, mockModel, mockColumn, &MockViewService{}, &MockRelationshipService{}, &MockAssetManagementService{})
 			modelID, baseID := uuid.New(), uuid.New()
-			col := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID.String(), ColumnName: "col", Title: "T", UIDT: "text", DT: helpers.StringPtr(tc.dt)}
+			uidt := "text"
+			if tc.dt == "TEXT[]" {
+				uidt = "multiSelect"
+			}
+			if tc.name == "single select" {
+				uidt = "select"
+			}
+			col := tenant.Column{ID: uuid.New(), ModelID: modelID.String(), BaseID: baseID.String(), ColumnName: "col", Title: "T", UIDT: uidt, DT: helpers.StringPtr(tc.dt)}
 			mockColumn.On("Create", mock.Anything, mock.Anything, "schema").Return(col, nil)
 			mockColumn.On("DeleteColumn", mock.Anything, "schema", col.ID.String()).Return(nil).Maybe()
 			mockModel.On("GetModelByID", mock.Anything, "schema", modelID.String()).Return(tenant.Model{ID: modelID, Alias: "tbl"}, nil)
 			mockTable.On("AddColumn", mock.Anything, mock.Anything).Return(nil)
 			mockTable.On("AlterTable", mock.Anything, mock.Anything).Return(nil)
 
-			_, err := svc.AddColumn(context.Background(), "schema", dto.AddColumnRequest{
+			if !tc.wantErr {
+				// A new column also gives its default to the records that already exist
+				sqlMock.ExpectExec(`UPDATE "schema"."tbl" SET "col" = ` + regexp.QuoteMeta(tc.want) + ` WHERE "col" IS NULL`).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+
+			_, err = svc.AddColumn(context.Background(), "schema", dto.AddColumnRequest{
 				ModelID: modelID, BaseID: baseID, Title: "T", UIDT: "text",
 				Meta: map[string]interface{}{"defaultValue": tc.value},
 			})
@@ -62,6 +90,7 @@ func TestAddColumn_AppliesMetaDefaultValue(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
+			assert.NoError(t, sqlMock.ExpectationsWereMet())
 			for _, c := range mockTable.Calls {
 				if c.Method == "AlterTable" && c.Arguments.Get(1).(dbModels.AlterTableRequest).Action == "modify_column" {
 					req := modifyColumnReq(t, c.Arguments)
@@ -157,7 +186,7 @@ func TestUpdateColumn_AppliesMetaDefaultValue(t *testing.T) {
 	})
 
 	t.Run("nil meta leaves default alone", func(t *testing.T) {
-		_, mockTable2,_, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
+		_, mockTable2, _, mockModel, mockColumn, _, _, _, svc := setupTableManagementService()
 		modelID, colID := uuid.New(), uuid.New()
 		col := tenant.Column{ID: colID, ModelID: modelID.String(), BaseID: uuid.New().String(), ColumnName: "col", UIDT: "number", DT: helpers.StringPtr("INTEGER")}
 		mockColumn.On("GetColumnByID", mock.Anything, "schema", colID.String()).Return(col, nil)

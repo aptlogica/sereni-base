@@ -382,3 +382,21 @@ func TestUpdateColumn_TypeChangeBlockedByCheckConstraint(t *testing.T) {
 	assert.Equal(t, `Age is used by the check constraint "Age 18–100". Delete it before changing the field type.`, detailedMessage(t, err))
 	mockColumn.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
+
+func TestUpdateColumn_DefaultValueConflictWithCheckConstraint(t *testing.T) {
+	_, mockTable, _, _, mockColumn, _, _, _, svc := setupTableManagementService()
+	modelID := uuid.New().String()
+	col := tenant.Column{ID: uuid.New(), ModelID: modelID, BaseID: uuid.NewString(), ColumnName: "salary", Title: "Salary", UIDT: "number", DT: helpers.StringPtr("INTEGER")}
+	mockColumn.On("GetColumnByID", mock.Anything, "schema", "cid").Return(col, nil)
+	mockColumn.On("GetColumnByModelID", mock.Anything, "schema", modelID).Return([]tenant.Column{col}, nil)
+	mockColumn.On("UpdateColumn", mock.Anything, "schema", "cid", mock.Anything).Return(tenant.Column{}, errors.New("stop"))
+	row := uniqueKeyRow(modelID, []string{col.ID.String()})
+	row["type"] = "check"
+	mockTable.On("GetTableData", guardConstraintsTable, mock.Anything).Return([]map[string]interface{}{row}, nil)
+
+	_, err := svc.UpdateColumn(context.Background(), "schema", "cid", dto.ColumnUpdate{Meta: &map[string]interface{}{"defaultValue": float64(-5)}})
+
+	assert.ErrorIs(t, err, app_errors.UniqueKeyDefaultConflict)
+	assert.Equal(t, tenant.CheckDefaultConflictMessage, detailedMessage(t, err))
+	mockColumn.AssertNotCalled(t, "UpdateColumn", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
