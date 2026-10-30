@@ -2,4 +2,4 @@ antivirus-service https://github.com/aptlogica/sereni-antivirus-clamav v0.3.0
 storage-service https://github.com/aptlogica/sereni-storage-provider v0.3.0
 auth-service https://github.com/aptlogica/sereni-jwt-provider v0.3.0
 email-service https://github.com/aptlogica/sereni-email-smtp v0.3.0
-base-ui https://github.com/aptlogica/base-ui v0.3.0
+base-ui https://github.com/aptlogica/base-ui v0.3.1
