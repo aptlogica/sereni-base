@@ -122,3 +122,9 @@ func HasDefaultValue(c Column) bool {
 
 // UniqueDefaultConflictMessage is shown when a unique key and default values can't be combined
 const UniqueDefaultConflictMessage = "This column has a UNIQUE constraint. Its default value may be duplicated when inserting multiple rows. Remove the default value or the UNIQUE constraint to avoid duplicate-value errors."
+
+// CheckDefaultConflictMessage is shown when a check constraint and default values can't be combined
+const CheckDefaultConflictMessage = "This column has a CHECK constraint. Its default value may fail the check rule. Remove the default value or the CHECK constraint to avoid check-violation errors."
+
+// CheckCreateDefaultConflictMessage is shown when a check constraint is added on columns that all have a default value
+const CheckCreateDefaultConflictMessage = "This column has a default value that may fail this check rule. Remove the default value from the field or cancel this CHECK constraint to avoid check-violation errors."

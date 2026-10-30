@@ -735,20 +735,9 @@ func (s tableManagementService) AddColumn(
 		return dto.ColumnResponse{}, err
 	}
 
-	if _, hasDefault := meta[metaDefaultValueKey]; hasDefault {
-		if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, meta); err != nil {
-			s.rollbackLinkColumn(ctx, schemaName, column, model.Alias)
-			return dto.ColumnResponse{}, err
-		}
-	}
-
-	// A new auto uuid field gets a value in every existing record
-	if idCfg.Mode == constant.IDModeAuto {
-		col := AutoUUIDColumn{ColumnName: column.ColumnName, Version: idCfg.Version}
-		if _, err := s.backfillUUIDs(ctx, schemaName, model.Alias, col); err != nil {
-			s.rollbackLinkColumn(ctx, schemaName, column, model.Alias)
-			return dto.ColumnResponse{}, err
-		}
+	if err := s.initNewColumnValues(ctx, schemaName, model.Alias, column, meta, idCfg); err != nil {
+		s.rollbackLinkColumn(ctx, schemaName, column, model.Alias)
+		return dto.ColumnResponse{}, err
 	}
 
 	var columnResponse dto.ColumnResponse
@@ -759,6 +748,35 @@ func (s tableManagementService) AddColumn(
 	}
 
 	return columnResponse, nil
+}
+
+// initNewColumnValues sets the DB default of a new column, gives it to the existing records of a
+// select/multiSelect column, and fills a new auto uuid field in every existing record.
+func (s tableManagementService) initNewColumnValues(
+	ctx context.Context,
+	schemaName string,
+	alias string,
+	column tenant.Column,
+	meta map[string]interface{},
+	idCfg dto.IDGeneration,
+) error {
+	if _, hasDefault := meta[metaDefaultValueKey]; hasDefault {
+		if err := s.applyColumnDefault(schemaName, alias, column.ColumnName, column.UIDT, *column.DT, meta); err != nil {
+			return err
+		}
+		if err := s.fillNewColumnDefault(ctx, schemaName, alias, column.ColumnName, column.UIDT, *column.DT, meta); err != nil {
+			return err
+		}
+	}
+
+	// A new auto uuid field gets a value in every existing record
+	if idCfg.Mode == constant.IDModeAuto {
+		col := AutoUUIDColumn{ColumnName: column.ColumnName, Version: idCfg.Version}
+		if _, err := s.backfillUUIDs(ctx, schemaName, alias, col); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s tableManagementService) addColumnWithRelation(
@@ -1753,6 +1771,8 @@ func (s tableManagementService) updatePlainColumn(
 		}
 	}
 
+	removed := s.removedSelectOptions(columnData, &req)
+
 	column, err := s.columnsService.UpdateColumn(ctx, schemaName, id, req)
 	if err != nil {
 		return tenant.Column{}, err
@@ -1766,6 +1786,12 @@ func (s tableManagementService) updatePlainColumn(
 		return tenant.Column{}, err
 	}
 
+	if len(removed) > 0 {
+		if err := s.clearOptionsInRows(ctx, schemaName, column, removed); err != nil {
+			return tenant.Column{}, err
+		}
+	}
+
 	if startsAuto {
 		if err := s.fillOnAutoStart(ctx, schemaName, id, columnData, column, idCfg, req.Backfill); err != nil {
 			return tenant.Column{}, err
@@ -1773,6 +1799,31 @@ func (s tableManagementService) updatePlainColumn(
 	}
 
 	return column, nil
+}
+
+// removedSelectOptions returns the options a select/multiSelect update deletes, and
+// strips them from the default in req.Meta so they aren't saved as the default.
+func (s tableManagementService) removedSelectOptions(columnData dto.ColumnResponse, req *dto.ColumnUpdate) []string {
+	if req.Meta == nil || (columnData.UIDT != "select" && columnData.UIDT != "multiSelect") {
+		return nil
+	}
+	if req.UIDT != nil && *req.UIDT != "" && *req.UIDT != columnData.UIDT {
+		return nil
+	}
+	removed := removedOptions(columnData.Meta, *req.Meta)
+	if len(removed) > 0 {
+		dropRemovedFromDefault(*req.Meta, removed)
+	}
+	return removed
+}
+
+// clearOptionsInRows empties the cells that still hold a deleted option.
+func (s tableManagementService) clearOptionsInRows(ctx context.Context, schemaName string, column tenant.Column, removed []string) error {
+	model, err := s.modelService.GetModelByID(ctx, schemaName, column.ModelID)
+	if err != nil {
+		return err
+	}
+	return s.clearRemovedOptionValues(ctx, schemaName, model.Alias, column.ColumnName, column.UIDT, removed)
 }
 
 // prepareIDGeneration checks the uuid settings of a column update and stores them with defaults filled in.
@@ -1857,7 +1908,7 @@ func (s tableManagementService) applyMetaDefaultIfPresent(
 	if err != nil {
 		return err
 	}
-	if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, *column.DT, *req.Meta); err != nil {
+	if err := s.applyColumnDefault(schemaName, model.Alias, column.ColumnName, column.UIDT, *column.DT, *req.Meta); err != nil {
 		s.revertColumnMetadata(ctx, schemaName, id, columnData)
 		return err
 	}

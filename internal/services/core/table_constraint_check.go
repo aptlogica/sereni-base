@@ -222,10 +222,28 @@ func (s *tableConstraintService) applyCheck(table, name string, in dto.CheckInpu
 	if err != nil {
 		return nil, err
 	}
+	// Nothing is committed yet, so the constraint is dropped again with the transaction
+	if err := ensureNoCheckDefaultConflict(columnIDs, columns); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, app_errors.WithMessage(app_errors.ConstraintFailed, app_errors.PostgresMessage(err))
 	}
 	return columnIDs, nil
+}
+
+// ensureNoCheckDefaultConflict fails when every column the check uses has a default value: a record
+// without values would get the defaults, which may break the rule
+func ensureNoCheckDefaultConflict(columnIDs []string, columns map[string]tenant.Column) error {
+	if len(columnIDs) == 0 {
+		return nil
+	}
+	for _, id := range columnIDs {
+		if !tenant.HasDefaultValue(columns[id]) {
+			return nil
+		}
+	}
+	return app_errors.WithMessage(app_errors.UniqueKeyDefaultConflict, tenant.CheckCreateDefaultConflictMessage)
 }
 
 // existingRowsError says how many records break the condition
