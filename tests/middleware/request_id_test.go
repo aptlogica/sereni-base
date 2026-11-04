@@ -3,6 +3,8 @@ package middleware_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +37,16 @@ func TestRequestID(t *testing.T) {
 			name:          "trims whitespace from provided ID",
 			headerValue:   "  trimmed-id  ",
 			expectNewUUID: false,
+		},
+		{
+			name:          "replaces an ID with characters that are unsafe in logs",
+			headerValue:   "id with spaces;and=symbols",
+			expectNewUUID: true,
+		},
+		{
+			name:          "replaces an ID longer than 64 characters",
+			headerValue:   strings.Repeat("a", 65),
+			expectNewUUID: true,
 		},
 	}
 
@@ -73,9 +85,9 @@ func TestRequestID(t *testing.T) {
 				if capturedRequestID == "" {
 					t.Error("Expected new UUID to be generated")
 				}
-				// UUID format validation: basic length check
-				if len(capturedRequestID) != 36 {
-					t.Errorf("Expected UUID format (36 chars), got %d chars", len(capturedRequestID))
+				// req_ + UUID without dashes
+				if !regexp.MustCompile(`^req_[0-9a-f]{32}$`).MatchString(capturedRequestID) {
+					t.Errorf("Expected req_ + 32 hex characters, got %q", capturedRequestID)
 				}
 			} else {
 				expected := "custom-request-id-123"

@@ -19,9 +19,11 @@ import (
 	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
+	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/platform"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/router"
 	"github.com/aptlogica/sereni-base/internal/scripts"
@@ -50,9 +52,15 @@ type App struct {
 	router       *gin.Engine
 	authProvider auth.AuthProvider
 	dbService    *pkg.DatabaseService
+	publicAPI    *platform.API
 }
 
 func New(cfg *config.Config) (*App, error) {
+	// The public API has no authentication yet, so it must never be open in production
+	if cfg.PublicAPI.OpenAccess && (cfg.Server.Env == "prod" || cfg.Server.Env == "production") {
+		return nil, fmt.Errorf("PUBLIC_API_OPEN_ACCESS must be false when SERVER_ENV is %s", cfg.Server.Env)
+	}
+
 	// Keep Swagger runtime metadata aligned with active server config.
 	host := cfg.Server.Host
 	if host == "" || host == "0.0.0.0" {
@@ -219,6 +227,17 @@ func New(cfg *config.Config) (*App, error) {
 	)
 
 	organizationService := services.NewOrganizationService(dbService)
+	workspaceAPIService := platform.NewWorkspaceAPIService(dbService)
+
+	// Workspace public API, open without authentication: only built when PUBLIC_API_OPEN_ACCESS is on
+	var publicAPI *platform.API
+	if cfg.PublicAPI.OpenAccess {
+		recordWriter, ok := tableManagementService.(platform.RecordWriter)
+		if !ok {
+			return nil, fmt.Errorf("table management service does not support public API writes")
+		}
+		publicAPI = platform.NewAPI(dbService.DB, appConstant.MasterDatabase, recordWriter, cfg.PublicAPI.RateLimitPerMinute)
+	}
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService, workspaceManagementService, baseManagementService)
@@ -231,6 +250,7 @@ func New(cfg *config.Config) (*App, error) {
 	automationHandler := handlers.NewAutomationHandler(automationService)
 	tableConstraintHandler := handlers.NewTableConstraintHandler(tableConstraintService)
 	primaryKeyHandler := handlers.NewPrimaryKeyHandler(primaryKeyService)
+	workspaceAPIHandler := handlers.NewWorkspaceAPIHandler(workspaceAPIService)
 
 
 
@@ -245,6 +265,8 @@ func New(cfg *config.Config) (*App, error) {
 		Automation:      automationHandler,
 		TableConstraint: tableConstraintHandler,
 		PrimaryKey:   primaryKeyHandler,
+		WorkspaceAPI: workspaceAPIHandler,
+		PublicAPI:    publicAPI,
 
 	}
 
@@ -303,6 +325,7 @@ func New(cfg *config.Config) (*App, error) {
 		router:       r,
 		authProvider: authProvider,
 		dbService:    dbService,
+		publicAPI:    publicAPI,
 	}, nil
 }
 
@@ -313,6 +336,11 @@ func (a *App) Run() error {
 	}
 
 	runBeforeServer(a.dbService, a.authProvider, a.config)
+
+	// Idempotency keys of the public API are kept for 24 hours
+	if a.publicAPI != nil {
+		a.publicAPI.StartIdempotencyCleanup(time.Hour)
+	}
 
 	fmt.Printf("🚀 Serenibase server starting on %s\n", a.server.Addr)
 	// fmt.Printf("📚 API Documentation available at http://%s/api/v1/health\n", a.server.Addr)
@@ -340,6 +368,10 @@ func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, 
 	// Register predefined owner from configuration
 	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
 		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)
+	}
+	// Test workspaces for the public API, only while it is open without authentication
+	if cfg.PublicAPI.OpenAccess && cfg.PublicAPI.SeedWorkspaces != "" {
+		scripts.SeedAPIWorkspaces(repo, cfg.PublicAPI.SeedWorkspaces)
 	}
 }
 

@@ -51,6 +51,7 @@ var ErrorCodes = MergeMaps(
 	PrimaryKeyErrorCodes,
 	TableConstraintErrorCodes,
 	UUIDErrorCodes,
+	WorkspaceAPIErrorCodes,
 )
 
 var SuccessCodes = MergeMaps(
@@ -66,6 +67,7 @@ var SuccessCodes = MergeMaps(
 	AutomationSuccessCodes,
 	PrimaryKeySuccessCodes,
 	TableConstraintSuccessCodes,
+	WorkspaceAPISuccessCodes,
 )
 
 // 	CoreErrorCodes,

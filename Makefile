@@ -40,6 +40,7 @@ help:
 	@echo "    make test               - Run all tests"
 	@echo "    make test-unit          - Run unit tests only"
 	@echo "    make test-integration   - Run integration tests (requires services running)"
+	@echo "    make test-public-api    - Run the workspace public API against Postgres (needs PLATFORM_TEST_PG_PASSWORD)"
 	@echo "    make test-coverage      - Run tests with coverage report"
 	@echo ""
 	@echo "  Docker Management:"
@@ -120,6 +121,14 @@ ifeq ($(OS),Windows_NT)
 else
 	go test -v -tags=integration -timeout=10m ./tests/integration_test.go
 endif
+
+# Run the workspace public API against a real Postgres (throwaway schema). PLATFORM_TEST_PG_HOST, _PORT, _USER
+# and _DB default to localhost, 5432, postgres and serenibase.
+test-public-api: ## Run the public API end-to-end test against Postgres
+ifeq ($(PLATFORM_TEST_PG_PASSWORD),)
+	$(error Set PLATFORM_TEST_PG_PASSWORD, e.g. make test-public-api PLATFORM_TEST_PG_PASSWORD=postgres)
+endif
+	go test -v -count=1 -timeout=5m ./tests/platform/ -run TestPublicAPIAgainstPostgres
 
 # ============================================================================
 # Docker Management Commands

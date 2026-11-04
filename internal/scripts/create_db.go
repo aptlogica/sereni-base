@@ -44,6 +44,16 @@ func createTableUsingSchema(repo *pkg.DatabaseService, schema models.CreateTable
 	}
 }
 
+// addCheckConstraints runs ALTER TABLE ... ADD CONSTRAINT statements, ignoring constraints that
+// already exist from an earlier start.
+func addCheckConstraints(repo *pkg.DatabaseService, statements []string) {
+	for _, stmt := range statements {
+		if _, err := repo.DB.Exec(stmt); err != nil && !contains(err.Error(), "already exists") {
+			fmt.Printf("Error adding constraint: %v\n", err)
+		}
+	}
+}
+
 // createFunctions installs DefinedFunctions with CREATE OR REPLACE, so changed function bodies reach
 // existing databases on the next start. Superseded signatures are dropped first.
 func createFunctions(repo *pkg.DatabaseService, schemaName string) error {
@@ -91,6 +101,9 @@ func CreateMasterSchema(dbService *pkg.DatabaseService) {
 	// serenibase tables
 	createTableUsingSchema(dbService, tenant.Assets{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Workspace{}.TableSchema(appConstant.MasterDatabase))
+	createTableUsingSchema(dbService, tenant.WorkspaceAPI{}.TableSchema(appConstant.MasterDatabase))
+	addCheckConstraints(dbService, tenant.WorkspaceAPI{}.CheckConstraints(appConstant.MasterDatabase))
+	createTableUsingSchema(dbService, tenant.APIIdempotencyKey{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Base{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.WorkspaceMember{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Model{}.TableSchema(appConstant.MasterDatabase))
@@ -101,6 +114,10 @@ func CreateMasterSchema(dbService *pkg.DatabaseService) {
 	createTableUsingSchema(dbService, tenant.TableConstraint{}.TableSchema(appConstant.MasterDatabase))
 
 	createFunctions(dbService, appConstant.MasterDatabase)
+
+	if err := InstallSchemaVersionTriggers(dbService, appConstant.MasterDatabase); err != nil {
+		fmt.Printf("⚠ Warning: %v\n", err)
+	}
 
 	if err := MigrateLinkKeys(dbService, appConstant.MasterDatabase); err != nil {
 		fmt.Printf("⚠ Warning: link key migration failed: %v\n", err)

@@ -13,10 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequestLogger logs all requests with timing information
+// PublicWorkspaceIDKey is the gin context key holding the workspace public ID (ws_...) on public API requests
+const PublicWorkspaceIDKey = "public_workspace_id"
+
+// RequestLogger logs all requests with timing information, the request ID and, on public API
+// requests, the workspace public ID
 func RequestLogger() gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		return fmt.Sprintf("[%s] %s %s %d %s \"%s\" %s \"%s\" %s\n",
+		line := fmt.Sprintf("[%s] %s %s %d %s \"%s\" %s \"%s\" %s",
 			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
 			param.ClientIP,
 			param.Method,
@@ -27,6 +31,13 @@ func RequestLogger() gin.HandlerFunc {
 			param.Request.UserAgent(),
 			param.ErrorMessage,
 		)
+		if requestID, ok := param.Keys[RequestIDKey].(string); ok && requestID != "" {
+			line += " request_id=" + requestID
+		}
+		if publicID, ok := param.Keys[PublicWorkspaceIDKey].(string); ok && publicID != "" {
+			line += " ws=" + publicID
+		}
+		return line + "\n"
 	})
 }
 

@@ -57,19 +57,30 @@ func RequestSizeLimit(maxSize int64) gin.HandlerFunc {
 	})
 }
 
-// RateLimiter provides basic rate limiting
+// RateLimiter provides basic rate limiting per client IP
 func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
+	return RateLimiterBy(func(c *gin.Context) string { return c.ClientIP() }, requestsPerMinute,
+		func(c *gin.Context, _ time.Duration) {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded",
+			})
+			c.Abort()
+		})
+}
+
+// RateLimiterBy allows requestsPerMinute requests per key in any 60 second window. Over the limit it
+// calls onLimit, which must write the response and abort, with the time until the next request is allowed.
+func RateLimiterBy(key func(*gin.Context) string, requestsPerMinute int, onLimit func(c *gin.Context, retryAfter time.Duration)) gin.HandlerFunc {
 	// This is a simple in-memory rate limiter
 	// For production, consider using external rate limiting solutions
 	clients := make(map[string][]int64)
 	var mu sync.Mutex
 
 	return gin.HandlerFunc(func(c *gin.Context) {
-		clientIP := c.ClientIP()
-		// now := gin.H{"timestamp": nil}["timestamp"].(int64)
+		clientKey := key(c)
 		now := time.Now().Unix()
 		mu.Lock()
-		if requests, exists := clients[clientIP]; exists {
+		if requests, exists := clients[clientKey]; exists {
 			// Remove old requests (older than 1 minute)
 			var validRequests []int64
 			for _, timestamp := range requests {
@@ -79,19 +90,21 @@ func RateLimiter(requestsPerMinute int) gin.HandlerFunc {
 			}
 
 			if len(validRequests) >= requestsPerMinute {
-				clients[clientIP] = validRequests
+				clients[clientKey] = validRequests
 				mu.Unlock()
-				c.JSON(http.StatusTooManyRequests, gin.H{
-					"error": "Rate limit exceeded",
-				})
-				c.Abort()
+				// The oldest request in the window leaves it first
+				retryAfter := time.Minute
+				if len(validRequests) > 0 {
+					retryAfter = time.Duration(60-(now-validRequests[0])) * time.Second
+				}
+				onLimit(c, retryAfter)
 				return
 			}
 
 			validRequests = append(validRequests, now)
-			clients[clientIP] = validRequests
+			clients[clientKey] = validRequests
 		} else {
-			clients[clientIP] = []int64{now}
+			clients[clientKey] = []int64{now}
 		}
 		mu.Unlock()
 

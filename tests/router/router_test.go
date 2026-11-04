@@ -75,6 +75,7 @@ func createMockHandlers() router.Handlers {
 	tableHandler := &handlers.TableHandler{}
 	userHandler := &handlers.UserHandler{}
 	organizationHandler := &handlers.OrganizationHandler{}
+	workspaceAPIHandler := &handlers.WorkspaceAPIHandler{}
 
 	return router.Handlers{
 		Auth:         authHandler,
@@ -84,6 +85,7 @@ func createMockHandlers() router.Handlers {
 		Table:        tableHandler,
 		User:         userHandler,
 		Organization: organizationHandler,
+		WorkspaceAPI: workspaceAPIHandler,
 	}
 }
 
@@ -265,6 +267,8 @@ func TestWorkspaceRoutesSetup(t *testing.T) {
 		"/api/v1/workspace/:id/bulk-add-members",
 		"/api/v1/workspace/access/:id",
 		"/api/v1/workspace/:id/bases",
+		"/api/v1/workspace/:id/api",
+		"/api/v1/workspace/:id/api/enable",
 	}
 
 	for _, expectedRoute := range workspaceRoutes {

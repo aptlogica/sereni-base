@@ -7,6 +7,7 @@ package app_errors
 
 import (
 	"errors"
+	"fmt"
 
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -143,7 +144,24 @@ var (
 	ErrWorkspaceInsertion     = errors.New("failed to insert workspace")
 	WorkspaceMemberNotFound   = errors.New("workspace member not found")
 	ErrUserAlreadyInWorkspace = errors.New("user already in workspace")
+	WorkspaceNotFound         = errors.New("workspace not found")
 )
+
+// workspace API
+var (
+	WorkspaceAPIPublicIDFailed = errors.New("could not generate a unique workspace API ID")
+)
+
+// RecordWriteError is a record of a multi-record write that could not be saved; Index is its position in the
+// request. Nothing in the request is written when one record fails.
+type RecordWriteError struct {
+	Index int
+	Err   error
+}
+
+func (e *RecordWriteError) Error() string { return fmt.Sprintf("record %d: %v", e.Index, e.Err) }
+
+func (e *RecordWriteError) Unwrap() error { return e.Err }
 
 // base management
 var (

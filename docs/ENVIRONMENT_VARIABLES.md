@@ -80,6 +80,13 @@ These variables should NOT be prompted - they are automatically configured based
 - `CORS_ALLOWED_HEADERS=Content-Type,...`
 - `CORS_ALLOW_CREDENTIALS=true`
 
+### Public API (Defaults)
+The workspace public API (`/api/v1/{ws}`), see [API_PLATFORM_FOUNDATION.md](API_PLATFORM_FOUNDATION.md).
+- `PUBLIC_API_OPEN_ACCESS=false` - Registers the public API routes **without authentication**. Dev only: the server refuses to start with it on when `SERVER_ENV=prod`
+- `PUBLIC_API_RATE_LIMIT_PER_MINUTE=600` - Requests per minute per workspace
+- `PUBLIC_API_SEED_WORKSPACES=` - Comma-separated workspace slugs whose API is enabled at startup (only when open access is on)
+- The `CORS_*` settings don't apply to the public API: `/api/v1/ws_...` is open to every origin.
+
 ### Logging (Defaults)
 - `LOG_LEVEL=info`
 - `LOG_FILE=app.log`

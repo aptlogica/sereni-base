@@ -27,6 +27,7 @@ type Config struct {
 	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
 	CORS                       CORSConfig                       `mapstructure:"cors"`
 	Database                   DatabaseConfig                   `mapstructure:"database"`
+	PublicAPI                  PublicAPIConfig                  `mapstructure:"public_api"`
 }
 
 type ServerConfig struct {
@@ -122,6 +123,16 @@ type CORSConfig struct {
 	AllowCredentials bool   `mapstructure:"allow_credentials"`
 }
 
+// PublicAPIConfig holds the workspace public API (/api/v1/{ws}) settings
+type PublicAPIConfig struct {
+	// OpenAccess registers the public API routes without authentication. Dev only: the server
+	// refuses to start with it on when SERVER_ENV is prod.
+	OpenAccess         bool `mapstructure:"open_access"`
+	RateLimitPerMinute int  `mapstructure:"rate_limit_per_minute"`
+	// Comma-separated workspace slugs whose API is enabled at startup when open access is on
+	SeedWorkspaces string `mapstructure:"seed_workspaces"`
+}
+
 func Load() (*Config, error) {
 	// Load .env file
 	_ = godotenv.Load()
@@ -196,6 +207,11 @@ func Load() (*Config, error) {
 	viper.BindEnv("cors.allowed_headers", "CORS_ALLOWED_HEADERS")
 	viper.BindEnv("cors.allow_credentials", "CORS_ALLOW_CREDENTIALS")
 
+	// Public API Config
+	viper.BindEnv("public_api.open_access", "PUBLIC_API_OPEN_ACCESS")
+	viper.BindEnv("public_api.rate_limit_per_minute", "PUBLIC_API_RATE_LIMIT_PER_MINUTE")
+	viper.BindEnv("public_api.seed_workspaces", "PUBLIC_API_SEED_WORKSPACES")
+
 	// Set defaults
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -260,8 +276,12 @@ func Load() (*Config, error) {
 
 	viper.SetDefault("cors.allowed_origins", "*")
 	viper.SetDefault("cors.allowed_methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
-	viper.SetDefault("cors.allowed_headers", "Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization,accept,origin,Cache-Control,X-Requested-With,schema,workspace,base")
+	viper.SetDefault("cors.allowed_headers", "Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization,accept,origin,Cache-Control,X-Requested-With,schema,workspace,base,Idempotency-Key,X-Request-Id")
 	viper.SetDefault("cors.allow_credentials", true)
+
+	viper.SetDefault("public_api.open_access", false)
+	viper.SetDefault("public_api.rate_limit_per_minute", 600)
+	viper.SetDefault("public_api.seed_workspaces", "")
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
