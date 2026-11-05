@@ -6,6 +6,7 @@
 package platform
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -125,20 +126,28 @@ func (a *API) getTable(c *gin.Context) {
 
 // linkLookupFields lists the lookups that go through a link field, as keyed in its objects
 func (a *API) linkLookupFields(c *gin.Context, tc *tableContext, link *field) ([]lookupOut, error) {
-	var lookups []*field
-	for _, f := range tc.fields {
-		if f.Type == typeLookup && strings.EqualFold(f.LookupLinkColumnID, link.ID) {
-			lookups = append(lookups, f)
-		}
-	}
-	_, targets, err := a.lookupTargets(c, tc.ws, link, lookups)
+	targets, keys, err := a.linkObjectKeys(c, tc.ws, tc.fields, link)
 	if err != nil {
 		return nil, err
 	}
-	keys := lookupKeys(targets, false)
 	out := make([]lookupOut, len(targets))
 	for i, tf := range targets {
 		out[i] = lookupOut{Key: keys[tf], ID: tf.PublicID(), Name: tf.Name, Type: tf.APIType()}
 	}
 	return out, nil
+}
+
+// linkObjectKeys returns the looked-up fields a link field's objects carry besides id, with their keys by name
+func (a *API) linkObjectKeys(ctx context.Context, ws workspaceRef, fields []*field, link *field) ([]*field, map[*field]string, error) {
+	var lookups []*field
+	for _, f := range fields {
+		if f.Type == typeLookup && strings.EqualFold(f.LookupLinkColumnID, link.ID) {
+			lookups = append(lookups, f)
+		}
+	}
+	_, targets, err := a.lookupTargets(ctx, ws, link, lookups)
+	if err != nil {
+		return nil, nil, err
+	}
+	return targets, lookupKeys(targets, false), nil
 }

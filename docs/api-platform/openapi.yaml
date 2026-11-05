@@ -13,6 +13,10 @@ info:
 
     Every response is `{data, error, meta}`; `meta.request_id` equals the `X-Request-Id` header.
 
+    This file is the generic contract. Each workspace also serves its own spec, with a typed path and record
+    type for every table, at `/api/v1/{ws}/openapi.json` (`?base=` limits it to one base), and shows it at
+    `/api/v1/{ws}/docs` (Swagger UI) and `/api/v1/{ws}/redoc` (ReDoc).
+
     CORS is open: any origin may call the API from a browser (`Access-Control-Allow-Origin: *`, no credentials),
     and `X-Request-Id`, `Retry-After` and `Idempotent-Replayed` are readable.
     See [README.md](README.md) for a quick start and `../API_PLATFORM_FOUNDATION.md` for the design.

@@ -1,0 +1,572 @@
+openapi: 3.0.3
+info:
+  title: SereniBase Workspace API
+  version: "1.0.0-stage1"
+  description: |
+    Read and write the records of a SereniBase workspace from your own apps.
+
+    **Development only:** there is no authentication yet. The API exists only when the server runs with
+    `PUBLIC_API_OPEN_ACCESS=true`, which is refused when `SERVER_ENV=prod`. API keys come with the security stage.
+
+    Bases, tables and fields can be named (exact, case-sensitive, URL-encoded in paths) or given by ID
+    (`bse_`, `tbl_`, `fld_` + 32 hex characters). Records are `rec_` + an integer.
+
+    Every response is `{data, error, meta}`; `meta.request_id` equals the `X-Request-Id` header.
+
+    This file is the generic contract. Each workspace also serves its own spec, with a typed path and record
+    type for every table, at `/api/v1/{ws}/openapi.json` (`?base=` limits it to one base), and shows it at
+    `/api/v1/{ws}/docs` (Swagger UI) and `/api/v1/{ws}/redoc` (ReDoc).
+
+    CORS is open: any origin may call the API from a browser (`Access-Control-Allow-Origin: *`, no credentials),
+    and `X-Request-Id`, `Retry-After` and `Idempotent-Replayed` are readable.
+    See [README.md](README.md) for a quick start and `../API_PLATFORM_FOUNDATION.md` for the design.
+servers:
+  - url: http://localhost:8080/api/v1/{ws}
+    variables:
+      ws:
+        default: ws_8f3k2m9qx7
+        description: The workspace's public ID, shown in the app under Home → Workspace API.
+
+# No authentication yet (development only). API keys add a security scheme here in the security stage.
+security: []
+
+tags:
+  - name: Schema
+    description: Bases, tables and fields of the workspace (read-only; set them up in the SereniBase app)
+  - name: Records
+    description: Read and write the records of a table
+
+paths:
+  /bases:
+    get:
+      tags: [Schema]
+      summary: List bases
+      operationId: listBases
+      responses:
+        "200":
+          description: The workspace's active bases
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Base" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /bases/{base}/tables:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+    get:
+      tags: [Schema]
+      summary: List tables in a base
+      operationId: listTables
+      responses:
+        "200":
+          description: The base's tables, in the app's order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Table" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/AmbiguousName" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /bases/{base}/tables/{table}:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+      - $ref: "#/components/parameters/Table"
+    get:
+      tags: [Schema]
+      summary: Get a table with its fields
+      operationId: getTable
+      responses:
+        "200":
+          description: The table and its fields, in the table's field order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TableDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/AmbiguousName" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /bases/{base}/tables/{table}/records:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+      - $ref: "#/components/parameters/Table"
+    get:
+      tags: [Records]
+      summary: List records
+      operationId: listRecords
+      description: |
+        Filters use `filter[Field]=value` (equals) or `filter[Field][operator]=value` and are combined with AND.
+        Operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in` (comma-separated), `contains` (text: case-insensitive
+        substring; multi select: has the option; links: links to the record ID), `is_null` (`true`/`false`).
+        In `select`, `sort` and `filter`, `id`, `created_at` and `updated_at` mean the record's own values.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: "`meta.next_cursor` of the previous page; send the same filter and sort."
+          schema: { type: string }
+        - name: select
+          in: query
+          description: Comma-separated field names or IDs to return.
+          schema: { type: string }
+          example: Name,Price
+        - name: sort
+          in: query
+          description: Comma-separated field names or IDs; `-` for descending. `id` is always the last tie-breaker.
+          schema: { type: string }
+          example: -created_at,Name
+        - name: filter
+          in: query
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties: true
+          example: { Status: Active }
+        - $ref: "#/components/parameters/Keys"
+      responses:
+        "200":
+          description: A page of records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, error, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Record" }
+                  error: { type: object, nullable: true }
+                  meta: { $ref: "#/components/schemas/ListMeta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/AmbiguousName" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    post:
+      tags: [Records]
+      summary: Create one or many records
+      operationId: createRecords
+      description: |
+        `{"fields": {...}}` creates one record and returns it; `{"records": [{"fields": {...}}]}` creates up to 100
+        and returns them in order. All or nothing. Link fields can only be set when creating one record.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Keys"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/FieldsInput"
+                - type: object
+                  required: [records]
+                  additionalProperties: false
+                  properties:
+                    records:
+                      type: array
+                      minItems: 1
+                      maxItems: 100
+                      items: { $ref: "#/components/schemas/FieldsInput" }
+            examples:
+              one: { value: { fields: { Name: Asha, Status: Active, Price: 499, Customer: [rec_12] } } }
+              many: { value: { records: [{ fields: { Name: Ravi } }, { fields: { Name: Meera } }] } }
+      responses:
+        "201":
+          description: The created record, or the created records
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - $ref: "#/components/schemas/Record"
+                          - type: array
+                            items: { $ref: "#/components/schemas/Record" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    patch:
+      tags: [Records]
+      summary: Update many records
+      operationId: updateRecords
+      description: Up to 100 records; only the fields sent change. All or nothing; an ID that doesn't exist is 404. Link fields can't be set here.
+      parameters:
+        - $ref: "#/components/parameters/Keys"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [records]
+              additionalProperties: false
+              properties:
+                records:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [id]
+                    additionalProperties: false
+                    properties:
+                      id: { $ref: "#/components/schemas/RecordID" }
+                      fields: { $ref: "#/components/schemas/Fields" }
+      responses:
+        "200":
+          description: The updated records, in order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Record" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /bases/{base}/tables/{table}/records/{record}:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+      - $ref: "#/components/parameters/Table"
+      - name: record
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/RecordID" }
+    get:
+      tags: [Records]
+      summary: Get one record
+      operationId: getRecord
+      parameters:
+        - $ref: "#/components/parameters/Keys"
+      responses:
+        "200":
+          description: The record
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Record" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    patch:
+      tags: [Records]
+      summary: Update one record
+      operationId: updateRecord
+      description: Only the fields sent change. A link field's value replaces its links.
+      parameters:
+        - $ref: "#/components/parameters/Keys"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FieldsInput" }
+      responses:
+        "200":
+          description: The updated record
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Record" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    delete:
+      tags: [Records]
+      summary: Delete one record
+      operationId: deleteRecord
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Deleted" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /bases/{base}/tables/{table}/records/delete:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+      - $ref: "#/components/parameters/Table"
+    post:
+      tags: [Records]
+      summary: Delete many records
+      operationId: deleteRecords
+      description: Up to 100 IDs. If any doesn't exist, nothing is deleted and the response is 404 listing the missing IDs.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              additionalProperties: false
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { $ref: "#/components/schemas/RecordID" }
+      responses:
+        "200":
+          description: Deleted, in order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+components:
+  parameters:
+    Base:
+      name: base
+      in: path
+      required: true
+      description: Base name (URL-encoded) or ID (`bse_...`)
+      schema: { type: string }
+    Table:
+      name: table
+      in: path
+      required: true
+      description: Table name (URL-encoded) or ID (`tbl_...`)
+      schema: { type: string }
+    Keys:
+      name: keys
+      in: query
+      description: Key `fields` by field name (default) or by field ID.
+      schema: { type: string, enum: [name, id] }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: A retry with the same key and body replays the first response (24 hours).
+      schema: { type: string, maxLength: 255 }
+
+  headers:
+    RetryAfter:
+      description: Seconds until the next request is allowed
+      schema: { type: integer }
+
+  schemas:
+    RecordID:
+      type: string
+      pattern: "^rec_[1-9][0-9]*$"
+      example: rec_1042
+    Meta:
+      type: object
+      required: [request_id]
+      properties:
+        request_id: { type: string, example: req_6f1c2d3e4f5a67b8c9d0e1f2a3b4c5d6 }
+    ListMeta:
+      allOf:
+        - $ref: "#/components/schemas/Meta"
+        - type: object
+          required: [next_cursor, has_more, limit]
+          properties:
+            next_cursor: { type: string, nullable: true }
+            has_more: { type: boolean }
+            limit: { type: integer }
+    Envelope:
+      type: object
+      required: [data, error, meta]
+      properties:
+        data: {}
+        error: { type: object, nullable: true }
+        meta: { $ref: "#/components/schemas/Meta" }
+    ErrorEnvelope:
+      type: object
+      required: [data, error, meta]
+      properties:
+        data: { type: object, nullable: true }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error]
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  index: { type: integer, description: Position of the record in a bulk request }
+                  field: { type: string }
+                  id: { type: string }
+                  issue: { type: string }
+        meta: { $ref: "#/components/schemas/Meta" }
+    Base:
+      type: object
+      properties:
+        id: { type: string, example: bse_3f2a9c1e7b4d4e8a9c3b1d2e3f4a5b6c }
+        name: { type: string }
+    Table:
+      type: object
+      properties:
+        id: { type: string, example: tbl_3f2a9c1e7b4d4e8a9c3b1d2e3f4a5b6c }
+        name: { type: string }
+    Field:
+      type: object
+      required: [id, name, type, read_only]
+      properties:
+        id: { type: string, example: fld_3f2a9c1e7b4d4e8a9c3b1d2e3f4a5b6c }
+        name: { type: string }
+        type:
+          type: string
+          enum: [text, long_text, email, url, phone_number, number, decimal, currency, percent, rating, year, date,
+                 date_time, time, duration, checkbox, single_select, multi_select, json, uuid, links, lookup,
+                 attachment, user, formula, created_time, last_modified_time, created_by, last_modified_by]
+        read_only: { type: boolean }
+        options:
+          type: array
+          items: { type: string }
+          description: Select fields only
+        linked_table_id: { type: string, description: Link fields only }
+        multiple: { type: boolean, description: "Link fields only: whether the field holds several records" }
+        lookups:
+          type: array
+          description: |
+            Link fields only: the lookups through this link, carried in each linked record's object under `key`.
+            Lookup fields are not listed as fields of their own.
+          items:
+            type: object
+            properties:
+              key: { type: string, example: Email }
+              id: { type: string, description: The looked-up field in the linked table }
+              name: { type: string }
+              type: { type: string }
+    TableDetail:
+      allOf:
+        - $ref: "#/components/schemas/Table"
+        - type: object
+          properties:
+            base_id: { type: string }
+            fields:
+              type: array
+              items: { $ref: "#/components/schemas/Field" }
+    Fields:
+      type: object
+      description: |
+        Values by field name (or ID). Formats: date `"2026-11-03"`; date and time RFC 3339 (returned in UTC);
+        time `"10:15"`; duration whole minutes; select an option name; multi select an array of option names;
+        json any JSON value. Links are an array of objects, one per linked record: `id` plus each lookup through
+        the link keyed by the looked-up field's name; lookups have no key of their own. Links are written as an
+        array of record IDs or of those objects (only `id` is read). Empty values are `null`, or `[]` for lists.
+      additionalProperties: true
+      example: { Name: Asha, Status: Active, Price: 499, Customer: [{ id: rec_12, Email: asha@example.com }] }
+    FieldsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        fields: { $ref: "#/components/schemas/Fields" }
+    Record:
+      type: object
+      required: [id, fields, created_at, updated_at]
+      properties:
+        id: { $ref: "#/components/schemas/RecordID" }
+        fields: { $ref: "#/components/schemas/Fields" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Deleted:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/RecordID" }
+        deleted: { type: boolean, enum: [true] }
+
+  responses:
+    BadRequest:
+      description: Malformed JSON, a bad query parameter, a reused cursor, or the same ID twice
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    NotFound:
+      description: Workspace (or its API is off), base, table, field or record not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    AmbiguousName:
+      description: A name matches several items; `details` lists their IDs
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Conflict:
+      description: Idempotency key reused with a different body, or still running
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    PayloadTooLarge:
+      description: More than 100 records in one request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    ValidationFailed:
+      description: Invalid or read-only fields, unknown fields, unknown select options, link fields in bulk writes, duplicate keys or failed check constraints. Nothing was written.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    RateLimited:
+      description: Too many requests for this workspace
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }

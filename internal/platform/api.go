@@ -63,6 +63,11 @@ func (a *API) schemaIdent() string { return pq.QuoteIdentifier(a.schema) }
 func (a *API) Register(api *gin.RouterGroup) {
 	ws := api.Group("/:ws", a.resolveWorkspace(), authPlaceholder(), a.rateLimit())
 
+	// The workspace's own spec and its docs pages, as FastAPI serves them
+	ws.GET("/openapi.json", a.openAPISpec)
+	ws.GET("/docs", a.swaggerUI)
+	ws.GET("/redoc", a.redoc)
+
 	ws.GET("/bases", a.listBases)
 	ws.GET("/bases/:base/tables", a.listTables)
 	ws.GET("/bases/:base/tables/:table", a.getTable)

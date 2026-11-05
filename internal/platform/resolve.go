@@ -102,7 +102,8 @@ type schemaSnapshot struct {
 	bases      []*baseInfo
 	tables     map[string][]*tableInfo // by base ID
 	tablesByID map[string]*tableInfo
-	fields     map[string][]*field // by table ID
+	fields     map[string][]*field   // by table ID
+	specs      map[string]cachedSpec // OpenAPI specs, by base ID ("" for the whole workspace)
 }
 
 type schemaCache struct {
@@ -120,6 +121,7 @@ func (s *schemaCache) snapshot(ws workspaceRef) *schemaSnapshot {
 			tables:     map[string][]*tableInfo{},
 			tablesByID: map[string]*tableInfo{},
 			fields:     map[string][]*field{},
+			specs:      map[string]cachedSpec{},
 		}
 		s.byWorkspace[ws.ID] = snap
 	}

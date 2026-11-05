@@ -29,6 +29,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/platform"
 	"github.com/aptlogica/sereni-base/internal/scripts"
 	"github.com/aptlogica/sereni-base/internal/services"
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -283,6 +284,24 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 			"the link carries the lookup through it")
 		assert.NotContains(t, f, "Customer name")
 		assert.True(t, strings.HasSuffix(first.CreatedAt, "Z"))
+	})
+
+	t.Run("openapi spec describes the real tables", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", base+"/openapi.json", nil))
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		doc, err := openapi3.NewLoader().LoadFromData(w.Body.Bytes())
+		require.NoError(t, err)
+		require.NoError(t, doc.Validate(ctx))
+		assert.NotNil(t, doc.Paths.Value("/bases/Main/tables/In%2FOut/records"), "names are URL-encoded in paths")
+
+		// Every key of a real record is a property of the table's record type
+		fields := doc.Components.Schemas["Fields_"+platform.EncodeUUID(platform.PrefixTable, orders.Model.ID.String())]
+		require.NotNil(t, fields)
+		for key := range first.Fields {
+			assert.Contains(t, fields.Value.Properties, key)
+		}
+		assert.Equal(t, []interface{}{"Open", "Done"}, fields.Value.Properties["Status"].Value.Enum)
 	})
 
 	t.Run("validation", func(t *testing.T) {
