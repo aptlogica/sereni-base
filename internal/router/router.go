@@ -7,11 +7,13 @@ package router
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/handlers"
 	"github.com/aptlogica/sereni-base/internal/middleware"
+	"github.com/aptlogica/sereni-base/internal/platform"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConstants "github.com/aptlogica/sereni-base/internal/utils/response/constants"
@@ -52,6 +54,9 @@ type Handlers struct {
 	Automation   *handlers.AutomationHandler
 	PrimaryKey   *handlers.PrimaryKeyHandler
 	TableConstraint *handlers.TableConstraintHandler
+	WorkspaceAPI *handlers.WorkspaceAPIHandler
+	// PublicAPI serves /api/v1/{ws}; registered only when PUBLIC_API_OPEN_ACCESS is on
+	PublicAPI *platform.API
 }
 
 func Setup(cfg *config.Config,
@@ -60,6 +65,9 @@ func Setup(cfg *config.Config,
 ) *gin.Engine {
 
 	r := gin.Default()
+	// Names in public API paths are URL-encoded (a table named In/Out is In%2FOut); match routes on the raw
+	// path so they reach the handler. Path values are still unescaped.
+	r.UseRawPath = true
 
 	// Global middleware
 	r.Use(middlewareGroups.CORS())
@@ -122,6 +130,17 @@ func Setup(cfg *config.Config,
 		setupTableConstraintRoutes(private, handlerGroups, middlewareGroups)
 		setupAssetRoutes(private, handlerGroups, middlewareGroups)
 	}
+
+	// Workspace public API (/api/v1/{ws}); no authentication yet, so only when open access is on (never in prod)
+	if cfg.PublicAPI.OpenAccess && handlerGroups.PublicAPI != nil {
+		handlerGroups.PublicAPI.Register(api)
+	}
+	// Unknown /api/v1/ws_... paths get the public API's 404 envelope; everything else keeps gin's plain 404
+	r.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, middleware.PublicAPIPathPrefix) {
+			platform.NotFound(c)
+		}
+	})
 
 	return r
 }
@@ -280,6 +299,15 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 			objectGuard(middlewares, appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage,
 				lk.AccessMemberParam("id", appConstant.ScopeLevels.Workspace)),
 			handlers.Auth.RemoveAccessMemberByID)
+
+		// Workspace public API: any member sees the status; only those who can update the workspace turn it on
+		workspace.GET("/:id/api",
+			objectGuard(middlewares, appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Read, wsParam),
+			handlers.WorkspaceAPI.GetWorkspaceAPI)
+		workspace.POST("/:id/api/enable",
+			objectGuard(middlewares, appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Update, wsParam),
+			handlers.WorkspaceAPI.EnableWorkspaceAPI)
+
 		// All access operations
 		workspace.GET("/:id/bases", wsAccess, handlers.Workspace.GetBasesByWorkspaceId)
 		workspace.GET("/:id", wsAccess, handlers.Workspace.GetWorkspaceByID)
