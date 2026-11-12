@@ -80,7 +80,13 @@ func (a *API) Register(api *gin.RouterGroup) {
 	records.PATCH("", a.updateRecords)
 	records.DELETE("/:record", a.deleteRecord)
 	records.POST("/delete", a.idempotent(), a.deleteRecords)
+	// The HTTP QUERY method (a read with a body) does the same as POST; clients use whichever they support
+	records.POST("/query", a.queryRecords)
+	records.Handle(MethodQuery, "/query", a.queryRecords)
 }
+
+// MethodQuery is the HTTP QUERY method: safe and idempotent like GET, with a body like POST
+const MethodQuery = "QUERY"
 
 // NotFound answers unknown /api/v1/ws_... paths in the API's envelope
 func NotFound(c *gin.Context) {
@@ -148,6 +154,7 @@ type tableContext struct {
 	base   *baseInfo
 	table  *tableInfo
 	fields []*field
+	key    *recordKey // the table's primary key, read when a record is addressed
 }
 
 func (a *API) resolveTablePath(c *gin.Context) (*tableContext, error) {

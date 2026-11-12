@@ -126,6 +126,11 @@ func (m *mockAPI) expectLinkTarget() {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}).AddRow(mockTargetID, mockBaseID, "Customers", "customers_x"))
 }
 
+// expectDefaultKey answers the primary key lookup of a record ID or key: the default key, id
+func (m *mockAPI) expectDefaultKey() {
+	m.mock.ExpectQuery(q(`FROM pg_index i`)).WillReturnRows(sqlmock.NewRows([]string{"attname"}).AddRow("id"))
+}
+
 func (m *mockAPI) do(method, path string, body interface{}) (*httptest.ResponseRecorder, apiEnvelope) {
 	var reader *bytes.Reader
 	if body != nil {
@@ -170,9 +175,10 @@ func TestAPIListRecordsConvertsValuesAndPages(t *testing.T) {
 		`"title_x":"Hello","price_x":12.50,"status_x":"Open","tags_x":["red"],"at_x":"2026-11-03T04:45:00",` +
 		`"took_x":"90","extra_x":"{\"a\":1}","owners_x":"u1, u2","files_x":[{"id":"f1","title":"a.png","url":"http://x/a.png","size":10,"mime_type":"image/png","width":3}],` +
 		`"customer_x":[{"id":12},{"id":13}],"dup_1":"one","dup_2":"two","button_x":"ignored"}`
-	m.mock.ExpectQuery(q(`SELECT row_to_json(t)::text FROM "public"."`+mockAlias+`" AS t WHERE t."status_x" = $1 ORDER BY t."price_x" DESC, t.id LIMIT $2 OFFSET $3`)).
+	m.mock.ExpectQuery(q(`SELECT row_to_json(t)::text FROM "public"."`+mockAlias+`" AS t WHERE ("status_x" = $1) ORDER BY t."price_x" DESC, t.id LIMIT $2 OFFSET $3`)).
 		WithArgs("Open", 2, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"row"}).AddRow(row).AddRow(strings.Replace(row, `"id":5`, `"id":6`, 1)))
+	m.expectDefaultKey()
 	m.expectLinkTarget()
 
 	w, res := m.do("GET", ordersURL+"/records?limit=1&filter[Status]=Open&sort=-Price", nil)
@@ -214,10 +220,46 @@ func TestAPIListRecordsConvertsValuesAndPages(t *testing.T) {
 	// The next page uses the offset from the cursor; the schema comes from the cache
 	m.mock.ExpectQuery(q(`ORDER BY t."price_x" DESC, t.id LIMIT $2 OFFSET $3`)).WithArgs("Open", 2, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"row"}))
+	m.expectDefaultKey()
 	w, res = m.do("GET", ordersURL+"/records?limit=1&filter[Status]=Open&sort=-Price&cursor="+url.QueryEscape(next), nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, false, res.Meta["has_more"])
 	assert.Nil(t, res.Meta["next_cursor"])
+	assert.NoError(t, m.mock.ExpectationsWereMet())
+}
+
+func TestAPIQueryRecordsTakesPostAndQueryMethods(t *testing.T) {
+	m := newMockAPI(t, 600)
+	m.expectSchema()
+	body := map[string]interface{}{
+		"where": map[string]interface{}{"conditions": []interface{}{map[string]interface{}{"field": "Status", "value": "Open"}}},
+		"sort":  "-Price", "limit": 1,
+	}
+	row := `{"id":5,"created_time":"2026-11-03T10:15:00","last_modified_time":"2026-11-03T10:15:00","status_x":"Open"}`
+	pageRows := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"row"}).AddRow(row).AddRow(strings.Replace(row, `"id":5`, `"id":6`, 1))
+	}
+
+	m.mock.ExpectQuery(q(`"status_x" = $1`)).WithArgs("Open", 2, 0).WillReturnRows(pageRows())
+	m.expectDefaultKey()
+	m.expectLinkTarget()
+	w, res := m.do("POST", ordersURL+"/records/query", body)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	next, _ := res.Meta["next_cursor"].(string)
+	require.NotEmpty(t, next)
+
+	// QUERY runs the same handler; a cursor from POST carries on with QUERY
+	m.mock.ExpectQuery(q(`"status_x" = $1`)).WithArgs("Open", 2, 0).WillReturnRows(pageRows())
+	m.expectDefaultKey()
+	w, res2 := m.do("QUERY", ordersURL+"/records/query", body)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.JSONEq(t, string(res.Data), string(res2.Data), "POST and QUERY return the same records")
+
+	body["cursor"] = next
+	m.mock.ExpectQuery(q(`"status_x" = $1`)).WithArgs("Open", 2, 1).WillReturnRows(sqlmock.NewRows([]string{"row"}))
+	m.expectDefaultKey()
+	w, _ = m.do("QUERY", ordersURL+"/records/query", body)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.NoError(t, m.mock.ExpectationsWereMet())
 }
 
@@ -282,6 +324,7 @@ func TestAPICreateValidatesBeforeWriting(t *testing.T) {
 func TestAPICreateManyConvertsValues(t *testing.T) {
 	m := newMockAPI(t, 600)
 	m.expectSchema()
+	m.expectDefaultKey()
 	m.expectLinkTarget()
 	w, res := m.do("POST", ordersURL+"/records", map[string]interface{}{"records": []interface{}{
 		map[string]interface{}{"fields": map[string]interface{}{
@@ -331,9 +374,10 @@ func TestAPIBulkRules(t *testing.T) {
 	assert.Equal(t, "bad_request", res.Error.Code)
 
 	// The same ID twice in a bulk delete
+	m.expectDefaultKey()
 	w, res = m.do("POST", ordersURL+"/records/delete", map[string]interface{}{"ids": []string{"rec_1", "rec_1"}})
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, res.Error.Message, "appears twice")
+	assert.Contains(t, res.Error.Message, "are the same record")
 
 	// Not JSON
 	w, res = m.do("PATCH", ordersURL+"/records", "not an object")
@@ -418,6 +462,7 @@ func TestAPILinkObjectsCarryLookups(t *testing.T) {
 		return sqlmock.NewRows([]string{"id", "v"}).AddRow(12, id12).AddRow(13, id13)
 	}
 	m.mock.ExpectQuery(q(`FROM "public"."` + mockAlias + `" AS t ORDER BY t.id`)).WillReturnRows(listRows())
+	m.expectDefaultKey()
 	m.expectLinkTarget()
 	m.mock.ExpectQuery(q(`FROM "public".columns WHERE model_id = $1`)).WithArgs(mockTargetID).WillReturnRows(
 		sqlmock.NewRows([]string{"id", "title", "column_name", "uidt", "dt", "meta", "system", "order_index"}).
@@ -445,6 +490,7 @@ func TestAPILinkObjectsCarryLookups(t *testing.T) {
 
 	// A selected lookup brings its link with only that lookup, keyed by ID with keys=id
 	m.mock.ExpectQuery(q(`FROM "public"."` + mockAlias + `" AS t ORDER BY t.id`)).WillReturnRows(listRows())
+	m.expectDefaultKey()
 	m.mock.ExpectQuery(q(`SELECT x.id, (to_jsonb(x) -> $1)::text FROM "public"."customers_x"`)).
 		WithArgs("email_x", sqlmock.AnyArg()).WillReturnRows(values(`"asha@example.com"`, nil))
 	w, res = m.do("GET", ordersURL+"/records?select=Customer%20email&keys=id", nil)
@@ -477,4 +523,33 @@ func TestAPILinkObjectsCarryLookups(t *testing.T) {
 	}
 	assert.Equal(t, "is read-only", issues["Customer name"])
 	assert.Equal(t, "must be an array of record IDs like rec_12, or of objects with an id", issues["Customer"])
+}
+
+// An empty body, an empty where or a bare filter= lists every record, as no filter does
+func TestAPIEmptyFiltersListEverything(t *testing.T) {
+	m := newMockAPI(t, 600)
+	m.expectSchema()
+	first := true
+	unfiltered := func() {
+		// No WHERE between the table and the order
+		m.mock.ExpectQuery(q(`FROM "public"."` + mockAlias + `" AS t ORDER BY t.id`)).
+			WillReturnRows(sqlmock.NewRows([]string{"row"}))
+		m.expectDefaultKey()
+		if first {
+			m.expectLinkTarget() // then cached
+			first = false
+		}
+	}
+	for _, body := range []interface{}{nil, map[string]interface{}{}, map[string]interface{}{"where": map[string]interface{}{}},
+		map[string]interface{}{"where": nil}, map[string]interface{}{"where": map[string]interface{}{"match": "all", "conditions": []interface{}{}}}} {
+		unfiltered()
+		w, _ := m.do("POST", ordersURL+"/records/query", body)
+		assert.Equal(t, http.StatusOK, w.Code, "%v: %s", body, w.Body.String())
+	}
+	for _, query := range []string{"where=", "where=%7B%7D", "filter=", "filter=%7B%7D"} {
+		unfiltered()
+		w, _ := m.do("GET", ordersURL+"/records?"+query, nil)
+		assert.Equal(t, http.StatusOK, w.Code, "%s: %s", query, w.Body.String())
+	}
+	assert.NoError(t, m.mock.ExpectationsWereMet())
 }

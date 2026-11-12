@@ -133,6 +133,9 @@ func (s tableManagementService) DeleteRecordsForAPI(ctx context.Context, schemaN
 	table := fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias)
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE id = ANY($1) RETURNING id`, table), pq.Array(ids))
 	if err != nil {
+		if stopped, ok := writeStoppedError(err); ok {
+			return nil, stopped
+		}
 		return nil, app_errors.LogDatabaseError(err, "failed to delete records")
 	}
 	deleted := map[int64]bool{}
@@ -146,6 +149,10 @@ func (s tableManagementService) DeleteRecordsForAPI(ctx context.Context, schemaN
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		// An AFTER DELETE trigger runs while the rows are read
+		if stopped, ok := writeStoppedError(err); ok {
+			return nil, stopped
+		}
 		return nil, app_errors.LogDatabaseError(err, "failed to delete records")
 	}
 
@@ -160,6 +167,10 @@ func (s tableManagementService) DeleteRecordsForAPI(ctx context.Context, schemaN
 		return missing, nil
 	}
 	if err := tx.Commit(); err != nil {
+		// Deferred constraint triggers run at commit
+		if stopped, ok := writeStoppedError(err); ok {
+			return nil, stopped
+		}
 		return nil, app_errors.LogDatabaseError(err, "failed to commit deleted records")
 	}
 	return nil, nil
@@ -187,6 +198,10 @@ func (s tableManagementService) inAPITransaction(ctx context.Context, schemaName
 		return nil, &app_errors.RecordWriteError{Index: index, Err: s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to write records")}
 	}
 	if err := tx.Commit(); err != nil {
+		if stopped, ok := writeStoppedError(err); ok {
+			// Deferred triggers run at commit, so no single record can be named
+			return nil, stopped
+		}
 		return nil, app_errors.LogDatabaseError(err, "failed to commit records")
 	}
 	return out, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
 	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
@@ -12,6 +13,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/aptlogica/go-postgres-rest/pkg"
@@ -201,17 +203,30 @@ func TestRecordWrites_DuplicateUniqueKey(t *testing.T) {
 		assert.Equal(t, "Duplicate value not allowed. This record repeats the values of a unique key.", detailedMessage(t, err))
 	})
 
-	t.Run("keeps other database errors generic", func(t *testing.T) {
+	t.Run("names an empty NOT NULL field outside the primary key", func(t *testing.T) {
 		_, mockTable, _, _, _, _, _, _, svc := setupTableManagementService()
 		mockTable.On("CreateRecord", mock.Anything, mock.Anything).
 			Return(nil, &pq.Error{Code: "23502", Column: "notes", Message: "null value in column violates not-null constraint"})
-		// An empty field outside the primary key is not a key error
 		mockTable.On("GetByFunction", mock.Anything, "public.link_key_columns", mock.Anything).
 			Return([]map[string]interface{}{{"link_key_columns": "{id}"}}, nil)
 
 		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
-		assert.ErrorIs(t, err, app_errors.DatabaseError)
+		var apiErr *app_errors.APIError
+		require.ErrorAs(t, err, &apiErr)
+		assert.Equal(t, string(responseConst.TableError.FieldValueRequired), apiErr.Code)
+		assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		// Without the table's metadata the field is named by its column
+		assert.Equal(t, "notes can't be empty.", apiErr.Message)
 		mockTable.AssertNotCalled(t, "GetTableData", guardConstraintsTable, mock.Anything)
+	})
+
+	t.Run("keeps other database errors generic", func(t *testing.T) {
+		_, mockTable, _, _, _, _, _, _, svc := setupTableManagementService()
+		mockTable.On("CreateRecord", mock.Anything, mock.Anything).
+			Return(nil, &pq.Error{Code: "22001", Message: "value too long for type character varying(10)"})
+
+		_, err := svc.CreateRowWithRecords(context.Background(), "schema", "tbl", map[string]interface{}{})
+		assert.ErrorIs(t, err, app_errors.DatabaseError)
 	})
 }
 

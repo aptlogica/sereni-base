@@ -55,7 +55,7 @@ const (
 )
 
 // The generic records paths, by what follows the table in the path
-var recordsPathSuffixes = []string{"/records", "/records/{record}", "/records/delete"}
+var recordsPathSuffixes = []string{"/records", "/records/query", "/records/{record}", "/records/delete"}
 
 // cachedSpec is a built spec and its ETag
 type cachedSpec struct {
@@ -305,6 +305,9 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 			}
 			describeListParams(child(item, "get"), selectable, sortable, filterable)
 		}
+		if suffix == "/records/query" {
+			describeQuery(child(item, "post"), sortable, filterable)
+		}
 		b.paths[tablePath+suffix] = item
 	}
 	return nil
@@ -366,8 +369,27 @@ func describeListParams(op schemaObject, selectable, sortable, filterable []stri
 			}
 			param["description"] = text
 			delete(param, "example")
+		case "where":
+			param["description"] = fmt.Sprintf("%s\n\nFields take the same operators as in `filter`.", param["description"])
 		}
 	}
+}
+
+// describeQuery adds the table's filterable and sortable fields to POST /records/query
+func describeQuery(op schemaObject, sortable, filterable []string) {
+	if op == nil {
+		return
+	}
+	text := fmt.Sprint(op["description"])
+	if len(filterable) > 0 {
+		text += "\n\nOperators by field (`id`, `created_at` and `updated_at` take eq, neq, gt, gte, lt, lte, in and is_null):\n\n" +
+			strings.Join(filterable, "\n")
+	}
+	text += "\n\nSortable: `id`, `created_at`, `updated_at`"
+	if len(sortable) > 0 {
+		text += ", " + strings.Join(sortable, ", ")
+	}
+	op["description"] = text + "."
 }
 
 // withoutTableParams drops the base and table path parameters: a table's paths name them

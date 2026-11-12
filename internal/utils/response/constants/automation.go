@@ -17,6 +17,9 @@ var AutomationError = struct {
 	TriggerHasFunction   ResponseCode
 	InvalidTriggerEvent  ResponseCode
 	DuplicateTitle       ResponseCode
+	RecordRejected       ResponseCode
+	AutomationFailed     ResponseCode
+	TableBusy            ResponseCode
 }{
 	AutomationNotFound:   "AUT_1001",
 	InvalidTriggerQuery:  "AUT_1002",
@@ -27,6 +30,9 @@ var AutomationError = struct {
 	TriggerHasFunction:   "AUT_1009",
 	InvalidTriggerEvent:  "AUT_1010",
 	DuplicateTitle:       "AUT_1011",
+	RecordRejected:       "AUT_1012",
+	AutomationFailed:     "AUT_1013",
+	TableBusy:            "AUT_1014",
 }
 
 var AutomationErrorCodes = map[ResponseCode]MetaResponse{
@@ -74,6 +80,21 @@ var AutomationErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusBadRequest,
 		Message:     "Title too long",
 		Description: "The title exceeds the maximum allowed length",
+	},
+	AutomationError.RecordRejected: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "An automation rejected the record",
+		Description: "A trigger function of the table raised an error, so the record was not saved; its message says why",
+	},
+	AutomationError.AutomationFailed: {
+		HTTPStatus:  http.StatusInternalServerError,
+		Message:     "An automation on this table failed",
+		Description: "A trigger function of the table failed, so nothing was saved; check the table's automations",
+	},
+	AutomationError.TableBusy: {
+		HTTPStatus:  http.StatusServiceUnavailable,
+		Message:     "The table is busy",
+		Description: "Other changes to the table were being saved at the same time; nothing was saved, try again",
 	},
 }
 

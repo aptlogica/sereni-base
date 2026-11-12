@@ -18,7 +18,7 @@ import (
 const PublicAPIPathPrefix = "/api/v1/ws_"
 
 const (
-	publicAPIAllowMethods   = "GET, POST, PATCH, DELETE, OPTIONS"
+	publicAPIAllowMethods   = "GET, POST, PATCH, DELETE, QUERY, OPTIONS"
 	publicAPIAllowHeaders   = "Content-Type, Idempotency-Key, X-Request-Id, Authorization"
 	publicAPIExposeHeaders  = "X-Request-Id, Retry-After, Idempotent-Replayed"
 	publicAPIPreflightCache = "600"

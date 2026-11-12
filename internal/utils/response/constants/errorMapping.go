@@ -113,6 +113,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.ViewNotFound, TableError.ViewNotFound},
 	{app_errors.ViewUploadFailed, TableError.ViewUploadFailed},
 	{app_errors.UpdateNotAllowed, TableError.UpdateNotAllowed},
+	{app_errors.InvalidFieldValue, TableError.InvalidFieldValue},
 	{app_errors.DeleteNotAllowed, TableError.DeleteNotAllowed},
 	{app_errors.ColumnNotFound, TableError.ColumnNotFound},
 	{app_errors.ColumnUpdateFailed, TableError.ColumnUpdateFailed},
@@ -137,6 +138,9 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.InvalidFunctionQuery, AutomationError.InvalidFunctionQuery},
 	{app_errors.TriggerFailed, AutomationError.TriggerFailed},
 	{app_errors.TriggerHasFunction, AutomationError.TriggerHasFunction},
+	{app_errors.AutomationRejected, AutomationError.RecordRejected},
+	{app_errors.AutomationFailed, AutomationError.AutomationFailed},
+	{app_errors.DatabaseBusy, AutomationError.TableBusy},
 	{app_errors.InvalidTriggerEvent, AutomationError.InvalidTriggerEvent},
 	{app_errors.DuplicateAutomationTitle, AutomationError.DuplicateTitle},
 

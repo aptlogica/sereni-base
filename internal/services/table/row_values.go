@@ -17,6 +17,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/utils/fieldrules"
 )
 
 // UpdateRowValues saves several fields of one record (values by column ID) in one statement. Every value is
@@ -118,7 +119,12 @@ func (s tableManagementService) rowValuesByName(ctx context.Context, schemaName 
 			byName[columnData.ColumnName] = value
 			continue
 		}
-		byName[columnData.ColumnName] = cellValue(columnData, values[columnID])
+		// The field's settings: its options, the email / phone / URL check, decimals, time input
+		value, issue := fieldrules.CheckCell(fieldrules.FromMeta(columnData.UIDT, columnData.Meta), values[columnID])
+		if issue != "" {
+			return nil, app_errors.WithMessage(app_errors.InvalidFieldValue, fmt.Sprintf("%s: %s", columnData.Title, issue))
+		}
+		byName[columnData.ColumnName] = cellValue(columnData, value)
 	}
 	return byName, nil
 }

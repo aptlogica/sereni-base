@@ -90,6 +90,8 @@ var TableError = struct {
 	InvalidDisplayColumn           ResponseCode
 	DisplayColumnInUse             ResponseCode
 	LinkColumnNotWritable          ResponseCode
+	FieldValueRequired             ResponseCode
+	InvalidFieldValue              ResponseCode
 }{
 	BaseIDRequired:                 "TBL_1001",
 	BaseIDInvalid:                  "TBL_1002",
@@ -173,6 +175,8 @@ var TableError = struct {
 	LinkColumnNotWritable:          "TBL_1080",
 	InvalidDisplayColumn:           "TBL_1081",
 	DisplayColumnInUse:             "TBL_1082",
+	FieldValueRequired:             "TBL_1083",
+	InvalidFieldValue:              "TBL_1084",
 }
 
 var TableErrorCodes = map[ResponseCode]MetaResponse{
@@ -575,6 +579,16 @@ var TableErrorCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusConflict,
 		Message:     "Field is used as a display column",
 		Description: "A link field shows this field as its label, so its type can't be changed to links, lookup, rollup, attachment or JSON",
+	},
+	TableError.FieldValueRequired: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Field can't be empty",
+		Description: "The field doesn't allow empty values (NOT NULL), so every record needs a value in it",
+	},
+	TableError.InvalidFieldValue: {
+		HTTPStatus:  http.StatusBadRequest,
+		Message:     "Value not allowed",
+		Description: "The value doesn't fit the field's settings, e.g. an option the field doesn't have or an invalid email",
 	},
 }
 

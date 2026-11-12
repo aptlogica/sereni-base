@@ -56,6 +56,7 @@ func TestCORS_PublicAPIPreflight(t *testing.T) {
 	assert.False(t, handled, "a preflight is answered by the middleware")
 	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "PATCH")
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "QUERY", "records/query also takes QUERY")
 	assert.Equal(t, "content-type,idempotency-key,x-client-version", w.Header().Get("Access-Control-Allow-Headers"),
 		"the headers the client asked for are allowed")
 	assert.Equal(t, "600", w.Header().Get("Access-Control-Max-Age"))

@@ -152,6 +152,9 @@ func (s tableManagementService) checkKeyClash(ctx context.Context, schemaName st
 // keyWriteError turns a Postgres key violation from a write to a user table into an exact error; other errors
 // become the usual database error
 func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, alias string, err error, msg string) error {
+	if stopped, ok := writeStoppedError(err); ok {
+		return stopped
+	}
 	pqErr, ok := postgresWriteError(err)
 	if !ok {
 		var apiErr *app_errors.APIError
@@ -173,9 +176,11 @@ func (s tableManagementService) keyWriteError(ctx context.Context, schemaName, a
 	if pqErr.Code == "23505" && s.isUniqueKeyViolation(schemaName, pqErr, keyCols) {
 		return s.recordWriteError(ctx, schemaName, pqErr, msg)
 	}
-	// An empty field outside the primary key is not a key error
+	// An empty field outside the primary key that doesn't allow empty values (NOT NULL): name the field
 	if pqErr.Code == "23502" && pqErr.Column != "" && !slices.Contains(keyCols, pqErr.Column) {
-		return app_errors.LogDatabaseError(err, msg)
+		title := fieldTitle(s.keyFieldsByAlias(ctx, schemaName, alias, []string{pqErr.Column}), pqErr.Column)
+		return keyAPIError(responseConst.TableError.FieldValueRequired, http.StatusBadRequest,
+			fmt.Sprintf("%s can't be empty.", title), map[string]interface{}{"field": title})
 	}
 
 	fields := s.keyFieldsByAlias(ctx, schemaName, alias, keyCols)

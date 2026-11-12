@@ -17,6 +17,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	tableServices "github.com/aptlogica/sereni-base/internal/services/table"
+	"github.com/aptlogica/sereni-base/internal/utils/fieldrules"
 	"github.com/lib/pq"
 )
 
@@ -89,6 +90,8 @@ type field struct {
 	Options    []string // select and multi-select option names
 	RatingMax  int
 	Multiple   bool // user fields with meta.allowMultiple
+	// Rules are the value rules the field's settings define (option names, format checks, decimals)
+	Rules fieldrules.Rules
 
 	// Links: the linked table and whether the field holds several records
 	LinkTargetModelID string
@@ -129,15 +132,13 @@ func newField(id, title, columnName, uidt, dt string, system bool, order float64
 	}
 	_, known := apiTypeNames[f.Type]
 	f.ReadOnly = readOnlyTypes[f.Type] || !known
+	f.Rules = fieldrules.FromMeta(f.Type, meta)
 
 	switch f.Type {
 	case typeSelect, typeMultiSelect:
-		f.Options = selectOptions(meta["options"])
+		f.Options = f.Rules.Options
 	case typeRating:
-		f.RatingMax = 5
-		if n, ok := metaNumber(meta["ratingMax"]); ok && n > 0 {
-			f.RatingMax = int(n)
-		}
+		f.RatingMax = f.Rules.RatingMax
 	case typeUser:
 		f.Multiple, _ = meta["allowMultiple"].(bool)
 	case typeUUID:
@@ -156,37 +157,6 @@ func newField(id, title, columnName, uidt, dt string, system bool, order float64
 		f.LookupTargetColumnID, _ = meta["lookup_column_id"].(string)
 	}
 	return f, true
-}
-
-// selectOptions reads option names from meta.options: [{option, color}] or plain strings
-func selectOptions(raw interface{}) []string {
-	list, _ := raw.([]interface{})
-	options := make([]string, 0, len(list))
-	for _, item := range list {
-		switch v := item.(type) {
-		case string:
-			options = append(options, v)
-		case map[string]interface{}:
-			if name, ok := v["option"].(string); ok {
-				options = append(options, name)
-			}
-		}
-	}
-	return options
-}
-
-func metaNumber(v interface{}) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	case string:
-		f, err := strconv.ParseFloat(n, 64)
-		return f, err == nil
-	}
-	return 0, false
 }
 
 // ---- Database value -> API value ----
@@ -292,12 +262,8 @@ func apiAttachments(v interface{}) []interface{} {
 
 // ---- API value -> database value ----
 
-var (
-	emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
-	urlPattern   = regexp.MustCompile(`^(https?://)?[^\s/$.?#][^\s]*\.[^\s]+$`)
-	phonePattern = regexp.MustCompile(`^\+?[0-9 ()\-.]{3,25}$`)
-	timePattern  = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
-)
+// timePattern is how the API returns times (HH:MM, 24-hour)
+var timePattern = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 
 // dbValue converts a value from a request body (decoded with UseNumber) to what the field's column stores.
 // issue is a short reason when the value is not valid for the field. Links are handled by the caller.
@@ -311,12 +277,9 @@ func dbValue(f *field, v interface{}) (value interface{}, issue string) {
 	switch f.Type {
 	case typeText, typeLongText:
 		return asString(v)
-	case typeEmail:
-		return checkedString(v, func(s string) bool { return s == "" || emailPattern.MatchString(s) }, "must be a valid email address")
-	case typeURL:
-		return checkedString(v, func(s string) bool { return s == "" || urlPattern.MatchString(s) }, "must be a valid URL")
-	case typePhone:
-		return checkedString(v, func(s string) bool { return s == "" || phonePattern.MatchString(s) }, "must be a valid phone number")
+	case typeEmail, typeURL, typePhone:
+		// Checked only when the field's check is on, with the app's own rules
+		return formatString(f.Rules, v)
 	case typeNumber:
 		return wholeNumber(v, math.MinInt32, math.MaxInt32)
 	case typeRating:
@@ -328,8 +291,13 @@ func dbValue(f *field, v interface{}) (value interface{}, issue string) {
 		if !ok {
 			return nil, "must be a number"
 		}
-		if _, err := n.Float64(); err != nil {
+		x, err := n.Float64()
+		if err != nil {
 			return nil, "must be a number"
+		}
+		if f.Rules.Places >= 0 {
+			// Kept to the field's decimals, as the app keeps them
+			return strconv.FormatFloat(fieldrules.Round(x, f.Rules.Places), 'f', -1, 64), ""
 		}
 		return n.String(), ""
 	case typeDuration:
@@ -366,13 +334,21 @@ func dbValue(f *field, v interface{}) (value interface{}, issue string) {
 		// Stored without a time zone, in UTC
 		return t.UTC(), ""
 	case typeTime:
-		return checkedString(v, timePattern.MatchString, "must be a time like 10:15 (24-hour)")
+		s, ok := v.(string)
+		if !ok {
+			return nil, timeIssue
+		}
+		t, ok := fieldrules.ParseTime(s)
+		if !ok {
+			return nil, timeIssue
+		}
+		return t, ""
 	case typeSelect:
 		s, ok := v.(string)
 		if !ok {
 			return nil, "must be the name of one of the field's options"
 		}
-		if !f.hasOption(s) {
+		if !f.Rules.HasOption(s) {
 			return nil, fmt.Sprintf("%q is not one of the field's options", s)
 		}
 		return s, ""
@@ -387,7 +363,7 @@ func dbValue(f *field, v interface{}) (value interface{}, issue string) {
 			if !ok {
 				return nil, "must be a list of option names"
 			}
-			if !f.hasOption(s) {
+			if !f.Rules.HasOption(s) {
 				return nil, fmt.Sprintf("%q is not one of the field's options", s)
 			}
 			names = append(names, s)
@@ -410,27 +386,25 @@ func dbValue(f *field, v interface{}) (value interface{}, issue string) {
 	return nil, "can't be written through the API"
 }
 
-func (f *field) hasOption(name string) bool {
-	for _, o := range f.Options {
-		if o == name {
-			return true
-		}
+// timeIssue says what a time value must look like
+const timeIssue = "must be a time like 14:15 or 2:15 PM"
+
+// formatString checks an email, URL or phone value when the field's check is on; an empty value is fine
+func formatString(r fieldrules.Rules, v interface{}) (interface{}, string) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, "must be a string"
 	}
-	return false
+	if issue := fieldrules.FormatIssue(r, s); issue != "" {
+		return nil, issue
+	}
+	return s, ""
 }
 
 func asString(v interface{}) (interface{}, string) {
 	s, ok := v.(string)
 	if !ok {
 		return nil, "must be a string"
-	}
-	return s, ""
-}
-
-func checkedString(v interface{}, valid func(string) bool, issue string) (interface{}, string) {
-	s, ok := v.(string)
-	if !ok || !valid(s) {
-		return nil, issue
 	}
 	return s, ""
 }

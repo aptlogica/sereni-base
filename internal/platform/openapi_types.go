@@ -5,6 +5,8 @@
 
 package platform
 
+import "fmt"
+
 // schemaObject is an OpenAPI schema, parameter or other spec object
 type schemaObject = map[string]any
 
@@ -20,14 +22,26 @@ func fieldSchema(f *field) schemaObject {
 	case typeText, typeLongText, typePhone, typeFormula, typeCreatedBy, typeLastModifiedBy:
 		s = schemaObject{"type": "string"}
 	case typeEmail:
-		s = schemaObject{"type": "string", "format": "email"}
+		s = schemaObject{"type": "string"}
+		if f.Rules.EmailCheck {
+			s["format"] = "email"
+		} else {
+			s["description"] = "Any text: the field's email check is off."
+		}
 	case typeURL:
 		// No format: uri, because the API accepts URLs without a scheme (example.com)
 		s = schemaObject{"type": "string", "example": "https://example.com"}
+		if !f.Rules.URLCheck {
+			s["description"] = "Any text: the field's URL check is off."
+		}
 	case typeNumber:
 		s = schemaObject{"type": "integer", "format": "int32"}
 	case typeDecimal, typeCurrency, typePercent:
-		s = schemaObject{"type": "number", "description": "Sent and returned with all its digits; parsing into a float may round it."}
+		description := "Sent and returned with all its digits; parsing into a float may round it."
+		if f.Rules.Places >= 0 {
+			description = fmt.Sprintf("Rounded to %d decimal place(s) when saved, as the field is set.", f.Rules.Places)
+		}
+		s = schemaObject{"type": "number", "description": description}
 	case typeRating:
 		s = schemaObject{"type": "integer", "minimum": 0, "maximum": f.RatingMax}
 	case typeYear:
@@ -39,7 +53,8 @@ func fieldSchema(f *field) schemaObject {
 	case typeDateTime, typeCreatedTime, typeLastModifiedTime:
 		s = schemaObject{"type": "string", "format": "date-time"}
 	case typeTime:
-		s = schemaObject{"type": "string", "pattern": timePattern.String(), "example": "10:15"}
+		s = schemaObject{"type": "string", "pattern": timePattern.String(), "example": "14:15",
+			"description": "Returned as HH:MM (24-hour). 12-hour input like 2:15 PM is also accepted."}
 	case typeCheckbox:
 		s = schemaObject{"type": "boolean"}
 	case typeSelect:

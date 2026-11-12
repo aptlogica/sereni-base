@@ -14,13 +14,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
-	"unicode"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -66,15 +69,18 @@ func (o orderedFields) MarshalJSON() ([]byte, error) {
 }
 
 type recordOut struct {
-	ID        string        `json:"id"`
+	ID string `json:"id"`
+	// Key holds the primary key fields' values when the table's key is other fields than id
+	Key       orderedFields `json:"key,omitempty"`
 	Fields    orderedFields `json:"fields"`
 	CreatedAt interface{}   `json:"created_at"`
 	UpdatedAt interface{}   `json:"updated_at"`
 }
 
 type deletedOut struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted"`
+	ID      string        `json:"id"`
+	Key     orderedFields `json:"key,omitempty"`
+	Deleted bool          `json:"deleted"`
 }
 
 // fieldKeys returns the key of each field in "fields": its name, or its ID with ?keys=id. Fields that share a
@@ -108,6 +114,10 @@ func rowID(row map[string]interface{}) int64 {
 // not keys of their own: a selected lookup brings its link field, holding only the selected lookups.
 func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[string]interface{}, fields []*field, keysByID bool) ([]recordOut, error) {
 	keys := fieldKeys(tc.fields, keysByID)
+	pk, err := a.recordKeyOf(ctx, tc)
+	if err != nil {
+		return nil, err
+	}
 
 	// The fields to return, in order, with the lookups each link field carries
 	selected := map[*field]bool{}
@@ -185,6 +195,7 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 		}
 		out[i] = recordOut{
 			ID:        EncodeRecordID(rowID(row)),
+			Key:       pk.keyValues(row, keys),
 			Fields:    values,
 			CreatedAt: apiTime(row["created_time"]),
 			UpdatedAt: apiTime(row["last_modified_time"]),
@@ -410,16 +421,39 @@ func (a *API) queryRows(ctx context.Context, query string, args ...interface{}) 
 	return out, rows.Err()
 }
 
-func (a *API) linkTargetTable(ctx context.Context, ws workspaceRef) func(*field) string {
-	return func(f *field) string {
+// linkResolver finds what a link cell holds for one linked record, for link filters: {"id": n} on most tables,
+// the primary key columns' values on tables with a custom primary key
+func (a *API) linkResolver(ctx context.Context, ws workspaceRef) linkResolver {
+	return func(f *field, id int64) ([]string, bool, error) {
 		if f.LinkTargetModelID == "" {
-			return ""
+			return nil, false, nil
 		}
 		t, err := a.tableByID(ctx, ws, f.LinkTargetModelID)
 		if err != nil || t == nil {
-			return ""
+			return nil, false, err
 		}
-		return a.recordsTable(t)
+		byID := fmt.Sprintf(`[{"id": %d}]`, id)
+		arrays := []string{byID}
+		table := a.recordsTable(t)
+		rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT (
+			SELECT jsonb_object_agg(a.attname::text, to_jsonb(x) -> a.attname::text)
+			FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+			WHERE i.indrelid = $1::regclass AND i.indisprimary)::text
+			FROM %s AS x WHERE x.id = $2`, table), table, id)
+		if err != nil {
+			return nil, false, err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			var key sql.NullString
+			if err := rows.Scan(&key); err != nil {
+				return nil, false, err
+			}
+			if key.Valid && key.String != `{"id": `+strconv.FormatInt(id, 10)+`}` {
+				arrays = append(arrays, "["+key.String+"]")
+			}
+		}
+		return arrays, true, rows.Err()
 	}
 }
 
@@ -430,12 +464,98 @@ func (a *API) listRecords(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	opts, err := parseListOptions(c.Request.URL.Query(), tc.fields, a.linkTargetTable(c, tc.ws))
+	a.runList(c, tc, c.Request.URL.Query())
+}
+
+// POST /records/query: the list query in a JSON body, for filters too long or nested for a URL.
+// Body: {"where": {...}, "sort": ["-Price"] or "-Price", "select": ["Name"] or "Name", "limit", "cursor", "keys"}.
+func (a *API) queryRecords(c *gin.Context) {
+	tc, err := a.resolveTablePath(c)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	query, args := listSQL(a.recordsTable(tc.table), opts)
+	// No body lists every record, as GET /records does
+	body, err := readOptionalBody(c)
+	if err == nil {
+		err = onlyKeys(body, "body", "where", "sort", "select", "limit", "cursor", "keys")
+	}
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	query := url.Values{}
+	for _, k := range []string{"sort", "select"} {
+		if v, ok := body[k]; ok && v != nil {
+			list, err := stringOrList(v, k)
+			if err != nil {
+				respondError(c, err)
+				return
+			}
+			query.Set(k, list)
+		}
+	}
+	for _, k := range []string{"cursor", "keys"} {
+		if v, ok := body[k]; ok && v != nil {
+			s, ok := v.(string)
+			if !ok {
+				respondError(c, badRequest(k+" must be text."))
+				return
+			}
+			query.Set(k, s)
+		}
+	}
+	if v, ok := body["limit"]; ok && v != nil {
+		n, ok := v.(json.Number)
+		if !ok {
+			respondError(c, badRequest(fmt.Sprintf("limit must be a whole number from 1 to %d.", maxLimit)))
+			return
+		}
+		query.Set("limit", n.String())
+	}
+	if v, ok := body["where"]; ok && v != nil {
+		// Re-encoded and read like the where query parameter, so both give the same filter and cursor
+		raw, err := json.Marshal(v)
+		if err != nil {
+			respondError(c, badRequest("where must be a JSON object."))
+			return
+		}
+		query.Set("where", string(raw))
+	}
+	a.runList(c, tc, query)
+}
+
+// stringOrList reads "a,b" or ["a", "b"] as "a,b"
+func stringOrList(v interface{}, name string) (string, error) {
+	switch v := v.(type) {
+	case string:
+		return v, nil
+	case []interface{}:
+		parts := make([]string, len(v))
+		for i, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return "", badRequest(fmt.Sprintf("%s[%d] must be a field name or ID.", name, i))
+			}
+			parts[i] = s
+		}
+		return strings.Join(parts, ","), nil
+	}
+	return "", badRequest(name + " must be a list of field names, or one comma-separated text.")
+}
+
+// runList answers a list request: GET /records and POST /records/query
+func (a *API) runList(c *gin.Context, tc *tableContext, params url.Values) {
+	opts, err := parseListOptions(params, tc.fields, a.linkResolver(c, tc.ws))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	query, args, err := listSQL(a.recordsTable(tc.table), opts)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
 	rows, err := a.queryRows(c, query, args...)
 	if err != nil {
 		respondError(c, err)
@@ -464,15 +584,6 @@ func keysByID(c *gin.Context) (bool, error) {
 	return false, badRequest("keys must be id or name.")
 }
 
-// recordFromPath reads the {record} path segment
-func recordFromPath(c *gin.Context) (int64, error) {
-	id, ok := DecodeRecordID(c.Param("record"))
-	if !ok {
-		return 0, notFound(fmt.Sprintf("No record with ID %q.", c.Param("record")))
-	}
-	return id, nil
-}
-
 func (a *API) readRecord(ctx context.Context, tc *tableContext, id int64) (map[string]interface{}, error) {
 	rows, err := a.queryRows(ctx, fmt.Sprintf(`SELECT row_to_json(t)::text FROM %s AS t WHERE t.id = $1`, a.recordsTable(tc.table)), id)
 	if err != nil {
@@ -496,7 +607,7 @@ func (a *API) getRecord(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	id, err := recordFromPath(c)
+	id, err := a.recordFromPath(c, tc)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -538,6 +649,19 @@ func readBody(c *gin.Context) (map[string]interface{}, error) {
 		return nil, badRequest("The request body must be a JSON object.")
 	}
 	return body, nil
+}
+
+// readOptionalBody reads a JSON object body; an empty body is {}
+func readOptionalBody(c *gin.Context) (map[string]interface{}, error) {
+	raw, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes))
+	if err != nil {
+		return nil, NewError(CodePayloadTooLarge, "The request body is too large.")
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	return readBody(c)
 }
 
 // onlyKeys rejects body keys other than the allowed ones, so typos surface
@@ -788,6 +912,9 @@ func modelOf(t *tableInfo) (tenant.Model, error) {
 func writeError(err error, recordIDs func(int) string) error {
 	var recErr *app_errors.RecordWriteError
 	if !errors.As(err, &recErr) {
+		if stopped := stoppedWriteError(err); stopped != nil {
+			return stopped
+		}
 		return err
 	}
 	index := recErr.Index
@@ -798,11 +925,35 @@ func writeError(err error, recordIDs func(int) string) error {
 	if errors.Is(recErr.Err, app_errors.DatabaseError) {
 		return recErr.Err
 	}
+	// A busy table or a failed automation isn't about this record's values; a rejection is, and names it below
+	if !errors.Is(recErr.Err, app_errors.AutomationRejected) {
+		if stopped := stoppedWriteError(recErr.Err); stopped != nil {
+			return stopped
+		}
+	}
 	return NewError(CodeValidationFailed, "Some records can't be saved. Nothing was changed.",
 		ErrorDetail{Index: &index, Issue: userMessage(recErr.Err)})
 }
 
-// userMessage is the message the app shows for a write error
+// stoppedWriteError is the API error for a write stopped by the table's automations or by a busy database,
+// or nil for other errors. A trigger function that raised an error gives its own message.
+func stoppedWriteError(err error) *Error {
+	switch {
+	case errors.Is(err, app_errors.AutomationRejected):
+		return NewError(CodeValidationFailed, userMessage(err))
+	case errors.Is(err, app_errors.AutomationFailed):
+		return NewError(CodeInternalError, userMessage(err))
+	case errors.Is(err, app_errors.DatabaseBusy):
+		return NewError(CodeConflict, userMessage(err))
+	}
+	return nil
+}
+
+// cantSaveMessage is shown for a write error that has no message meant for users
+const cantSaveMessage = "This change can't be saved."
+
+// userMessage is the message the app shows for a write error. Errors without a message meant for users get
+// the app's message for their kind, never their internal text.
 func userMessage(err error) string {
 	var detailed *app_errors.DetailedError
 	if errors.As(err, &detailed) && detailed.Message != "" {
@@ -812,13 +963,13 @@ func userMessage(err error) string {
 	if errors.As(err, &apiErr) && apiErr.Message != "" {
 		return apiErr.Message
 	}
-	msg := err.Error()
-	if msg == "" {
-		return msg
+	if code := responseConst.MapError(err); code != "" {
+		if meta, ok := responseConst.ErrorCodes[code]; ok && meta.Message != "" && !errors.Is(err, app_errors.DatabaseError) {
+			return meta.Message
+		}
 	}
-	r := []rune(msg)
-	r[0] = unicode.ToUpper(r[0])
-	return string(r)
+	logger.Get().Warn().Err(err).Msg("public API write error without a message for users")
+	return cantSaveMessage
 }
 
 func validationFailed(details []ErrorDetail) error {
@@ -934,7 +1085,7 @@ func (a *API) updateRecord(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	id, err := recordFromPath(c)
+	id, err := a.recordFromPath(c, tc)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -962,10 +1113,10 @@ func (a *API) updateRecord(c *gin.Context) {
 	if err != nil {
 		var recErr *app_errors.RecordWriteError
 		if errors.As(err, &recErr) && errors.Is(recErr.Err, app_errors.ErrRecordNotFound) {
-			respondError(c, notFound(fmt.Sprintf("No record with ID %q.", EncodeRecordID(id))))
+			respondError(c, notFound(fmt.Sprintf("No record %s.", pathRef(c).label())))
 			return
 		}
-		respondError(c, writeError(err, func(int) string { return EncodeRecordID(id) }))
+		respondError(c, writeError(err, func(int) string { return pathRef(c).label() }))
 		return
 	}
 	if len(w.links) > 0 {
@@ -981,25 +1132,8 @@ func (a *API) updateRecord(c *gin.Context) {
 	a.respondRecords(c, tc, rows, true, c.Query("keys") == "id", http.StatusOK)
 }
 
-// recordIDs reads a list of record IDs from a bulk request; the same ID twice is a bad request
-func recordIDs(raw []string, where string) ([]int64, error) {
-	ids := make([]int64, len(raw))
-	seen := map[int64]int{}
-	for i, s := range raw {
-		id, ok := DecodeRecordID(s)
-		if !ok {
-			return nil, badRequest(fmt.Sprintf("%s[%d]: %q is not a record ID like rec_12.", where, i, s))
-		}
-		if j, dup := seen[id]; dup {
-			return nil, badRequest(fmt.Sprintf("%s: %s appears twice (positions %d and %d).", where, s, j, i))
-		}
-		seen[id] = i
-		ids[i] = id
-	}
-	return ids, nil
-}
-
-// PATCH /records: {"records": [{"id": "rec_1", "fields": {...}}]}
+// PATCH /records: {"records": [{"id": "rec_1", "fields": {...}}]}. On a table whose primary key is other fields,
+// each record has "key": {"SKU": "A1", "Region": "EU"} instead (or "id" with the value of a one-field key).
 func (a *API) updateRecords(c *gin.Context) {
 	body, err := readBody(c)
 	if err == nil {
@@ -1013,21 +1147,26 @@ func (a *API) updateRecords(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	rawIDs := make([]string, len(inputs))
+	refs := make([]recordRef, len(inputs))
 	for i, in := range inputs {
-		if err := onlyKeys(in, fmt.Sprintf("records[%d]", i), "id", "fields"); err != nil {
+		where := fmt.Sprintf("records[%d]", i)
+		if err := onlyKeys(in, where, "id", "key", "fields"); err != nil {
 			respondError(c, err)
 			return
 		}
-		rawIDs[i], _ = in["id"].(string)
+		ref, err := bulkRef(in["id"], in["key"], where)
+		if err != nil {
+			respondError(c, err)
+			return
+		}
+		refs[i] = ref
 	}
-	ids, err := recordIDs(rawIDs, "records.id")
+	tc, err := a.resolveTablePath(c)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-
-	tc, err := a.resolveTablePath(c)
+	ids, err := a.recordRefs(c, tc, refs, "records")
 	if err != nil {
 		respondError(c, err)
 		return
@@ -1056,52 +1195,74 @@ func (a *API) updateRecords(c *gin.Context) {
 	}
 	rows, err := a.records.UpdateRecordsForAPI(c, a.schema, model, updates)
 	if err != nil {
-		respondError(c, writeError(err, func(i int) string { return rawIDs[i] }))
+		respondError(c, writeError(err, func(i int) string { return refs[i].label() }))
 		return
 	}
 	a.respondRecords(c, tc, rows, false, c.Query("keys") == "id", http.StatusOK)
 }
 
-// deleteIDs deletes the records, or none of them when some don't exist
-func (a *API) deleteIDs(c *gin.Context, ids []int64) ([]deletedOut, error) {
-	tc, err := a.resolveTablePath(c)
-	if err != nil {
-		return nil, err
-	}
+// deleteIDs deletes the records, or none of them when some don't exist; refs are the IDs or keys sent for them
+func (a *API) deleteIDs(c *gin.Context, tc *tableContext, ids []int64, refs []string) ([]deletedOut, error) {
 	model, err := modelOf(tc.table)
 	if err != nil {
 		return nil, err
 	}
-	missing, err := a.records.DeleteRecordsForAPI(c, a.schema, model, ids)
+	pk, err := a.recordKeyOf(c, tc)
 	if err != nil {
 		return nil, err
 	}
+	keyOf := map[int64]orderedFields{}
+	if !pk.idKey {
+		rows, err := a.queryRows(c, fmt.Sprintf(`SELECT row_to_json(t)::text FROM %s AS t WHERE t.id = ANY($1)`, a.recordsTable(tc.table)), pq.Array(ids))
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			keyOf[rowID(row)] = pk.keyValues(row, fieldKeys(tc.fields, false))
+		}
+	}
+	missing, err := a.records.DeleteRecordsForAPI(c, a.schema, model, ids)
+	if err != nil {
+		if stopped := stoppedWriteError(err); stopped != nil {
+			return nil, stopped
+		}
+		return nil, err
+	}
 	if len(missing) > 0 {
+		ref := map[int64]string{}
+		for i, id := range ids {
+			ref[id] = refs[i]
+		}
 		details := make([]ErrorDetail, len(missing))
 		for i, id := range missing {
-			details[i] = ErrorDetail{ID: EncodeRecordID(id), Issue: "no record with this ID"}
+			details[i] = ErrorDetail{ID: ref[id], Issue: "no record with this ID or key"}
 		}
 		return nil, NewError(CodeNotFound, "Some records don't exist. Nothing was deleted.", details...)
 	}
 	out := make([]deletedOut, len(ids))
 	for i, id := range ids {
-		out[i] = deletedOut{ID: EncodeRecordID(id), Deleted: true}
+		out[i] = deletedOut{ID: EncodeRecordID(id), Key: keyOf[id], Deleted: true}
 	}
 	return out, nil
 }
 
 // DELETE /records/{id}
 func (a *API) deleteRecord(c *gin.Context) {
-	id, err := recordFromPath(c)
+	tc, err := a.resolveTablePath(c)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	out, err := a.deleteIDs(c, []int64{id})
+	id, err := a.recordFromPath(c, tc)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	out, err := a.deleteIDs(c, tc, []int64{id}, []string{pathRef(c).label()})
 	if err != nil {
 		var apiErr *Error
 		if errors.As(err, &apiErr) && apiErr.Code == CodeNotFound && len(apiErr.Details) > 0 {
-			err = notFound(fmt.Sprintf("No record with ID %q.", EncodeRecordID(id)))
+			err = notFound(fmt.Sprintf("No record %s.", pathRef(c).label()))
 		}
 		respondError(c, err)
 		return
@@ -1109,38 +1270,89 @@ func (a *API) deleteRecord(c *gin.Context) {
 	respond(c, http.StatusOK, out[0])
 }
 
-// POST /records/delete: {"ids": ["rec_1", "rec_2"]}
+// POST /records/delete: {"ids": ["rec_1", "rec_2"]}. On a table whose primary key is other fields,
+// {"keys": [{"SKU": "A1", "Region": "EU"}]} (or "ids" with the values of a one-field key).
 func (a *API) deleteRecords(c *gin.Context) {
 	body, err := readBody(c)
 	if err == nil {
-		err = onlyKeys(body, "body", "ids")
+		err = onlyKeys(body, "body", "ids", "keys")
 	}
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	list, ok := body["ids"].([]interface{})
+	part := "ids"
+	if _, hasKeys := body["keys"]; hasKeys {
+		if _, hasIDs := body["ids"]; hasIDs {
+			respondError(c, badRequest("Send ids or keys, not both."))
+			return
+		}
+		part = "keys"
+	}
+	list, ok := body[part].([]interface{})
 	if !ok || len(list) == 0 {
-		respondError(c, badRequest("ids must be a non-empty array of record IDs."))
+		respondError(c, badRequest("ids must be a non-empty array of record IDs, or keys a non-empty array of key objects."))
 		return
 	}
 	if len(list) > maxBulkRecords {
 		respondError(c, NewError(CodePayloadTooLarge, fmt.Sprintf("At most %d records per request; this one has %d.", maxBulkRecords, len(list))))
 		return
 	}
-	raw := make([]string, len(list))
+	refs := make([]recordRef, len(list))
 	for i, item := range list {
-		raw[i], _ = item.(string)
+		where := fmt.Sprintf("%s[%d]", part, i)
+		var ref recordRef
+		if part == "keys" {
+			ref, err = bulkRef(nil, item, where)
+		} else {
+			ref, err = bulkRef(item, nil, where)
+		}
+		if err != nil {
+			respondError(c, err)
+			return
+		}
+		refs[i] = ref
 	}
-	ids, err := recordIDs(raw, "ids")
+	tc, err := a.resolveTablePath(c)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	out, err := a.deleteIDs(c, ids)
+	ids, err := a.recordRefs(c, tc, refs, part)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	labels := make([]string, len(refs))
+	for i, ref := range refs {
+		labels[i] = ref.label()
+	}
+	out, err := a.deleteIDs(c, tc, ids, labels)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 	respond(c, http.StatusOK, out)
+}
+
+// bulkRef reads how a bulk request names a record: an id (a record ID, or the value of a one-field key) or a
+// key object
+func bulkRef(id, key interface{}, where string) (recordRef, error) {
+	switch {
+	case id != nil && key != nil:
+		return recordRef{}, badRequest(fmt.Sprintf("%s: send id or key, not both.", where))
+	case key != nil:
+		obj, ok := key.(map[string]interface{})
+		if !ok || len(obj) == 0 {
+			return recordRef{}, badRequest(fmt.Sprintf(`%s: the key must be an object of the key fields' values, like {"SKU": "A1", "Region": "EU"}.`, where))
+		}
+		return recordRef{key: obj}, nil
+	}
+	switch v := id.(type) {
+	case string:
+		return recordRef{ref: v}, nil
+	case json.Number:
+		return recordRef{ref: v.String()}, nil
+	}
+	return recordRef{}, badRequest(fmt.Sprintf("%s: needs a record ID, or a key object.", where))
 }

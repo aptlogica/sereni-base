@@ -37,7 +37,7 @@ func TestFilterOperatorsMatchBuildFilter(t *testing.T) {
 		}
 		return "x"
 	}
-	linkTarget := func(*field) string { return `"public"."target"` }
+	linkTarget := func(*field, int64) ([]string, bool, error) { return []string{`[{"id": 1}]`}, true, nil }
 
 	types := []string{"somethingnew"}
 	for uidt := range apiTypeNames {

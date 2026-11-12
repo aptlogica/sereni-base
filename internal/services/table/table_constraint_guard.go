@@ -77,6 +77,9 @@ func (s tableManagementService) ensureTypeFitsKey(schemaName string, column dto.
 // recordWriteError turns a duplicate rejected by a unique key into a message naming the values;
 // other errors are logged and reported as database errors
 func (s tableManagementService) recordWriteError(ctx context.Context, schemaName string, err error, msg string) error {
+	if stopped, ok := writeStoppedError(err); ok {
+		return stopped
+	}
 	if name, ok := app_errors.CheckViolation(err); ok {
 		return s.checkViolationError(schemaName, name)
 	}
