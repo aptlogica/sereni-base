@@ -41,7 +41,16 @@ Bases, tables and fields can be named or given by ID (`bse_...`, `tbl_...`, `fld
 ```bash
 curl "$BASE/bases/CRM/tables/Orders/records?limit=20"
 curl "$BASE/bases/CRM/tables/Orders/records/rec_1042"
+curl -g "$BASE/bases/CRM/tables/Products/records/by-key?key[SKU]=A1&key[Region]=EU"   # primary key SKU + Region
 ```
+
+With the default primary key, a record is found by its record ID (`rec_1042`). When the table's primary key was changed to other fields, the record ID is refused with a `400` that names the key fields, and each record in responses carries a `key` object (`"key": {"SKU": "A1", "Region": "EU"}`). Then:
+
+- One record: `records/A1` for a one-field key, or name each key field: `records/by-key?key[SKU]=A1&key[Region]=EU` (by name or `fld_` ID, in any order; values only need URL encoding, so `_`, `/` and spaces are fine). When the record ID is part of the key, name it `id`: `by-key?key[Uuid]=01a1…&key[id]=1` (`1` or `rec_1`).
+- Bulk update: `{"records": [{"key": {"SKU": "A1", "Region": "EU"}, "fields": {...}}]}`.
+- Bulk delete: `{"keys": [{"SKU": "A1", "Region": "EU"}]}`.
+
+A missing or extra key field, or a field that isn't part of the key, is a `400` saying which; a key that matches nothing is a `404` (*No record with SKU "A1" and Region "FR".*)
 
 ```json
 {
@@ -90,6 +99,76 @@ curl -g "$BASE/bases/CRM/tables/Orders/records?filter[Customer][contains]=rec_12
 
 Operators: `eq` (default), `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. Filters are combined with AND. `sort` takes a comma-separated list; `-` means descending, and `id` is always the last tie-breaker. In `select`, `sort` and `filter`, the names `id`, `created_at` and `updated_at` mean the record's own values (`filter[id]=rec_12`); a field with one of those names, or with `,`, `[` or `]` in its name, must be given by its `fld_` ID.
 
+Formula and lookup fields are calculated when a record is read, so they can't be used to filter or sort.
+
+### "Or" and "not" filters
+
+Send a `where` tree to `POST /records/query`. A group matches **all**, **any** or **none** of its conditions, and a condition is a `field`, an `op` (default `eq`) and a `value`:
+
+```bash
+# Price at least 100, Status Active or Paused, and not paid; highest price first
+curl -X POST "$BASE/bases/CRM/tables/Orders/records/query" -H "Content-Type: application/json" -d '{
+  "where": {
+    "match": "all",
+    "conditions": [
+      { "field": "Price", "op": "gte", "value": 100 },
+      { "match": "any", "conditions": [
+          { "field": "Status", "value": "Active" },
+          { "field": "Status", "value": "Paused" }
+      ]},
+      { "match": "none", "conditions": [ { "field": "Paid", "value": true } ] }
+    ]
+  },
+  "sort": ["-Price"],
+  "limit": 20
+}'
+```
+
+- `match` is `all` when left out. Groups can hold groups, up to 5 deep, with at most 50 conditions in all.
+- `in` takes a JSON list: `{"field": "Status", "op": "in", "value": ["Active", "Paused"]}`.
+- `{"field": "Notes", "op": "is_null"}` finds empty fields.
+- `none` counts an empty field as not matching: `none` of `Price < 100` keeps orders without a price.
+- The body also takes `select`, `limit`, `cursor` and `keys`. An empty `select` (`[]`) returns all fields, as when it is left out. Everything is optional: an empty body, a `where` that is `null` or `{}`, or a group without conditions lists every record. The same goes for `?where=`, `?where={}` and a bare `?filter=` on GET. Page with `next_cursor`, sending the same `where` and `sort`.
+- The same tree works on `GET` as the URL-encoded `where` parameter, combined with any `filter[...]` using AND.
+- The HTTP `QUERY` method works too: `curl -X QUERY "$BASE/bases/CRM/tables/Orders/records/query" ...` takes the same body and gives the same answer. Use whichever your client supports; cursors work across both.
+- Mistakes say where they are: `where.conditions[1].conditions[0]: No field named "Staus". Did you mean "Status"?`
+
+### Search
+
+`search` finds records where **any** text field (text, long text, email, URL, phone, single select) contains the text, ignoring case:
+
+```bash
+curl "$BASE/bases/CRM/tables/Orders/records?search=acme"
+curl "$BASE/bases/CRM/tables/Orders/records?search=acme&filter[Status]=Open"   # both must match
+```
+
+- Combined with `filter[...]` and `where` using AND. In `POST /records/query` send `"search": "acme"`.
+- At most 200 characters; an empty search lists every record. A cursor belongs to its search: send the same `search` with `cursor`.
+
+### Linked records inline (`expand`)
+
+By default a link field holds only each linked record's `id` (and its lookups). `expand` adds the linked record's fields:
+
+```bash
+curl "$BASE/bases/CRM/tables/Orders/records?expand=Customer"
+curl "$BASE/bases/CRM/tables/Orders/records?expand=Customer,Customer.Company"   # two levels
+curl "$BASE/bases/CRM/tables/Orders/records/rec_1042?expand=Customer"
+```
+
+```json
+"Customer": [{ "id": "rec_12", "Email": "asha@example.com",
+               "fields": { "Name": "Asha", "Company": [{ "id": "rec_3", "fields": { "Name": "Acme Group" } }] } }]
+```
+
+- Up to 2 levels (`Customer.Company`; a third level is a 400) and 5 link fields per request. The first 100 linked records of each link are expanded; the rest keep only their `id`.
+- An expanded field is returned even when `select` leaves it out. In `POST /records/query` send `"expand": ["Customer", "Customer.Company"]`.
+- Expanding changes what each record shows, not which records are returned. Filtering by a linked record's fields (`Customer.Country`) isn't supported yet.
+- Each expanded field is one extra database query per page, however many records the page has.
+
+### Time limit
+
+A read (list, query or get one record) that runs longer than 10 seconds is stopped and returns `503 query_timeout`. Narrow the filter or search, expand fewer fields, or ask for a smaller page.
+
 ## 4. Write records
 
 ```bash
@@ -118,7 +197,8 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/delete" -H "Content-Type: ap
 - **All or nothing.** In a bulk request every record is checked first; if any fails, nothing is written and the error lists each problem with the record's `index`. A bulk update or delete with an ID that doesn't exist returns `404` and changes nothing.
 - **Unknown fields are rejected**, not ignored, so typos surface. Read-only fields (lookups, formulas, attachments, users, auto UUIDs, created/modified) can't be written.
 - **Link fields** come back as one object per linked record: its `id` plus every lookup through the link, keyed by the looked-up field's name (`"Email"` above); lookups have no key of their own. To write them, send an array of record IDs or of those objects (only `id` is read). They can only be set when writing one record, and the value replaces the field's links.
-- **Value formats** per field type are in [section 6 of the design doc](../API_PLATFORM_FOUNDATION.md#6-field-type-mapping). Dates are `"2026-11-03"`, date-times RFC 3339 (returned in UTC), times `"10:15"`, durations whole minutes.
+- **Value formats** per field type are in [section 6 of the design doc](../API_PLATFORM_FOUNDATION.md#6-field-type-mapping). Dates are `"2026-11-03"`, date-times RFC 3339 (returned in UTC), times `"14:15"` (12-hour input like `"2:15 PM"` is also accepted), durations whole minutes.
+- **Field settings apply, as in the app.** Select and multi-select values must be one of the field's options. Email, phone and URL fields are checked only when their check is turned on in the field's settings, with the same rules the app uses; with it off, any text is saved. Decimal values are rounded to the field's decimal places, and percent values to 1 decimal. A rating can't be above the field's highest rating.
 
 ### Safe retries
 
@@ -145,13 +225,14 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records" -H "Content-Type: applicati
 
 | Code | HTTP | When |
 |---|---|---|
-| `bad_request` | 400 | Malformed JSON, a bad query parameter, a cursor reused with another filter or sort, the same ID twice in a bulk request |
+| `bad_request` | 400 | Malformed JSON, a bad query parameter or where tree, a cursor reused with another filter or sort, the same ID twice in a bulk request |
 | `not_found` | 404 | Workspace, base, table, field or record doesn't exist, or the workspace's API is off |
 | `ambiguous_name` | 409 | A name matches more than one base, table or field (`details` lists their IDs) |
-| `conflict` | 409 | Idempotency key reused with a different body, or still running |
+| `conflict` | 409 | Idempotency key reused with a different body, or still running; or the table was busy with other changes (nothing was saved, try again) |
 | `payload_too_large` | 413 | More than 100 records in one request |
-| `validation_failed` | 422 | Wrong type, unknown field, read-only field, unknown select option, link field in a bulk write, a duplicate key or a failed check constraint |
+| `validation_failed` | 422 | Wrong type, unknown field, read-only field, unknown select option, link field in a bulk write, a duplicate key, a failed check constraint, or a table automation that rejected the change (its own message is shown) |
 | `rate_limited` | 429 | More than 600 requests per minute for the workspace; wait `Retry-After` seconds |
-| `internal_error` | 500 | Server error; quote `meta.request_id` when reporting it |
+| `internal_error` | 500 | Server error; quote `meta.request_id` when reporting it. If an automation on the table failed, the message says so: check the table's automations |
+| `query_timeout` | 503 | A read ran longer than 10 seconds and was stopped; narrow the filter or search, expand fewer fields, or ask for a smaller page |
 
 Every response has an `X-Request-Id` header equal to `meta.request_id`. You can send your own `X-Request-Id` (up to 64 characters of `A-Z a-z 0-9 _ -`) to trace a request through the server logs.

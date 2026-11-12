@@ -26,6 +26,7 @@ const (
 	CodeValidationFailed ErrorCode = "validation_failed"
 	CodeRateLimited      ErrorCode = "rate_limited"
 	CodeInternalError    ErrorCode = "internal_error"
+	CodeQueryTimeout     ErrorCode = "query_timeout"
 )
 
 var errorStatus = map[ErrorCode]int{
@@ -37,6 +38,7 @@ var errorStatus = map[ErrorCode]int{
 	CodeValidationFailed: http.StatusUnprocessableEntity,
 	CodeRateLimited:      http.StatusTooManyRequests,
 	CodeInternalError:    http.StatusInternalServerError,
+	CodeQueryTimeout:     http.StatusServiceUnavailable,
 }
 
 // Status returns the HTTP status of an error code

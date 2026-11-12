@@ -114,10 +114,19 @@ paths:
       summary: List records
       operationId: listRecords
       description: |
-        Filters use `filter[Field]=value` (equals) or `filter[Field][operator]=value` and are combined with AND.
+        Simple filters use `filter[Field]=value` (equals) or `filter[Field][operator]=value` and are combined with AND.
         Operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in` (comma-separated), `contains` (text: case-insensitive
         substring; multi select: has the option; links: links to the record ID), `is_null` (`true`/`false`).
+
+        For "or" and "not", send a `where` tree: groups that match **all**, **any** or **none** of their
+        conditions, nested up to 5 deep with at most 50 conditions. It is combined with `filter[...]` using AND.
+        The same tree can be sent in a JSON body to `POST /records/query`, which is easier for long filters.
+
+        Formula and lookup fields are calculated when read, so they can't be used to filter or sort.
         In `select`, `sort` and `filter`, `id`, `created_at` and `updated_at` mean the record's own values.
+
+        `search` finds records where any text field contains the text; `expand` returns linked records' fields
+        inside the link objects. A request that runs longer than 10 seconds is stopped with `query_timeout` (503).
       parameters:
         - name: limit
           in: query
@@ -128,14 +137,14 @@ paths:
           schema: { type: string }
         - name: select
           in: query
-          description: Comma-separated field names or IDs to return.
+          description: Comma-separated field names or IDs to return. Empty or left out returns all fields.
           schema: { type: string }
           example: Name,Price
         - name: sort
           in: query
           description: Comma-separated field names or IDs; `-` for descending. `id` is always the last tie-breaker.
           schema: { type: string }
-          example: -created_at,Name
+          example: -created_at
         - name: filter
           in: query
           style: deepObject
@@ -144,6 +153,17 @@ paths:
             type: object
             additionalProperties: true
           example: { Status: Active }
+        - name: where
+          in: query
+          description: |
+            A filter tree as JSON (URL-encoded): `{"match": "any", "conditions": [{"field": "Status", "value": "Active"},
+            {"field": "Status", "value": "Paused"}]}`. See `WhereGroup`. For long filters use `POST /records/query`.
+            Empty, `null`, `{}` or a group without conditions filters nothing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WhereGroup" }
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Expand"
         - $ref: "#/components/parameters/Keys"
       responses:
         "200":
@@ -163,6 +183,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/QueryTimeout" }
     post:
       tags: [Records]
       summary: Create one or many records
@@ -217,7 +238,7 @@ paths:
       tags: [Records]
       summary: Update many records
       operationId: updateRecords
-      description: Up to 100 records; only the fields sent change. All or nothing; an ID that doesn't exist is 404. Link fields can't be set here.
+      description: Up to 100 records; only the fields sent change. Each record has an `id` (a record ID, or the value of a one-field key) or, on a table whose primary key is other fields, a `key` object naming each key field. All or nothing; a record that doesn't exist is 404. Link fields can't be set here.
       parameters:
         - $ref: "#/components/parameters/Keys"
       requestBody:
@@ -235,10 +256,14 @@ paths:
                   maxItems: 100
                   items:
                     type: object
-                    required: [id]
+                    description: Give `id` or `key`, not both.
                     additionalProperties: false
                     properties:
-                      id: { $ref: "#/components/schemas/RecordID" }
+                      id:
+                        type: string
+                        description: A record ID, or the value of a one-field primary key
+                        example: rec_1042
+                      key: { $ref: "#/components/schemas/RecordKey" }
                       fields: { $ref: "#/components/schemas/Fields" }
       responses:
         "200":
@@ -259,6 +284,110 @@ paths:
         "422": { $ref: "#/components/responses/ValidationFailed" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /bases/{base}/tables/{table}/records/query:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+      - $ref: "#/components/parameters/Table"
+    post:
+      tags: [Records]
+      summary: Find records (filter in the body)
+      operationId: queryRecords
+      description: |
+        The same as listing records, with the options in a JSON body instead of the URL. Use it for filters
+        with "or" and "not": `where` is a group that matches **all**, **any** or **none** of its conditions,
+        and groups can hold groups (up to 5 deep, at most 50 conditions). Nothing is changed; the request only reads.
+        Page with `next_cursor` as usual, sending the same `where` and `sort`.
+
+        The same request also works with the HTTP `QUERY` method (`QUERY /records/query`, same body and answer).
+        Use whichever your client supports; a cursor from one works with the other.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                where: { $ref: "#/components/schemas/WhereGroup" }
+                sort:
+                  description: Field names or IDs; `-` for descending. A list, or one comma-separated text.
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+                  example: [-Price]
+                select:
+                  description: Field names or IDs to return. A list, or one comma-separated text. An empty list returns all fields.
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+                limit: { type: integer, minimum: 1, maximum: 200, default: 50 }
+                cursor: { type: string, description: "`meta.next_cursor` of the previous page." }
+                keys: { type: string, enum: [name, id] }
+                search:
+                  type: string
+                  maxLength: 200
+                  description: Records where any text field contains this text (see the `search` parameter of List records).
+                expand:
+                  description: Link fields whose linked records' fields to return (see the `expand` parameter of List records). A list, or one comma-separated text.
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+                  example: [Customer, Customer.Company]
+            examples:
+              anyOf:
+                summary: Status is Active or Paused
+                value:
+                  where:
+                    match: any
+                    conditions:
+                      - { field: Status, value: Active }
+                      - { field: Status, value: Paused }
+              nested:
+                summary: Price at least 100, Active or Paused, and not paid
+                value:
+                  where:
+                    match: all
+                    conditions:
+                      - { field: Price, op: gte, value: 100 }
+                      - match: any
+                        conditions:
+                          - { field: Status, value: Active }
+                          - { field: Status, value: Paused }
+                      - match: none
+                        conditions:
+                          - { field: Paid, value: true }
+                  sort: [-Price]
+                  limit: 20
+              searchAndExpand:
+                summary: Open records mentioning "acme", with each customer and its company
+                value:
+                  search: acme
+                  where: { field: Status, value: Open }
+                  expand: [Customer, Customer.Company]
+      responses:
+        "200":
+          description: A page of records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, error, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Record" }
+                  error: { type: object, nullable: true }
+                  meta: { $ref: "#/components/schemas/ListMeta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/AmbiguousName" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/QueryTimeout" }
+
   /bases/{base}/tables/{table}/records/{record}:
     parameters:
       - $ref: "#/components/parameters/Base"
@@ -266,12 +395,19 @@ paths:
       - name: record
         in: path
         required: true
-        schema: { $ref: "#/components/schemas/RecordID" }
+        description: >-
+          The record ID (`rec_1042`) with the default primary key. When the table's primary key was changed to
+          other fields, a record ID is refused with a 400 that names the key fields: use the value of a one-field key
+          (`records/A1`), or `by-key` and name each key field with `key[Field]=value` parameters
+          (`records/by-key?key[SKU]=A1&key[Region]=EU`, by name or `fld_` ID, in any order).
+        schema: { type: string }
+        example: rec_1042
     get:
       tags: [Records]
       summary: Get one record
       operationId: getRecord
       parameters:
+        - $ref: "#/components/parameters/Expand"
         - $ref: "#/components/parameters/Keys"
       responses:
         "200":
@@ -284,8 +420,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/Record" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/QueryTimeout" }
     patch:
       tags: [Records]
       summary: Update one record
@@ -339,7 +477,7 @@ paths:
       tags: [Records]
       summary: Delete many records
       operationId: deleteRecords
-      description: Up to 100 IDs. If any doesn't exist, nothing is deleted and the response is 404 listing the missing IDs.
+      description: Up to 100 records, as `ids` (record IDs, or values of a one-field key) or, on a table whose primary key is other fields, `keys` (key objects). If any doesn't exist, nothing is deleted and the response is 404 listing the missing ones.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -348,14 +486,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [ids]
+              description: Give `ids` or `keys`, not both.
               additionalProperties: false
               properties:
                 ids:
                   type: array
                   minItems: 1
                   maxItems: 100
-                  items: { $ref: "#/components/schemas/RecordID" }
+                  items: { type: string, example: rec_1042 }
+                keys:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { $ref: "#/components/schemas/RecordKey" }
       responses:
         "200":
           description: Deleted, in order
@@ -394,6 +537,25 @@ components:
       in: query
       description: Key `fields` by field name (default) or by field ID.
       schema: { type: string, enum: [name, id] }
+    Search:
+      name: search
+      in: query
+      description: |
+        Records where any text field (text, long text, email, URL, phone, single select) contains this text,
+        ignoring case. Combined with `filter[...]` and `where` using AND, and part of the cursor: send the same
+        search with `cursor`. At most 200 characters; empty searches nothing.
+      schema: { type: string, maxLength: 200 }
+      example: acme
+    Expand:
+      name: expand
+      in: query
+      description: |
+        Comma-separated link field names or IDs. Each linked record's object gets a `fields` object with that
+        record's fields. `Customer.Company` also expands the Company link inside each customer (2 levels at most,
+        5 link fields at most, the first 100 linked records of each link). An expanded field is returned even when
+        `select` leaves it out. Expanding doesn't change which records are returned.
+      schema: { type: string }
+      example: Customer,Customer.Company
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -442,7 +604,7 @@ components:
           properties:
             code:
               type: string
-              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error]
+              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error, query_timeout]
             message: { type: string }
             details:
               type: array
@@ -509,8 +671,9 @@ components:
         Values by field name (or ID). Formats: date `"2026-11-03"`; date and time RFC 3339 (returned in UTC);
         time `"10:15"`; duration whole minutes; select an option name; multi select an array of option names;
         json any JSON value. Links are an array of objects, one per linked record: `id` plus each lookup through
-        the link keyed by the looked-up field's name; lookups have no key of their own. Links are written as an
-        array of record IDs or of those objects (only `id` is read). Empty values are `null`, or `[]` for lists.
+        the link keyed by the looked-up field's name; lookups have no key of their own. With `expand`, the object
+        also has `fields`: the linked record's fields. Links are written as an array of record IDs or of those
+        objects (only `id` is read). Empty values are `null`, or `[]` for lists.
       additionalProperties: true
       example: { Name: Asha, Status: Active, Price: 499, Customer: [{ id: rec_12, Email: asha@example.com }] }
     FieldsInput:
@@ -518,23 +681,72 @@ components:
       additionalProperties: false
       properties:
         fields: { $ref: "#/components/schemas/Fields" }
+    RecordKey:
+      type: object
+      description: The primary key fields' values, by field name or `fld_` ID, when the table's key is other fields than the record ID. When the record ID is part of the key, name it `id` (`12` or `rec_12`).
+      additionalProperties: true
+      example: { SKU: A1, Region: EU }
     Record:
       type: object
       required: [id, fields, created_at, updated_at]
       properties:
         id: { $ref: "#/components/schemas/RecordID" }
+        key: { $ref: "#/components/schemas/RecordKey" }
         fields: { $ref: "#/components/schemas/Fields" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    WhereGroup:
+      type: object
+      description: |
+        Records where **all** (default), **any** or **none** of the conditions are true. A condition can itself be
+        a group. `none` counts an empty field as not matching, so `none` of `Price < 100` keeps records without a price.
+      required: [conditions]
+      additionalProperties: false
+      properties:
+        match: { type: string, enum: [all, any, none], default: all }
+        conditions:
+          type: array
+          minItems: 1
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/WhereCondition"
+              - $ref: "#/components/schemas/WhereGroup"
+      example:
+        match: any
+        conditions:
+          - { field: Status, value: Active }
+          - { field: Price, op: lt, value: 100 }
+    WhereCondition:
+      type: object
+      description: |
+        One test of one field. The operators each field type takes are the same as for `filter[...]`;
+        `in` takes a list. `{"field": "Status", "op": "is_null"}` finds empty fields.
+      required: [field]
+      additionalProperties: false
+      properties:
+        field: { type: string, description: "Field name or ID (`fld_...`), or `id`, `created_at`, `updated_at`" }
+        op:
+          type: string
+          enum: [eq, neq, gt, gte, lt, lte, in, contains, is_null]
+          default: eq
+        value:
+          description: Text, a number or true/false; a list for `in`; true or false for `is_null` (default true).
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+            - type: array
+              items: {}
     Deleted:
       type: object
       properties:
         id: { $ref: "#/components/schemas/RecordID" }
+        key: { $ref: "#/components/schemas/RecordKey" }
         deleted: { type: boolean, enum: [true] }
 
   responses:
     BadRequest:
-      description: Malformed JSON, a bad query parameter, a reused cursor, or the same ID twice
+      description: Malformed JSON, a bad query parameter or where tree, a reused cursor, or the same ID twice
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -567,6 +779,11 @@ components:
       description: Too many requests for this workspace
       headers:
         Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    QueryTimeout:
+      description: The request ran longer than 10 seconds and was stopped (`query_timeout`). Narrow the filter or search, expand fewer fields, or ask for a smaller page.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }

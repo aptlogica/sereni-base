@@ -112,7 +112,9 @@ func rowID(row map[string]interface{}) int64 {
 // buildRecords turns stored rows into API records with the given fields. A link field becomes a list of
 // objects, one per linked record: its id and the values of the lookups that go through the link. Lookups are
 // not keys of their own: a selected lookup brings its link field, holding only the selected lookups.
-func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[string]interface{}, fields []*field, keysByID bool) ([]recordOut, error) {
+// The objects of the link fields in expand also hold the linked record's fields, under "fields".
+func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[string]interface{}, fields []*field, keysByID bool,
+	expand expandSet) ([]recordOut, error) {
 	keys := fieldKeys(tc.fields, keysByID)
 	pk, err := a.recordKeyOf(ctx, tc)
 	if err != nil {
@@ -153,6 +155,7 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 
 	linkIDs := map[*field][][]int64{}
 	lookups := map[*field][]linkLookup{}
+	expanded := map[*field]map[int64]orderedFields{}
 	for _, f := range returned {
 		if f.Type != typeLinks {
 			continue
@@ -171,6 +174,11 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 			return nil, err
 		}
 		lookups[f] = values
+		if node := expand[f]; node != nil {
+			if expanded[f], err = a.expandedRecords(ctx, node, ids, keysByID); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	out := make([]recordOut, len(rows))
@@ -180,10 +188,17 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 			var v interface{}
 			if f.Type == typeLinks {
 				list := make([]orderedFields, 0, len(linkIDs[f][i]))
-				for _, id := range linkIDs[f][i] {
+				for j, id := range linkIDs[f][i] {
 					obj := orderedFields{{key: refID, value: EncodeRecordID(id)}}
 					for _, lk := range lookups[f] {
-						obj = append(obj, fieldValue{key: lk.key, value: lk.values[id]})
+						key := lk.key
+						if expanded[f] != nil && key == expandKey {
+							key = lk.id // "fields" holds the expanded record
+						}
+						obj = append(obj, fieldValue{key: key, value: lk.values[id]})
+					}
+					if fv, ok := expanded[f][id]; ok && j < maxExpandPerRecord {
+						obj = append(obj, fieldValue{key: expandKey, value: fv})
 					}
 					list = append(list, obj)
 				}
@@ -207,6 +222,7 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 // linkLookup is one lookup in a link field's objects: its key and its value in each linked record
 type linkLookup struct {
 	key    string
+	id     string // the looked-up field's ID, the key when its name is taken
 	values map[int64]interface{}
 }
 
@@ -268,7 +284,7 @@ func (a *API) linkLookups(ctx context.Context, ws workspaceRef, link *field, loo
 	keys := lookupKeys(targets, keysByID)
 	out := make([]linkLookup, len(targets))
 	for i, tf := range targets {
-		out[i] = linkLookup{key: keys[tf], values: map[int64]interface{}{}}
+		out[i] = linkLookup{key: keys[tf], id: tf.PublicID(), values: map[int64]interface{}{}}
 		if len(ids) == 0 {
 			continue
 		}
@@ -478,14 +494,14 @@ func (a *API) queryRecords(c *gin.Context) {
 	// No body lists every record, as GET /records does
 	body, err := readOptionalBody(c)
 	if err == nil {
-		err = onlyKeys(body, "body", "where", "sort", "select", "limit", "cursor", "keys")
+		err = onlyKeys(body, "body", "where", "sort", "select", "limit", "cursor", "keys", "expand", "search")
 	}
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 	query := url.Values{}
-	for _, k := range []string{"sort", "select"} {
+	for _, k := range []string{"sort", "select", "expand"} {
 		if v, ok := body[k]; ok && v != nil {
 			list, err := stringOrList(v, k)
 			if err != nil {
@@ -495,7 +511,7 @@ func (a *API) queryRecords(c *gin.Context) {
 			query.Set(k, list)
 		}
 	}
-	for _, k := range []string{"cursor", "keys"} {
+	for _, k := range []string{"cursor", "keys", "search"} {
 		if v, ok := body[k]; ok && v != nil {
 			s, ok := v.(string)
 			if !ok {
@@ -546,19 +562,28 @@ func stringOrList(v interface{}, name string) (string, error) {
 
 // runList answers a list request: GET /records and POST /records/query
 func (a *API) runList(c *gin.Context, tc *tableContext, params url.Values) {
-	opts, err := parseListOptions(params, tc.fields, a.linkResolver(c, tc.ws))
+	ctx, cancel := context.WithTimeout(c.Request.Context(), queryTimeout)
+	defer cancel()
+	fail := func(err error) { respondError(c, timeoutError(ctx, err)) }
+
+	opts, err := parseListOptions(params, tc.fields, a.linkResolver(ctx, tc.ws))
 	if err != nil {
-		respondError(c, err)
+		fail(err)
+		return
+	}
+	expand, err := a.parseExpand(ctx, tc, params["expand"]...)
+	if err != nil {
+		fail(err)
 		return
 	}
 	query, args, err := listSQL(a.recordsTable(tc.table), opts)
 	if err != nil {
-		respondError(c, err)
+		fail(err)
 		return
 	}
-	rows, err := a.queryRows(c, query, args...)
+	rows, err := a.queryRows(ctx, query, args...)
 	if err != nil {
-		respondError(c, err)
+		fail(err)
 		return
 	}
 	next := ""
@@ -566,9 +591,9 @@ func (a *API) runList(c *gin.Context, tc *tableContext, params url.Values) {
 		rows = rows[:opts.limit]
 		next = encodeCursor(opts.offset+opts.limit, opts.hash)
 	}
-	out, err := a.buildRecords(c, tc, rows, opts.fields, opts.keysByID)
+	out, err := a.buildRecords(ctx, tc, rows, withExpanded(opts.fields, tc.fields, expand), opts.keysByID, expand)
 	if err != nil {
-		respondError(c, err)
+		fail(err)
 		return
 	}
 	respondList(c, out, next, opts.limit)
@@ -612,17 +637,29 @@ func (a *API) getRecord(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	row, err := a.readRecord(c, tc, id)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), queryTimeout)
+	defer cancel()
+	expand, err := a.parseExpand(ctx, tc, c.QueryArray("expand")...)
 	if err != nil {
-		respondError(c, err)
+		respondError(c, timeoutError(ctx, err))
 		return
 	}
-	a.respondRecords(c, tc, []map[string]interface{}{row}, true, byID, http.StatusOK)
+	row, err := a.readRecord(ctx, tc, id)
+	if err != nil {
+		respondError(c, timeoutError(ctx, err))
+		return
+	}
+	out, err := a.buildRecords(ctx, tc, []map[string]interface{}{row}, tc.fields, byID, expand)
+	if err != nil {
+		respondError(c, timeoutError(ctx, err))
+		return
+	}
+	respond(c, http.StatusOK, out[0])
 }
 
 // respondRecords writes one record, or the list when single is false
 func (a *API) respondRecords(c *gin.Context, tc *tableContext, rows []map[string]interface{}, single, byID bool, status int) {
-	out, err := a.buildRecords(c, tc, rows, tc.fields, byID)
+	out, err := a.buildRecords(c, tc, rows, tc.fields, byID, nil)
 	if err != nil {
 		respondError(c, err)
 		return

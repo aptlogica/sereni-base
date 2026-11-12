@@ -164,6 +164,13 @@ func parseListOptions(query url.Values, fields []*field, links linkResolver) (*l
 		opts.filters = append(opts.filters, term)
 	}
 
+	// Search across the text fields; combined with the filters using AND, and part of the cursor hash
+	if term, ok, err := buildSearch(fields, query.Get("search")); err != nil {
+		return nil, err
+	} else if ok {
+		opts.filters = append(opts.filters, term)
+	}
+
 	if raw := query.Get("sort"); raw != "" {
 		for _, ref := range splitList(raw) {
 			desc := strings.HasPrefix(ref, "-")

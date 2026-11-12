@@ -124,6 +124,9 @@ paths:
 
         Formula and lookup fields are calculated when read, so they can't be used to filter or sort.
         In `select`, `sort` and `filter`, `id`, `created_at` and `updated_at` mean the record's own values.
+
+        `search` finds records where any text field contains the text; `expand` returns linked records' fields
+        inside the link objects. A request that runs longer than 10 seconds is stopped with `query_timeout` (503).
       parameters:
         - name: limit
           in: query
@@ -159,6 +162,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WhereGroup" }
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Expand"
         - $ref: "#/components/parameters/Keys"
       responses:
         "200":
@@ -178,6 +183,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/QueryTimeout" }
     post:
       tags: [Records]
       summary: Create one or many records
@@ -319,6 +325,17 @@ paths:
                 limit: { type: integer, minimum: 1, maximum: 200, default: 50 }
                 cursor: { type: string, description: "`meta.next_cursor` of the previous page." }
                 keys: { type: string, enum: [name, id] }
+                search:
+                  type: string
+                  maxLength: 200
+                  description: Records where any text field contains this text (see the `search` parameter of List records).
+                expand:
+                  description: Link fields whose linked records' fields to return (see the `expand` parameter of List records). A list, or one comma-separated text.
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+                  example: [Customer, Customer.Company]
             examples:
               anyOf:
                 summary: Status is Active or Paused
@@ -344,6 +361,12 @@ paths:
                           - { field: Paid, value: true }
                   sort: [-Price]
                   limit: 20
+              searchAndExpand:
+                summary: Open records mentioning "acme", with each customer and its company
+                value:
+                  search: acme
+                  where: { field: Status, value: Open }
+                  expand: [Customer, Customer.Company]
       responses:
         "200":
           description: A page of records
@@ -363,6 +386,7 @@ paths:
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/QueryTimeout" }
 
   /bases/{base}/tables/{table}/records/{record}:
     parameters:
@@ -383,6 +407,7 @@ paths:
       summary: Get one record
       operationId: getRecord
       parameters:
+        - $ref: "#/components/parameters/Expand"
         - $ref: "#/components/parameters/Keys"
       responses:
         "200":
@@ -395,8 +420,10 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/Record" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/QueryTimeout" }
     patch:
       tags: [Records]
       summary: Update one record
@@ -510,6 +537,25 @@ components:
       in: query
       description: Key `fields` by field name (default) or by field ID.
       schema: { type: string, enum: [name, id] }
+    Search:
+      name: search
+      in: query
+      description: |
+        Records where any text field (text, long text, email, URL, phone, single select) contains this text,
+        ignoring case. Combined with `filter[...]` and `where` using AND, and part of the cursor: send the same
+        search with `cursor`. At most 200 characters; empty searches nothing.
+      schema: { type: string, maxLength: 200 }
+      example: acme
+    Expand:
+      name: expand
+      in: query
+      description: |
+        Comma-separated link field names or IDs. Each linked record's object gets a `fields` object with that
+        record's fields. `Customer.Company` also expands the Company link inside each customer (2 levels at most,
+        5 link fields at most, the first 100 linked records of each link). An expanded field is returned even when
+        `select` leaves it out. Expanding doesn't change which records are returned.
+      schema: { type: string }
+      example: Customer,Customer.Company
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -558,7 +604,7 @@ components:
           properties:
             code:
               type: string
-              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error]
+              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error, query_timeout]
             message: { type: string }
             details:
               type: array
@@ -625,8 +671,9 @@ components:
         Values by field name (or ID). Formats: date `"2026-11-03"`; date and time RFC 3339 (returned in UTC);
         time `"10:15"`; duration whole minutes; select an option name; multi select an array of option names;
         json any JSON value. Links are an array of objects, one per linked record: `id` plus each lookup through
-        the link keyed by the looked-up field's name; lookups have no key of their own. Links are written as an
-        array of record IDs or of those objects (only `id` is read). Empty values are `null`, or `[]` for lists.
+        the link keyed by the looked-up field's name; lookups have no key of their own. With `expand`, the object
+        also has `fields`: the linked record's fields. Links are written as an array of record IDs or of those
+        objects (only `id` is read). Empty values are `null`, or `[]` for lists.
       additionalProperties: true
       example: { Name: Asha, Status: Active, Price: 499, Customer: [{ id: rec_12, Email: asha@example.com }] }
     FieldsInput:
@@ -732,6 +779,11 @@ components:
       description: Too many requests for this workspace
       headers:
         Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    QueryTimeout:
+      description: The request ran longer than 10 seconds and was stopped (`query_timeout`). Narrow the filter or search, expand fewer fields, or ask for a smaller page.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }

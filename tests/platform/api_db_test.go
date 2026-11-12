@@ -173,6 +173,10 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	relationID, _ := link.Meta["relation_id"].(string)
 	addColumn(orders, "Customer name", "lookup", map[string]interface{}{
 		"relation_id": relationID, "lookup_column_id": customerTitle.ID.String(), "link_column_id": link.ID.String()})
+	// Orders -> Customer -> Company, for expand two levels deep
+	companies := createTable("Companies")
+	addColumn(customers, "Company", "links", map[string]interface{}{
+		"relation": map[string]interface{}{"with": companies.Model.ID.String(), "type": "has-many"}})
 	createTable("In/Out")
 
 	// A table whose primary key was changed in the app (two fields), with a unique constraint and a NOT NULL
@@ -473,6 +477,134 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("GET", ordersPath+"/records?limit=1&filter[Status]=Open&cursor="+url.QueryEscape(next), nil)
 		assert.Equal(t, http.StatusBadRequest, code)
 		assert.Equal(t, "bad_request", res.Error.Code)
+	})
+
+	t.Run("search across text fields", func(t *testing.T) {
+		titles := func(raw json.RawMessage) []string {
+			var out []string
+			for _, rec := range records(raw) {
+				out = append(out, fmt.Sprint(rec.Fields["Title"]))
+			}
+			return out
+		}
+		// Case-insensitive, in Title
+		code, res, _ := call("GET", ordersPath+"/records?search=BULK&sort=Price", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Equal(t, []string{"Bulk 1", "Bulk 2", "Bulk 3", "Bulk 4", "Bulk 5", "Bulk 6"}, titles(res.Data))
+
+		// In a select field too (Status), and combined with filters using AND
+		code, res, _ = call("GET", ordersPath+"/records?search=open", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Len(t, records(res.Data), 4) // First, Bulk 1, 3, 5
+		code, res, _ = call("GET", ordersPath+"/records?search=open&filter[Price][gte]=20", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Equal(t, []string{"Bulk 3", "Bulk 5"}, titles(res.Data))
+
+		// In the body, paged with its cursor
+		code, res, _ = call("POST", ordersPath+"/records/query", map[string]interface{}{"search": "bulk", "limit": 4, "sort": "Price"})
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Len(t, records(res.Data), 4)
+		next, _ := res.Meta["next_cursor"].(string)
+		require.NotEmpty(t, next)
+		code, res, _ = call("GET", ordersPath+"/records?search=bulk&limit=4&sort=Price&cursor="+url.QueryEscape(next), nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Equal(t, []string{"Bulk 5", "Bulk 6"}, titles(res.Data))
+		code, _, _ = call("GET", ordersPath+"/records?search=first&limit=4&sort=Price&cursor="+url.QueryEscape(next), nil)
+		assert.Equal(t, http.StatusBadRequest, code, "a cursor belongs to its search")
+
+		code, res, _ = call("GET", ordersPath+"/records?search=nothing-matches-this", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Empty(t, records(res.Data))
+	})
+
+	t.Run("expand linked records", func(t *testing.T) {
+		// Asha's company
+		code, res, _ := call("POST", base+"/bases/Main/tables/Companies/records", map[string]interface{}{
+			"fields": map[string]interface{}{"Title": "Acme Group"}})
+		require.Equal(t, http.StatusCreated, code, res.Error)
+		company := record(res.Data)
+		code, res, _ = call("PATCH", base+"/bases/Main/tables/Customers/records/"+cust[0].ID, map[string]interface{}{
+			"fields": map[string]interface{}{"Company": []string{company.ID}}})
+		require.Equal(t, http.StatusOK, code, res.Error)
+
+		linked := func(rec apiRecord, name string) []map[string]interface{} {
+			t.Helper()
+			list, ok := rec.Fields[name].([]interface{})
+			require.True(t, ok, "%s: %v", name, rec.Fields[name])
+			out := make([]map[string]interface{}, len(list))
+			for i, item := range list {
+				out[i] = item.(map[string]interface{})
+			}
+			return out
+		}
+		inner := func(obj map[string]interface{}) apiRecord {
+			t.Helper()
+			fields, ok := obj["fields"].(map[string]interface{})
+			require.True(t, ok, "expanded object has fields: %v", obj)
+			return apiRecord{Fields: fields}
+		}
+		byCustomer := ordersPath + "/records?filter[Customer][contains]=" + cust[0].ID
+
+		// Without expand: only the id and the lookup
+		code, res, _ = call("GET", byCustomer, nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		obj := linked(records(res.Data)[0], "Customer")[0]
+		assert.NotContains(t, obj, "fields")
+
+		// One level: the customer's fields; its own link holds only the company's id
+		code, res, _ = call("GET", byCustomer+"&expand=Customer", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		obj = linked(records(res.Data)[0], "Customer")[0]
+		assert.Equal(t, cust[0].ID, obj["id"])
+		assert.Equal(t, "Asha", obj[customerTitle.Title], "lookups are still there")
+		customer := inner(obj)
+		assert.Equal(t, "Asha", customer.Fields[customerTitle.Title])
+		assert.Equal(t, []interface{}{map[string]interface{}{"id": company.ID}}, customer.Fields["Company"])
+
+		// Two levels; Customer.Company alone expands Customer too
+		for _, expand := range []string{"Customer,Customer.Company", "Customer.Company"} {
+			code, res, _ = call("GET", byCustomer+"&expand="+url.QueryEscape(expand), nil)
+			require.Equal(t, http.StatusOK, code, res.Error)
+			customer = inner(linked(records(res.Data)[0], "Customer")[0])
+			comp := linked(customer, "Company")[0]
+			assert.Equal(t, company.ID, comp["id"])
+			assert.Equal(t, "Acme Group", inner(comp).Fields["Title"], expand)
+		}
+
+		// An expanded field is returned even when select leaves it out
+		code, res, _ = call("GET", byCustomer+"&select=Title&expand=Customer", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		got := records(res.Data)[0]
+		assert.Len(t, got.Fields, 2)
+		assert.Equal(t, "Asha", inner(linked(got, "Customer")[0]).Fields[customerTitle.Title])
+
+		// In the query body, and on one record
+		code, res, _ = call("POST", ordersPath+"/records/query", map[string]interface{}{
+			"where":  map[string]interface{}{"field": "Customer", "op": "contains", "value": cust[0].ID},
+			"expand": []string{"Customer.Company"}})
+		require.Equal(t, http.StatusOK, code, res.Error)
+		customer = inner(linked(records(res.Data)[0], "Customer")[0])
+		assert.Equal(t, "Acme Group", inner(linked(customer, "Company")[0]).Fields["Title"])
+		code, res, _ = call("GET", ordersPath+"/records/"+first.ID+"?expand=Customer", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Equal(t, "Asha", inner(linked(record(res.Data), "Customer")[0]).Fields[customerTitle.Title])
+
+		// Records without links still list fine
+		code, res, _ = call("GET", ordersPath+"/records?expand=Customer.Company", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Len(t, records(res.Data), 7)
+
+		// Problems are 400s that say what to change
+		for expand, msg := range map[string]string{
+			"Price":                       `"Price" is a decimal field; only link fields can be expanded`,
+			"Custmer":                     `Did you mean "Customer"?`,
+			"Customer.Compny":             `Did you mean "Company"?`,
+			"Customer.Company.Title.More": "goes deeper than 2 levels",
+		} {
+			code, res, _ = call("GET", ordersPath+"/records?expand="+url.QueryEscape(expand), nil)
+			require.Equal(t, http.StatusBadRequest, code, expand)
+			assert.Contains(t, res.Error.Message, msg, expand)
+		}
 	})
 
 	t.Run("bulk create rolls back when the database rejects one record", func(t *testing.T) {
@@ -776,6 +908,14 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("GET", shipmentsPath+"/records?filter[Product][contains]="+prods[0].ID, nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 		assert.Empty(t, records(res.Data))
+		// expand follows links stored as key objects too
+		code, res, _ = call("GET", shipmentsPath+"/records/"+shipment.ID+"?expand=Product", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		linked, _ = record(res.Data).Fields["Product"].([]interface{})
+		require.Len(t, linked, 1)
+		expandedProduct, _ := linked[0].(map[string]interface{})["fields"].(map[string]interface{})
+		assert.Equal(t, prods[1].Fields["SKU"], expandedProduct["SKU"])
+		assert.Equal(t, prods[1].Fields["Region"], expandedProduct["Region"])
 
 		// Changing the key values of a linked record keeps the link (the app's key sync triggers rewrite it)
 		code, res, _ = call("PATCH", productsPath+"/records/by-key?key[SKU]=A1&key[Region]=US", map[string]interface{}{"fields": map[string]interface{}{"SKU": "A2"}})
