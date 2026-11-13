@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -494,7 +495,10 @@ func (a *API) queryRecords(c *gin.Context) {
 	// No body lists every record, as GET /records does
 	body, err := readOptionalBody(c)
 	if err == nil {
-		err = onlyKeys(body, "body", "where", "sort", "select", "limit", "cursor", "keys", "expand", "search")
+		err = rejectURLOptions(c, "/records/query", queryBodyKeys)
+	}
+	if err == nil {
+		err = onlyKeys(body, "body", queryBodyKeys...)
 	}
 	if err != nil {
 		respondError(c, err)
@@ -699,6 +703,39 @@ func readOptionalBody(c *gin.Context) (map[string]interface{}, error) {
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
 	return readBody(c)
+}
+
+// queryBodyKeys are the options POST /records/query reads from its body
+var queryBodyKeys = []string{"where", "sort", "select", "limit", "cursor", "keys", "expand", "search"}
+
+// rejectURLOptions answers bad_request when an endpoint that reads its options from the body gets query
+// parameters. They would otherwise be ignored without a word: ?filter[Status]=Open would return every record.
+func rejectURLOptions(c *gin.Context, endpoint string, bodyKeys []string) error {
+	params := c.Request.URL.Query()
+	if len(params) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(params))
+	for k := range params {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	k := names[0]
+	msg := c.Request.Method + " " + endpoint + " reads its options from the body, not the URL. "
+	switch m := filterParamPattern.FindStringSubmatch(k); {
+	case m != nil:
+		op := m[2]
+		if op == "" {
+			op = "eq"
+		}
+		example, _ := json.Marshal(map[string]string{"field": m[1], "op": op, "value": params.Get(k)})
+		msg += fmt.Sprintf("Move %s into where, e.g. {\"where\": %s}.", k, example)
+	case slices.Contains(bodyKeys, k):
+		msg += fmt.Sprintf("Send %q in the body instead.", k)
+	default:
+		msg += fmt.Sprintf("%q is not an option. Body keys: %s.", k, strings.Join(bodyKeys, ", "))
+	}
+	return badRequest(msg)
 }
 
 // onlyKeys rejects body keys other than the allowed ones, so typos surface

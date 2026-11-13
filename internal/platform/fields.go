@@ -121,13 +121,16 @@ func (f *field) isArray() bool {
 		(f.Type == typeUser && f.Multiple) || (f.Type == typeLookup)
 }
 
-// newField builds a field from a columns row; ok is false for system columns and buttons, which are not data
+// newField builds a field from a columns row; ok is false for system columns and buttons, which are not data,
+// and for formulas
 func newField(id, title, columnName, uidt, dt string, system bool, order float64, meta map[string]interface{}) (*field, bool) {
 	if system && systemColumns[columnName] {
 		return nil, false
 	}
 	f := &field{ID: id, Name: title, ColumnName: columnName, Type: strings.ToLower(uidt), DT: dt, Order: order}
-	if f.Type == typeButton {
+	// Formula values are calculated in the app, not on the server: the stored value is whatever the app last
+	// saved, so it can be empty or out of date. Formulas stay out of the API until the server calculates them.
+	if f.Type == typeButton || f.Type == typeFormula {
 		return nil, false
 	}
 	_, known := apiTypeNames[f.Type]

@@ -115,6 +115,7 @@ func (m *mockAPI) expectSchema(extra ...[3]string) {
 	add("aaaaaaaa-0000-0000-0000-00000000000d", "Dup", "dup_1", "text", "{}", false)
 	add("aaaaaaaa-0000-0000-0000-00000000000e", "Dup", "dup_2", "text", "{}", false)
 	add("aaaaaaaa-0000-0000-0000-00000000000f", "Go", "button_x", "button", "{}", false)
+	add("aaaaaaaa-0000-0000-0000-000000000010", "Total", "total_x", "formula", "{}", false)
 	for _, c := range extra {
 		add(c[0], c[1], "", "lookup", c[2], false)
 	}
@@ -174,7 +175,7 @@ func TestAPIListRecordsConvertsValuesAndPages(t *testing.T) {
 	row := `{"id":5,"created_time":"2026-11-03T10:15:00.5","last_modified_time":"2026-11-04T08:00:00",` +
 		`"title_x":"Hello","price_x":12.50,"status_x":"Open","tags_x":["red"],"at_x":"2026-11-03T04:45:00",` +
 		`"took_x":"90","extra_x":"{\"a\":1}","owners_x":"u1, u2","files_x":[{"id":"f1","title":"a.png","url":"http://x/a.png","size":10,"mime_type":"image/png","width":3}],` +
-		`"customer_x":[{"id":12},{"id":13}],"dup_1":"one","dup_2":"two","button_x":"ignored"}`
+		`"customer_x":[{"id":12},{"id":13}],"dup_1":"one","dup_2":"two","button_x":"ignored","total_x":"stale"}`
 	m.mock.ExpectQuery(q(`SELECT row_to_json(t)::text FROM "public"."`+mockAlias+`" AS t WHERE ("status_x" = $1) ORDER BY t."price_x" DESC, t.id LIMIT $2 OFFSET $3`)).
 		WithArgs("Open", 2, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"row"}).AddRow(row).AddRow(strings.Replace(row, `"id":5`, `"id":6`, 1)))
@@ -198,6 +199,7 @@ func TestAPIListRecordsConvertsValuesAndPages(t *testing.T) {
 	assert.Equal(t, []interface{}{"red"}, f["Tags"])
 	assert.Equal(t, "2026-11-03T04:45:00Z", f["At"])
 	assert.Equal(t, float64(90), f["Took"], "duration minutes are a number")
+	assert.NotContains(t, f, "Total", "formula fields aren't in the API: the stored value can be out of date")
 	assert.Equal(t, map[string]interface{}{"a": float64(1)}, f["Extra"], "json text is returned as JSON")
 	assert.Equal(t, []interface{}{"u1", "u2"}, f["Owners"])
 	assert.Equal(t, []interface{}{map[string]interface{}{"id": "f1", "url": "http://x/a.png", "name": "a.png", "size": float64(10), "type": "image/png"}}, f["Files"])
@@ -261,6 +263,39 @@ func TestAPIQueryRecordsTakesPostAndQueryMethods(t *testing.T) {
 	w, _ = m.do("QUERY", ordersURL+"/records/query", body)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.NoError(t, m.mock.ExpectationsWereMet())
+}
+
+// Formula fields aren't in the API, so naming one is the same as naming a field that doesn't exist
+func TestAPIFormulaFieldsAreHidden(t *testing.T) {
+	for _, query := range []string{"filter[Total]=1", "sort=Total", "select=Total"} {
+		m := newMockAPI(t, 600)
+		m.expectSchema()
+		w, res := m.do("GET", ordersURL+"/records?"+query, nil)
+		require.Equal(t, http.StatusBadRequest, w.Code, query)
+		require.NotNil(t, res.Error, query)
+		assert.Contains(t, res.Error.Message, `"Total"`, query)
+		assert.NoError(t, m.mock.ExpectationsWereMet(), query)
+	}
+}
+
+// Options in the URL of /records/query used to be ignored, so ?filter[Status]=Open returned every record
+func TestAPIQueryRecordsRejectsURLOptions(t *testing.T) {
+	cases := []struct{ method, query, want string }{
+		{"POST", "?filter[Status]=Open", `Move filter[Status] into where, e.g. {"where": {"field":"Status","op":"eq","value":"Open"}}`},
+		{"POST", "?filter[Price][gt]=5", `{"field":"Price","op":"gt","value":"5"}`},
+		{"QUERY", "?keys=id", `QUERY /records/query reads its options from the body, not the URL. Send "keys" in the body instead.`},
+		{"POST", "?foo=1", `"foo" is not an option. Body keys: where, sort, select, limit, cursor, keys, expand, search.`},
+	}
+	for _, tc := range cases {
+		m := newMockAPI(t, 600)
+		m.expectSchema()
+		w, res := m.do(tc.method, ordersURL+"/records/query"+tc.query, map[string]interface{}{})
+		require.Equal(t, http.StatusBadRequest, w.Code, tc.query)
+		require.NotNil(t, res.Error, tc.query)
+		assert.Equal(t, "bad_request", string(res.Error.Code), tc.query)
+		assert.Contains(t, res.Error.Message, tc.want, tc.query)
+		assert.NoError(t, m.mock.ExpectationsWereMet(), "no records query runs: %s", tc.query)
+	}
 }
 
 func TestAPIListRecordsBadQueries(t *testing.T) {

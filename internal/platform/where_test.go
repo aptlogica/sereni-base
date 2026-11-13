@@ -113,7 +113,7 @@ func TestWhereErrors(t *testing.T) {
 		`{"match": "xor", "conditions": [{"field": "Status", "value": "x"}]}`:                                                                         `where.match must be all, any or none.`,
 		`{"conditions": [{"match": "all", "conditions": []}]}`:                                                                                        `where.conditions[0].conditions must be a list with at least one condition.`,
 		`{"conditions": [{"field": "Staus", "value": "x"}]}`:                                                                                          `where.conditions[0]: No field named "Staus". Did you mean "Status"?`,
-		`{"conditions": [{"field": "Total", "op": "gt", "value": 1}]}`:                                                                                `"Total" is a formula field. Formula and lookup fields are calculated when read, so they can't be used to filter or sort.`,
+		`{"conditions": [{"field": "Total", "op": "gt", "value": 1}]}`:                                                                                `"Total" is a formula field. Its value is calculated when read, so it can't be used to filter or sort.`,
 		`{"conditions": [{"field": "Amount", "op": "contains", "value": "1"}]}`:                                                                       `where.conditions[0]: "Amount" is a currency field. You can use: eq, neq, gt, gte, lt, lte, in, is_null.`,
 		`{"conditions": [{"field": "Amount", "value": "cheap"}]}`:                                                                                     `"cheap" is not a valid value for this field.`,
 		`{"conditions": [{"field": "Amount", "value": null}]}`:                                                                                        `value can't be null`,
@@ -143,6 +143,14 @@ func TestWhereConditionLimit(t *testing.T) {
 	_, err := parseListOptions(whereQuery(`{"conditions": [`+strings.Join(conds, ",")+`]}`), whereFields(), testLinks)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at most 50 conditions")
+}
+
+// Formula values are calculated in the app, so the stored value can be out of date; the API leaves them out
+func TestFormulaFieldsAreLeftOut(t *testing.T) {
+	_, ok := newField("00000000-0000-0000-0000-0000000000f1", "Total", "total", "Formula", "", false, 0, nil)
+	assert.False(t, ok)
+	_, ok = newField("00000000-0000-0000-0000-0000000000f2", "Title", "title", "text", "", false, 0, nil)
+	assert.True(t, ok)
 }
 
 func TestFormulaCantBeSortedOrFiltered(t *testing.T) {

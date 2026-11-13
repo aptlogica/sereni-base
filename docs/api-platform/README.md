@@ -99,7 +99,9 @@ curl -g "$BASE/bases/CRM/tables/Orders/records?filter[Customer][contains]=rec_12
 
 Operators: `eq` (default), `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. Filters are combined with AND. `sort` takes a comma-separated list; `-` means descending, and `id` is always the last tie-breaker. In `select`, `sort` and `filter`, the names `id`, `created_at` and `updated_at` mean the record's own values (`filter[id]=rec_12`); a field with one of those names, or with `,`, `[` or `]` in its name, must be given by its `fld_` ID.
 
-Formula and lookup fields are calculated when a record is read, so they can't be used to filter or sort.
+Lookup fields are calculated when a record is read, so they can't be used to filter or sort.
+
+Formula fields aren't in the API yet: the app calculates their values, so the value stored on the server can be empty or out of date. They will be added once the server calculates them.
 
 ### "Or" and "not" filters
 
@@ -130,6 +132,7 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/query" -H "Content-Type: app
 - `none` counts an empty field as not matching: `none` of `Price < 100` keeps orders without a price.
 - The body also takes `select`, `limit`, `cursor` and `keys`. An empty `select` (`[]`) returns all fields, as when it is left out. Everything is optional: an empty body, a `where` that is `null` or `{}`, or a group without conditions lists every record. The same goes for `?where=`, `?where={}` and a bare `?filter=` on GET. Page with `next_cursor`, sending the same `where` and `sort`.
 - The same tree works on `GET` as the URL-encoded `where` parameter, combined with any `filter[...]` using AND.
+- `POST /records/query` reads every option from the body. URL parameters such as `?filter[Status]=Open` or `?keys=id` are rejected with `400`, which says where to put them; a `filter[...]` becomes a `where` condition. Use `filter[...]` on `GET`.
 - The HTTP `QUERY` method works too: `curl -X QUERY "$BASE/bases/CRM/tables/Orders/records/query" ...` takes the same body and gives the same answer. Use whichever your client supports; cursors work across both.
 - Mistakes say where they are: `where.conditions[1].conditions[0]: No field named "Staus". Did you mean "Status"?`
 
@@ -195,7 +198,7 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/delete" -H "Content-Type: ap
 ```
 
 - **All or nothing.** In a bulk request every record is checked first; if any fails, nothing is written and the error lists each problem with the record's `index`. A bulk update or delete with an ID that doesn't exist returns `404` and changes nothing.
-- **Unknown fields are rejected**, not ignored, so typos surface. Read-only fields (lookups, formulas, attachments, users, auto UUIDs, created/modified) can't be written.
+- **Unknown fields are rejected**, not ignored, so typos surface. Read-only fields (lookups, attachments, users, auto UUIDs, created/modified) can't be written.
 - **Link fields** come back as one object per linked record: its `id` plus every lookup through the link, keyed by the looked-up field's name (`"Email"` above); lookups have no key of their own. To write them, send an array of record IDs or of those objects (only `id` is read). They can only be set when writing one record, and the value replaces the field's links.
 - **Value formats** per field type are in [section 6 of the design doc](../API_PLATFORM_FOUNDATION.md#6-field-type-mapping). Dates are `"2026-11-03"`, date-times RFC 3339 (returned in UTC), times `"14:15"` (12-hour input like `"2:15 PM"` is also accepted), durations whole minutes.
 - **Field settings apply, as in the app.** Select and multi-select values must be one of the field's options. Email, phone and URL fields are checked only when their check is turned on in the field's settings, with the same rules the app uses; with it off, any text is saved. Decimal values are rounded to the field's decimal places, and percent values to 1 decimal. A rating can't be above the field's highest rating.

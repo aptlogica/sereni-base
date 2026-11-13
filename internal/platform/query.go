@@ -251,7 +251,8 @@ func columnExpr(f *field) string {
 // Every filter is a go-postgres-rest filter group; the library writes the SQL. Field types whose values need
 // more than one comparison (empty text, unchecked checkboxes, empty lists) are small any-of groups.
 
-// computedTypes are worked out when a record is read, so there is no stored value to filter or sort by
+// computedTypes are worked out when a record is read, so there is no stored value to filter or sort by.
+// Formula fields aren't in the API yet (see newField); the entry is kept for when the server calculates them.
 var computedTypes = map[string]bool{typeFormula: true, typeLookup: true}
 
 var textTypes = map[string]bool{
@@ -266,7 +267,7 @@ var numberTypes = map[string]bool{
 var timeTypes = map[string]bool{typeDateTime: true, typeCreatedTime: true, typeLastModifiedTime: true}
 
 func computedFieldMessage(f *field) string {
-	return fmt.Sprintf("%q is a %s field. Formula and lookup fields are calculated when read, so they can't be used to filter or sort.",
+	return fmt.Sprintf("%q is a %s field. Its value is calculated when read, so it can't be used to filter or sort.",
 		f.Name, f.APIType())
 }
 

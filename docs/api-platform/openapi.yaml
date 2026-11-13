@@ -122,7 +122,8 @@ paths:
         conditions, nested up to 5 deep with at most 50 conditions. It is combined with `filter[...]` using AND.
         The same tree can be sent in a JSON body to `POST /records/query`, which is easier for long filters.
 
-        Formula and lookup fields are calculated when read, so they can't be used to filter or sort.
+        Lookup fields are calculated when read, so they can't be used to filter or sort. Formula fields aren't
+        in the API yet.
         In `select`, `sort` and `filter`, `id`, `created_at` and `updated_at` mean the record's own values.
 
         `search` finds records where any text field contains the text; `expand` returns linked records' fields
@@ -300,6 +301,10 @@ paths:
 
         The same request also works with the HTTP `QUERY` method (`QUERY /records/query`, same body and answer).
         Use whichever your client supports; a cursor from one works with the other.
+
+        Every option goes in the body. Parameters in the URL (such as `?filter[Status]=Open` or `?keys=id`)
+        are rejected with `400 bad_request`, which says where to put them: a `filter[...]` becomes a `where`
+        condition like `{"field": "Status", "value": "Open"}`.
       requestBody:
         required: true
         content:
@@ -636,7 +641,7 @@ components:
           type: string
           enum: [text, long_text, email, url, phone_number, number, decimal, currency, percent, rating, year, date,
                  date_time, time, duration, checkbox, single_select, multi_select, json, uuid, links, lookup,
-                 attachment, user, formula, created_time, last_modified_time, created_by, last_modified_by]
+                 attachment, user, created_time, last_modified_time, created_by, last_modified_by]
         read_only: { type: boolean }
         options:
           type: array
