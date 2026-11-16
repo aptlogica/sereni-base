@@ -113,9 +113,10 @@ func rowID(row map[string]interface{}) int64 {
 // buildRecords turns stored rows into API records with the given fields. A link field becomes a list of
 // objects, one per linked record: its id and the values of the lookups that go through the link. Lookups are
 // not keys of their own: a selected lookup brings its link field, holding only the selected lookups.
-// The objects of the link fields in expand also hold the linked record's fields, under "fields".
+// The objects of the link fields in expand also hold the linked record's fields, under "fields". Without
+// lookups (records inside an expand), link objects hold only their id.
 func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[string]interface{}, fields []*field, keysByID bool,
-	expand expandSet) ([]recordOut, error) {
+	expand expandSet, withLookups bool) ([]recordOut, error) {
 	keys := fieldKeys(tc.fields, keysByID)
 	pk, err := a.recordKeyOf(ctx, tc)
 	if err != nil {
@@ -148,7 +149,7 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 		}
 		// A selected link field carries all its lookups; otherwise only the selected ones
 		for _, lf := range tc.fields {
-			if lf.Type == typeLookup && strings.EqualFold(lf.LookupLinkColumnID, link.ID) && (selected[link] || selected[lf]) {
+			if withLookups && lf.Type == typeLookup && strings.EqualFold(lf.LookupLinkColumnID, link.ID) && (selected[link] || selected[lf]) {
 				carried[link] = append(carried[link], lf)
 			}
 		}
@@ -462,40 +463,135 @@ func (a *API) queryPage(ctx context.Context, query string, args ...interface{}) 
 	return out, keys, rows.Err()
 }
 
-// linkResolver finds what a link cell holds for one linked record, for link filters: {"id": n} on most tables,
-// the primary key columns' values on tables with a custom primary key
+// apiLinks is the linkResolver of a request: it reads linked tables, their keys and their records. Each
+// linked table, and whether it uses the default key, is read once per request.
+type apiLinks struct {
+	a       *API
+	ctx     context.Context
+	ws      workspaceRef
+	targets map[*field]*tableContext
+	idKey   map[string]bool // by table ID
+}
+
 func (a *API) linkResolver(ctx context.Context, ws workspaceRef) linkResolver {
-	return func(f *field, id int64) ([]string, bool, error) {
-		if f.LinkTargetModelID == "" {
-			return nil, false, nil
-		}
-		t, err := a.tableByID(ctx, ws, f.LinkTargetModelID)
-		if err != nil || t == nil {
-			return nil, false, err
-		}
-		byID := fmt.Sprintf(`[{"id": %d}]`, id)
-		arrays := []string{byID}
-		table := a.recordsTable(t)
-		rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT (
-			SELECT jsonb_object_agg(a.attname::text, to_jsonb(x) -> a.attname::text)
-			FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-			WHERE i.indrelid = $1::regclass AND i.indisprimary)::text
-			FROM %s AS x WHERE x.id = $2`, table), table, id)
-		if err != nil {
-			return nil, false, err
-		}
-		defer rows.Close()
-		if rows.Next() {
-			var key sql.NullString
-			if err := rows.Scan(&key); err != nil {
-				return nil, false, err
-			}
-			if key.Valid && key.String != `{"id": `+strconv.FormatInt(id, 10)+`}` {
-				arrays = append(arrays, "["+key.String+"]")
-			}
-		}
-		return arrays, true, rows.Err()
+	return &apiLinks{a: a, ctx: ctx, ws: ws, targets: map[*field]*tableContext{}, idKey: map[string]bool{}}
+}
+
+// table is a link field's linked table; nil when it no longer exists
+func (l *apiLinks) table(link *field) (*tableContext, error) {
+	if t, ok := l.targets[link]; ok {
+		return t, nil
 	}
+	t, err := l.a.linkedTable(l.ctx, l.ws, link)
+	if err != nil {
+		return nil, err
+	}
+	l.targets[link] = t
+	return t, nil
+}
+
+// usesIDKey tells whether the linked table has the default key, so its link cells hold {"id": n}
+func (l *apiLinks) usesIDKey(t *tableContext) (bool, error) {
+	if v, ok := l.idKey[t.table.ID]; ok {
+		return v, nil
+	}
+	key, err := l.a.recordKeyOf(l.ctx, t)
+	if err != nil {
+		return false, err
+	}
+	l.idKey[t.table.ID] = key.idKey
+	return key.idKey, nil
+}
+
+// keySQL is the key object of record x on a table with a custom key, as link cells hold it
+const keySQL = `(SELECT jsonb_object_agg(a.attname::text, to_jsonb(x) -> a.attname::text)
+	FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+	WHERE i.indrelid = $1::regclass AND i.indisprimary)::text`
+
+// keys finds what a link cell holds for one linked record, for link filters: {"id": n} on most tables (no query),
+// the primary key columns' values on tables with a custom primary key
+func (l *apiLinks) keys(f *field, id int64) ([]string, bool, error) {
+	if f.LinkTargetModelID == "" {
+		return nil, false, nil
+	}
+	target, err := l.table(f)
+	if err != nil || target == nil {
+		return nil, false, err
+	}
+	arrays := []string{fmt.Sprintf(`[{"id": %d}]`, id)}
+	if idKey, err := l.usesIDKey(target); err != nil || idKey {
+		return arrays, err == nil, err
+	}
+	// A custom key: cells hold the key columns' values (and {"id": n} can still occur)
+	table := l.a.recordsTable(target.table)
+	rows, err := l.a.db.QueryContext(l.ctx, fmt.Sprintf(`SELECT %s FROM %s AS x WHERE x.id = $2`, keySQL, table), table, id)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		var key sql.NullString
+		if err := rows.Scan(&key); err != nil {
+			return nil, false, err
+		}
+		if key.Valid && key.String != `{"id": `+strconv.FormatInt(id, 10)+`}` {
+			arrays = append(arrays, "["+key.String+"]")
+		}
+	}
+	return arrays, true, rows.Err()
+}
+
+// target is the fields of a link field's linked table; ok is false when it no longer exists
+func (l *apiLinks) target(link *field) ([]*field, bool, error) {
+	t, err := l.table(link)
+	if err != nil || t == nil {
+		return nil, false, err
+	}
+	return t.fields, true, nil
+}
+
+// matching returns what link cells hold for the linked records where cond holds (built on the linked table's
+// fields, columns without a table prefix): at most limit+1 records, so the caller can tell there are more
+func (l *apiLinks) matching(link *field, cond filterTerm, limit int) ([]string, int, error) {
+	t, err := l.table(link)
+	if err != nil || t == nil {
+		return nil, 0, err
+	}
+	idKey, err := l.usesIDKey(t)
+	if err != nil {
+		return nil, 0, err
+	}
+	table := l.a.recordsTable(t.table)
+	key, next := "NULL::text", 1
+	var args []interface{}
+	if !idKey {
+		key, next, args = keySQL, 2, []interface{}{table}
+	}
+	where, whereArgs, next, err := whereClause([]filterTerm{cond}, next)
+	if err != nil {
+		return nil, 0, err
+	}
+	args = append(append(args, whereArgs...), limit+1)
+	rows, err := l.a.db.QueryContext(l.ctx, fmt.Sprintf(`SELECT x.id, %s FROM %s AS x%s ORDER BY x.id LIMIT $%d`, key, table, where, next), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var arrays []string
+	found := 0
+	for rows.Next() {
+		var id int64
+		var k sql.NullString
+		if err := rows.Scan(&id, &k); err != nil {
+			return nil, 0, err
+		}
+		found++
+		arrays = append(arrays, fmt.Sprintf(`[{"id": %d}]`, id))
+		if k.Valid && k.String != `{"id": `+strconv.FormatInt(id, 10)+`}` {
+			arrays = append(arrays, "["+k.String+"]")
+		}
+	}
+	return arrays, found, rows.Err()
 }
 
 // GET /records
@@ -548,6 +644,14 @@ func (a *API) queryRecords(c *gin.Context) {
 			}
 			query.Set(k, s)
 		}
+	}
+	if v, ok := body["count"]; ok && v != nil {
+		b, ok := v.(bool)
+		if !ok {
+			respondError(c, badRequest("count must be true or false."))
+			return
+		}
+		query.Set("count", strconv.FormatBool(b))
 	}
 	if v, ok := body["limit"]; ok && v != nil {
 		n, ok := v.(json.Number)
@@ -620,12 +724,39 @@ func (a *API) runList(c *gin.Context, tc *tableContext, params url.Values) {
 		// The next page starts after the last record of this one
 		next = encodeCursor(keys[opts.limit-1], opts.hash)
 	}
-	out, err := a.buildRecords(ctx, tc, rows, withExpanded(opts.fields, tc.fields, expand), opts.keysByID, expand)
+	out, err := a.buildRecords(ctx, tc, rows, withExpanded(opts.fields, tc.fields, expand), opts.keysByID, expand, true)
 	if err != nil {
 		fail(err)
 		return
 	}
-	respondList(c, out, next, opts.limit)
+	var total *int64
+	if opts.count {
+		if total, err = a.countRecords(ctx, a.recordsTable(tc.table), opts.filters); err != nil {
+			fail(err)
+			return
+		}
+	}
+	respondList(c, out, next, opts.limit, total)
+}
+
+// countRecords counts the records the filters match
+func (a *API) countRecords(ctx context.Context, table string, filters []filterTerm) (*int64, error) {
+	query, args, err := countSQL(table, filters)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var n int64
+	if rows.Next() {
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+	}
+	return &n, rows.Err()
 }
 
 func keysByID(c *gin.Context) (bool, error) {
@@ -678,7 +809,7 @@ func (a *API) getRecord(c *gin.Context) {
 		respondError(c, timeoutError(ctx, err))
 		return
 	}
-	out, err := a.buildRecords(ctx, tc, []map[string]interface{}{row}, tc.fields, byID, expand)
+	out, err := a.buildRecords(ctx, tc, []map[string]interface{}{row}, tc.fields, byID, expand, true)
 	if err != nil {
 		respondError(c, timeoutError(ctx, err))
 		return
@@ -688,7 +819,7 @@ func (a *API) getRecord(c *gin.Context) {
 
 // respondRecords writes one record, or the list when single is false
 func (a *API) respondRecords(c *gin.Context, tc *tableContext, rows []map[string]interface{}, single, byID bool, status int) {
-	out, err := a.buildRecords(c, tc, rows, tc.fields, byID, nil)
+	out, err := a.buildRecords(c, tc, rows, tc.fields, byID, nil, true)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -731,7 +862,7 @@ func readOptionalBody(c *gin.Context) (map[string]interface{}, error) {
 }
 
 // queryBodyKeys are the options POST /records/query reads from its body
-var queryBodyKeys = []string{"where", "sort", "select", "limit", "cursor", "keys", "expand", "search"}
+var queryBodyKeys = []string{"where", "sort", "select", "limit", "cursor", "keys", "expand", "search", "count"}
 
 // rejectURLOptions answers bad_request when an endpoint that reads its options from the body gets a query
 // option in the URL. It would otherwise be ignored without a word: ?filter[Status]=Open would return every
@@ -747,23 +878,50 @@ func rejectURLOptions(c *gin.Context, endpoint string, bodyKeys []string) error 
 	if len(names) == 0 {
 		return nil
 	}
+	// Every wrong option in one answer: filter[...] options become one where, body options are named together
 	sort.Strings(names)
-	k := names[0]
-	msg := c.Request.Method + " " + endpoint + " reads its options from the body, not the URL. "
-	switch m := filterParamPattern.FindStringSubmatch(k); {
-	case m != nil:
-		op := m[2]
-		if op == "" {
-			op = "eq"
+	var filters, conditions []string
+	var bodyOpts []string
+	bare := false
+	for _, k := range names {
+		switch m := filterParamPattern.FindStringSubmatch(k); {
+		case m != nil:
+			op := m[2]
+			if op == "" {
+				op = "eq"
+			}
+			cond, _ := json.Marshal(map[string]string{"field": m[1], "op": op, "value": params.Get(k)})
+			filters, conditions = append(filters, k), append(conditions, string(cond))
+		case slices.Contains(bodyKeys, k):
+			bodyOpts = append(bodyOpts, strconv.Quote(k))
+		default:
+			bare = true
 		}
-		example, _ := json.Marshal(map[string]string{"field": m[1], "op": op, "value": params.Get(k)})
-		msg += fmt.Sprintf("Move %s into where, e.g. {\"where\": %s}.", k, example)
-	case slices.Contains(bodyKeys, k):
-		msg += fmt.Sprintf("Send %q in the body instead.", k)
-	default:
-		msg += fmt.Sprintf("Move %s into where, e.g. {\"where\": {\"field\": \"Status\", \"value\": \"Open\"}}.", k)
 	}
-	return badRequest(msg)
+	parts := []string{c.Request.Method + " " + endpoint + " reads its options from the body, not the URL."}
+	switch len(filters) {
+	case 0:
+	case 1:
+		parts = append(parts, fmt.Sprintf("Move %s into where, e.g. {\"where\": %s}.", filters[0], conditions[0]))
+	default:
+		parts = append(parts, fmt.Sprintf("Move %s into where, e.g. {\"where\": {\"match\": \"all\", \"conditions\": [%s]}}.",
+			joinAnd(filters), strings.Join(conditions, ", ")))
+	}
+	if len(bodyOpts) > 0 {
+		parts = append(parts, fmt.Sprintf("Send %s in the body instead.", joinAnd(bodyOpts)))
+	}
+	if bare {
+		parts = append(parts, "Move filter into where, e.g. {\"where\": {\"field\": \"Status\", \"value\": \"Open\"}}.")
+	}
+	return badRequest(strings.Join(parts, " "))
+}
+
+// joinAnd joins a list as "a", "a and b" or "a, b and c"
+func joinAnd(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // onlyKeys rejects body keys other than the allowed ones, so typos surface

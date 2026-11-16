@@ -128,7 +128,7 @@ Lookups get no property of their own, which matches the API: they appear inside 
 
 - **Cache key:** the built JSON is cached in the schema snapshot, keyed by `(workspace_id, schema_version, base filter)`. It's rebuilt only when the schema changes.
 - **ETag:** a hash of the spec itself, so it also changes when a deploy changes how specs are built. `If-None-Match` gets `304`, so Swagger UI and code generators don't download it again.
-- **Delay after a schema change:** the 10 s workspace cache means a new table can take up to 10 s to appear, the same as for the data endpoints.
+- **Delay after a schema change:** none. The workspace's `schema_version` is read on every request (G3, 2026-11-16), so a new table appears on the next request, the same as for the data endpoints.
 
 ---
 

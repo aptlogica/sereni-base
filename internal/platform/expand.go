@@ -15,9 +15,10 @@ import (
 // expand=Customer,Customer.Company returns the linked records' fields inside the link objects, instead of
 // only their IDs. Each expanded link field costs one query per page, however many records the page has.
 const (
-	maxExpandDepth     = 2   // Customer.Company, not Customer.Company.Owner
-	maxExpandFields    = 5   // link fields expanded in one request, all levels together
-	maxExpandPerRecord = 100 // linked records expanded per link cell; the rest keep only their id
+	maxExpandDepth     = 2    // Customer.Company, not Customer.Company.Owner
+	maxExpandFields    = 5    // link fields expanded in one request, all levels together
+	maxExpandPerRecord = 100  // linked records expanded per link cell; the rest keep only their id
+	maxExpandTotal     = 5000 // linked records expanded in one request, all fields and levels; the rest keep only their id
 	expandKey          = "fields"
 )
 
@@ -27,6 +28,7 @@ type expandSet map[*field]*expandNode
 type expandNode struct {
 	target   *tableContext // the linked table
 	children expandSet
+	budget   *int // linked records the request may still expand, shared by every node
 }
 
 // parseExpand reads expand: link field names or IDs, comma-separated, with a dot for the next level
@@ -39,9 +41,9 @@ func (a *API) parseExpand(ctx context.Context, tc *tableContext, values ...strin
 		return nil, nil
 	}
 	set := expandSet{}
-	count := 0
+	count, budget := 0, maxExpandTotal
 	for _, path := range paths {
-		if err := a.addExpand(ctx, tc.ws, set, tc.fields, path, path, 1, &count); err != nil {
+		if err := a.addExpand(ctx, tc.ws, set, tc.fields, path, path, 1, &count, &budget); err != nil {
 			return nil, err
 		}
 	}
@@ -50,7 +52,7 @@ func (a *API) parseExpand(ctx context.Context, tc *tableContext, values ...strin
 
 // addExpand adds one path to set. fields are the fields of the table the path starts in; full is the path as
 // the client sent it, for errors.
-func (a *API) addExpand(ctx context.Context, ws workspaceRef, set expandSet, fields []*field, path, full string, depth int, count *int) error {
+func (a *API) addExpand(ctx context.Context, ws workspaceRef, set expandSet, fields []*field, path, full string, depth int, count, budget *int) error {
 	if depth > maxExpandDepth {
 		return badRequest(fmt.Sprintf("expand: %q goes deeper than %d levels. Read the linked records' own links with another request.",
 			full, maxExpandDepth))
@@ -74,13 +76,13 @@ func (a *API) addExpand(ctx context.Context, ws workspaceRef, set expandSet, fie
 		if target == nil {
 			return badRequest(fmt.Sprintf("expand: the linked table of %q no longer exists.", f.Name))
 		}
-		node = &expandNode{target: target, children: expandSet{}}
+		node = &expandNode{target: target, children: expandSet{}, budget: budget}
 		set[f] = node
 	}
 	if rest == "" {
 		return nil
 	}
-	return a.addExpand(ctx, ws, node.children, node.target.fields, rest, full, depth+1, count)
+	return a.addExpand(ctx, ws, node.children, node.target.fields, rest, full, depth+1, count, budget)
 }
 
 // splitExpandPath finds the field a path starts with: the whole path when it names a field (names may hold
@@ -118,7 +120,8 @@ func (a *API) linkedTable(ctx context.Context, ws workspaceRef, link *field) (*t
 }
 
 // expandedRecords reads the linked records of one expanded link field with one query and returns their fields
-// by record ID: the first maxExpandPerRecord linked records of each cell. The node's own expand applies inside.
+// by record ID: the first maxExpandPerRecord linked records of each cell, while the request's budget lasts. The
+// node's own expand applies inside. Expanded records carry their link fields as IDs, without lookups.
 func (a *API) expandedRecords(ctx context.Context, node *expandNode, linkIDs [][]int64, keysByID bool) (map[int64]orderedFields, error) {
 	var ids []int64
 	seen := map[int64]bool{}
@@ -133,6 +136,7 @@ func (a *API) expandedRecords(ctx context.Context, node *expandNode, linkIDs [][
 			}
 		}
 	}
+	ids = takeBudget(ids, node.budget)
 	out := map[int64]orderedFields{}
 	if len(ids) == 0 {
 		return out, nil
@@ -142,7 +146,7 @@ func (a *API) expandedRecords(ctx context.Context, node *expandNode, linkIDs [][
 	if err != nil {
 		return nil, err
 	}
-	records, err := a.buildRecords(ctx, node.target, rows, node.target.fields, keysByID, node.children)
+	records, err := a.buildRecords(ctx, node.target, rows, node.target.fields, keysByID, node.children, false)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +154,15 @@ func (a *API) expandedRecords(ctx context.Context, node *expandNode, linkIDs [][
 		out[rowID(row)] = records[i].Fields
 	}
 	return out, nil
+}
+
+// takeBudget keeps the first IDs the request's expand budget still allows, and spends them
+func takeBudget(ids []int64, budget *int) []int64 {
+	if len(ids) > *budget {
+		ids = ids[:*budget]
+	}
+	*budget -= len(ids)
+	return ids
 }
 
 // withExpanded returns the fields to return plus any expanded link field that select left out, in the

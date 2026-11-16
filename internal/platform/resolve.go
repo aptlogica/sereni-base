@@ -9,15 +9,16 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 )
 
-// workspaceTTL is how long a public ID lookup (found or not) is cached. Disabling the API or changing the
-// schema reaches every instance within this time, without the app's services having to clear caches.
+// workspaceTTL is how long an unknown public ID is cached, so random IDs can't load the database. A found
+// workspace is read on every request instead (one lookup by the unique public_id), so a schema change
+// (schema_version) or turning the API off applies to the next request on every instance. A newly enabled
+// workspace can still answer 404 for up to this time after a request found it missing.
 const workspaceTTL = 10 * time.Second
 
 // workspaceRef is the workspace a request addresses
@@ -63,21 +64,39 @@ func (w *workspaceCache) put(publicID string, e workspaceEntry, now time.Time) {
 	w.entries[publicID] = e
 }
 
-// lookupWorkspace returns the enabled workspace with this public ID
+// lookupWorkspace returns the enabled workspace with this public ID, with its current schema_version. Only
+// misses are cached (see workspaceTTL).
 func (a *API) lookupWorkspace(ctx context.Context, publicID string) (workspaceRef, bool, error) {
 	now := a.now()
-	if e, ok := a.workspaces.get(publicID, now); ok {
-		return e.ref, e.found, nil
+	if e, ok := a.workspaces.get(publicID, now); ok && !e.found {
+		return e.ref, false, nil
 	}
-	ref := workspaceRef{PublicID: publicID}
-	err := a.db.QueryRow(fmt.Sprintf(`SELECT workspace_id, schema_version FROM %s.workspace_api WHERE public_id = $1 AND enabled = true`,
-		a.schemaIdent()), publicID).Scan(&ref.ID, &ref.SchemaVersion)
-	found := err == nil
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	ref, found, err := a.readWorkspace(ctx, publicID)
+	if err != nil {
 		return workspaceRef{}, false, err
 	}
-	a.workspaces.put(publicID, workspaceEntry{ref: ref, found: found, expires: now.Add(workspaceTTL)}, now)
+	if !found {
+		a.workspaces.put(publicID, workspaceEntry{ref: ref, expires: now.Add(workspaceTTL)}, now)
+	}
 	return ref, found, nil
+}
+
+// readWorkspace reads the enabled workspace with this public ID from the database
+func (a *API) readWorkspace(ctx context.Context, publicID string) (workspaceRef, bool, error) {
+	ref := workspaceRef{PublicID: publicID}
+	rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT workspace_id, schema_version FROM %s.workspace_api WHERE public_id = $1 AND enabled = true`,
+		a.schemaIdent()), publicID)
+	if err != nil {
+		return ref, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return ref, false, rows.Err()
+	}
+	if err := rows.Scan(&ref.ID, &ref.SchemaVersion); err != nil {
+		return ref, false, err
+	}
+	return ref, true, rows.Err()
 }
 
 // ---- Bases, tables and fields, cached per (workspace, schema_version) ----

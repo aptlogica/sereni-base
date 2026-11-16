@@ -34,7 +34,7 @@ curl "$BASE/bases/CRM/tables"
 curl "$BASE/bases/CRM/tables/Orders"          # the table with its fields, types and select options
 ```
 
-Bases, tables and fields can be named or given by ID (`bse_...`, `tbl_...`, `fld_...`). Names are exact and case-sensitive, and URL-encoded in paths (`Sales%20Team`, `In%2FOut`). If two items share a name you get `409 ambiguous_name` with their IDs; IDs always work, and apps that must survive renames should use them.
+Bases, tables and fields can be named or given by ID (`bse_...`, `tbl_...`, `fld_...`). Names are exact and case-sensitive, and URL-encoded in paths (`Sales%20Team`, `In%2FOut`). If two items share a name you get `409 ambiguous_name` with their IDs; IDs always work, and apps that must survive renames should use them. Changes made in the app (fields or tables added, renamed or deleted, the API turned off) apply to the next request.
 
 ## 3. Read records
 
@@ -101,9 +101,11 @@ curl -g "$BASE/bases/CRM/tables/Orders/records?filter[Notes][is_null]=true"
 curl -g "$BASE/bases/CRM/tables/Orders/records?filter[Customer][contains]=rec_12"
 ```
 
-Operators: `eq` (default), `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. Filters are combined with AND. `sort` takes a comma-separated list; `-` means descending, and `id` is always the last tie-breaker. In `select`, `sort` and `filter`, the names `id`, `created_at` and `updated_at` mean the record's own values (`filter[id]=rec_12`); a field with one of those names, or with `,`, `[` or `]` in its name, must be given by its `fld_` ID.
+Operators: `eq` (default), `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`. Filters are combined with AND. `sort` takes a comma-separated list; `-` means descending, and `id` is always the last tie-breaker. A field can be listed once, and fields after `id` are ignored (they can't change the order). In `select`, `sort` and `filter`, the names `id`, `created_at` and `updated_at` mean the record's own values (`filter[id]=rec_12`); a field with one of those names, or with `,`, `[` or `]` in its name, must be given by its `fld_` ID.
 
-Lookup fields are calculated when a record is read, so they can't be used to filter or sort.
+A field of the linked records can be filtered on, as `Link.Field` or by a lookup's name: `filter[Customer.Country]=India` and `filter[Customer country]=India` (a lookup of Country) both find orders with at least one customer in India. With `none` or `neq`, records with no linked record match too. At most 1000 linked records may match one such condition (else `400`, narrow it); filters follow one link. Lookups can't be sorted by.
+
+Add `count=true` (`"count": true` in `POST /records/query`) for `meta.total`, the number of records the filter matches on every page. It costs one more query, so ask on the first page only.
 
 Formula fields aren't in the API yet: the app calculates their values, so the value stored on the server can be empty or out of date. They will be added once the server calculates them.
 
@@ -169,9 +171,10 @@ curl "$BASE/bases/CRM/tables/Orders/records/rec_1042?expand=Customer"
                "fields": { "Name": "Asha", "Company": [{ "id": "rec_3", "fields": { "Name": "Acme Group" } }] } }]
 ```
 
-- Up to 2 levels (`Customer.Company`; a third level is a 400) and 5 link fields per request. The first 100 linked records of each link are expanded; the rest keep only their `id`.
+- Up to 2 levels (`Customer.Company`; a third level is a 400) and 5 link fields per request. The first 100 linked records of each link are expanded, and at most 5,000 in the whole request; the rest keep only their `id`.
+- Inside an expanded record, its own link fields hold only `id`s, without lookups, unless you expand them too (`Customer.Company`).
 - An expanded field is returned even when `select` leaves it out. In `POST /records/query` send `"expand": ["Customer", "Customer.Company"]`.
-- Expanding changes what each record shows, not which records are returned. Filtering by a linked record's fields (`Customer.Country`) isn't supported yet.
+- Expanding changes what each record shows, not which records are returned. To filter by a linked record's fields, use `Customer.Country` (see Filters).
 - Each expanded field is one extra database query per page, however many records the page has.
 
 ### Count, sum and group
@@ -200,8 +203,8 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/aggregate" -H "Content-Type:
 }
 ```
 
-- `metrics` (required, 1 to 10): `count` (records), `count_distinct` (different non-empty values), `sum` and `avg` (number fields, including duration in minutes), `min` and `max` (number, date and date-time fields). `as` names the value; by default it's `count` or `<op>_<field name>`, like `avg_Price`.
-- `group_by` (up to 3): text, email, URL, phone, single select, checkbox, number and date fields, and link, multi-select and lookup fields (below). Dates and date-times can be grouped by `day`, `week` (starting Monday), `month` or `year` with `{"field": …, "by": …}`; date-times, including `created_at` and `updated_at`, must say `by`. A period is returned as its first day.
+- `metrics` (required, 1 to 10): `count` (records), `count_distinct` (different non-empty values), `sum` and `avg` (number fields, including duration in minutes), `min` and `max` (number, date and date-time fields). `as` names the value; by default it's `count` or `<op>_<field name>`, like `avg_Price`; with `keys=id` it uses the field ID, `avg_fld_…`, so a rename doesn't change it. Use `as` for names you rely on.
+- `group_by` (up to 3, each field once): text, email, URL, phone, single select, checkbox, number and date fields, and link, multi-select and lookup fields (below). Dates and date-times can be grouped by `day`, `week` (starting Monday), `month` or `year` with `{"field": …, "by": …}`; date-times, including `created_at` and `updated_at`, must say `by`. A period is returned as its first day.
 - `timezone` (default `UTC`) decides which day a date-time belongs to: an order at 19:30 UTC on 30 November is in December with `Asia/Kolkata`.
 - Empty values make their own group, `null`, sorted last. Empty text counts as empty and an unchecked checkbox as `false`, as in filters. `sum` of no values is `0`; `avg`, `min` and `max` of no values are `null`.
 - Without `group_by` the answer is one group, `{"group": {}, "values": {...}}`, even when nothing matches.
@@ -227,7 +230,7 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/aggregate" -H "Content-Type:
 | Sort fields (the `id` tie-breaker added at the end doesn't count) | 5 | `400`: `sort: at most 5 fields.` |
 | `where` nesting | 5 deep | `400` |
 | `search` | 200 characters, 10 words | `400`: `search: at most 10 words.` |
-| `expand` | 2 levels, 5 link fields, 100 linked records per cell | `400`; linked records past 100 keep only their `id` |
+| `expand` | 2 levels, 5 link fields, 100 linked records per cell, 5,000 per request | `400`; linked records past the limits keep only their `id` |
 | Page size (`limit`) | 200 | `400` |
 | Aggregate: metrics / `group_by` fields / groups returned | 10 / 3 / 1000 | `400`; past 1000 groups, `meta.has_more` is true |
 
@@ -261,7 +264,7 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/delete" -H "Content-Type: ap
 ```
 
 - **All or nothing.** In a bulk request every record is checked first; if any fails, nothing is written and the error lists each problem with the record's `index`. A bulk update or delete with an ID that doesn't exist returns `404` and changes nothing.
-- **Unknown fields are rejected**, not ignored, so typos surface. Read-only fields (lookups, attachments, users, auto UUIDs, created/modified) can't be written.
+- **Unknown fields are rejected**, not ignored, so typos surface. Read-only fields (lookups, attachments, users, auto UUIDs, created/modified) can't be written. A user field that holds several users is filtered with `contains` (one user ID) and `is_null`, and can't be sorted by.
 - **Link fields** come back as one object per linked record: its `id` plus every lookup through the link, keyed by the looked-up field's name (`"Email"` above); lookups have no key of their own. To write them, send an array of record IDs or of those objects (only `id` is read). They can only be set when writing one record, and the value replaces the field's links.
 - **Value formats** per field type are in [section 6 of the design doc](../API_PLATFORM_FOUNDATION.md#6-field-type-mapping). Dates are `"2026-11-03"`, date-times RFC 3339 (returned in UTC), times `"14:15"` (12-hour input like `"2:15 PM"` is also accepted), durations whole minutes.
 - **Field settings apply, as in the app.** Select and multi-select values must be one of the field's options. Email, phone and URL fields are checked only when their check is turned on in the field's settings, with the same rules the app uses; with it off, any text is saved. Decimal values are rounded to the field's decimal places, and percent values to 1 decimal. A rating can't be above the field's highest rating.
@@ -300,5 +303,6 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records" -H "Content-Type: applicati
 | `rate_limited` | 429 | More than 600 requests per minute for the workspace; wait `Retry-After` seconds |
 | `internal_error` | 500 | Server error; quote `meta.request_id` when reporting it. If an automation on the table failed, the message says so: check the table's automations |
 | `query_timeout` | 503 | A read ran longer than 10 seconds and was stopped; narrow the filter or search, expand fewer fields, or ask for a smaller page |
+| `schema_changed` | 409 | A field or table used by the request was changed or deleted in the app while the request was being answered; try again |
 
 Every response has an `X-Request-Id` header equal to `meta.request_id`. You can send your own `X-Request-Id` (up to 64 characters of `A-Z a-z 0-9 _ -`) to trace a request through the server logs.

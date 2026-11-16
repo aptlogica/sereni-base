@@ -120,6 +120,11 @@ func (a *API) resolveWorkspace() gin.HandlerFunc {
 		}
 		c.Set(ctxWorkspace, ref)
 		c.Set(middleware.PublicWorkspaceIDKey, ref.PublicID)
+		// For respondError: did a missing column or table come from a schema change during this request?
+		c.Set(ctxSchemaCheck, func() bool {
+			now, found, err := a.readWorkspace(c.Request.Context(), publicID)
+			return err == nil && (!found || now.SchemaVersion != ref.SchemaVersion)
+		})
 		c.Next()
 	}
 }

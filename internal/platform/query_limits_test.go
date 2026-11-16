@@ -125,11 +125,34 @@ func TestSortTermLimit(t *testing.T) {
 	assert.Len(t, opts.sorts, 5)
 
 	// The id tie-breaker added at the end doesn't count
-	opts, err = parseListOptions(url.Values{"sort": {"Status,-Amount,created_at,updated_at,Status"}}, whereFields(), testLinks)
+	opts, err = parseListOptions(url.Values{"sort": {"Status,-Amount,created_at,updated_at,Name"}}, whereFields(), testLinks)
 	require.NoError(t, err)
 	assert.Len(t, opts.sorts, 6)
 
-	_, err = parseListOptions(url.Values{"sort": {five + ",Status"}}, whereFields(), testLinks)
+	_, err = parseListOptions(url.Values{"sort": {five + ",Name"}}, whereFields(), testLinks)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "sort: at most 5 fields.")
+}
+
+func TestSortFieldOnceAndNothingAfterID(t *testing.T) {
+	// G10: a field listed twice, by name, ID or direction, is refused
+	for _, sort := range []string{"Status,Status", "Status,-Status", "Status,fld_00000000000000000000000000000002", "id,-id"} {
+		_, err := parseListOptions(url.Values{"sort": {sort}}, whereFields(), testLinks)
+		require.Error(t, err, sort)
+		assert.Contains(t, err.Error(), "is listed twice.", sort)
+	}
+
+	// G25: fields after id can't change the order, so they are left out; they are still checked
+	opts, err := parseListOptions(url.Values{"sort": {"-Amount,id,Name"}}, whereFields(), testLinks)
+	require.NoError(t, err)
+	keys := []string{}
+	for _, s := range opts.sorts {
+		keys = append(keys, s.key)
+	}
+	assert.Equal(t, []string{"00000000-0000-0000-0000-000000000003", "id"}, keys)
+	other, _ := parseListOptions(url.Values{"sort": {"-Amount,id"}}, whereFields(), testLinks)
+	assert.Equal(t, other.hash, opts.hash, "the same order, so the same cursor")
+	_, err = parseListOptions(url.Values{"sort": {"id,Nmae"}}, whereFields(), testLinks)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `No field named "Nmae"`)
 }

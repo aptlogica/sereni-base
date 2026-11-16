@@ -35,7 +35,7 @@ Each workspace can now get a permanent API address (`/api/v1/ws_xxxxxxxxxx`) fro
 | File | What it does |
 |---|---|
 | [api.go](../internal/platform/api.go) | Registers the routes ([L63](../internal/platform/api.go#L63)); request pipeline: workspace lookup ([L92](../internal/platform/api.go#L92)), auth placeholder ([L122](../internal/platform/api.go#L122)), per-workspace rate limit ([L127](../internal/platform/api.go#L127)) |
-| [resolve.go](../internal/platform/resolve.go) | Workspace cache (10 s, misses cached too) ([L67](../internal/platform/resolve.go#L67)); bases, tables and fields cached per `schema_version` ([L113](../internal/platform/resolve.go#L113)); name-or-ID lookup with `409 ambiguous_name` ([L261](../internal/platform/resolve.go#L261)) |
+| [resolve.go](../internal/platform/resolve.go) | Workspace lookup on every request, unknown IDs cached as misses for 10 s (G3) ([L67](../internal/platform/resolve.go#L67)); bases, tables and fields cached per `schema_version` ([L113](../internal/platform/resolve.go#L113)); name-or-ID lookup with `409 ambiguous_name` ([L261](../internal/platform/resolve.go#L261)) |
 | [schema.go](../internal/platform/schema.go) | `GET /bases`, `/tables`, one table with its fields ([L43](../internal/platform/schema.go#L43), [L57](../internal/platform/schema.go#L57), [L77](../internal/platform/schema.go#L77)) |
 | [query.go](../internal/platform/query.go) | `limit`, `cursor`, `select`, `filter`, `sort`, `keys` ([L72](../internal/platform/query.go#L72)); builds the SQL ([L391](../internal/platform/query.go#L391)); cursor encode/decode ([L440–455](../internal/platform/query.go#L440-L455)) |
 | [fields.go](../internal/platform/fields.go) | Field types; database → JSON ([L213](../internal/platform/fields.go#L213)) and JSON → database with validation ([L304](../internal/platform/fields.go#L304)) |
@@ -159,4 +159,4 @@ Most of the work is new files that only run for `/api/v1/ws_…` paths or the ne
    ```
    make test-public-api PLATFORM_TEST_PG_PASSWORD=<postgres password>
    ```
-   This takes about 25 s, because it waits out the 10 s workspace cache twice: once to check that turning the API off gives 404, once to check `ambiguous_name`. It also covers a bulk create that Postgres rejects partway through, and checks that nothing is written.
+   It waits out the 10 s miss cache once, to check that a workspace turned back on answers again; turning the API off and schema changes apply at once. It also covers a bulk create that Postgres rejects partway through, and checks that nothing is written.

@@ -66,6 +66,7 @@ paths:
                         items: { $ref: "#/components/schemas/Base" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /bases/{base}/tables:
     parameters:
@@ -90,6 +91,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /bases/{base}/tables/{table}:
     parameters:
@@ -113,6 +115,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /bases/{base}/tables/{table}/records:
     parameters:
@@ -125,7 +128,8 @@ paths:
       description: |
         Simple filters use `filter[Field]=value` (equals) or `filter[Field][operator]=value` and are combined with AND.
         Operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in` (comma-separated), `contains` (text: case-insensitive
-        substring; multi select: has the option; links: links to the record ID), `is_null` (`true`/`false`).
+        substring; multi select: has the option; a user field holding several users: has the user ID; links: links to the
+        record ID), `is_null` (`true`/`false`). A value that can't be read says the format it needs.
 
         For "or" and "not", send a `where` tree: groups that match **all**, **any** or **none** of their
         conditions, nested up to 5 deep. It is combined with `filter[...]` using AND.
@@ -133,8 +137,11 @@ paths:
         5 sort fields.
         The same tree can be sent in a JSON body to `POST /records/query`, which is easier for long filters.
 
-        Lookup fields are calculated when read, so they can't be used to filter or sort. Formula fields aren't
-        in the API yet.
+        A field of the linked records can be filtered on, as `Link.Field` (`filter[Customer.Country]=India`) or by
+        a lookup's name (`filter[Customer country]=India`): a record matches when at least one of its linked
+        records does, and with `none` or `neq` also when it has no linked record. At most 1000 linked records may
+        match one such condition, and filters follow one link. Lookups can't be sorted by. Formula fields aren't in
+        the API yet.
         In `select`, `sort` and `filter`, `id`, `created_at` and `updated_at` mean the record's own values.
 
         `search` finds records where every word of the text is in some text field; `expand` returns linked records' fields
@@ -154,9 +161,13 @@ paths:
           example: Name,Price
         - name: sort
           in: query
-          description: Comma-separated field names or IDs; `-` for descending. `id` is always the last tie-breaker.
+          description: Comma-separated field names or IDs; `-` for descending. `id` is always the last tie-breaker. Each field once; fields after `id` are ignored.
           schema: { type: string }
           example: -created_at
+        - name: count
+          in: query
+          description: "`true` adds `meta.total`: the number of records the filter matches, on every page. It costs one more query; ask on the first page only."
+          schema: { type: boolean, default: false }
         - name: filter
           in: query
           style: deepObject
@@ -195,6 +206,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/QueryTimeout" }
     post:
       tags: [Records]
@@ -246,6 +258,7 @@ paths:
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
     patch:
       tags: [Records]
       summary: Update many records
@@ -292,9 +305,11 @@ paths:
                         items: { $ref: "#/components/schemas/Record" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /bases/{base}/tables/{table}/records/query:
     parameters:
@@ -342,6 +357,7 @@ paths:
                 limit: { type: integer, minimum: 1, maximum: 200, default: 50 }
                 cursor: { type: string, description: "`meta.next_cursor` of the previous page." }
                 keys: { type: string, enum: [name, id] }
+                count: { type: boolean, default: false, description: "`true` adds `meta.total`, as `count` on List records." }
                 search:
                   type: string
                   maxLength: 200
@@ -403,6 +419,7 @@ paths:
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/QueryTimeout" }
 
   /bases/{base}/tables/{table}/records/aggregate:
@@ -419,8 +436,9 @@ paths:
 
         - `metrics` (required, 1 to 10): `count` (records), `count_distinct` (different non-empty values),
           `sum`, `avg` (number fields), `min`, `max` (number, date and date-time fields). `as` names the value
-          in the answer; by default it is `count` or `<op>_<field name>`, like `avg_Price`.
-        - `group_by` (up to 3): text, email, URL, phone, single select, checkbox, number and date fields, or
+          in the answer; by default it is `count` or `<op>_<field name>`, like `avg_Price` (with `keys=id`:
+          `<op>_<field ID>`, so a rename doesn't change it).
+        - `group_by` (up to 3, each field once): text, email, URL, phone, single select, checkbox, number and date fields, or
           `{"field": …, "by": "day" | "week" | "month" | "year"}` for date and date-time fields (`by` is
           required for date-time, including `created_at` and `updated_at`). Weeks start on Monday. A period
           is returned as its first day, like `2026-11-01`.
@@ -430,14 +448,17 @@ paths:
           in **each** group it belongs to: an order linked to two customers counts for both, so group totals
           can add up to more than the overall total. One link or multi-select field per request; lookups
           through that same link can be added. These fields can't be used in `metrics`.
-        - `timezone` decides which day a date-time belongs to (default `UTC`), e.g. `Asia/Kolkata`.
+        - `timezone` decides which day a date-time belongs to (default `UTC`), e.g. `Asia/Kolkata`. An unknown
+          name is `400`.
         - Empty values make their own group, `null`; empty text counts as empty and an unchecked checkbox as
           `false`, as in filters. `sum` of no values is 0; `avg`, `min` and `max` of no values are `null`.
         - Without `group_by` the answer is one group, `{"group": {}, "values": {...}}`, even when nothing matches.
-        - `sort`: metric names or `group_by` fields, `-` for descending (at most 5). Default: the groups in order.
+        - `sort`: metric names or `group_by` fields, `-` for descending (at most 5, each once). Default: the
+          groups in order.
         - `limit` (1 to 1000, default 100) is the number of groups returned. When more groups match,
           `meta.has_more` is true; there is no cursor for groups.
-        - Long text, JSON, attachments, users, uuid and formula fields can't be grouped or aggregated.
+        - Long text, JSON, attachments, users, created_by, last_modified_by, time, uuid and formula fields can't
+          be grouped or aggregated.
 
         The same request also works with the HTTP `QUERY` method. Options in the URL are rejected with
         `400 bad_request`, as for Find records.
@@ -543,6 +564,7 @@ paths:
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/QueryTimeout" }
 
   /bases/{base}/tables/{table}/records/{record}:
@@ -579,7 +601,9 @@ paths:
                       data: { $ref: "#/components/schemas/Record" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/QueryTimeout" }
     patch:
       tags: [Records]
@@ -606,8 +630,11 @@ paths:
                       data: { $ref: "#/components/schemas/Record" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
     delete:
       tags: [Records]
       summary: Delete one record
@@ -623,8 +650,11 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
   /bases/{base}/tables/{table}/records/delete:
     parameters:
@@ -674,6 +704,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
 
 components:
   parameters:
@@ -711,8 +742,10 @@ components:
       description: |
         Comma-separated link field names or IDs. Each linked record's object gets a `fields` object with that
         record's fields. `Customer.Company` also expands the Company link inside each customer (2 levels at most,
-        5 link fields at most, the first 100 linked records of each link). An expanded field is returned even when
-        `select` leaves it out. Expanding doesn't change which records are returned.
+        5 link fields at most, the first 100 linked records of each link and 5,000 in the whole request; the rest
+        keep only their `id`). Inside an expanded record, its own link fields hold only `id`s, without lookups,
+        unless expanded too. An expanded field is returned even when `select` leaves it out. Expanding doesn't
+        change which records are returned.
       schema: { type: string }
       example: Customer,Customer.Company
     IdempotencyKey:
@@ -745,6 +778,7 @@ components:
             next_cursor: { type: string, nullable: true }
             has_more: { type: boolean }
             limit: { type: integer }
+            total: { type: integer, description: "Records the filter matches, on every page; only with `count=true`." }
     Envelope:
       type: object
       required: [data, error, meta]
@@ -763,7 +797,7 @@ components:
           properties:
             code:
               type: string
-              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error, query_timeout]
+              enum: [bad_request, not_found, ambiguous_name, conflict, payload_too_large, validation_failed, rate_limited, internal_error, query_timeout, schema_changed]
             message: { type: string }
             details:
               type: array
@@ -905,7 +939,7 @@ components:
 
   responses:
     BadRequest:
-      description: Malformed JSON, a bad query parameter or where tree, a reused cursor, or the same ID twice
+      description: Malformed JSON, a bad query parameter or where tree, a value in the wrong format, a cursor made for another filter or edited, the same ID twice, a record ID on a table addressed by key, or an Idempotency-Key longer than 255 characters
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -915,22 +949,22 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     AmbiguousName:
-      description: A name matches several items; `details` lists their IDs
+      description: A name matches several items; `details` lists their IDs (`ambiguous_name`). Or the table's fields changed while the request was being answered (`schema_changed`); try again.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     Conflict:
-      description: Idempotency key reused with a different body, or still running
+      description: An Idempotency-Key reused with a different body, or still running; the table was busy with other changes (nothing was saved, try again); a name matches several items (`ambiguous_name`); or the table's fields changed while the request was being answered (`schema_changed`, try again).
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     PayloadTooLarge:
-      description: More than 100 records in one request
+      description: More than 100 records in one request, or a request body over 10 MB
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     ValidationFailed:
-      description: Invalid or read-only fields, unknown fields, unknown select options, link fields in bulk writes, duplicate keys or failed check constraints. Nothing was written.
+      description: Invalid or read-only fields, unknown fields, unknown select options, link fields in bulk writes, duplicate keys, failed check constraints, or a table automation that rejected the change (its own message is shown). `details` says which record and field. Nothing was written.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -938,6 +972,11 @@ components:
       description: Too many requests for this workspace
       headers:
         Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    InternalError:
+      description: A server error (`internal_error`); quote `meta.request_id` when reporting it. If a table automation failed, the message says so.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }

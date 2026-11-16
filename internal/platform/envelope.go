@@ -12,6 +12,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 // ErrorCode is a public API error code (section 4 of docs/API_PLATFORM_FOUNDATION.md)
@@ -27,6 +28,7 @@ const (
 	CodeRateLimited      ErrorCode = "rate_limited"
 	CodeInternalError    ErrorCode = "internal_error"
 	CodeQueryTimeout     ErrorCode = "query_timeout"
+	CodeSchemaChanged    ErrorCode = "schema_changed"
 )
 
 var errorStatus = map[ErrorCode]int{
@@ -39,6 +41,7 @@ var errorStatus = map[ErrorCode]int{
 	CodeRateLimited:      http.StatusTooManyRequests,
 	CodeInternalError:    http.StatusInternalServerError,
 	CodeQueryTimeout:     http.StatusServiceUnavailable,
+	CodeSchemaChanged:    http.StatusConflict,
 }
 
 // Status returns the HTTP status of an error code
@@ -94,6 +97,7 @@ type listMeta struct {
 	NextCursor *string `json:"next_cursor"`
 	HasMore    bool    `json:"has_more"`
 	Limit      int     `json:"limit"`
+	Total      *int64  `json:"total,omitempty"` // records matching the filter, with count=true
 }
 
 type envelope struct {
@@ -113,8 +117,8 @@ func respond(c *gin.Context, status int, data any) {
 }
 
 // respondList writes a page of a list; next_cursor is null on the last page
-func respondList(c *gin.Context, data any, nextCursor string, limit int) {
-	m := listMeta{RequestID: requestID(c), Limit: limit}
+func respondList(c *gin.Context, data any, nextCursor string, limit int, total *int64) {
+	m := listMeta{RequestID: requestID(c), Limit: limit, Total: total}
 	if nextCursor != "" {
 		m.NextCursor = &nextCursor
 		m.HasMore = true
@@ -129,16 +133,38 @@ func respondGroups(c *gin.Context, data any, hasMore bool, limit int) {
 }
 
 // respondError writes err in the envelope. Errors that are not *Error are logged and returned as
-// internal_error, so database messages never reach the client.
+// internal_error, so database messages never reach the client. A column or table that no longer exists,
+// because the schema changed while the request ran, is schema_changed: the client can simply try again.
 func respondError(c *gin.Context, err error) {
 	var apiErr *Error
 	if !errors.As(err, &apiErr) {
 		lg := logger.Get()
-		lg.Error().Stack().Err(err).Str("request_id", requestID(c)).Msg("public API request failed")
-		apiErr = NewError(CodeInternalError, "Something went wrong on our side. Please try again.")
+		if schemaChanged(c, err) {
+			lg.Warn().Err(err).Str("request_id", requestID(c)).Msg("public API request met a schema change")
+			apiErr = NewError(CodeSchemaChanged, "The table's fields changed while this request was being answered. Please try again.")
+		} else {
+			lg.Error().Stack().Err(err).Str("request_id", requestID(c)).Msg("public API request failed")
+			apiErr = NewError(CodeInternalError, "Something went wrong on our side. Please try again.")
+		}
 	}
 	c.AbortWithStatusJSON(apiErr.Code.Status(), envelope{
 		Error: &errorBody{Code: apiErr.Code, Message: apiErr.Message, Details: apiErr.Details},
 		Meta:  meta{RequestID: requestID(c)},
 	})
+}
+
+// ctxSchemaCheck holds a func that tells whether the workspace's schema changed since the request started
+const ctxSchemaCheck = "platform.schemaCheck"
+
+// schemaChanged tells whether err is a missing column or table (42703, 42P01) and the workspace's
+// schema_version really moved on since the request read it. If it didn't, the SQL is wrong: a bug, not a
+// schema change, and it stays an internal_error.
+func schemaChanged(c *gin.Context, err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || (pqErr.Code != "42703" && pqErr.Code != "42P01") {
+		return false
+	}
+	check, _ := c.Get(ctxSchemaCheck)
+	changed, ok := check.(func() bool)
+	return ok && changed()
 }

@@ -98,9 +98,10 @@ func TestOpenAPISpecDescribesTheTables(t *testing.T) {
 	assert.Contains(t, obj(t, write, "Customer", "items"), "oneOf")
 	assert.NotContains(t, obj(t, schemas, "FieldsBulkWrite_"+mockTID, "properties"), "Customer", "no links in bulk writes")
 
-	// Reading it again is cached: no queries, and the ETag answers 304
+	// Reading it again is cached: only the workspace lookup every request makes, and the ETag answers 304
 	etag := w.Header().Get("ETag")
 	require.NotEmpty(t, etag)
+	m.expectWorkspace()
 	req := httptest.NewRequest("GET", specURL, nil)
 	req.Header.Set("If-None-Match", etag)
 	w = httptest.NewRecorder()
@@ -125,8 +126,6 @@ func TestOpenAPISpecForOneBase(t *testing.T) {
 
 func TestDocsPagesLoadTheSpec(t *testing.T) {
 	m := newMockAPI(t, 600)
-	m.mock.ExpectQuery(q(`FROM "public".workspace_api WHERE public_id = $1 AND enabled = true`)).WithArgs(mockWS).
-		WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}).AddRow(mockWSID, 1))
 
 	w, _ := m.do("GET", "/api/v1/"+mockWS+"/docs", nil)
 	require.Equal(t, http.StatusOK, w.Code)

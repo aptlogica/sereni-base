@@ -210,12 +210,17 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 	keys := fieldKeys(fields, false)
 
 	read, write, bulkWrite := schemaObject{}, schemaObject{}, schemaObject{}
-	var selectable, sortable, filterable, aggregatable []string
+	// id, created_at and updated_at are always returned; select accepts them too
+	selectable := []string{refID, refCreatedAt, refUpdatedAt}
+	var sortable, filterable, aggregatable []string
 	for _, f := range fields {
 		key := keys[f]
 		selectable = append(selectable, key)
 		if f.Type == typeLookup {
-			continue // inside the link field's objects
+			// No key of its own (its values are inside the link field's objects), but it filters and groups
+			filterable = append(filterable, fmt.Sprintf("- `%s` (lookup): the operators of the looked-up field; matches records with a linked record where it holds", key))
+			aggregatable = append(aggregatable, fmt.Sprintf("- `%s` (lookup): group_by, by the looked-up value, when that field can be grouped (a record counts in each group it belongs to)", key))
+			continue
 		}
 		var s schemaObject
 		if f.Type == typeLinks {
@@ -244,17 +249,13 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 		}
 		read[key] = s
 
-		if !unsortableTypes[f.Type] {
+		if !unsortable(f) {
 			sortable = append(sortable, "`"+key+"`")
 		}
 		if ops := filterOperators(f); len(ops) > 0 {
 			filterable = append(filterable, fmt.Sprintf("- `%s`: %s", key, strings.Join(ops, ", ")))
 		}
-		uses := aggregateUses(aggregateKind(f))
-		if f.Type == typeLookup {
-			uses = "group_by, by the looked-up value, when that field can be grouped (a record counts in each group it belongs to)"
-		}
-		if uses != "" {
+		if uses := aggregateUses(aggregateKind(f)); uses != "" {
 			aggregatable = append(aggregatable, fmt.Sprintf("- `%s`: %s", key, uses))
 		}
 	}
@@ -272,6 +273,7 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 		"required": []string{"id", "fields", "created_at", "updated_at"},
 		"properties": schemaObject{
 			"id":         schemaRef(recordIDRef),
+			"key":        schemaRef(schemasPrefix + "RecordKey"),
 			"fields":     schemaRef(schemasPrefix + "Fields_" + tid),
 			"created_at": schemaObject{"type": "string", "format": "date-time"},
 			"updated_at": schemaObject{"type": "string", "format": "date-time"},

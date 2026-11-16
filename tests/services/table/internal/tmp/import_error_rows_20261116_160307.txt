@@ -1,0 +1,89 @@
+Import Issues Report
+Generated: 2026-11-16T16:03:07+05:30
+====================================================================================================
+
+SUMMARY:
+Total Error Rows: 1
+Total Empty Rows: 2
+Total Duplicate Rows: 1
+----------------------------------------------------------------------------------------------------
+
+CSV Headers:
+Name | Age
+
+====================================================================================================
+CSV VALIDATION ERROR TYPES
+====================================================================================================
+
+  • Field Length Violation: 1 errors
+  • Invalid Boolean Format: 1 errors
+  • Invalid Decimal Format: 1 errors
+  • Invalid Email Format: 1 errors
+  • Invalid JSON Format: 1 errors
+  • Invalid Number Format: 1 errors
+  • Value Out of Range: 2 errors
+
+----------------------------------------------------------------------------------------------------
+
+====================================================================================================
+ALL VALIDATION ERRORS (Detailed Error Analysis)
+====================================================================================================
+
+[Error Set 1]
+Invalid number format
+
+[Error Set 2]
+Invalid decimal format
+
+[Error Set 3]
+Invalid boolean value
+
+[Error Set 4]
+Invalid email format
+
+[Error Set 5]
+Invalid JSON format
+
+[Error Set 6]
+Text length exceeds maximum
+
+[Error Set 7]
+Value 1 is less than minimum 2
+
+[Error Set 8]
+value out of range for integer type
+
+----------------------------------------------------------------------------------------------------
+
+====================================================================================================
+EMPTY ROWS (All cells are empty)
+====================================================================================================
+
+[Empty Row 1] Line 2 in CSV file
+Row Data: [  ]
+
+[Empty Row 2] Line 4 in CSV file
+Row Data: [ ]
+
+====================================================================================================
+DUPLICATE ROWS (Identical rows found)
+====================================================================================================
+
+[Duplicate Row 1] Line 5 in CSV file
+Row Data: [Alice 10]
+
+====================================================================================================
+RAW DATA (CSV Format)
+====================================================================================================
+
+Name,Age
+# ERROR ROWS:
+"A, ""quoted""","bad
+value"
+
+# EMPTY ROWS:
+# Line 2:  ,
+# Line 4: ,
+
+# DUPLICATE ROWS:
+# Line 5: Alice,10

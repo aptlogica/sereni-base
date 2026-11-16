@@ -37,7 +37,6 @@ func TestFilterOperatorsMatchBuildFilter(t *testing.T) {
 		}
 		return "x"
 	}
-	linkTarget := func(*field, int64) ([]string, bool, error) { return []string{`[{"id": 1}]`}, true, nil }
 
 	types := []string{"somethingnew"}
 	for uidt := range apiTypeNames {
@@ -51,7 +50,7 @@ func TestFilterOperatorsMatchBuildFilter(t *testing.T) {
 			if op == "is_null" {
 				value = "true"
 			}
-			_, err := buildFilter([]*field{f}, "F", op, value, linkTarget)
+			_, err := buildFilter([]*field{f}, "F", op, value, testLinks)
 			assert.Equal(t, err == nil, slices.Contains(ops, op), "type %s, operator %s: %v", uidt, op, err)
 		}
 	}

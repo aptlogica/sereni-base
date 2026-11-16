@@ -117,7 +117,7 @@ var (
 // filterOperators lists the operators buildFilter accepts for a field; none when it can't be filtered
 func filterOperators(f *field) []string {
 	switch {
-	case f.Type == typeMultiSelect || f.Type == typeLinks:
+	case f.Type == typeMultiSelect || f.Type == typeLinks || f.Type == typeUser && f.Multiple:
 		return []string{"contains", "is_null"}
 	case f.Type == typeJSON || f.Type == typeAttachment || f.Type == typeLookup:
 		return nil

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,30 +83,31 @@ func TestAggregateErrors(t *testing.T) {
 	cases := map[string]string{
 		`{}`:              `metrics is required`,
 		`{"metrics": []}`: `metrics is required`,
-		`{"metrics": [{"op": "median", "field": "Amount"}]}`:                               `metrics[0].op must be one of count, count_distinct, sum, avg, min, max.`,
-		`{"metrics": [{"op": "sum"}]}`:                                                     `metrics[0]: sum needs a field.`,
-		`{"metrics": [{"op": "count", "field": "Amount"}]}`:                                `count counts records and takes no field`,
-		`{"metrics": [{"op": "sum", "field": "Status"}]}`:                                  `metrics[0]: sum doesn't work on "Status", a single_select field. sum takes a number field`,
-		`{"metrics": [{"op": "max", "field": "Name"}]}`:                                    `max takes a number, date or date-time field.`,
-		`{"metrics": [{"op": "sum", "field": "Amout"}]}`:                                   `metrics[0].field: No field named "Amout". Did you mean "Amount"?`,
-		`{"metrics": [{"op": "sum", "field": "Total"}]}`:                                   `"Total" is a formula field. Its value is calculated when read, so it can't be grouped or aggregated.`,
-		`{"metrics": [{"op": "count"}, {"op": "count"}]}`:                                  `metrics[1]: two metrics are named "count". Give one a different name with "as".`,
-		`{"metrics": [{"op": "count", "as": ""}]}`:                                         `metrics[0].as must be text of 1 to 100 characters.`,
-		`{"metrics": [{"op": "count", "extra": 1}]}`:                                       `metrics[0]: unknown key "extra"`,
-		`{"metrics": [{"op": "count"}], "group_by": ["Ordered at"]}`:                       `group_by[0]: "Ordered at" is a date-time field. Group it by day, week, month or year`,
-		`{"metrics": [{"op": "count"}], "group_by": [{"field": "Status", "by": "month"}]}`: `group_by[0]: by works only with date and date-time fields; "Status" is a single_select field.`,
-		`{"metrics": [{"op": "count"}], "group_by": [{"field": "Due", "by": "hour"}]}`:     `group_by[0].by must be day, week, month, year.`,
-		`{"metrics": [{"op": "count"}], "group_by": ["Notes"]}`:                            `"Notes" is a long_text field and can't be grouped.`,
-		`{"metrics": [{"op": "count"}], "group_by": ["Status", "Status"]}`:                 `group_by[1]: "Status" is already in group_by.`,
-		`{"metrics": [{"op": "count"}], "group_by": ["Status", "Paid", "Due", "Name"]}`:    `group_by: at most 3 fields.`,
-		`{"metrics": [{"op": "count"}], "group_by": ["id"]}`:                               `can't be grouped or aggregated by id`,
-		`{"metrics": [{"op": "count"}], "sort": ["Amount"]}`:                               `sort: "Amount" is not a metric name or a group_by field.`,
-		`{"metrics": [{"op": "count"}], "sort": ["count", "-count"]}`:                      `sort: "count" is listed twice.`,
-		`{"metrics": [{"op": "count"}], "limit": 1001}`:                                    `limit must be a whole number from 1 to 1000.`,
-		`{"metrics": [{"op": "count"}], "limit": "5"}`:                                     `limit must be a whole number from 1 to 1000.`,
-		`{"metrics": [{"op": "count"}], "timezone": "Mars/Base"}`:                          `timezone: "Mars/Base" is not a time zone.`,
-		`{"metrics": [{"op": "count"}], "timezone": "Local"}`:                              `is not a time zone`,
-		`{"metrics": [{"op": "count"}], "keys": "x"}`:                                      `keys must be id or name.`,
+		`{"metrics": [{"op": "median", "field": "Amount"}]}`:                                                                          `metrics[0].op must be one of count, count_distinct, sum, avg, min, max.`,
+		`{"metrics": [{"op": "sum"}]}`:                                                                                                `metrics[0]: sum needs a field.`,
+		`{"metrics": [{"op": "count", "field": "Amount"}]}`:                                                                           `count counts records and takes no field`,
+		`{"metrics": [{"op": "sum", "field": "Status"}]}`:                                                                             `metrics[0]: sum doesn't work on "Status", a single_select field. sum takes a number field`,
+		`{"metrics": [{"op": "max", "field": "Name"}]}`:                                                                               `max takes a number, date or date-time field.`,
+		`{"metrics": [{"op": "sum", "field": "Amout"}]}`:                                                                              `metrics[0].field: No field named "Amout". Did you mean "Amount"?`,
+		`{"metrics": [{"op": "sum", "field": "Total"}]}`:                                                                              `"Total" is a formula field. Its value is calculated when read, so it can't be grouped or aggregated.`,
+		`{"metrics": [{"op": "count"}, {"op": "count"}]}`:                                                                             `metrics[1]: two metrics are named "count". Give one a different name with "as".`,
+		`{"metrics": [{"op": "count", "as": ""}]}`:                                                                                    `metrics[0].as must be text of 1 to 100 characters.`,
+		`{"metrics": [{"op": "count", "extra": 1}]}`:                                                                                  `metrics[0]: unknown key "extra"`,
+		`{"metrics": [{"op": "count"}], "group_by": ["Ordered at"]}`:                                                                  `group_by[0]: "Ordered at" is a date-time field. Group it by day, week, month or year`,
+		`{"metrics": [{"op": "count"}], "group_by": [{"field": "Status", "by": "month"}]}`:                                            `group_by[0]: by works only with date and date-time fields; "Status" is a single_select field.`,
+		`{"metrics": [{"op": "count"}], "group_by": [{"field": "Due", "by": "hour"}]}`:                                                `group_by[0].by must be day, week, month, year.`,
+		`{"metrics": [{"op": "count"}], "group_by": ["Notes"]}`:                                                                       `"Notes" is a long_text field and can't be grouped.`,
+		`{"metrics": [{"op": "count"}], "group_by": ["Status", "Status"]}`:                                                            `group_by[1]: "Status" is already in group_by.`,
+		`{"metrics": [{"op": "count"}], "group_by": [{"field": "Ordered at", "by": "year"}, {"field": "Ordered at", "by": "month"}]}`: `group_by[1]: "Ordered at" is already in group_by. Group a field once`,
+		`{"metrics": [{"op": "count"}], "group_by": ["Status", "Paid", "Due", "Name"]}`:                                               `group_by: at most 3 fields.`,
+		`{"metrics": [{"op": "count"}], "group_by": ["id"]}`:                                                                          `can't be grouped or aggregated by id`,
+		`{"metrics": [{"op": "count"}], "sort": ["Amount"]}`:                                                                          `sort: "Amount" is not a metric name or a group_by field.`,
+		`{"metrics": [{"op": "count"}], "sort": ["count", "-count"]}`:                                                                 `sort: "count" is listed twice.`,
+		`{"metrics": [{"op": "count"}], "limit": 1001}`:                                                                               `limit must be a whole number from 1 to 1000.`,
+		`{"metrics": [{"op": "count"}], "limit": "5"}`:                                                                                `limit must be a whole number from 1 to 1000.`,
+		`{"metrics": [{"op": "count"}], "timezone": "Mars/Base"}`:                                                                     `timezone: "Mars/Base" is not a time zone.`,
+		`{"metrics": [{"op": "count"}], "timezone": "Local"}`:                                                                         `is not a time zone`,
+		`{"metrics": [{"op": "count"}], "keys": "x"}`:                                                                                 `keys must be id or name.`,
 	}
 	for body, want := range cases {
 		_, err := parseAggregate(aggBody(t, body), aggFields(), nil)
@@ -144,9 +146,16 @@ func TestAggregateAnswer(t *testing.T) {
 		{"group": {"Status": null, "created_at": "2026-11-12"}, "values": {"count": 1, "last": null}}
 	]`, string(raw))
 
-	// keys=id keys group fields by their IDs
+	// keys=id keys group fields by their IDs, and default metric names use the field ID too, so a rename doesn't
+	// change them (G16); "as" names stay as given
 	opts, err = parseAggregate(aggBody(t, `{"group_by": ["Status"], "metrics": [{"op": "count"}], "keys": "id"}`), aggFields(), nil)
 	require.NoError(t, err)
+	byID, err := parseAggregate(aggBody(t, `{"metrics": [{"op": "avg", "field": "Amount"}, {"op": "sum", "field": "Amount", "as": "total"},
+		{"op": "max", "field": "created_at"}], "keys": "id"}`), aggFields(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "avg_fld_00000000000000000000000000000003", byID.metrics[0].name)
+	assert.Equal(t, "total", byID.metrics[1].name)
+	assert.Equal(t, "max_created_at", byID.metrics[2].name)
 	raw, _ = json.Marshal(opts.answer([]map[string]interface{}{{"g0": "Open", "m0": json.Number("2")}}, aggFields()))
 	assert.JSONEq(t, `[{"group": {"fld_00000000000000000000000000000002": "Open"}, "values": {"count": 2}}]`, string(raw))
 
@@ -155,6 +164,14 @@ func TestAggregateAnswer(t *testing.T) {
 	require.NoError(t, err)
 	raw, _ = json.Marshal(opts.answer([]map[string]interface{}{{"m0": json.Number("0")}}, aggFields()))
 	assert.JSONEq(t, `[{"group": {}, "values": {"count": 0}}]`, string(raw))
+}
+
+// G17: a time zone Postgres doesn't know is the client's mistake, not a server error
+func TestTimezoneError(t *testing.T) {
+	err := timezoneError(&pq.Error{Code: "22023", Message: `time zone "Mars/Base" not recognized`}, "Mars/Base")
+	assert.Contains(t, err.Error(), `bad_request: timezone: "Mars/Base" is not a time zone the database knows.`)
+	other := &pq.Error{Code: "22023", Message: "invalid parameter value"}
+	assert.Same(t, other, timezoneError(other, "UTC"), "other errors are kept")
 }
 
 // ---- Grouping by link, multi-select and lookup ----

@@ -181,8 +181,18 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		"relation_id": relationID, "lookup_column_id": customerTitle.ID.String(), "link_column_id": link.ID.String()})
 	// Orders -> Customer -> Company, for expand two levels deep
 	companies := createTable("Companies")
-	addColumn(customers, "Company", "links", map[string]interface{}{
+	companyLink := addColumn(customers, "Company", "links", map[string]interface{}{
 		"relation": map[string]interface{}{"with": companies.Model.ID.String(), "type": "has-many"}})
+	// A lookup through Company: shown on customers read directly, left out inside expanded customers (G4)
+	companyTitle := companies.Columns[0]
+	for _, c := range companies.Columns {
+		if (c.System == nil || !*c.System) && c.UIDT == "text" {
+			companyTitle = c
+		}
+	}
+	companyRelation, _ := companyLink.Meta["relation_id"].(string)
+	addColumn(customers, "Company name", "lookup", map[string]interface{}{
+		"relation_id": companyRelation, "lookup_column_id": companyTitle.ID.String(), "link_column_id": companyLink.ID.String()})
 	createTable("In/Out")
 	// A formula field: the app calculates it in the browser, so the API leaves it out
 	addColumn(orders, "Margin", "formula", map[string]interface{}{"formula": "{Price} * 2"})
@@ -199,6 +209,11 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	pages := createTable("Pages")
 	addColumn(pages, "Price", "decimal", nil)
 	pagesAt := addColumn(pages, "At", "datetime", nil)
+	// A table for exact number filters (G29) and multi-user filters (G27)
+	tasks := createTable("Tasks")
+	addColumn(tasks, "Hours", "number", nil)
+	taskCost := addColumn(tasks, "Cost", "decimal", nil)
+	taskOwners := addColumn(tasks, "Owners", "user", map[string]interface{}{"allowMultiple": true})
 	// Tables for grouping by link, multi-select and lookup: Deals -> Rep (many), with lookups of the rep's fields
 	reps := createTable("Reps")
 	repTitle := reps.Columns[0]
@@ -590,6 +605,57 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Empty(t, records(res.Data))
 	})
 
+	t.Run("number and multi-user filters are exact", func(t *testing.T) {
+		tasksPath := base + "/bases/Main/tables/Tasks"
+		code, res, _ := call("POST", tasksPath+"/records", map[string]interface{}{"records": []interface{}{
+			map[string]interface{}{"fields": map[string]interface{}{"Hours": 1}},
+			map[string]interface{}{"fields": map[string]interface{}{"Hours": 2}},
+			map[string]interface{}{"fields": map[string]interface{}{"Hours": 3}},
+		}})
+		require.Equal(t, http.StatusCreated, code, res.Error)
+		created := records(res.Data)
+		// Users can't be written through the API, and an exact 17-digit decimal is set in SQL too
+		set := func(i int, cost, owners string) {
+			id, _ := platform.DecodeRecordID(created[i].ID)
+			exec(fmt.Sprintf(`UPDATE "%s".%q SET %s = $1::numeric, %s = $2 WHERE id = $3`, s, tasks.Model.Alias,
+				quoteIdent(taskCost.ColumnName), quoteIdent(taskOwners.ColumnName)), cost, owners, id)
+		}
+		set(0, "12345678901234567.89", "u1,u12")
+		set(1, "12345678901234567.88", "u12, u3")
+		set(2, "5", "")
+		hours := func(query string) []float64 {
+			t.Helper()
+			code, res, _ := call("GET", tasksPath+"/records?sort=Hours&"+query, nil)
+			require.Equal(t, http.StatusOK, code, "%s: %+v", query, res.Error)
+			out := []float64{}
+			for _, rec := range records(res.Data) {
+				out = append(out, rec.Fields["Hours"].(float64))
+			}
+			return out
+		}
+
+		// G29: the value is compared exactly, not rounded through float64 (both prices round to the same float)
+		assert.Equal(t, []float64{1}, hours("filter[Cost]=12345678901234567.89"))
+		assert.Equal(t, []float64{2, 3}, hours("filter[Cost][in]=12345678901234567.88,5"))
+		// A whole-number field with a fraction, or a number past its range, compares as numbers instead of failing
+		assert.Equal(t, []float64{2, 3}, hours("filter[Hours][gt]=1.5"))
+		assert.Equal(t, []float64{1, 2, 3}, hours("filter[Hours][lt]=99999999999"))
+		code, res, _ = call("GET", tasksPath+"/records?filter[Hours]=Inf", nil)
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "Use a number")
+
+		// G27: contains matches one whole user ID in "u1,u12" or "u12, u3", so u1 doesn't match u12
+		assert.Equal(t, []float64{1}, hours("filter[Owners][contains]=u1"))
+		assert.Equal(t, []float64{1, 2}, hours("filter[Owners][contains]=u12"))
+		assert.Equal(t, []float64{2}, hours("filter[Owners][contains]=u3"))
+		assert.Equal(t, []float64{3}, hours("filter[Owners][is_null]=true"))
+		code, res, _ = call("GET", tasksPath+"/records?filter[Owners]=u1", nil)
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "You can use: contains, is_null.")
+		code, _, _ = call("GET", tasksPath+"/records?sort=Owners", nil)
+		assert.Equal(t, http.StatusBadRequest, code, "a list of users can't be sorted by")
+	})
+
 	t.Run("expand linked records", func(t *testing.T) {
 		// Asha's company
 		code, res, _ := call("POST", base+"/bases/Main/tables/Companies/records", map[string]interface{}{
@@ -632,7 +698,12 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Equal(t, "Asha", obj[customerTitle.Title], "lookups are still there")
 		customer := inner(obj)
 		assert.Equal(t, "Asha", customer.Fields[customerTitle.Title])
-		assert.Equal(t, []interface{}{map[string]interface{}{"id": company.ID}}, customer.Fields["Company"])
+		assert.Equal(t, []interface{}{map[string]interface{}{"id": company.ID}}, customer.Fields["Company"],
+			"inside an expanded record, links hold only ids, without their lookups (G4)")
+		// Read directly, the customer's Company link carries its lookup
+		code, res, _ = call("GET", base+"/bases/Main/tables/Customers/records/"+cust[0].ID, nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Equal(t, "Acme Group", linked(record(res.Data), "Company")[0][companyTitle.Title])
 
 		// Two levels; Customer.Company alone expands Customer too
 		for _, expand := range []string{"Customer,Customer.Company", "Customer.Company"} {
@@ -823,12 +894,17 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		require.NoError(t, db.DB.QueryRow(fmt.Sprintf(`SELECT schema_version FROM "%s".workspace_api WHERE workspace_id = $1`, s), wsID).Scan(&after))
 		assert.Greater(t, after, before, "creating a table bumps schema_version")
 
-		// Turned off, the workspace is 404 once the 10 s cache expires; turned back on, it answers again
+		// The second Orders table is seen by the very next request (the workspace is read on every request)
+		code, res, _ = call("GET", ordersPath+"/records", nil)
+		require.Equal(t, http.StatusConflict, code)
+		assert.Equal(t, "ambiguous_name", res.Error.Code)
+
+		// Turned off, the workspace is 404 at once; turned back on, it answers again once the miss, cached for
+		// 10 s so random IDs can't load the database, expires
 		setEnabled := func(on bool) {
 			exec(fmt.Sprintf(`UPDATE "%s".workspace_api SET enabled = $1 WHERE workspace_id = $2`, s), on, wsID)
 		}
 		setEnabled(false)
-		time.Sleep(11 * time.Second)
 		code, res, _ = call("GET", base+"/bases", nil)
 		assert.Equal(t, http.StatusNotFound, code)
 		assert.Equal(t, "not_found", res.Error.Code)
@@ -1001,6 +1077,13 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("GET", shipmentsPath+"/records?filter[Product][contains]="+prods[1].ID, nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 		assert.Len(t, records(res.Data), 1)
+		// A field of the linked records, on a table with a custom key: matched through the key columns (G6)
+		code, res, _ = call("GET", shipmentsPath+"/records?filter[Product.SKU]=A2", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Len(t, records(res.Data), 1)
+		code, res, _ = call("GET", shipmentsPath+"/records?filter[Product.SKU]=A1", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Empty(t, records(res.Data), "the key was changed to A2")
 		// Grouping by the link finds the linked record through its key columns, after the key change too
 		code, res, _ = call("POST", shipmentsPath+"/records/aggregate", map[string]interface{}{
 			"group_by": []string{"Product"}, "metrics": []interface{}{map[string]interface{}{"op": "count"}}})
@@ -1253,10 +1336,9 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("GET", notesPath+"/records?expand=Ref", nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 
-		// Deleting a table also deletes the links to it. The API sees schema changes once its workspace
-		// lookup expires (10 s), the same wait as the rename test above.
+		// Deleting a table also deletes the links to it. The very next request sees it: the workspace's
+		// schema_version is read on every request (G3), so there is no window where the old field is used
 		require.NoError(t, tableSvc.DeleteTable(ctx, s, scratch.Model.ID.String()))
-		time.Sleep(11 * time.Second)
 		code, res, _ = call("GET", notesPath+"/records?expand=Ref", nil)
 		require.Equal(t, http.StatusBadRequest, code, "%+v", res.Error)
 		assert.Contains(t, res.Error.Message, `expand: No field named "Ref".`)
@@ -1469,6 +1551,64 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		require.Equal(t, http.StatusOK, code, res.Error)
 		groups = aggregate(map[string]interface{}{"group_by": []string{"Rep"}, "metrics": count})
 		assert.Equal(t, [][2]interface{}{{repOf(asha), 2.0}, {repOf(chen), 1.0}, {nil, 2.0}}, pairs(groups, "Rep", "count"))
+	})
+
+	// The deals and reps of the subtest above: deal 100 → Asha (North, active); 50 → Asha and Chen (North, Active
+	// never set); 20 → nobody (Ben was deleted); 5 → nobody
+	t.Run("filter by a linked field or a lookup, and count", func(t *testing.T) {
+		dealsPath := base + "/bases/Main/tables/Deals"
+		amounts := func(method, path string, body interface{}) ([]float64, map[string]interface{}) {
+			t.Helper()
+			code, res, _ := call(method, path, body)
+			require.Equal(t, http.StatusOK, code, "%s: %+v", path, res.Error)
+			out := []float64{}
+			for _, rec := range records(res.Data) {
+				out = append(out, rec.Fields["Amount"].(float64))
+			}
+			return out, res.Meta
+		}
+		list := func(query string) []float64 {
+			t.Helper()
+			got, _ := amounts("GET", dealsPath+"/records?sort=Amount&"+query, nil)
+			return got
+		}
+
+		// G6: deals with a rep in the North, named through the link or by the lookup
+		assert.Equal(t, []float64{50, 100}, list("filter[Rep.Region]=North"))
+		assert.Equal(t, []float64{50, 100}, list(url.PathEscape("filter[Rep region]")+"=North"))
+		assert.Empty(t, list("filter[Rep.Region]=South"), "Ben was deleted")
+		// A checkbox in the linked records: unchecked includes never set
+		assert.Equal(t, []float64{50, 100}, list("filter[Rep.Active]=true"))
+		assert.Equal(t, []float64{50}, list("filter[Rep.Active]=false"))
+		// none: no rep in the North, which includes deals with no rep
+		where := url.QueryEscape(`{"match": "none", "conditions": [{"field": "Rep.Region", "value": "North"}]}`)
+		assert.Equal(t, []float64{5, 20}, list("where="+where))
+		// The same filter in aggregate
+		code, res, _ := call("POST", dealsPath+"/records/aggregate", map[string]interface{}{
+			"where":   map[string]interface{}{"field": "Rep region", "value": "North"},
+			"metrics": []interface{}{map[string]interface{}{"op": "sum", "field": "Amount", "as": "total"}}})
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Contains(t, string(res.Data), `"total":150`)
+		code, res, _ = call("GET", dealsPath+"/records?filter[Rep.Regon]=North", nil)
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, `Did you mean "Region"?`)
+
+		// G5: count=true adds meta.total, every page of the filter, not only this one
+		got, meta := amounts("GET", dealsPath+"/records?sort=Amount&limit=1&count=true&filter[Rep.Region]=North", nil)
+		assert.Equal(t, []float64{50}, got)
+		assert.Equal(t, 2.0, meta["total"])
+		next, _ := meta["next_cursor"].(string)
+		require.NotEmpty(t, next)
+		got, meta = amounts("GET", dealsPath+"/records?sort=Amount&limit=1&count=true&filter[Rep.Region]=North&cursor="+url.QueryEscape(next), nil)
+		assert.Equal(t, []float64{100}, got)
+		assert.Equal(t, 2.0, meta["total"], "the same total on the next page")
+		_, meta = amounts("GET", dealsPath+"/records", nil)
+		assert.NotContains(t, meta, "total", "only when asked")
+		_, meta = amounts("POST", dealsPath+"/records/query", map[string]interface{}{"count": true, "limit": 1})
+		assert.Equal(t, 4.0, meta["total"])
+		code, res, _ = call("GET", dealsPath+"/records?count=yes", nil)
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "count must be true or false.")
 	})
 
 	t.Run("keyset paging: every record once, while records are added and deleted", func(t *testing.T) {

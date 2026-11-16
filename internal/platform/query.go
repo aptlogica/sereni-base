@@ -64,13 +64,25 @@ type listOptions struct {
 	filters  []filterTerm
 	sorts    []sortTerm
 	keysByID bool
+	count    bool   // count=true: also count every record the filter matches (meta.total)
 	hash     string // filter and sort, so a cursor can't be reused with different ones
 }
 
-// linkResolver returns the JSON arrays a link cell contains when it links to record id of the field's linked
-// table: [{"id": n}], and on a table with a custom primary key also the key columns' object. ok is false when
-// the linked table no longer exists.
-type linkResolver func(f *field, id int64) (arrays []string, ok bool, err error)
+// linkResolver answers what link filters need from linked tables. A link cell holds the linked records' key
+// objects as JSON arrays: [{"id": n}], and on a table with a custom primary key also the key columns' object.
+type linkResolver interface {
+	// keys returns the arrays a link cell holds when it links to record id; ok is false when the linked
+	// table no longer exists
+	keys(f *field, id int64) (arrays []string, ok bool, err error)
+	// target returns the fields of the link field's linked table; ok is false when it no longer exists
+	target(link *field) (fields []*field, ok bool, err error)
+	// matching returns the arrays of the linked records where cond (built on the linked table's fields) holds,
+	// for at most limit+1 records, and how many records it found
+	matching(link *field, cond filterTerm, limit int) (arrays []string, found int, err error)
+}
+
+// maxLinkedMatches is how many linked records a condition on a linked field may match (Customer.Country)
+const maxLinkedMatches = 1000
 
 // emptyParam tells whether every value of a parameter is empty: "", "{}" or "null"
 func emptyParam(values []string) bool {
@@ -106,6 +118,14 @@ func parseListOptions(query url.Values, fields []*field, links linkResolver) (*l
 		return nil, badRequest("keys must be id or name.")
 	}
 
+	switch query.Get("count") {
+	case "", "false":
+	case "true":
+		opts.count = true
+	default:
+		return nil, badRequest("count must be true or false.")
+	}
+
 	// An empty select (select= or "select": []) returns all fields, as when select is not given
 	if refs := splitList(strings.Join(query["select"], ",")); len(refs) > 0 {
 		selected := []*field{}
@@ -137,6 +157,8 @@ func parseListOptions(query url.Values, fields []*field, links linkResolver) (*l
 		if len(refs) > maxSortTerms {
 			return nil, badRequest(fmt.Sprintf("sort: at most %d fields.", maxSortTerms))
 		}
+		seen := map[string]bool{}
+		afterID := false
 		for _, ref := range refs {
 			desc := strings.HasPrefix(ref, "-")
 			ref = strings.TrimPrefix(ref, "-")
@@ -144,7 +166,16 @@ func parseListOptions(query url.Values, fields []*field, links linkResolver) (*l
 			if err != nil {
 				return nil, err
 			}
-			opts.sorts = append(opts.sorts, term)
+			if seen[term.key] {
+				return nil, badRequest(fmt.Sprintf("sort: %q is listed twice.", ref))
+			}
+			seen[term.key] = true
+			// id is unique, so fields after it can't change the order; they are checked but left out of the
+			// query and the cursor
+			if !afterID {
+				opts.sorts = append(opts.sorts, term)
+			}
+			afterID = afterID || term.key == refID
 		}
 	}
 	// id is always the last tie-breaker, so pages never overlap or skip records
@@ -248,13 +279,22 @@ func buildSort(fields []*field, ref string, desc bool) (sortTerm, error) {
 	if err != nil {
 		return sortTerm{}, asBadRequest(err, "sort")
 	}
-	if unsortableTypes[f.Type] {
+	if unsortable(f) {
+		if f.Type == typeLookup {
+			return sortTerm{}, badRequest(fmt.Sprintf("sort: %q is a lookup field. It can be filtered on, but not sorted by: a record can have several linked records.", f.Name))
+		}
 		if computedTypes[f.Type] {
 			return sortTerm{}, badRequest("sort: " + computedFieldMessage(f))
 		}
 		return sortTerm{}, badRequest(fmt.Sprintf("sort: records can't be sorted by %q (%s field).", f.Name, f.APIType()))
 	}
 	return sortTerm{key: f.ID, expr: columnExpr(f), desc: desc}, nil
+}
+
+// unsortable tells whether records can't be sorted by the field: lists (multi-select, links, multi-user),
+// calculated values and JSON
+func unsortable(f *field) bool {
+	return unsortableTypes[f.Type] || f.Type == typeUser && f.Multiple
 }
 
 // columnExpr is the SQL value of a field for sorting. Duration is stored as text minutes, so it is sorted as a
@@ -367,12 +407,24 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 		if ref == refID {
 			maxIn = maxInIDs // fetching records by a list of IDs, up to one full page
 		}
-		return scalarFilter(key, pq.QuoteIdentifier(col), "", op, value, values, maxIn, parse, bad)
+		return scalarFilter(key, pq.QuoteIdentifier(col), "", op, value, values, maxIn, parse, systemHint(ref), bad)
 	}
 
 	f, err := resolveField(fields, ref)
 	if err != nil {
+		// Customer.Country: a field of the linked records
+		if link, rest, splitErr := splitExpandPath(fields, ref); splitErr == nil && rest != "" && link.Type == typeLinks {
+			return linkedCondition(link, rest, c, links)
+		}
 		return filterTerm{}, fieldLookupError(err, c.label, fields, ref)
+	}
+	if f.Type == typeLookup {
+		// A lookup is the looked-up field of the linked records, as Customer.Country is
+		link := fieldByID(fields, f.LookupLinkColumnID)
+		if link == nil || link.Type != typeLinks {
+			return bad(fmt.Sprintf("the link field of the lookup %q no longer exists.", f.Name))
+		}
+		return linkedCondition(link, f.LookupTargetColumnID, c, links)
 	}
 	key = fmt.Sprintf("%s:%s:%s%s", f.ID, op, value, listKey)
 	ops := filterOperators(f)
@@ -406,7 +458,7 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 			return bad("the value must be a record ID like rec_12.")
 		}
 		// Link cells hold the linked records' primary key objects
-		arrays, ok, err := links(f, id)
+		arrays, ok, err := links.keys(f, id)
 		if err != nil {
 			return filterTerm{}, err
 		}
@@ -433,6 +485,22 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 		}
 		return filterTerm{key: key, node: leaf(col, "eq", true, "")}, nil
 
+	case f.Type == typeUser && f.Multiple:
+		// Stored as one text of user IDs, "u1,u2" (or "u1, u2"): contains matches one whole ID, so u1 doesn't match u12
+		if op == "is_null" {
+			return nullTerm(key, value, anyOf(leaf(col, "is_null", nil, ""), leaf(col, "eq", "", pgsql.CastText))), nil
+		}
+		id := strings.TrimSpace(value)
+		if id == "" || strings.Contains(id, ",") {
+			return bad("the value must be one user ID.")
+		}
+		esc := likeEscaper.Replace(id)
+		nodes := []models.ComplexFilter{leaf(col, "eq", id, pgsql.CastText)}
+		for _, pattern := range []string{esc + ",%", "%," + esc, "%, " + esc, "%," + esc + ",%", "%, " + esc + ",%"} {
+			nodes = append(nodes, leaf(col, "ilike", pattern, pgsql.CastText))
+		}
+		return filterTerm{key: key, node: anyOf(nodes...)}, nil
+
 	case textTypes[f.Type]:
 		if op == "contains" {
 			pattern := "%" + likeEscaper.Replace(value) + "%"
@@ -445,32 +513,113 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 		if f.Type == typeUUID {
 			cast = pgsql.CastText
 		}
-		return scalarFilter(key, col, cast, op, value, values, maxInValues, func(s string) (interface{}, bool) { return s, true }, bad)
+		return scalarFilter(key, col, cast, op, value, values, maxInValues, func(s string) (interface{}, bool) { return s, true }, "", bad)
 
 	case numberTypes[f.Type]:
 		cast := ""
-		if f.Type == typeDuration {
-			// Stored as text minutes
+		if f.Type == typeDuration || integerTypes[f.Type] && !allIntegers(op, value, values) {
+			// Duration is stored as text minutes. A whole-number column compared with 1.5 or a number past its
+			// range would be refused by Postgres; as numbers, the comparison is exact.
 			cast = pgsql.CastSafeNumeric
 		}
+		// The value goes to Postgres as the text sent, so long decimals compare exactly (no float64 rounding)
 		return scalarFilter(key, col, cast, op, value, values, maxInValues, func(s string) (interface{}, bool) {
-			n, err := strconv.ParseFloat(s, 64)
-			return n, err == nil
-		}, bad)
+			s = strings.TrimSpace(s)
+			return s, numberPattern.MatchString(s)
+		}, hintNumber, bad)
 
 	case f.Type == typeDate:
 		return scalarFilter(key, col, "", op, value, values, maxInValues, func(s string) (interface{}, bool) {
 			_, err := time.Parse("2006-01-02", s)
 			return s, err == nil
-		}, bad)
+		}, hintDate, bad)
 
 	case timeTypes[f.Type]:
 		return scalarFilter(key, col, "", op, value, values, maxInValues, func(s string) (interface{}, bool) {
 			t, err := time.Parse(time.RFC3339Nano, s)
 			return t.UTC(), err == nil
-		}, bad)
+		}, hintDateTime, bad)
 	}
 	return bad(fmt.Sprintf("%q is a %s field and can't be used to filter.", f.Name, f.APIType()))
+}
+
+// numberPattern is a number as Postgres reads it: no Inf, NaN or hex, which Go would accept
+var numberPattern = regexp.MustCompile(`^[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?$`)
+
+// integerTypes are stored as INTEGER
+var integerTypes = map[string]bool{typeNumber: true, typeRating: true, typeYear: true}
+
+var integerPattern = regexp.MustCompile(`^[-+]?\d{1,9}$`)
+
+// allIntegers tells whether every value of the condition fits an INTEGER column as it is
+func allIntegers(op, value string, values func() []string) bool {
+	if op == "is_null" {
+		return true
+	}
+	list := []string{value}
+	if op == "in" {
+		list = values()
+	}
+	for _, v := range list {
+		if !integerPattern.MatchString(strings.TrimSpace(v)) {
+			return false
+		}
+	}
+	return true
+}
+
+// linkedCondition is a condition on a field of the linked records (Customer.Country = India, or a lookup):
+// the records linked to at least one linked record where it holds. The linked records are found first, then
+// matched like link contains. Negated (none, neq), it also matches records with no linked record.
+func linkedCondition(link *field, targetRef string, c filterCondition, links linkResolver) (filterTerm, error) {
+	bad := func(msg string) (filterTerm, error) {
+		return filterTerm{}, badRequest(fmt.Sprintf("%s: %s", c.label, msg))
+	}
+	if links == nil {
+		return bad(fmt.Sprintf("fields of the linked records of %q can't be used here.", link.Name))
+	}
+	targetFields, ok, err := links.target(link)
+	if err != nil {
+		return filterTerm{}, err
+	}
+	if !ok {
+		return bad(fmt.Sprintf("the linked table of %q no longer exists.", link.Name))
+	}
+	// A lookup gives the looked-up field's ID; Customer.Country gives a name or fld_ ID
+	tf := fieldByID(targetFields, targetRef)
+	if tf == nil {
+		if tf, err = resolveField(targetFields, targetRef); err != nil {
+			return filterTerm{}, fieldLookupError(err, c.label+" (in the linked records of "+strconv.Quote(link.Name)+")", targetFields, targetRef)
+		}
+	}
+	if tf.Type == typeLinks || tf.Type == typeLookup {
+		return bad(fmt.Sprintf("filters follow one link: %q in the linked records of %q is a %s field.", tf.Name, link.Name, tf.APIType()))
+	}
+	inner := c
+	inner.ref = tf.PublicID()
+	cond, err := buildCondition(targetFields, inner, nil)
+	if err != nil {
+		return filterTerm{}, err
+	}
+	arrays, found, err := links.matching(link, cond, maxLinkedMatches)
+	if err != nil {
+		return filterTerm{}, err
+	}
+	if found > maxLinkedMatches {
+		return bad(fmt.Sprintf("this condition matches more than %d records in the linked table of %q. Narrow it, or filter that table directly.",
+			maxLinkedMatches, link.Name))
+	}
+	key := link.ID + ">" + cond.key
+	if len(arrays) == 0 {
+		// No linked record matches, so no record does: id is never empty
+		return filterTerm{key: key, node: leaf(pq.QuoteIdentifier("id"), "is_null", nil, "")}, nil
+	}
+	col := pq.QuoteIdentifier(link.ColumnName)
+	nodes := make([]models.ComplexFilter, len(arrays))
+	for i, a := range arrays {
+		nodes[i] = leaf(col, "jsonb_contains", a, "")
+	}
+	return filterTerm{key: key, node: anyOf(nodes...)}, nil
 }
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
@@ -483,9 +632,26 @@ func nullTerm(key, value string, isNull models.ComplexFilter) filterTerm {
 	return filterTerm{key: key, node: negate(isNull)}
 }
 
-// scalarFilter handles eq, neq, gt, gte, lt, lte, in and is_null on a single value column
+// What a filter value must look like, added to the error when it doesn't
+const (
+	hintNumber   = " Use a number, like 12.5."
+	hintDate     = " Use a date as YYYY-MM-DD, like 2026-11-01."
+	hintDateTime = " Use a date-time with a time zone (RFC 3339), like 2026-11-01T00:00:00Z or 2026-11-01T09:30:00+05:30."
+	hintRecordID = " Use a record ID like rec_12."
+)
+
+// systemHint is the value hint of id, created_at or updated_at
+func systemHint(ref string) string {
+	if ref == refID {
+		return hintRecordID
+	}
+	return hintDateTime
+}
+
+// scalarFilter handles eq, neq, gt, gte, lt, lte, in and is_null on a single value column. hint says what a value
+// must look like, for errors.
 func scalarFilter(key, col, cast, op, value string, values func() []string, maxIn int, parse func(string) (interface{}, bool),
-	bad func(string) (filterTerm, error)) (filterTerm, error) {
+	hint string, bad func(string) (filterTerm, error)) (filterTerm, error) {
 	if op == "is_null" {
 		return nullTerm(key, value, leaf(col, "is_null", nil, cast)), nil
 	}
@@ -501,7 +667,7 @@ func scalarFilter(key, col, cast, op, value string, values func() []string, maxI
 		for i, p := range parts {
 			v, ok := parse(p)
 			if !ok {
-				return bad(fmt.Sprintf("%q is not a valid value for this field.", p))
+				return bad(fmt.Sprintf("%q is not a valid value for this field.%s", p, hint))
 			}
 			parsed[i] = v
 		}
@@ -512,7 +678,7 @@ func scalarFilter(key, col, cast, op, value string, values func() []string, maxI
 	}
 	v, ok := parse(value)
 	if !ok {
-		return bad(fmt.Sprintf("%q is not a valid value for this field.", value))
+		return bad(fmt.Sprintf("%q is not a valid value for this field.%s", value, hint))
 	}
 	return filterTerm{key: key, node: leaf(col, op, v, cast)}, nil
 }
@@ -648,6 +814,15 @@ func listSQL(table string, opts *listOptions) (string, []interface{}, error) {
 		args = append(args, opts.offset)
 	}
 	return b.String(), args, nil
+}
+
+// countSQL counts the records the filters match, for meta.total: every page of the list, not only this one
+func countSQL(table string, filters []filterTerm) (string, []interface{}, error) {
+	where, args, _, err := whereClause(filters, 1)
+	if err != nil {
+		return "", nil, err
+	}
+	return "SELECT COUNT(*) FROM " + table + " AS t" + where, args, nil
 }
 
 // keysetClause is the condition "the record comes after the bookmark" for the sort keys and the bookmark's

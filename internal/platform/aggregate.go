@@ -8,6 +8,7 @@ package platform
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -153,7 +154,7 @@ func (a *API) aggregateRecords(c *gin.Context) {
 	}
 	rows, err := a.queryRows(ctx, query, args...)
 	if err != nil {
-		fail(err)
+		fail(timezoneError(err, opts.timezone))
 		return
 	}
 	hasMore := len(opts.groups) > 0 && len(rows) > opts.limit
@@ -242,7 +243,7 @@ func parseAggregate(body map[string]interface{}, fields []*field, targets aggTar
 	}
 	opts.groups = groups
 
-	metrics, err := parseMetrics(body["metrics"], fields, targets)
+	metrics, err := parseMetrics(body["metrics"], fields, targets, opts.keysByID)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +268,16 @@ func validTimezone(name string) bool {
 	}
 	_, err := time.LoadLocation(name)
 	return err == nil
+}
+
+// timezoneError turns Postgres refusing a time zone into bad_request. timezone is checked against Go's list
+// first; the two lists are nearly the same, but a name only Go knows would otherwise be a 500.
+func timezoneError(err error, timezone string) error {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Code == "22023" && strings.Contains(pqErr.Message, "time zone") {
+		return badRequest(fmt.Sprintf("timezone: %q is not a time zone the database knows. Use a name like \"Asia/Kolkata\", \"Europe/Berlin\" or \"UTC\".", timezone))
+	}
+	return err
 }
 
 // jsonText shows a body value in an error message
@@ -445,18 +456,18 @@ func parseGroupBy(v interface{}, fields []*field, targets aggTargets) ([]groupTe
 			return nil, badRequest(fmt.Sprintf("%s: %q is a %s and can't be grouped. Group by text, select, multi-select, link, lookup, checkbox, number, date or date-time fields.",
 				label, c.name, c.describe()))
 		}
-		key := c.identity() + "/" + by
-		if seen[key] {
-			return nil, badRequest(fmt.Sprintf("%s: %q is already in group_by.", label, c.name))
+		// A field once: twice (even by different periods) would give two groups with the same key
+		if seen[c.identity()] {
+			return nil, badRequest(fmt.Sprintf("%s: %q is already in group_by. Group a field once; for another period, send a second request.", label, c.name))
 		}
-		seen[key] = true
+		seen[c.identity()] = true
 		out = append(out, groupTerm{c: c, by: by})
 	}
 	return out, nil
 }
 
 // parseMetrics reads metrics: a list of {"op": …, "field": …, "as": …}
-func parseMetrics(v interface{}, fields []*field, targets aggTargets) ([]metricTerm, error) {
+func parseMetrics(v interface{}, fields []*field, targets aggTargets, keysByID bool) ([]metricTerm, error) {
 	items, ok := v.([]interface{})
 	if !ok || len(items) == 0 {
 		return nil, badRequest(`metrics is required: a list like [{"op": "count"}, {"op": "sum", "field": "Price"}].`)
@@ -498,7 +509,11 @@ func parseMetrics(v interface{}, fields []*field, targets aggTargets) ([]metricT
 				return nil, badRequest(fmt.Sprintf("%s: %s doesn't work on %q, a %s. %s", label, op, c.name, c.describe(), metricHelp(op)))
 			}
 			m.c = c
+			// keys=id clients get names that survive a rename: avg_fld_…; others get avg_Price
 			m.name = op + "_" + c.name
+			if keysByID && c.f != nil {
+				m.name = op + "_" + c.f.PublicID()
+			}
 		}
 		if raw, ok := obj["as"]; ok {
 			s, ok := raw.(string)

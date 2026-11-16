@@ -60,7 +60,7 @@ func TestKeysetClause(t *testing.T) {
 		{"checkbox and text values keep their type", "Paid,Name", `[false, "a\"b", 7]`,
 			`(((t."paid" > $1 OR t."paid" IS NULL)) OR (t."paid" = $1 AND (t."title" > $2 OR t."title" IS NULL)) OR (t."paid" = $1 AND t."title" = $2 AND t.id > $3))`,
 			[]interface{}{false, `a"b`, "7"}},
-		{"keys after id don't matter", "id,Name", `[7, "Asha"]`, `t."id" > $1`, []interface{}{"7"}},
+		{"keys after id are left out of the query and the cursor", "id,Name", `[7]`, `t."id" > $1`, []interface{}{"7"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

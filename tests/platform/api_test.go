@@ -18,6 +18,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/platform"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,12 +69,17 @@ type mockAPI struct {
 	r      *gin.Engine
 	mock   sqlmock.Sqlmock
 	writer *fakeWriter
+	// noWorkspace stops do from expecting the workspace lookup, for tests that expect it themselves
+	noWorkspace bool
 }
 
 func newMockAPI(t *testing.T, rateLimit int) *mockAPI {
 	t.Helper()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
+	// Every request reads the workspace first (do expects it), so the workspace lookup comes after the queries a
+	// test expects up front; other queries still match in the order they were expected
+	mock.MatchExpectationsInOrder(false)
 	t.Cleanup(func() { _ = db.Close() })
 	writer := &fakeWriter{}
 	gin.SetMode(gin.TestMode)
@@ -86,11 +92,15 @@ func newMockAPI(t *testing.T, rateLimit int) *mockAPI {
 
 func q(s string) string { return regexp.QuoteMeta(s) }
 
-// expectSchema expects the workspace lookup and the reads of the base, the table and its fields; extra
-// columns are added after the table's own
-func (m *mockAPI) expectSchema(extra ...[3]string) {
+// expectWorkspace expects the workspace lookup every request makes: found, at schema version 1
+func (m *mockAPI) expectWorkspace() {
 	m.mock.ExpectQuery(q(`FROM "public".workspace_api WHERE public_id = $1 AND enabled = true`)).WithArgs(mockWS).
 		WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}).AddRow(mockWSID, 1))
+}
+
+// expectSchema expects the reads of the base, the table and its fields; extra
+// columns are added after the table's own
+func (m *mockAPI) expectSchema(extra ...[3]string) {
 	m.mock.ExpectQuery(q(`FROM "public".bases WHERE workspace_id = $1`)).WithArgs(mockWSID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(mockBaseID, "Main"))
 	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID, mockWSID).
@@ -133,6 +143,9 @@ func (m *mockAPI) expectDefaultKey() {
 }
 
 func (m *mockAPI) do(method, path string, body interface{}) (*httptest.ResponseRecorder, apiEnvelope) {
+	if !m.noWorkspace && strings.HasPrefix(path, "/api/v1/"+mockWS+"/") {
+		m.expectWorkspace()
+	}
 	var reader *bytes.Reader
 	if body != nil {
 		raw, _ := json.Marshal(body)
@@ -151,6 +164,7 @@ const ordersURL = "/api/v1/" + mockWS + "/bases/Main/tables/Orders"
 
 func TestAPIUnknownWorkspaceIsCachedAsMiss(t *testing.T) {
 	m := newMockAPI(t, 600)
+	m.noWorkspace = true
 	m.mock.ExpectQuery(q(`FROM "public".workspace_api`)).WithArgs(mockWS).WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}))
 
 	for i := 0; i < 2; i++ {
@@ -293,6 +307,11 @@ func TestAPIQueryRecordsRejectsURLOptions(t *testing.T) {
 		{"POST", "?filter[Price][gt]=5", `{"field":"Price","op":"gt","value":"5"}`},
 		{"QUERY", "?keys=id", `QUERY /records/query reads its options from the body, not the URL. Send "keys" in the body instead.`},
 		{"POST", "?filter=x", `Move filter into where`},
+		// G11: every wrong option in one answer; filter[...] options become one where
+		{"POST", "?filter[Status]=Open&filter[Price][gt]=5&keys=id&limit=5",
+			`POST /records/query reads its options from the body, not the URL. Move filter[Price][gt] and filter[Status] into where, e.g. ` +
+				`{"where": {"match": "all", "conditions": [{"field":"Price","op":"gt","value":"5"}, {"field":"Status","op":"eq","value":"Open"}]}}. ` +
+				`Send "keys" and "limit" in the body instead.`},
 	}
 	for _, tc := range cases {
 		m := newMockAPI(t, 600)
@@ -453,10 +472,39 @@ func TestAPIWriteErrorsKeepTheAppMessage(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "database", "database errors are not shown")
 }
 
+// A column that no longer exists is schema_changed (409, try again) when the workspace's schema_version moved
+// on during the request, and internal_error (500) when it didn't: then the SQL is wrong, a bug to fix
+func TestAPIMissingColumnIsSchemaChangedOnlyAfterAChange(t *testing.T) {
+	cases := []struct {
+		versionAfter int
+		status       int
+		code         string
+	}{
+		{versionAfter: 2, status: http.StatusConflict, code: "schema_changed"},
+		{versionAfter: 1, status: http.StatusInternalServerError, code: "internal_error"},
+	}
+	for _, tc := range cases {
+		m := newMockAPI(t, 600)
+		m.noWorkspace = true
+		m.expectWorkspace() // the request starts at schema version 1
+		m.expectSchema()
+		m.mock.ExpectQuery(q(`SELECT row_to_json(t)::text`)).
+			WillReturnError(&pq.Error{Code: "42703", Message: `column "price_x" does not exist`})
+		// The check: the workspace read again
+		m.mock.ExpectQuery(q(`FROM "public".workspace_api WHERE public_id = $1 AND enabled = true`)).WithArgs(mockWS).
+			WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}).AddRow(mockWSID, tc.versionAfter))
+
+		w, res := m.do("GET", ordersURL+"/records", nil)
+		assert.Equal(t, tc.status, w.Code, tc.code)
+		require.NotNil(t, res.Error)
+		assert.Equal(t, tc.code, res.Error.Code)
+		assert.NotContains(t, w.Body.String(), "price_x", "database messages are not shown")
+		require.NoError(t, m.mock.ExpectationsWereMet())
+	}
+}
+
 func TestAPIRateLimitPerWorkspace(t *testing.T) {
 	m := newMockAPI(t, 2)
-	m.mock.ExpectQuery(q(`FROM "public".workspace_api`)).WithArgs(mockWS).
-		WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}).AddRow(mockWSID, 1))
 	m.mock.ExpectQuery(q(`FROM "public".bases`)).WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
 
 	for i := 0; i < 2; i++ {

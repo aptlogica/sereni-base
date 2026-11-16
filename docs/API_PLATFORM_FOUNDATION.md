@@ -77,7 +77,7 @@ ALTER TABLE "public".workspace_api
 - **Created:** the first time the API is enabled for a workspace. Workspaces that never enable it have no row.
 - **Generation:** `crypto/rand`, using rejection sampling over the 36-character alphabet so every character is equally likely. On a unique violation, retry with a new ID (up to 5 times).
 - **Lookup:** `WHERE public_id = $1 AND enabled = true`, cached. A disabled workspace and a missing one both return `404 not_found`.
-- **Cache:** each entry holds `workspace_id` and `schema_version` and expires after a short TTL (10 s). Unknown IDs are cached as misses for the same TTL, so random IDs can't hammer the database. A disable or schema change reaches every instance within the TTL, with no invalidation calls added to the existing services.
+- **Cache:** only unknown IDs are cached, as misses for 10 s, so random IDs can't hammer the database. A found workspace is read on every request (one lookup by the unique `public_id`), so a disable or schema change (`schema_version`) applies to the next request on every instance, with no invalidation calls added to the existing services. (Changed 2026-11-16 by G3; it was a 10 s cache for found workspaces too.)
 - **Disabling:** set `enabled = false` and keep `public_id`, so the address stays the same if the API is enabled again.
 - **`last_modified_time`:** set by the app on every update, as the other tables do.
 - **Test workspaces:** a new seed script creates the row with `enabled = true` and `enabled_at = now()`.
