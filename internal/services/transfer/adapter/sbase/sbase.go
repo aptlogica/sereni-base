@@ -1,0 +1,212 @@
+// Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
+// Licensed under the Apache License, Version 2.0
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
+// Package sbase is the adapter of the SereniBase file format: base.sbase.json, or a .sbase.zip that holds it with
+// the attachment files and the cover image.
+package sbase
+
+import (
+	"archive/zip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
+)
+
+const (
+	// Name is the name of this format
+	Name = "sbase"
+	// BaseFileInZip is the file of the zip that holds the model
+	BaseFileInZip = "base.sbase.json"
+	// AttachmentDir is the folder of the zip that holds the files
+	AttachmentDir = "attachments/"
+)
+
+var unsafeFileNameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+type sbaseAdapter struct{}
+
+// New returns the SereniBase adapter
+func New() adapter.Adapter { return sbaseAdapter{} }
+
+func (sbaseAdapter) Name() string { return Name }
+
+func (sbaseAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{Structure: true, Rows: true, Links: true, Lookups: true, Views: true, Constraints: true, Files: true}
+}
+
+// Describe: without data the download is the JSON; with data it is the zip, which also carries the files
+func (sbaseAdapter) Describe(opt adapter.ExportOptions, title string) (string, string) {
+	name := strings.Trim(unsafeFileNameChars.ReplaceAllString(title, "_"), "_")
+	if name == "" {
+		name = "base"
+	}
+	if opt.IncludeData {
+		return name + ".sbase.zip", "application/zip"
+	}
+	return name + ".sbase.json", "application/json"
+}
+
+// Export writes the model as .sbase.json, or with data as a zip of base.sbase.json and the files. File sizes and
+// checksums are taken from what is actually read, so the index in the JSON always matches the zip.
+func (sbaseAdapter) Export(ctx context.Context, file *dto.BaseExportFile, opt adapter.ExportOptions, out io.Writer) error {
+	if !opt.IncludeData {
+		return encodeJSON(out, file)
+	}
+
+	zw := zip.NewWriter(out)
+	hasFiles := file.Base.Cover != nil || (file.Data != nil && len(file.Data.Attachments) > 0)
+	if hasFiles && opt.Files == nil {
+		return errors.New("files cannot be exported: no storage provider is configured")
+	}
+	if file.Data != nil {
+		for i := range file.Data.Attachments {
+			a := &file.Data.Attachments[i]
+			size, sum, err := packFile(ctx, zw, opt.Files, a.Filename, a.Path, a.StoragePath)
+			if err != nil {
+				return err
+			}
+			a.Size, a.SHA256 = size, sum
+		}
+	}
+	if c := file.Base.Cover; c != nil {
+		size, sum, err := packFile(ctx, zw, opt.Files, c.Filename, c.Path, c.StoragePath)
+		if err != nil {
+			return err
+		}
+		c.Size, c.SHA256 = size, sum
+	}
+	jw, err := zw.Create(BaseFileInZip)
+	if err != nil {
+		return err
+	}
+	if err := encodeJSON(jw, file); err != nil {
+		return err
+	}
+	return zw.Close()
+}
+
+// encodeJSON writes indented JSON without escaping <, > and &, so SQL in the file stays readable
+func encodeJSON(w io.Writer, v interface{}) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
+}
+
+// packFile copies one stored file into the zip and returns the size and checksum of what was actually read.
+func packFile(ctx context.Context, zw *zip.Writer, files adapter.FileSource, name, path, storagePath string) (int64, string, error) {
+	rc, err := files.OpenFile(ctx, storagePath)
+	if err != nil {
+		return 0, "", fmt.Errorf("read %q: %w", name, err)
+	}
+	defer rc.Close()
+
+	fw, err := zw.Create(path)
+	if err != nil {
+		return 0, "", err
+	}
+	hash := sha256.New()
+	n, err := io.Copy(io.MultiWriter(fw, hash), io.LimitReader(rc, adapter.MaxAttachmentBytes+1))
+	if err != nil {
+		return 0, "", fmt.Errorf("read %q: %w", name, err)
+	}
+	if n > adapter.MaxAttachmentBytes {
+		return 0, "", fmt.Errorf("%q is larger than %d MB", name, adapter.MaxAttachmentBytes>>20)
+	}
+	return n, "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// Import reads a .sbase.json, or a .zip that holds base.sbase.json (the extension of opt.Filename tells which).
+// For a zip the input must be an io.ReaderAt (an uploaded file is) and must stay open until the import is done.
+func (sbaseAdapter) Import(_ context.Context, in io.Reader, size int64, opt adapter.ImportOptions) (*adapter.ImportResult, error) {
+	limit := opt.MaxBytes
+	if limit <= 0 {
+		limit = adapter.DefaultMaxImportBytes
+	}
+
+	reader := in
+	var source dto.AttachmentSource
+	if strings.HasSuffix(strings.ToLower(opt.Filename), ".zip") {
+		ra, ok := in.(io.ReaderAt)
+		if !ok {
+			return nil, errors.New("the file could not be read")
+		}
+		zr, err := zip.NewReader(ra, size)
+		if err != nil {
+			return nil, errors.New("the file is not a valid zip")
+		}
+		entry := findZipEntry(zr)
+		if entry == nil {
+			return nil, fmt.Errorf("the zip has no %s", BaseFileInZip)
+		}
+		if int64(entry.UncompressedSize64) > limit {
+			return nil, fmt.Errorf("%s in the zip is too large", BaseFileInZip)
+		}
+		rc, err := entry.Open()
+		if err != nil {
+			return nil, errors.New("the zip could not be read")
+		}
+		defer rc.Close()
+		reader = rc
+		source = NewZipSource(zr)
+	}
+
+	var file dto.BaseExportFile
+	dec := json.NewDecoder(io.LimitReader(reader, limit+1))
+	// The schema does not allow properties it does not define, so a typo such as "primary_keys" is an error here
+	// instead of a setting that is silently dropped.
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&file); err != nil {
+		return nil, fmt.Errorf("the file is not valid JSON: %v", err)
+	}
+	return &adapter.ImportResult{File: &file, Attachments: source}, nil
+}
+
+func findZipEntry(zr *zip.Reader) *zip.File {
+	for _, e := range zr.File {
+		if e.Name == BaseFileInZip {
+			return e
+		}
+	}
+	return nil
+}
+
+// zipSource serves the files of an uploaded zip.
+type zipSource struct {
+	files map[string]*zip.File
+}
+
+// NewZipSource wraps an opened zip as the attachment source of an import.
+func NewZipSource(zr *zip.Reader) dto.AttachmentSource {
+	src := &zipSource{files: map[string]*zip.File{}}
+	for _, f := range zr.File {
+		if !f.FileInfo().IsDir() {
+			src.files[f.Name] = f
+		}
+	}
+	return src
+}
+
+func (z *zipSource) Has(path string) bool {
+	_, ok := z.files[path]
+	return ok
+}
+
+func (z *zipSource) Open(path string) (io.ReadCloser, error) {
+	f, ok := z.files[path]
+	if !ok {
+		return nil, fmt.Errorf("%s is not in the zip", path)
+	}
+	return f.Open()
+}

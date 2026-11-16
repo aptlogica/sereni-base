@@ -7,6 +7,8 @@ package router
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/aptlogica/sereni-base/internal/config"
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
@@ -42,15 +44,16 @@ type Middlewares struct {
 }
 
 type Handlers struct {
-	Auth         *handlers.AuthHandler
-	Workspace    *handlers.WorkspaceHandler
-	Base         *handlers.BaseHandler
-	Asset        *handlers.AssetsHandler
-	Table        *handlers.TableHandler
-	User         *handlers.UserHandler
-	Organization *handlers.OrganizationHandler
-	Automation   *handlers.AutomationHandler
-	PrimaryKey   *handlers.PrimaryKeyHandler
+	Auth            *handlers.AuthHandler
+	Workspace       *handlers.WorkspaceHandler
+	Base            *handlers.BaseHandler
+	Asset           *handlers.AssetsHandler
+	Table           *handlers.TableHandler
+	User            *handlers.UserHandler
+	Organization    *handlers.OrganizationHandler
+	Automation      *handlers.AutomationHandler
+	PrimaryKey      *handlers.PrimaryKeyHandler
+	BaseTransfer    *handlers.BaseTransferHandler
 	TableConstraint *handlers.TableConstraintHandler
 }
 
@@ -114,6 +117,7 @@ func Setup(cfg *config.Config,
 		setupOrganizationRoutes(private, handlerGroups, middlewareGroups)
 		setupWorkspaceRoutes(private, handlerGroups, middlewareGroups)
 		setupBaseRoutes(private, handlerGroups, middlewareGroups)
+		setupTransferJobRoutes(private, handlerGroups)
 		setupTableRoutes(private, handlerGroups, middlewareGroups)
 		setupColumnRoutes(private, handlerGroups, middlewareGroups)
 		setupRowRoutes(private, handlerGroups, middlewareGroups)
@@ -233,6 +237,40 @@ func objectGuard(m Middlewares, resourceCode, actionCode string, resolve middlew
 	return middleware.NewObjectPermissionGuard(resourceCode, actionCode, m.AccessMemberService, resolve)
 }
 
+// automationsGuard checks the automations permission, but only for a request that asks for triggers and functions.
+func automationsGuard(m Middlewares, action string, asked func(*gin.Context) bool) gin.HandlerFunc {
+	guard := middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, action, m.AccessMemberService).Middleware()
+	return func(c *gin.Context) {
+		if asked(c) {
+			guard(c)
+		}
+	}
+}
+
+// automationsAccess records, without refusing the request, whether the user holds the automations permission. The
+// export handler reads it to decide whether the triggers and functions go into the file.
+func automationsAccess(m Middlewares, action string) gin.HandlerFunc {
+	guard := middleware.NewPermissionGuard(appConstant.ResourceCodes.Automations, action, m.AccessMemberService)
+	return func(c *gin.Context) {
+		allowed, err := guard.Check(c)
+		if err != nil {
+			// when the permission cannot be read, the SQL stays out of the file
+			allowed = false
+		}
+		c.Set(handlers.AutomationsAllowedKey, allowed)
+		c.Next()
+	}
+}
+
+// importAutomationsRequested is the one place that says whether an import asks for triggers and functions; the handler
+// reads it the same way. (The route functions have a parameter named handlers, which hides the package.)
+var importAutomationsRequested = handlers.ImportAutomationsRequested
+
+func boolParam(raw string) bool {
+	v, err := strconv.ParseBool(strings.TrimSpace(raw))
+	return err == nil && v
+}
+
 // adminOnly restricts tenant-wide listings to owner/co-owner.
 func adminOnly(m Middlewares) gin.HandlerFunc {
 	return middleware.NewRoleGuard(
@@ -280,6 +318,14 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 			objectGuard(middlewares, appConstant.ResourceCodes.Members, appConstant.ActionCodes.Manage,
 				lk.AccessMemberParam("id", appConstant.ScopeLevels.Workspace)),
 			handlers.Auth.RemoveAccessMemberByID)
+		// Creates a new base from an exported base file
+		workspace.POST("/:id/import-base",
+			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Create, wsParam),
+			// Triggers and functions run SQL from the file, so asking for them needs the automations permission as well
+			automationsGuard(middlewares, appConstant.ActionCodes.Create, func(c *gin.Context) bool { asked, _ := importAutomationsRequested(c); return asked }),
+			handlers.BaseTransfer.ImportBase)
+		// The user's exports and imports of the workspace, with progress
+		workspace.GET("/:id/transfer-jobs", wsAccess, handlers.BaseTransfer.ListWorkspaceJobs)
 		// All access operations
 		workspace.GET("/:id/bases", wsAccess, handlers.Workspace.GetBasesByWorkspaceId)
 		workspace.GET("/:id", wsAccess, handlers.Workspace.GetWorkspaceByID)
@@ -339,9 +385,31 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Delete, baseParam),
 			handlers.Base.DeleteBase)
 
+		// Exports the whole base to a file; rows need the records export permission
+		base.GET("/:id/export",
+			objectGuard(middlewares, appConstant.ResourceCodes.Records, appConstant.ActionCodes.Export, baseParam),
+			// Triggers and functions are always exported, but their SQL is read only with the automations permission:
+			// a user without it still gets the export, without them
+			automationsAccess(middlewares, appConstant.ActionCodes.Read),
+			handlers.BaseTransfer.ExportBase)
+
 		// All access operations
 		base.GET("/:id", baseAccess, handlers.Base.GetBaseByID)
 		base.GET("/:id/tables", baseAccess, handlers.Base.GetTablesByBaseId)
+	}
+}
+
+// setupTransferJobRoutes configures the endpoints that follow a background base export or import, and download an
+// export. They only need a login: a job can be read only by the user who started it, which the service checks.
+func setupTransferJobRoutes(private *gin.RouterGroup, handlers Handlers) {
+	export := private.Group("/export-job")
+	{
+		export.GET("/:id", handlers.BaseTransfer.GetExportJob)
+		export.GET("/:id/download", handlers.BaseTransfer.DownloadExportJob)
+	}
+	imports := private.Group("/import-job")
+	{
+		imports.GET("/:id", handlers.BaseTransfer.GetImportJob)
 	}
 }
 

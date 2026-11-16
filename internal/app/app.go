@@ -180,6 +180,7 @@ func New(cfg *config.Config) (*App, error) {
 	)
 
 	importService := services.NewImportService(tableManagementService, baseManagementService, antivirusProvider)
+	baseTransferService := services.NewBaseTransferService(baseManagementService, tableManagementService, primaryKeyService, storageProvider, assetManagementService, tableConstraintService, automationService)
 
 	// Create workspaceManagementService first (no circular dependency needed here)
 	workspaceManagementService := services.NewWorkspaceManagementService(
@@ -231,8 +232,29 @@ func New(cfg *config.Config) (*App, error) {
 	automationHandler := handlers.NewAutomationHandler(automationService)
 	tableConstraintHandler := handlers.NewTableConstraintHandler(tableConstraintService)
 	primaryKeyHandler := handlers.NewPrimaryKeyHandler(primaryKeyService)
-
-
+	// Exports with data run in the background; the finished zip is kept for a while in the storage service (or a local
+	// folder) and emailed to the user
+	var exportFiles services.TransferFileStore = services.NewStorageTransferFileStore(storageProvider)
+	if cfg.Transfer.Storage == "local" {
+		exportFiles = services.NewLocalTransferFileStore(cfg.Transfer.Dir)
+	}
+	transferJobService := services.NewBaseTransferJobService(
+		dbService,
+		exportFiles,
+		baseTransferService,
+		baseManagementService,
+		emailProvider,
+		func(ctx context.Context, schema, userID string) (string, error) {
+			user, err := userManagementService.GetUserByID(ctx, schema, userID)
+			return user.Email, err
+		},
+		services.TransferJobSettings{
+			TTL:                 time.Duration(cfg.Transfer.TTLMinutes) * time.Minute,
+			MaxPerUser:          cfg.Transfer.MaxPerUser,
+			DownloadURLTemplate: cfg.Transfer.DownloadURL,
+		},
+	)
+	baseTransferHandler := handlers.NewBaseTransferHandlerWithJobs(baseTransferService, transferJobService)
 
 	handlerGroups := router.Handlers{
 		Auth:            authHandler,
@@ -244,8 +266,8 @@ func New(cfg *config.Config) (*App, error) {
 		Organization:    organizationHandler,
 		Automation:      automationHandler,
 		TableConstraint: tableConstraintHandler,
-		PrimaryKey:   primaryKeyHandler,
-
+		PrimaryKey:      primaryKeyHandler,
+		BaseTransfer:    baseTransferHandler,
 	}
 
 	middlewareGroups := router.Middlewares{

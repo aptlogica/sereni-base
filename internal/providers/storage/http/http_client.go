@@ -6,12 +6,12 @@
 package http
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -45,49 +45,53 @@ func New(cfg Config) (*Client, error) {
 		cfg.TimeoutSeconds = 60 // Storage operations may take longer
 	}
 
+	// A total timeout on the client would also cut off the body of a large upload or download (an export zip can
+	// be hundreds of MB), so the limits are on connecting and on waiting for the answer instead. The body of a
+	// transfer that keeps moving is not limited; the caller's context can still stop it.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ResponseHeaderTimeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+
 	return &Client{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second,
-		},
+		config:     cfg,
+		httpClient: &http.Client{Transport: transport},
 	}, nil
 }
 
-// Upload uploads a file to the storage service
+// Upload uploads a file to the storage service. The file is streamed: it is never held in memory as a whole.
 func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader, size int64, contentType string) (interfaces.UploadResponse, error) {
-	// Create multipart form data
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
 
-	// Add the file
-	part, err := writer.CreateFormFile("file", objectName)
-	if err != nil {
-		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to create form file: %w", err)
-	}
+	// The multipart body is written into the pipe while the request reads it out
+	go func() {
+		pw.CloseWithError(func() error {
+			part, err := writer.CreateFormFile("file", objectName)
+			if err != nil {
+				return fmt.Errorf("storage http: failed to create form file: %w", err)
+			}
+			if _, err := io.Copy(part, reader); err != nil {
+				return fmt.Errorf("storage http: failed to copy file content: %w", err)
+			}
+			if err := writer.WriteField("path", objectName); err != nil {
+				return fmt.Errorf("storage http: failed to write path field: %w", err)
+			}
+			if err := writer.Close(); err != nil {
+				return fmt.Errorf("storage http: failed to close writer: %w", err)
+			}
+			return nil
+		}())
+	}()
+	// stops the writer above if the request ends before the body is read to the end
+	defer pr.Close()
 
-	if _, err := io.Copy(part, reader); err != nil {
-		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to copy file content: %w", err)
-	}
-
-	// Add the path field
-	if err := writer.WriteField("path", objectName); err != nil {
-		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to write path field: %w", err)
-	}
-
-	// Close the writer
-	if err := writer.Close(); err != nil {
-		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to close writer: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.BaseURL+"/storage/upload", &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.BaseURL+"/storage/upload", pr)
 	if err != nil {
 		return interfaces.UploadResponse{}, fmt.Errorf(ErrCreateRequest, err)
 	}
-
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return interfaces.UploadResponse{}, fmt.Errorf(ErrSendRequest, err)
@@ -105,8 +109,6 @@ func (c *Client) Upload(ctx context.Context, objectName string, reader io.Reader
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return interfaces.UploadResponse{}, fmt.Errorf("storage http: failed to decode response: %w", err)
 	}
-
-	// Return the parsed response
 	return result, nil
 }
 

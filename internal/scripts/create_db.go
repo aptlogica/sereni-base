@@ -99,6 +99,7 @@ func CreateMasterSchema(dbService *pkg.DatabaseService) {
 	createTableUsingSchema(dbService, tenant.Relation{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Automation{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.TableConstraint{}.TableSchema(appConstant.MasterDatabase))
+	createTableUsingSchema(dbService, tenant.TransferJob{}.TableSchema(appConstant.MasterDatabase))
 
 	createFunctions(dbService, appConstant.MasterDatabase)
 

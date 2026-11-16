@@ -22,6 +22,7 @@ type Config struct {
 	Log                        LogConfig                        `mapstructure:"log"`
 	Asset                      AssetConfig                      `mapstructure:"asset"`
 	Import                     ImportConfig                     `mapstructure:"import"`
+	Transfer                   TransferConfig                   `mapstructure:"transfer"`
 	Antivirus                  AntivirusConfig                  `mapstructure:"antivirus"`
 	TemporaryAddedUserPassword TemporaryAddedUserPasswordConfig `mapstructure:"temporary_added_user_password"`
 	OwnerRegistration          OwnerRegistrationConfig          `mapstructure:"owner_registration"`
@@ -101,6 +102,15 @@ type ImportConfig struct {
 	MaxSize int `mapstructure:"max_size"`
 }
 
+// TransferConfig holds the settings of background base exports and imports (the old EXPORT_* names still work)
+type TransferConfig struct {
+	Storage     string `mapstructure:"storage"`
+	Dir         string `mapstructure:"dir"`
+	TTLMinutes  int    `mapstructure:"ttl_minutes"`
+	MaxPerUser  int    `mapstructure:"max_per_user"`
+	DownloadURL string `mapstructure:"download_url"`
+}
+
 // TemporaryAddedUserPasswordConfig holds config for temporary password assigned to newly added users so they can change it later
 type TemporaryAddedUserPasswordConfig struct {
 	Value string `mapstructure:"value"`
@@ -152,6 +162,13 @@ func Load() (*Config, error) {
 	viper.BindEnv("database.max_open_conns", "DATABASE_MAX_OPEN_CONNS")
 	viper.BindEnv("database.max_idle_conns", "DATABASE_MAX_IDLE_CONNS")
 	viper.BindEnv("database.driver", "DATABASE_DRIVER")
+
+	// Export Config
+	viper.BindEnv("transfer.storage", "TRANSFER_STORAGE", "EXPORT_STORAGE")
+	viper.BindEnv("transfer.dir", "TRANSFER_DIR", "EXPORT_DIR")
+	viper.BindEnv("transfer.max_per_user", "TRANSFER_MAX_PER_USER", "EXPORT_MAX_PER_USER")
+	viper.BindEnv("transfer.ttl_minutes", "TRANSFER_TTL_MINUTES")
+	viper.BindEnv("transfer.download_url", "TRANSFER_DOWNLOAD_URL", "EXPORT_DOWNLOAD_URL")
 
 	// Auth Config
 	viper.BindEnv("auth.url", "AUTH_URL")
@@ -216,6 +233,10 @@ func Load() (*Config, error) {
 	viper.SetDefault("database.driver", "postgres")
 
 	viper.SetDefault("auth.url", "http://localhost:8081")
+	viper.SetDefault("transfer.ttl_minutes", 3)
+	viper.SetDefault("transfer.storage", "storage")
+	viper.SetDefault("transfer.max_per_user", 2)
+	viper.SetDefault("transfer.download_url", "http://localhost:5050/exports/%s")
 	viper.SetDefault("auth.reset_password_url", "http://localhost:5050/reset-password?token=%s")
 	viper.SetDefault("auth.jwt.access_token_expiry", 3600)
 	viper.SetDefault("auth.jwt.refresh_token_expiry", 86400)
@@ -270,4 +291,3 @@ func Load() (*Config, error) {
 
 	return &config, nil
 }
-

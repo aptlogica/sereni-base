@@ -1,0 +1,400 @@
+// Copyright 2026-2030 Aptlogica Technologies Pvt Ltd
+// Licensed under the Apache License, Version 2.0
+// Websites: https://www.aptlogica.com | https://www.serenibase.com
+// Support: support@aptlogica.com | support@serenibase.com
+
+package handlers
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
+	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/services/interfaces"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/sbase"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/formats"
+	"github.com/aptlogica/sereni-base/internal/utils/response"
+	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+// maxBaseImportBytes caps an uploaded base file, and the JSON read out of a zip
+const maxBaseImportBytes = 100 << 20
+
+// BaseTransferHandler exports and imports bases. The core service builds and creates bases as a model; an adapter
+// (internal/services/transfer/adapter) turns the model into a file and back, so the handler writes no file format.
+type BaseTransferHandler struct {
+	transferService interfaces.BaseTransferService
+	// jobs runs the exports with data in the background; without it they are built during the request
+	jobs interfaces.BaseTransferJobService
+	// adapters are the file formats
+	adapters *adapter.Registry
+}
+
+func NewBaseTransferHandler(transferService interfaces.BaseTransferService) *BaseTransferHandler {
+	return &BaseTransferHandler{transferService: transferService, adapters: formats.Registry()}
+}
+
+// NewBaseTransferHandlerWithJobs is NewBaseTransferHandler with background exports: an export with data
+// then returns a job to follow instead of the zip.
+func NewBaseTransferHandlerWithJobs(transferService interfaces.BaseTransferService, jobs interfaces.BaseTransferJobService) *BaseTransferHandler {
+	return &BaseTransferHandler{transferService: transferService, jobs: jobs, adapters: formats.Registry()}
+}
+
+// format returns the adapter of the SereniBase file format
+func (h *BaseTransferHandler) format() adapter.Adapter {
+	a, _ := h.adapters.Get(sbase.Name)
+	return a
+}
+
+// AutomationsAllowedKey is the context key under which the router says whether the user may read the trigger
+// functions and triggers of the base. Without it (or when false) an export leaves them out.
+const AutomationsAllowedKey = "base_transfer_automations_allowed"
+
+// ExportBase exports a base.
+// GET /base/:id/export?include_data=true
+// include_data is the only option. Without it the download is a .sbase.json with the structure. With it the
+// export is a .sbase.zip: base.sbase.json with the rows, plus the attachment files and the cover image. That can
+// take a while, so it runs as a background job: the response is 202 with the job (poll GET /export-job/:id, then
+// download it from GET /export-job/:id/download); the finished zip is also sent to the user's email. A user can
+// have two exports active at once; asking again for a base that is already being exported returns that job
+// ("reused": true), and a third one at the same time is refused with 429.
+// The trigger functions and triggers are always part of the export, for a user who has the automations
+// permission (the router sets AutomationsAllowedKey); for a user who does not, they are left out.
+func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
+	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
+	}
+	includeData, err := queryBool(c, "include_data", false)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+	includeAutomations := c.GetBool(AutomationsAllowedKey)
+
+	schemaName, _ := c.Get("schema")
+	schema, _ := schemaName.(string)
+
+	if includeData && h.jobs != nil {
+		userID, _ := c.Get("user_id")
+		user, _ := userID.(string)
+		job, err := h.jobs.StartExport(c.Request.Context(), schema, id, user, dto.ExportBaseOptions{
+			IncludeData:        true,
+			IncludeAttachments: true,
+			IncludeAutomations: includeAutomations,
+		})
+		if errors.Is(err, app_errors.TransferLimitReached) {
+			response.SendError(c, responseConst.BaseError.TransferLimitReached)
+			return
+		}
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		response.SendSuccess(c, responseConst.BaseSuccess.ExportStarted, job)
+		return
+	}
+
+	file, err := h.transferService.ExportBase(c.Request.Context(), schema, id, dto.ExportBaseOptions{
+		IncludeData:        includeData,
+		IncludeAttachments: includeData,
+		IncludeAutomations: includeAutomations,
+	})
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+
+	// the core service read the base into a model; the adapter writes it as a file
+	format := h.format()
+	opts := adapter.ExportOptions{IncludeData: includeData, Files: h.transferService}
+	filename, contentType := format.Describe(opts, file.Base.Title)
+	if includeData {
+		h.sendArchive(c, format, opts, file, filename, contentType)
+		return
+	}
+	var out bytes.Buffer
+	if err := format.Export(c.Request.Context(), file, opts, &out); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.Data(http.StatusOK, contentType, out.Bytes())
+}
+
+// sendArchive downloads the export that holds files (a zip). It is built in a temporary file first, so a failure
+// while reading an attachment still produces a clean error response.
+func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter, opts adapter.ExportOptions, file *dto.BaseExportFile, filename, contentType string) {
+	tmp, err := os.CreateTemp("", "sbase-export-*.zip")
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+
+	if err := format.Export(c.Request.Context(), file, opts, tmp); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	info, err := tmp.Stat()
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.DataFromReader(http.StatusOK, info.Size(), contentType, tmp, nil)
+}
+
+// ImportBase creates a new base in a workspace from an uploaded .sbase.json (or .sbase.zip) file.
+// POST /workspace/:id/import-base  (multipart: file, title, include_data, include_automations;
+// include_automations may also be a URL parameter)
+// A broken file is refused at once (400). Otherwise the import runs as a background job: the response is 202 with the
+// job (poll GET /import-job/:id until it is completed or failed).
+// A user can have two imports active at once; a third is refused with 429.
+func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
+	workspaceID := strings.TrimSpace(c.Param("id"))
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
+		return
+	}
+	upload, err := c.FormFile("file")
+	if err != nil {
+		response.SendError(c, responseConst.AssetError.FilesNotFound)
+		return
+	}
+	if upload.Size > maxBaseImportBytes {
+		response.SendError(c, responseConst.AssetError.FileTooLargeError)
+		return
+	}
+	includeData, err := formBool(c, "include_data", true)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+	includeAutomations, err := ImportAutomationsRequested(c)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
+	// the adapter reads the file into a model; it stays open until the import is done, because the files of a zip
+	// are read from it while the base is created
+	upfile, err := upload.Open()
+	if err != nil {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "the file could not be read")
+		return
+	}
+	defer upfile.Close()
+	read, err := h.format().Import(c.Request.Context(), upfile, upload.Size, adapter.ImportOptions{
+		Filename: upload.Filename,
+		MaxBytes: maxBaseImportBytes,
+	})
+	if err != nil {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, err.Error())
+		return
+	}
+
+	schemaName, _ := c.Get("schema")
+	schema, _ := schemaName.(string)
+	userID, _ := c.Get("user_id")
+	user, _ := userID.(string)
+
+	title := strings.TrimSpace(c.PostForm("title"))
+
+	// An import can take longer than the server's write timeout, so it runs as a background job: the file is kept and
+	// the response is 202 with the job to follow (GET /import-job/:id). The file was read above only to refuse a broken
+	// one at once; the job reads it again.
+	if h.jobs != nil {
+		if _, err := upfile.Seek(0, io.SeekStart); err != nil {
+			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "the file could not be read")
+			return
+		}
+		job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, upfile, upload.Filename, upload.Size, dto.ImportBaseOptions{
+			Title:              title,
+			IncludeData:        includeData,
+			IncludeAutomations: includeAutomations,
+		})
+		if errors.Is(err, app_errors.TransferLimitReached) {
+			response.SendError(c, responseConst.BaseError.TransferLimitReached)
+			return
+		}
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+		response.SendSuccess(c, responseConst.BaseSuccess.ImportStarted, job)
+		return
+	}
+
+	result, err := h.transferService.ImportBase(c.Request.Context(), schema, workspaceID, user, read.File, dto.ImportBaseOptions{
+		Title:              title,
+		IncludeData:        includeData,
+		Attachments:        read.Attachments,
+		IncludeAutomations: includeAutomations,
+	})
+	var invalid *dto.ImportValidationError
+	if errors.As(err, &invalid) {
+		response.SendErrorWithData(c, responseConst.Error.ValidationFailed, "the base file is not valid", invalid.Problems)
+		return
+	}
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	response.SendSuccess(c, "base imported successfully", result)
+}
+
+// ImportAutomationsRequested reports whether an import request asks for the trigger functions and triggers of the file.
+// The option can be a form field or a URL parameter (the form field wins). The router's permission check and the handler
+// both read it through this function, so the check always covers exactly what the handler then does.
+func ImportAutomationsRequested(c *gin.Context) (bool, error) {
+	raw := c.PostForm("include_automations")
+	if strings.TrimSpace(raw) == "" {
+		raw = c.Query("include_automations")
+	}
+	return parseBool(raw, false)
+}
+
+func queryBool(c *gin.Context, name string, fallback bool) (bool, error) {
+	return parseBool(c.Query(name), fallback)
+}
+
+func formBool(c *gin.Context, name string, fallback bool) (bool, error) {
+	return parseBool(c.PostForm(name), fallback)
+}
+
+func parseBool(raw string, fallback bool) (bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return fallback, nil
+	}
+	return strconv.ParseBool(strings.TrimSpace(raw))
+}
+
+// GetExportJob returns the state of a background export of the current user.
+// GET /export-job/:id
+func (h *BaseTransferHandler) GetExportJob(c *gin.Context) {
+	h.getJob(c, "export", responseConst.BaseSuccess.ExportStatus)
+}
+
+// GetImportJob returns the state of a background import of the current user. When it is completed, base_id is the
+// new base and result says what was created; when it failed, error says why (and result lists the problems of a file
+// that is not valid).
+// GET /import-job/:id
+func (h *BaseTransferHandler) GetImportJob(c *gin.Context) {
+	h.getJob(c, "import", responseConst.BaseSuccess.ImportStatus)
+}
+
+// ListWorkspaceJobs returns the current user's exports and imports of a workspace with their status and progress, newest
+// first, so the app can show them all in one place. Other users' jobs are never listed.
+// GET /workspace/:id/transfer-jobs
+func (h *BaseTransferHandler) ListWorkspaceJobs(c *gin.Context) {
+	if h.jobs == nil {
+		response.SendSuccess(c, responseConst.BaseSuccess.ExportStatus, []dto.TransferJobResponse{})
+		return
+	}
+	workspaceID := strings.TrimSpace(c.Param("id"))
+	if workspaceID == "" {
+		response.SendError(c, responseConst.WorkspaceError.IdRequired)
+		return
+	}
+	userID, _ := c.Get("user_id")
+	user, _ := userID.(string)
+	schemaName, _ := c.Get("schema")
+	schema, _ := schemaName.(string)
+	jobs, err := h.jobs.ListWorkspaceJobs(c.Request.Context(), schema, workspaceID, user)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	response.SendSuccess(c, responseConst.BaseSuccess.ExportStatus, jobs)
+}
+
+// getJob answers with a job of the given type. A job of the other type looks like a job that does not exist.
+func (h *BaseTransferHandler) getJob(c *gin.Context, jobType string, success responseConst.ResponseCode) {
+	id, user, schema, ok := h.transferJobRequest(c)
+	if !ok {
+		return
+	}
+	job, err := h.jobs.Get(c.Request.Context(), schema, id, user)
+	if err == nil && job.Type != jobType {
+		err = app_errors.TransferJobNotFound
+	}
+	if err != nil {
+		h.sendTransferJobError(c, err)
+		return
+	}
+	response.SendSuccess(c, success, job)
+}
+
+// DownloadExportJob downloads the zip of a completed export of the current user.
+// GET /export-job/:id/download
+func (h *BaseTransferHandler) DownloadExportJob(c *gin.Context) {
+	id, user, schema, ok := h.transferJobRequest(c)
+	if !ok {
+		return
+	}
+	f, job, err := h.jobs.Open(c.Request.Context(), schema, id, user)
+	if err != nil {
+		h.sendTransferJobError(c, err)
+		return
+	}
+	defer f.Close()
+
+	// A large zip can take longer to send than the server's write timeout; this response is exempt from it
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+
+	name := job.FileName
+	if name == "" {
+		name = "base.sbase.zip"
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	c.DataFromReader(http.StatusOK, job.SizeBytes, "application/zip", f, nil)
+}
+
+// transferJobRequest reads the job id and the user from a request; it answers the request itself when they are not usable.
+func (h *BaseTransferHandler) transferJobRequest(c *gin.Context) (id, user, schema string, ok bool) {
+	if h.jobs == nil {
+		response.SendError(c, responseConst.BaseError.TransferJobNotFound)
+		return "", "", "", false
+	}
+	id = strings.TrimSpace(c.Param("id"))
+	if _, err := uuid.Parse(id); err != nil {
+		response.SendError(c, responseConst.BaseError.TransferJobNotFound)
+		return "", "", "", false
+	}
+	userID, _ := c.Get("user_id")
+	user, _ = userID.(string)
+	schemaName, _ := c.Get("schema")
+	schema, _ = schemaName.(string)
+	return id, user, schema, true
+}
+
+func (h *BaseTransferHandler) sendTransferJobError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, app_errors.TransferJobNotFound):
+		response.SendError(c, responseConst.BaseError.TransferJobNotFound)
+	case errors.Is(err, app_errors.TransferJobNotReady):
+		response.SendError(c, responseConst.BaseError.TransferJobNotReady)
+	case errors.Is(err, app_errors.TransferJobExpired):
+		response.SendError(c, responseConst.BaseError.TransferJobGone)
+	default:
+		response.CheckAndSendError(c, err)
+	}
+}

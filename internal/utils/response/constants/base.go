@@ -8,35 +8,43 @@ package constants
 import "net/http"
 
 var BaseError = struct {
-	ErrNotFound        ResponseCode
-	BaseAlreadyExists  ResponseCode
-	BaseNotCreated     ResponseCode
-	BaseNotUpdated     ResponseCode
-	BaseNotDeleted     ResponseCode
-	NameRequired       ResponseCode
-	NameTooLong        ResponseCode
-	NameInvalid        ResponseCode
-	DescriptionInvalid ResponseCode
-	IdRequired         ResponseCode
-	IdInvalid          ResponseCode
-	BaseNotFound       ResponseCode
-	ImageTooLarge      ResponseCode
-	MetaInvalid        ResponseCode
+	ErrNotFound          ResponseCode
+	BaseAlreadyExists    ResponseCode
+	BaseNotCreated       ResponseCode
+	BaseNotUpdated       ResponseCode
+	BaseNotDeleted       ResponseCode
+	NameRequired         ResponseCode
+	NameTooLong          ResponseCode
+	NameInvalid          ResponseCode
+	DescriptionInvalid   ResponseCode
+	IdRequired           ResponseCode
+	IdInvalid            ResponseCode
+	BaseNotFound         ResponseCode
+	ImageTooLarge        ResponseCode
+	MetaInvalid          ResponseCode
+	TransferJobNotFound  ResponseCode
+	TransferJobNotReady  ResponseCode
+	TransferJobGone      ResponseCode
+	TransferLimitReached ResponseCode
 }{
-	ErrNotFound:        "BAS_6001",
-	BaseAlreadyExists:  "BAS_6002",
-	BaseNotCreated:     "BAS_6003",
-	BaseNotUpdated:     "BAS_6004",
-	BaseNotDeleted:     "BAS_6005",
-	NameRequired:       "BAS_6006",
-	NameTooLong:        "BAS_6012",
-	NameInvalid:        "BAS_6007",
-	DescriptionInvalid: "BAS_6008",
-	IdRequired:         "BAS_6009",
-	IdInvalid:          "BAS_6010",
-	BaseNotFound:       "BAS_6011",
-	ImageTooLarge:      "BAS_6013",
-	MetaInvalid:        "BAS_6014",
+	ErrNotFound:          "BAS_6001",
+	BaseAlreadyExists:    "BAS_6002",
+	BaseNotCreated:       "BAS_6003",
+	BaseNotUpdated:       "BAS_6004",
+	BaseNotDeleted:       "BAS_6005",
+	NameRequired:         "BAS_6006",
+	NameTooLong:          "BAS_6012",
+	NameInvalid:          "BAS_6007",
+	DescriptionInvalid:   "BAS_6008",
+	IdRequired:           "BAS_6009",
+	IdInvalid:            "BAS_6010",
+	BaseNotFound:         "BAS_6011",
+	ImageTooLarge:        "BAS_6013",
+	MetaInvalid:          "BAS_6014",
+	TransferJobNotFound:  "BAS_6015",
+	TransferJobNotReady:  "BAS_6016",
+	TransferJobGone:      "BAS_6017",
+	TransferLimitReached: "BAS_6018",
 }
 
 var BaseErrorCodes = map[ResponseCode]MetaResponse{
@@ -110,18 +118,46 @@ var BaseErrorCodes = map[ResponseCode]MetaResponse{
 		Message:     "Base meta is invalid",
 		Description: "The Base meta must be a valid JSON object",
 	},
+	BaseError.TransferJobNotFound: {
+		HTTPStatus:  http.StatusNotFound,
+		Message:     "Job not found",
+		Description: "The export or import does not exist, or it was started by another user",
+	},
+	BaseError.TransferJobNotReady: {
+		HTTPStatus:  http.StatusConflict,
+		Message:     "Export is not ready",
+		Description: "The export has not finished yet, or it failed; check its status",
+	},
+	BaseError.TransferLimitReached: {
+		HTTPStatus:  http.StatusTooManyRequests,
+		Message:     "Too many exports or imports",
+		Description: "You already have the most exports (or imports) that can run at once; wait for one to finish and try again",
+	},
+	BaseError.TransferJobGone: {
+		HTTPStatus:  http.StatusGone,
+		Message:     "Export expired",
+		Description: "The export file was deleted after it expired; start a new export",
+	},
 }
 
 var BaseSuccess = struct {
-	BaseCreated  ResponseCode
-	BaseUpdated  ResponseCode
-	BaseDeleted  ResponseCode
-	BasesFetched ResponseCode
+	BaseCreated   ResponseCode
+	BaseUpdated   ResponseCode
+	BaseDeleted   ResponseCode
+	BasesFetched  ResponseCode
+	ExportStarted ResponseCode
+	ExportStatus  ResponseCode
+	ImportStarted ResponseCode
+	ImportStatus  ResponseCode
 }{
-	BaseCreated:  "BAS_SUCCESS_6001",
-	BaseUpdated:  "BAS_SUCCESS_6002",
-	BaseDeleted:  "BAS_SUCCESS_6003",
-	BasesFetched: "BAS_SUCCESS_6004",
+	BaseCreated:   "BAS_SUCCESS_6001",
+	BaseUpdated:   "BAS_SUCCESS_6002",
+	BaseDeleted:   "BAS_SUCCESS_6003",
+	BasesFetched:  "BAS_SUCCESS_6004",
+	ExportStarted: "BAS_SUCCESS_6005",
+	ExportStatus:  "BAS_SUCCESS_6006",
+	ImportStarted: "BAS_SUCCESS_6007",
+	ImportStatus:  "BAS_SUCCESS_6008",
 }
 
 var BaseSuccessCodes = map[ResponseCode]MetaResponse{
@@ -144,5 +180,25 @@ var BaseSuccessCodes = map[ResponseCode]MetaResponse{
 		HTTPStatus:  http.StatusOK,
 		Message:     "Bases retrieved successfully",
 		Description: "The bases have been retrieved successfully",
+	},
+	BaseSuccess.ExportStarted: {
+		HTTPStatus:  http.StatusAccepted,
+		Message:     "Export started",
+		Description: "The export runs in the background; check its status and download it when it is completed",
+	},
+	BaseSuccess.ExportStatus: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Export status retrieved successfully",
+		Description: "The status of the export has been retrieved successfully",
+	},
+	BaseSuccess.ImportStarted: {
+		HTTPStatus:  http.StatusAccepted,
+		Message:     "Import started",
+		Description: "The import runs in the background; check its status until it is completed",
+	},
+	BaseSuccess.ImportStatus: {
+		HTTPStatus:  http.StatusOK,
+		Message:     "Import status retrieved successfully",
+		Description: "The status of the import has been retrieved successfully",
 	},
 }

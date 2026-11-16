@@ -302,3 +302,11 @@ func (e *APIError) Error() string {
 	}
 	return e.Code
 }
+
+// Transfer jobs (background base exports and imports)
+var (
+	TransferJobNotFound  = errors.New("export not found")
+	TransferJobNotReady  = errors.New("export is not ready")
+	TransferJobExpired   = errors.New("export expired")
+	TransferLimitReached = errors.New("too many active exports")
+)

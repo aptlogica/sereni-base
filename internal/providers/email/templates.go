@@ -7,6 +7,7 @@ package email
 
 import (
 	"fmt"
+	"html"
 
 	"github.com/aptlogica/sereni-base/internal/constant"
 )
@@ -189,4 +190,20 @@ func (s *service) WorkspaceAccessUpdatedBody(workspaceName, access string) Email
 		Subject: subject,
 		Body:    s.wrapBody(subject, content),
 	}
+}
+
+// ExportReadyEmail is the email sent when a base export has finished. It carries the link to the file, never the
+// file: an export can be large, and mail servers often refuse a big message.
+func ExportReadyEmail(baseTitle, downloadLink, validFor string) EmailContent {
+	s := &service{}
+	subject := fmt.Sprintf("Your export of %s is ready", baseTitle)
+	content := fmt.Sprintf(`
+		<p>Dear User,</p>
+		<p>The export of the base <strong>%s</strong> is finished.</p>
+		<p>Download it within the next <strong>%s</strong> with the button below:</p>
+		<p style="text-align: center; margin: 30px 0;"><a class="button" href="%s">Download export</a></p>
+		<p>To use the file, import it into a workspace as a new base.</p>
+	`, html.EscapeString(baseTitle), validFor, html.EscapeString(downloadLink))
+	// the subject is plain text; the page title and heading of the body are HTML
+	return EmailContent{Subject: subject, Body: s.wrapBody(html.EscapeString(subject), content)}
 }

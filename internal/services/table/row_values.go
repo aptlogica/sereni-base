@@ -171,7 +171,9 @@ func cellValue(column dto.ColumnResponse, value interface{}) interface{} {
 	if value == nil || column.DT == "" || !strings.HasSuffix(column.DT, "[]") {
 		return value
 	}
-	if _, ok := value.([]interface{}); ok {
+	switch value.(type) {
+	case []interface{}, []map[string]interface{}:
+		// Already a list; wrapping a list of objects again (attachment cells) would break the insert
 		return value
 	}
 	return []interface{}{value}

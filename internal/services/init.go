@@ -16,6 +16,7 @@ import (
 	core "github.com/aptlogica/sereni-base/internal/services/core"
 	rbac "github.com/aptlogica/sereni-base/internal/services/rbac"
 	table "github.com/aptlogica/sereni-base/internal/services/table"
+	transfer "github.com/aptlogica/sereni-base/internal/services/transfer"
 	workspace "github.com/aptlogica/sereni-base/internal/services/workspace"
 )
 
@@ -71,6 +72,21 @@ var NewTableManagementService = table.NewTableManagementService
 var NewColumnService = table.NewColumnService
 var NewImportService = table.NewImportService
 var NewModelService = table.NewModelService
+
+// ============================================================================
+// Base Transfer Service - Re-export from transfer subdirectory
+// ============================================================================
+
+var NewBaseTransferService = transfer.NewBaseTransferService
+var NewBaseTransferJobService = transfer.NewBaseTransferJobService
+var NewStorageTransferFileStore = transfer.NewStorageTransferFileStore
+var NewLocalTransferFileStore = transfer.NewLocalTransferFileStore
+
+// TransferFileStore keeps the zips of finished background exports
+type TransferFileStore = transfer.TransferFileStore
+
+// TransferJobSettings tunes the background base exports
+type TransferJobSettings = transfer.TransferJobSettings
 
 // ============================================================================
 // Asset Services - Re-exports from asset subdirectory
