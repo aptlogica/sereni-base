@@ -438,6 +438,30 @@ func (a *API) queryRows(ctx context.Context, query string, args ...interface{}) 
 	return out, rows.Err()
 }
 
+// queryPage runs listSQL's query: each row's row_to_json text and its sort values (a JSON array)
+func (a *API) queryPage(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, []json.RawMessage, error) {
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	out, keys := []map[string]interface{}{}, []json.RawMessage{}
+	for rows.Next() {
+		var raw, key string
+		if err := rows.Scan(&raw, &key); err != nil {
+			return nil, nil, err
+		}
+		v, err := decodeJSON([]byte(raw))
+		if err != nil {
+			return nil, nil, err
+		}
+		row, _ := v.(map[string]interface{})
+		out = append(out, row)
+		keys = append(keys, json.RawMessage(key))
+	}
+	return out, keys, rows.Err()
+}
+
 // linkResolver finds what a link cell holds for one linked record, for link filters: {"id": n} on most tables,
 // the primary key columns' values on tables with a custom primary key
 func (a *API) linkResolver(ctx context.Context, ws workspaceRef) linkResolver {
@@ -585,15 +609,16 @@ func (a *API) runList(c *gin.Context, tc *tableContext, params url.Values) {
 		fail(err)
 		return
 	}
-	rows, err := a.queryRows(ctx, query, args...)
+	rows, keys, err := a.queryPage(ctx, query, args...)
 	if err != nil {
-		fail(err)
+		fail(keysetError(err, opts))
 		return
 	}
 	next := ""
 	if len(rows) > opts.limit {
 		rows = rows[:opts.limit]
-		next = encodeCursor(opts.offset+opts.limit, opts.hash)
+		// The next page starts after the last record of this one
+		next = encodeCursor(keys[opts.limit-1], opts.hash)
 	}
 	out, err := a.buildRecords(ctx, tc, rows, withExpanded(opts.fields, tc.fields, expand), opts.keysByID, expand)
 	if err != nil {
@@ -708,16 +733,19 @@ func readOptionalBody(c *gin.Context) (map[string]interface{}, error) {
 // queryBodyKeys are the options POST /records/query reads from its body
 var queryBodyKeys = []string{"where", "sort", "select", "limit", "cursor", "keys", "expand", "search"}
 
-// rejectURLOptions answers bad_request when an endpoint that reads its options from the body gets query
-// parameters. They would otherwise be ignored without a word: ?filter[Status]=Open would return every record.
+// rejectURLOptions answers bad_request when an endpoint that reads its options from the body gets a query
+// option in the URL. It would otherwise be ignored without a word: ?filter[Status]=Open would return every
+// record. Other parameters (cache busters, tracking tags) have no meaning here and are ignored.
 func rejectURLOptions(c *gin.Context, endpoint string, bodyKeys []string) error {
 	params := c.Request.URL.Query()
-	if len(params) == 0 {
-		return nil
-	}
 	names := make([]string, 0, len(params))
 	for k := range params {
-		names = append(names, k)
+		if k == "filter" || strings.HasPrefix(k, "filter[") || slices.Contains(bodyKeys, k) {
+			names = append(names, k)
+		}
+	}
+	if len(names) == 0 {
+		return nil
 	}
 	sort.Strings(names)
 	k := names[0]
@@ -733,7 +761,7 @@ func rejectURLOptions(c *gin.Context, endpoint string, bodyKeys []string) error 
 	case slices.Contains(bodyKeys, k):
 		msg += fmt.Sprintf("Send %q in the body instead.", k)
 	default:
-		msg += fmt.Sprintf("%q is not an option. Body keys: %s.", k, strings.Join(bodyKeys, ", "))
+		msg += fmt.Sprintf("Move %s into where, e.g. {\"where\": {\"field\": \"Status\", \"value\": \"Open\"}}.", k)
 	}
 	return badRequest(msg)
 }
@@ -816,6 +844,8 @@ func convertFields(fields []*field, input map[string]interface{}, index int, all
 			var apiErr *Error
 			if errors.As(err, &apiErr) && apiErr.Code == CodeAmbiguousName {
 				issue(key, "several fields have this name; use the field ID")
+			} else if _, isFormula := hiddenFormula(fields, key); isFormula {
+				issue(key, "formula field; formula fields aren't in the API yet and can't be written")
 			} else {
 				issue(key, "unknown field")
 			}
@@ -1122,7 +1152,7 @@ func (a *API) createRecords(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	rows, err := a.records.CreateRecordsForAPI(c, a.schema, model, values)
+	rows, err := a.records.CreateRecordsForAPI(c.Request.Context(), a.schema, model, values)
 	if err != nil {
 		respondError(c, writeError(err, func(int) string { return "" }))
 		return
@@ -1183,7 +1213,7 @@ func (a *API) updateRecord(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	rows, err := a.records.UpdateRecordsForAPI(c, a.schema, model, []dto.APIRecordUpdate{{RowID: id, Values: w.values}})
+	rows, err := a.records.UpdateRecordsForAPI(c.Request.Context(), a.schema, model, []dto.APIRecordUpdate{{RowID: id, Values: w.values}})
 	if err != nil {
 		var recErr *app_errors.RecordWriteError
 		if errors.As(err, &recErr) && errors.Is(recErr.Err, app_errors.ErrRecordNotFound) {
@@ -1267,7 +1297,7 @@ func (a *API) updateRecords(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	rows, err := a.records.UpdateRecordsForAPI(c, a.schema, model, updates)
+	rows, err := a.records.UpdateRecordsForAPI(c.Request.Context(), a.schema, model, updates)
 	if err != nil {
 		respondError(c, writeError(err, func(i int) string { return refs[i].label() }))
 		return
@@ -1295,7 +1325,7 @@ func (a *API) deleteIDs(c *gin.Context, tc *tableContext, ids []int64, refs []st
 			keyOf[rowID(row)] = pk.keyValues(row, fieldKeys(tc.fields, false))
 		}
 	}
-	missing, err := a.records.DeleteRecordsForAPI(c, a.schema, model, ids)
+	missing, err := a.records.DeleteRecordsForAPI(c.Request.Context(), a.schema, model, ids)
 	if err != nil {
 		if stopped := stoppedWriteError(err); stopped != nil {
 			return nil, stopped

@@ -122,6 +122,12 @@ func respondList(c *gin.Context, data any, nextCursor string, limit int) {
 	c.JSON(http.StatusOK, envelope{Data: data, Meta: m})
 }
 
+// respondGroups writes the groups of an aggregate. Groups have no cursor: has_more says that more groups
+// matched than limit, and the client narrows the filter or raises limit.
+func respondGroups(c *gin.Context, data any, hasMore bool, limit int) {
+	c.JSON(http.StatusOK, envelope{Data: data, Meta: listMeta{RequestID: requestID(c), HasMore: hasMore, Limit: limit}})
+}
+
 // respondError writes err in the envelope. Errors that are not *Error are logged and returned as
 // internal_error, so database messages never reach the client.
 func respondError(c *gin.Context, err error) {

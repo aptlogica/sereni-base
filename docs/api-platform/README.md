@@ -66,7 +66,7 @@ A missing or extra key field, or a field that isn't part of the key, is a `400` 
     }
   ],
   "error": null,
-  "meta": { "request_id": "req_6f1c...", "next_cursor": "eyJ2Ijox...", "has_more": true, "limit": 20 }
+  "meta": { "request_id": "req_6f1c...", "next_cursor": "eyJ2Ijoy...", "has_more": true, "limit": 20 }
 }
 ```
 
@@ -77,12 +77,16 @@ Every response has `data`, `error` and `meta`. Empty fields are `null` (or `[]` 
 Pass `meta.next_cursor` back as `cursor`, with the same filter and sort, until `has_more` is `false`:
 
 ```bash
-curl "$BASE/bases/CRM/tables/Orders/records?limit=50&cursor=eyJ2Ijox..."
+curl "$BASE/bases/CRM/tables/Orders/records?limit=50&cursor=eyJ2Ijoy..."
 ```
 
 `limit` is 50 by default and at most 200.
 
-The cursor holds a position in the list, so records added or deleted while you page can make a later page skip or repeat a record. Page over data that isn't changing, or sort by a field that only grows (such as `created_at`) and treat repeats as already seen.
+The cursor remembers the last record of the page, and the next page starts after it. Records added or deleted while you page don't make a later page skip or repeat a record: a new record shows up if it sorts after where you are, and a deleted one simply isn't there. Every page is equally fast with the default order (by `id`).
+
+One case can still move a record: if a record's **sort value** changes between pages (for example its Price is edited while you page sorted by Price), it can move past where you are (seen twice) or behind it (not seen). Sorting by `id`, the default, is never affected. For a full copy of a table that is being edited, page without `sort`.
+
+Cursors are opaque: don't build or change them. A cursor sorted by a long text field carries that value, so it gets long; send such queries with `POST /records/query`, where the cursor goes in the body.
 
 ### Filter, sort and select
 
@@ -126,27 +130,29 @@ curl -X POST "$BASE/bases/CRM/tables/Orders/records/query" -H "Content-Type: app
 }'
 ```
 
-- `match` is `all` when left out. Groups can hold groups, up to 5 deep, with at most 50 conditions in all.
+- `match` is `all` when left out. Groups can hold groups, up to 5 deep, with at most 50 conditions in all (counted together with any `filter[...]`).
 - `in` takes a JSON list: `{"field": "Status", "op": "in", "value": ["Active", "Paused"]}`.
 - `{"field": "Notes", "op": "is_null"}` finds empty fields.
 - `none` counts an empty field as not matching: `none` of `Price < 100` keeps orders without a price.
 - The body also takes `select`, `limit`, `cursor` and `keys`. An empty `select` (`[]`) returns all fields, as when it is left out. Everything is optional: an empty body, a `where` that is `null` or `{}`, or a group without conditions lists every record. The same goes for `?where=`, `?where={}` and a bare `?filter=` on GET. Page with `next_cursor`, sending the same `where` and `sort`.
 - The same tree works on `GET` as the URL-encoded `where` parameter, combined with any `filter[...]` using AND.
-- `POST /records/query` reads every option from the body. URL parameters such as `?filter[Status]=Open` or `?keys=id` are rejected with `400`, which says where to put them; a `filter[...]` becomes a `where` condition. Use `filter[...]` on `GET`.
+- `POST /records/query` reads every option from the body. Options in the URL, such as `?filter[Status]=Open` or `?keys=id`, are rejected with `400`, which says where to put them; a `filter[...]` becomes a `where` condition. Other URL parameters (cache busters, tracking tags) are ignored. Use `filter[...]` on `GET`.
 - The HTTP `QUERY` method works too: `curl -X QUERY "$BASE/bases/CRM/tables/Orders/records/query" ...` takes the same body and gives the same answer. Use whichever your client supports; cursors work across both.
 - Mistakes say where they are: `where.conditions[1].conditions[0]: No field named "Staus". Did you mean "Status"?`
 
 ### Search
 
-`search` finds records where **any** text field (text, long text, email, URL, phone, single select) contains the text, ignoring case:
+`search` finds records where **every word** of the text is in some text field (text, long text, email, URL, phone, single select), ignoring case. `acme corp` finds "Acme Corporation", "Corp Acme", and a record with "acme" in its Name and "corp" in its Notes:
 
 ```bash
 curl "$BASE/bases/CRM/tables/Orders/records?search=acme"
 curl "$BASE/bases/CRM/tables/Orders/records?search=acme&filter[Status]=Open"   # both must match
+curl "$BASE/bases/CRM/tables/Orders/records?search=acme%20corp"                # every word, any order, any field
 ```
 
 - Combined with `filter[...]` and `where` using AND. In `POST /records/query` send `"search": "acme"`.
-- At most 200 characters; an empty search lists every record. A cursor belongs to its search: send the same `search` with `cursor`.
+- Words are split on spaces only, so `C++` and `e-mail` stay whole, and `acme, corp` looks for `acme,` with its comma. A word given twice is searched once.
+- At most 200 characters and 10 words; an empty search lists every record. A cursor belongs to its search: send the same `search` with `cursor`.
 
 ### Linked records inline (`expand`)
 
@@ -168,9 +174,66 @@ curl "$BASE/bases/CRM/tables/Orders/records/rec_1042?expand=Customer"
 - Expanding changes what each record shows, not which records are returned. Filtering by a linked record's fields (`Customer.Country`) isn't supported yet.
 - Each expanded field is one extra database query per page, however many records the page has.
 
+### Count, sum and group
+
+`POST /records/aggregate` counts, sums and averages the records a filter selects, optionally grouped. `where` and `search` work as in `POST /records/query`, so both select the same records.
+
+```bash
+# Orders and revenue per status and month, in India time
+curl -X POST "$BASE/bases/CRM/tables/Orders/records/aggregate" -H "Content-Type: application/json" -d '{
+  "where": {"field": "Status", "op": "neq", "value": "Cancelled"},
+  "group_by": ["Status", {"field": "Ordered at", "by": "month"}],
+  "metrics": [{"op": "count"}, {"op": "sum", "field": "Price", "as": "revenue"}],
+  "timezone": "Asia/Kolkata",
+  "sort": ["-revenue"],
+  "limit": 20
+}'
+```
+
+```json
+{
+  "data": [
+    { "group": { "Status": "Open", "Ordered at": "2026-11-01" }, "values": { "count": 12, "revenue": 1840.5 } },
+    { "group": { "Status": null,   "Ordered at": "2026-10-01" }, "values": { "count": 1,  "revenue": 0 } }
+  ],
+  "meta": { "request_id": "req_…", "next_cursor": null, "has_more": false, "limit": 20 }
+}
+```
+
+- `metrics` (required, 1 to 10): `count` (records), `count_distinct` (different non-empty values), `sum` and `avg` (number fields, including duration in minutes), `min` and `max` (number, date and date-time fields). `as` names the value; by default it's `count` or `<op>_<field name>`, like `avg_Price`.
+- `group_by` (up to 3): text, email, URL, phone, single select, checkbox, number and date fields, and link, multi-select and lookup fields (below). Dates and date-times can be grouped by `day`, `week` (starting Monday), `month` or `year` with `{"field": …, "by": …}`; date-times, including `created_at` and `updated_at`, must say `by`. A period is returned as its first day.
+- `timezone` (default `UTC`) decides which day a date-time belongs to: an order at 19:30 UTC on 30 November is in December with `Asia/Kolkata`.
+- Empty values make their own group, `null`, sorted last. Empty text counts as empty and an unchecked checkbox as `false`, as in filters. `sum` of no values is `0`; `avg`, `min` and `max` of no values are `null`.
+- Without `group_by` the answer is one group, `{"group": {}, "values": {...}}`, even when nothing matches.
+- `sort` takes metric names and `group_by` fields (`-` for descending); by default groups come in order. `limit` (1 to 1000, default 100) is the number of groups; `meta.has_more` says more groups matched. There is no cursor for groups.
+- `group_by` also takes **link, multi-select and lookup** fields:
+
+  ```json
+  { "group_by": ["Customer"], "metrics": [{ "op": "sum", "field": "Price", "as": "revenue" }], "sort": ["-revenue"], "limit": 10 }
+  ```
+
+  A link group is the linked record, `{"id": "rec_12"}`, a multi-select group is the option, and a lookup group is the looked-up value, grouped like that field (a looked-up date can use `by`). Records with no links or no options are the `null` group, and so are links to deleted records.
+- A record counts once in **each** group it belongs to: an order linked to two customers counts for both, and a task tagged `urgent` and `bug` counts in both groups. So group totals can add up to more than the overall total. With a lookup, an order whose two customers are both in India counts once for India.
+- One link or multi-select field per request, since two would multiply the rows; lookups through that same link can be added (`["Customer", "Customer country"]`). Link, multi-select and lookup fields can't be used in `metrics`.
+- Long text, JSON, attachments, users, uuid and formula fields can't be grouped or aggregated yet.
+- Options go in the body; `QUERY /records/aggregate` works too.
+
+### Query limits
+
+| Limit | Value | Over it |
+|---|---|---|
+| Conditions per request, `filter[...]` values and `where` conditions together | 50 | `400`: `at most 50 conditions across filter[...] and where.` |
+| Values in one `in` | 100; 200 for `id` (one full page of records) | `400`: `filter[Status][in]: in takes at most 100 values.` |
+| Sort fields (the `id` tie-breaker added at the end doesn't count) | 5 | `400`: `sort: at most 5 fields.` |
+| `where` nesting | 5 deep | `400` |
+| `search` | 200 characters, 10 words | `400`: `search: at most 10 words.` |
+| `expand` | 2 levels, 5 link fields, 100 linked records per cell | `400`; linked records past 100 keep only their `id` |
+| Page size (`limit`) | 200 | `400` |
+| Aggregate: metrics / `group_by` fields / groups returned | 10 / 3 / 1000 | `400`; past 1000 groups, `meta.has_more` is true |
+
 ### Time limit
 
-A read (list, query or get one record) that runs longer than 10 seconds is stopped and returns `503 query_timeout`. Narrow the filter or search, expand fewer fields, or ask for a smaller page.
+A read (list, query, aggregate or get one record) that runs longer than 10 seconds is stopped and returns `503 query_timeout`. Narrow the filter or search, expand fewer fields, or ask for a smaller page.
 
 ## 4. Write records
 

@@ -12,10 +12,9 @@ import (
 	"time"
 )
 
-// queryTimeout is the longest a read (list, query or get one record) may run. The database query is
+// queryTimeout is the longest a read (list, query, aggregate or get one record) may run. The database query is
 // cancelled when it runs out, so a heavy query can't hold a connection for long.
 var queryTimeout = 10 * time.Second
-// var queryTimeout = 1 * time.Millisecond
 
 // timeoutError turns an error caused by the request running out of time into query_timeout. Other errors,
 // and errors the API already explains, are returned as they are.

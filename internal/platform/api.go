@@ -83,6 +83,8 @@ func (a *API) Register(api *gin.RouterGroup) {
 	// The HTTP QUERY method (a read with a body) does the same as POST; clients use whichever they support
 	records.POST("/query", a.queryRecords)
 	records.Handle(MethodQuery, "/query", a.queryRecords)
+	records.POST("/aggregate", a.aggregateRecords)
+	records.Handle(MethodQuery, "/aggregate", a.aggregateRecords)
 }
 
 // MethodQuery is the HTTP QUERY method: safe and idempotent like GET, with a body like POST

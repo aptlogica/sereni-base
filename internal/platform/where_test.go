@@ -27,16 +27,16 @@ func testLinks(*field, int64) ([]string, bool, error) {
 	return []string{`[{"id": 12}]`, `[{"code": "C12"}]`}, true, nil
 }
 
-// whereSQL returns the WHERE part of the list query and its arguments, without limit and offset
+// whereSQL returns the WHERE part of the list query and its arguments, without limit
 func whereSQL(t *testing.T, query url.Values) (string, []interface{}) {
 	t.Helper()
 	opts, err := parseListOptions(query, whereFields(), testLinks)
 	require.NoError(t, err)
 	sql, args, err := listSQL(`"s"."orders"`, opts)
 	require.NoError(t, err)
-	sql = strings.TrimPrefix(sql, `SELECT row_to_json(t)::text FROM "s"."orders" AS t`)
+	sql = sql[strings.Index(sql, ` FROM "s"."orders" AS t`)+len(` FROM "s"."orders" AS t`):]
 	sql = sql[:strings.Index(sql, " ORDER BY")]
-	return strings.TrimPrefix(sql, " WHERE "), args[:len(args)-2]
+	return strings.TrimPrefix(sql, " WHERE "), args[:len(args)-1]
 }
 
 func whereQuery(tree string) url.Values { return url.Values{"where": {tree}} }
@@ -136,7 +136,7 @@ func TestWhereErrors(t *testing.T) {
 }
 
 func TestWhereConditionLimit(t *testing.T) {
-	conds := make([]string, maxWhereConditions+1)
+	conds := make([]string, maxConditions+1)
 	for i := range conds {
 		conds[i] = `{"field": "Amount", "value": 1}`
 	}
@@ -176,7 +176,7 @@ func TestWhereCursorHash(t *testing.T) {
 	assert.NotEqual(t, a, c)
 
 	// A cursor from the first page only works with the same where
-	cursor := encodeCursor(50, a)
+	cursor := encodeCursor([]byte(`[50]`), a)
 	q := whereQuery(`{"match": "all", "conditions": [{"field": "Status", "value": "Open"}, {"field": "Amount", "value": 1}]}`)
 	q.Set("cursor", cursor)
 	_, err := parseListOptions(q, whereFields(), testLinks)

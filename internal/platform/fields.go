@@ -99,6 +99,37 @@ type field struct {
 	// Lookups: the link field in this table and the looked-up field in the linked table
 	LookupLinkColumnID   string
 	LookupTargetColumnID string
+
+	// formulas are the table's formula fields, which the API leaves out (see newField); shared by all the
+	// table's fields, so naming a formula gets an error that says why instead of "no field named"
+	formulas *hiddenFormulas
+}
+
+// hiddenFormulas are a table's formula fields: column ID (lowercase) and name
+type hiddenFormulas struct {
+	byID   map[string]string
+	byName map[string]bool
+}
+
+// hiddenFormula returns the name of the formula field ref means, if it means one. ref is a name or fld_ ID,
+// as in resolveField.
+func hiddenFormula(fields []*field, ref string) (string, bool) {
+	if len(fields) == 0 || fields[0].formulas == nil {
+		return "", false
+	}
+	h := fields[0].formulas
+	if isUUIDID(PrefixField, ref) {
+		id, ok := DecodeUUID(PrefixField, ref)
+		name, found := h.byID[strings.ToLower(id)]
+		return name, ok && found
+	}
+	return ref, h.byName[ref]
+}
+
+// formulaFieldError is the error for a reference to a formula field
+func formulaFieldError(name string) error {
+	return notFound(fmt.Sprintf("%q is a formula field. Formula fields aren't in the API yet: the app calculates "+
+		"their values, so the value stored on the server can be empty or out of date.", name))
 }
 
 // PublicID returns fld_ + the column ID

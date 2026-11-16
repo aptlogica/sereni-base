@@ -23,6 +23,28 @@ func TestSearchSQL(t *testing.T) {
 	// Combined with filters using AND
 	sql, _ = whereSQL(t, url.Values{"search": {"acme"}, "filter[Paid]": {"true"}})
 	assert.Equal(t, `("paid" = $1) AND ((("title")::text ILIKE $2) OR (("status")::text ILIKE $3))`, sql)
+
+	// Several words: each word in some text field (all of any), in any order and across fields
+	sql, args = whereSQL(t, url.Values{"search": {"acme  corp"}})
+	assert.Equal(t, `(((("title")::text ILIKE $1) OR (("status")::text ILIKE $2)) AND ((("title")::text ILIKE $3) OR (("status")::text ILIKE $4)))`, sql)
+	assert.Equal(t, []interface{}{"%acme%", "%acme%", "%corp%", "%corp%"}, args)
+
+	// A word given twice (ignoring case) is searched once
+	_, args = whereSQL(t, url.Values{"search": {"acme ACME corp"}})
+	assert.Equal(t, []interface{}{"%acme%", "%acme%", "%corp%", "%corp%"}, args)
+}
+
+func TestSearchWords(t *testing.T) {
+	assert.Equal(t, []string{"acme", "corp"}, searchWords(" acme \t corp "))
+	assert.Equal(t, []string{"C++", "e-mail"}, searchWords("C++ e-mail c++"), "split on spaces only; repeats dropped")
+	assert.Empty(t, searchWords("   "))
+
+	words := "w1 w2 w3 w4 w5 w6 w7 w8 w9 w10"
+	_, err := parseListOptions(url.Values{"search": {words}}, whereFields(), testLinks)
+	assert.NoError(t, err, "10 words are allowed")
+	_, err = parseListOptions(url.Values{"search": {words + " w11"}}, whereFields(), testLinks)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at most 10 words")
 }
 
 func TestSearchEmptyAndLimits(t *testing.T) {
@@ -56,7 +78,7 @@ func TestSearchIsPartOfTheCursorHash(t *testing.T) {
 	assert.Equal(t, acme, hash(url.Values{"search": {" acme "}}), "spaces around the text don't matter")
 
 	// A cursor of one search can't be used with another
-	q := url.Values{"search": {"other"}, "cursor": {encodeCursor(50, acme)}}
+	q := url.Values{"search": {"other"}, "cursor": {encodeCursor([]byte(`[50]`), acme)}}
 	_, err := parseListOptions(q, whereFields(), testLinks)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "different filter or sort")

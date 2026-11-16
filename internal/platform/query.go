@@ -58,8 +58,9 @@ type sortTerm struct {
 // listOptions are the query parameters of GET /records (and the body of POST /records/query)
 type listOptions struct {
 	limit    int
-	offset   int
-	fields   []*field // fields to return; all fields when select is not given or empty
+	offset   int           // records to skip: only with an old (version 1) cursor
+	after    []interface{} // the last record's sort values (version 2 cursor): the page starts after it
+	fields   []*field      // fields to return; all fields when select is not given or empty
 	filters  []filterTerm
 	sorts    []sortTerm
 	keysByID bool
@@ -125,7 +126,49 @@ func parseListOptions(query url.Values, fields []*field, links linkResolver) (*l
 		opts.fields = selected
 	}
 
-	// Filters, in a fixed order so the cursor hash doesn't depend on parameter order
+	filters, err := parseFilters(query, fields, links)
+	if err != nil {
+		return nil, err
+	}
+	opts.filters = filters
+
+	if raw := query.Get("sort"); raw != "" {
+		refs := splitList(raw)
+		if len(refs) > maxSortTerms {
+			return nil, badRequest(fmt.Sprintf("sort: at most %d fields.", maxSortTerms))
+		}
+		for _, ref := range refs {
+			desc := strings.HasPrefix(ref, "-")
+			ref = strings.TrimPrefix(ref, "-")
+			term, err := buildSort(fields, ref, desc)
+			if err != nil {
+				return nil, err
+			}
+			opts.sorts = append(opts.sorts, term)
+		}
+	}
+	// id is always the last tie-breaker, so pages never overlap or skip records
+	if !hasIDSort(opts.sorts) {
+		opts.sorts = append(opts.sorts, sortTerm{key: refID, expr: "t.id"})
+	}
+
+	opts.hash = optionsHash(opts)
+	if raw := query.Get("cursor"); raw != "" {
+		offset, after, err := decodeCursor(raw, opts.hash, opts.sorts)
+		if err != nil {
+			return nil, err
+		}
+		opts.offset, opts.after = offset, after
+	}
+	return opts, nil
+}
+
+// parseFilters reads filter[...], where and search, which are combined using AND. The list and aggregate
+// endpoints share it, so a filter selects the same records in both.
+func parseFilters(query url.Values, fields []*field, links linkResolver) ([]filterTerm, error) {
+	var filters []filterTerm
+
+	// filter[...], in a fixed order so the cursor hash doesn't depend on parameter order
 	keys := make([]string, 0, len(query))
 	for k := range query {
 		keys = append(keys, k)
@@ -148,54 +191,32 @@ func parseListOptions(query url.Values, fields []*field, links linkResolver) (*l
 			op = "eq"
 		}
 		for _, value := range query[k] {
+			if len(filters) >= maxConditions {
+				return nil, tooManyConditions()
+			}
 			term, err := buildFilter(fields, m[1], op, value, links)
 			if err != nil {
 				return nil, err
 			}
-			opts.filters = append(opts.filters, term)
+			filters = append(filters, term)
 		}
 	}
 
 	// The where tree; combined with the filter[...] parameters using AND
 	// Left out, empty, null, {} or a group without conditions: no filter
-	if term, ok, err := parseWhereParam(query.Get("where"), fields, links); err != nil {
+	if term, ok, err := parseWhereParam(query.Get("where"), fields, links, len(filters)); err != nil {
 		return nil, err
 	} else if ok {
-		opts.filters = append(opts.filters, term)
+		filters = append(filters, term)
 	}
 
 	// Search across the text fields; combined with the filters using AND, and part of the cursor hash
 	if term, ok, err := buildSearch(fields, query.Get("search")); err != nil {
 		return nil, err
 	} else if ok {
-		opts.filters = append(opts.filters, term)
+		filters = append(filters, term)
 	}
-
-	if raw := query.Get("sort"); raw != "" {
-		for _, ref := range splitList(raw) {
-			desc := strings.HasPrefix(ref, "-")
-			ref = strings.TrimPrefix(ref, "-")
-			term, err := buildSort(fields, ref, desc)
-			if err != nil {
-				return nil, err
-			}
-			opts.sorts = append(opts.sorts, term)
-		}
-	}
-	// id is always the last tie-breaker, so pages never overlap or skip records
-	if !hasIDSort(opts.sorts) {
-		opts.sorts = append(opts.sorts, sortTerm{key: refID, expr: "t.id"})
-	}
-
-	opts.hash = optionsHash(opts)
-	if raw := query.Get("cursor"); raw != "" {
-		offset, err := decodeCursor(raw, opts.hash)
-		if err != nil {
-			return nil, err
-		}
-		opts.offset = offset
-	}
-	return opts, nil
+	return filters, nil
 }
 
 func hasIDSort(sorts []sortTerm) bool {
@@ -238,8 +259,11 @@ func buildSort(fields []*field, ref string, desc bool) (sortTerm, error) {
 
 // columnExpr is the SQL value of a field for sorting. Duration is stored as text minutes, so it is sorted as a
 // number.
-func columnExpr(f *field) string {
-	col := "t." + pq.QuoteIdentifier(f.ColumnName)
+func columnExpr(f *field) string { return columnExprAs(f, "t") }
+
+// columnExprAs is columnExpr for the table with this alias
+func columnExprAs(f *field, alias string) string {
+	col := alias + "." + pq.QuoteIdentifier(f.ColumnName)
 	if f.Type == typeDuration {
 		return fmt.Sprintf(`(CASE WHEN %[1]s ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$' THEN %[1]s::numeric END)`, col)
 	}
@@ -339,7 +363,11 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 			t, err := time.Parse(time.RFC3339Nano, s)
 			return t.UTC(), err == nil
 		}
-		return scalarFilter(key, pq.QuoteIdentifier(col), "", op, value, values, parse, bad)
+		maxIn := maxInValues
+		if ref == refID {
+			maxIn = maxInIDs // fetching records by a list of IDs, up to one full page
+		}
+		return scalarFilter(key, pq.QuoteIdentifier(col), "", op, value, values, maxIn, parse, bad)
 	}
 
 	f, err := resolveField(fields, ref)
@@ -417,7 +445,7 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 		if f.Type == typeUUID {
 			cast = pgsql.CastText
 		}
-		return scalarFilter(key, col, cast, op, value, values, func(s string) (interface{}, bool) { return s, true }, bad)
+		return scalarFilter(key, col, cast, op, value, values, maxInValues, func(s string) (interface{}, bool) { return s, true }, bad)
 
 	case numberTypes[f.Type]:
 		cast := ""
@@ -425,19 +453,19 @@ func buildCondition(fields []*field, c filterCondition, links linkResolver) (fil
 			// Stored as text minutes
 			cast = pgsql.CastSafeNumeric
 		}
-		return scalarFilter(key, col, cast, op, value, values, func(s string) (interface{}, bool) {
+		return scalarFilter(key, col, cast, op, value, values, maxInValues, func(s string) (interface{}, bool) {
 			n, err := strconv.ParseFloat(s, 64)
 			return n, err == nil
 		}, bad)
 
 	case f.Type == typeDate:
-		return scalarFilter(key, col, "", op, value, values, func(s string) (interface{}, bool) {
+		return scalarFilter(key, col, "", op, value, values, maxInValues, func(s string) (interface{}, bool) {
 			_, err := time.Parse("2006-01-02", s)
 			return s, err == nil
 		}, bad)
 
 	case timeTypes[f.Type]:
-		return scalarFilter(key, col, "", op, value, values, func(s string) (interface{}, bool) {
+		return scalarFilter(key, col, "", op, value, values, maxInValues, func(s string) (interface{}, bool) {
 			t, err := time.Parse(time.RFC3339Nano, s)
 			return t.UTC(), err == nil
 		}, bad)
@@ -456,7 +484,7 @@ func nullTerm(key, value string, isNull models.ComplexFilter) filterTerm {
 }
 
 // scalarFilter handles eq, neq, gt, gte, lt, lte, in and is_null on a single value column
-func scalarFilter(key, col, cast, op, value string, values func() []string, parse func(string) (interface{}, bool),
+func scalarFilter(key, col, cast, op, value string, values func() []string, maxIn int, parse func(string) (interface{}, bool),
 	bad func(string) (filterTerm, error)) (filterTerm, error) {
 	if op == "is_null" {
 		return nullTerm(key, value, leaf(col, "is_null", nil, cast)), nil
@@ -465,6 +493,9 @@ func scalarFilter(key, col, cast, op, value string, values func() []string, pars
 		parts := values()
 		if len(parts) == 0 {
 			return bad("in takes a list of values (comma-separated in filter[...]).")
+		}
+		if len(parts) > maxIn {
+			return bad(fmt.Sprintf("in takes at most %d values.", maxIn))
 		}
 		parsed := make([]interface{}, len(parts))
 		for i, p := range parts {
@@ -493,6 +524,9 @@ func fieldLookupError(err error, label string, fields []*field, ref string) erro
 		return err
 	}
 	msg := fmt.Sprintf("%s: %s", label, apiErr.Message)
+	if _, isFormula := hiddenFormula(fields, ref); isFormula {
+		return badRequest(msg) // it exists; a similar name would be the wrong hint
+	}
 	if name := closestFieldName(fields, ref); name != "" {
 		msg += fmt.Sprintf(" Did you mean %q?", name)
 	}
@@ -556,48 +590,136 @@ func checkFilter(node models.ComplexFilter) error {
 	return nil
 }
 
-// listSQL builds the page query: limit+1 rows, so the caller knows whether there is another page
+// whereClause is " WHERE …" for the filters (all of them must match), with its arguments numbered from next,
+// and the next free argument number. It is "" when there are no filters.
+func whereClause(filters []filterTerm, next int) (string, []interface{}, int, error) {
+	if len(filters) == 0 {
+		return "", nil, next, nil
+	}
+	all := models.ComplexFilter{Logic: "AND", Groups: make([]models.ComplexFilter, len(filters))}
+	for i, f := range filters {
+		all.Groups[i] = f.node
+	}
+	if err := checkFilter(all); err != nil {
+		return "", nil, 0, err
+	}
+	where, args, n := filterSQL.BuildComplexFilter(all, next)
+	if where == "" {
+		return "", nil, 0, errFilterSQL
+	}
+	return " WHERE " + where, args, n, nil
+}
+
+// listSQL builds the page query: limit+1 rows, so the caller knows whether there is another page. Each row
+// comes with its sort values (a JSON array, in sort order), so the last one can become the next cursor.
 func listSQL(table string, opts *listOptions) (string, []interface{}, error) {
 	var b strings.Builder
-	var args []interface{}
-	next := 1
-	fmt.Fprintf(&b, "SELECT row_to_json(t)::text FROM %s AS t", table)
-	if len(opts.filters) > 0 {
-		all := models.ComplexFilter{Logic: "AND", Groups: make([]models.ComplexFilter, len(opts.filters))}
-		for i, f := range opts.filters {
-			all.Groups[i] = f.node
-		}
-		if err := checkFilter(all); err != nil {
-			return "", nil, err
-		}
-		where, whereArgs, n := filterSQL.BuildComplexFilter(all, next)
-		if where == "" {
-			return "", nil, errFilterSQL
-		}
-		b.WriteString(" WHERE " + where)
-		args, next = whereArgs, n
-	}
+	cols := make([]string, len(opts.sorts))
 	order := make([]string, len(opts.sorts))
 	for i, s := range opts.sorts {
-		order[i] = s.expr
+		cols[i] = s.expr
+		// Postgres puts empty values last when ascending and first when descending; written out, so the
+		// order and the keyset condition visibly agree
+		order[i] = s.expr + " ASC NULLS LAST"
 		if s.desc {
-			order[i] += " DESC"
+			order[i] = s.expr + " DESC NULLS FIRST"
 		}
 	}
+	fmt.Fprintf(&b, "SELECT row_to_json(t)::text, json_build_array(%s)::text FROM %s AS t", strings.Join(cols, ", "), table)
+	where, args, next, err := whereClause(opts.filters, 1)
+	if err != nil {
+		return "", nil, err
+	}
+	if opts.after != nil {
+		after, afterArgs, n := keysetClause(opts.sorts, opts.after, next)
+		if where == "" {
+			where = " WHERE " + after
+		} else {
+			where = " WHERE (" + strings.TrimPrefix(where, " WHERE ") + ") AND " + after
+		}
+		args, next = append(args, afterArgs...), n
+	}
+	b.WriteString(where)
 	b.WriteString(" ORDER BY " + strings.Join(order, ", "))
-	fmt.Fprintf(&b, " LIMIT $%d OFFSET $%d", next, next+1)
-	args = append(args, opts.limit+1, opts.offset)
+	fmt.Fprintf(&b, " LIMIT $%d", next)
+	args = append(args, opts.limit+1)
+	if opts.offset > 0 {
+		fmt.Fprintf(&b, " OFFSET $%d", next+1)
+		args = append(args, opts.offset)
+	}
 	return b.String(), args, nil
+}
+
+// keysetClause is the condition "the record comes after the bookmark" for the sort keys and the bookmark's
+// values (one per key), with its arguments numbered from next, and the next free argument number. A record
+// comes after the bookmark when it is equal on the first keys and after on the next one:
+//
+//	(k1 after v1) OR (k1 = v1 AND k2 after v2) OR … OR (k1 = v1 AND … AND id > vid)
+//
+// Empty values are last when ascending and first when descending, as in listSQL's ORDER BY. id is never empty
+// and is unique, so the chain ends there; keys after id can't change the order and are left out.
+func keysetClause(sorts []sortTerm, after []interface{}, next int) (string, []interface{}, int) {
+	var args []interface{}
+	var terms, equal []string
+	for i, s := range sorts {
+		var eq, gt string
+		if v := after[i]; v == nil {
+			eq = s.expr + " IS NULL"
+			if s.desc {
+				gt = s.expr + " IS NOT NULL" // empty values came first, so every value comes after them
+			} // ascending: empty values are last, so nothing comes after an empty value on this key
+		} else {
+			p := fmt.Sprintf("$%d", next)
+			next++
+			args = append(args, keysetArg(v))
+			eq = s.expr + " = " + p
+			switch {
+			case s.desc:
+				gt = s.expr + " < " + p
+			case s.key == refID:
+				gt = s.expr + " > " + p
+			default:
+				gt = "(" + s.expr + " > " + p + " OR " + s.expr + " IS NULL)"
+			}
+		}
+		if gt != "" {
+			terms = append(terms, strings.Join(append(slices.Clone(equal), gt), " AND "))
+		}
+		if s.key == refID {
+			break
+		}
+		equal = append(equal, eq)
+	}
+	if len(terms) == 1 {
+		return terms[0], args, next
+	}
+	return "((" + strings.Join(terms, ") OR (") + "))", args, next
+}
+
+// keysetArg is a bookmark value as a query argument. Numbers keep their exact text; Postgres reads each
+// argument as the type of the column it is compared with.
+func keysetArg(v interface{}) interface{} {
+	if n, ok := v.(json.Number); ok {
+		return n.String()
+	}
+	return v
 }
 
 // ---- Cursor ----
 
-const cursorVersion = 1
+// Cursor versions: 1 skips a number of records ("o"); 2 holds the last record's sort values ("k") and the page
+// starts after that record, so records added or deleted between pages don't shift the pages. Version 1 is
+// still read for one release, so clients paging during the deploy carry on; new pages always get version 2.
+const (
+	cursorOffset = 1
+	cursorKeyset = 2
+)
 
 type cursor struct {
-	V int    `json:"v"`
-	O int    `json:"o"` // offset of the next page; the opaque format allows switching to keyset paging later
-	H string `json:"h"`
+	V int             `json:"v"`
+	O int             `json:"o,omitempty"`
+	K json.RawMessage `json:"k,omitempty"`
+	H string          `json:"h"`
 }
 
 func optionsHash(opts *listOptions) string {
@@ -616,19 +738,72 @@ func optionsHash(opts *listOptions) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func encodeCursor(offset int, hash string) string {
-	b, _ := json.Marshal(cursor{V: cursorVersion, O: offset, H: hash})
+// encodeCursor is the cursor of the page after the record whose sort values are keys (a JSON array)
+func encodeCursor(keys json.RawMessage, hash string) string {
+	b, _ := json.Marshal(cursor{V: cursorKeyset, K: keys, H: hash})
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func decodeCursor(raw, hash string) (int, error) {
+func cursorNotValid() error {
+	return badRequest("cursor is not valid. Use the next_cursor of the previous page.")
+}
+
+// decodeCursor reads a cursor made for the filter and sort with this hash: the number of records to skip
+// (version 1) or the last record's sort values, one per sort key (version 2)
+func decodeCursor(raw, hash string, sorts []sortTerm) (int, []interface{}, error) {
 	b, err := base64.RawURLEncoding.DecodeString(raw)
 	var c cursor
-	if err != nil || json.Unmarshal(b, &c) != nil || c.V != cursorVersion || c.O < 0 {
-		return 0, badRequest("cursor is not valid. Use the next_cursor of the previous page.")
+	if err != nil || json.Unmarshal(b, &c) != nil {
+		return 0, nil, cursorNotValid()
+	}
+	switch {
+	case c.V == cursorOffset && c.O >= 0 && c.K == nil:
+	case c.V == cursorKeyset && c.O == 0 && c.K != nil:
+	default:
+		return 0, nil, cursorNotValid()
 	}
 	if c.H != hash {
-		return 0, badRequest("cursor was made for a different filter or sort. Send the same filter and sort as the first page, or start again without a cursor.")
+		return 0, nil, badRequest("cursor was made for a different filter or sort. Send the same filter and sort as the first page, or start again without a cursor.")
 	}
-	return c.O, nil
+	if c.V == cursorOffset {
+		return c.O, nil, nil
+	}
+	after, ok := keysetValues(c.K, sorts)
+	if !ok {
+		return 0, nil, cursorNotValid()
+	}
+	return 0, after, nil
+}
+
+// keysetValues checks a version 2 cursor's sort values: one per sort key, each a text, number, true/false or
+// empty, and id never empty. Whether a value suits its column is left to Postgres (see keysetError).
+func keysetValues(raw json.RawMessage, sorts []sortTerm) ([]interface{}, bool) {
+	v, err := decodeJSON(raw)
+	values, ok := v.([]interface{})
+	if err != nil || !ok || len(values) != len(sorts) {
+		return nil, false
+	}
+	for i, value := range values {
+		switch value.(type) {
+		case string, json.Number, bool:
+		case nil:
+			if sorts[i].key == refID {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+	}
+	return values, true
+}
+
+// keysetError turns a database error caused by a cursor value that doesn't suit its column (an edited cursor,
+// or a field whose type changed between pages) into "cursor is not valid"
+func keysetError(err error, opts *listOptions) error {
+	var pqErr *pq.Error
+	// Class 22 (data exception): a value isn't of the column's type
+	if opts.after != nil && errors.As(err, &pqErr) && pqErr.Code.Class() == "22" {
+		return cursorNotValid()
+	}
+	return err
 }

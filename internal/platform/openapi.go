@@ -55,7 +55,7 @@ const (
 )
 
 // The generic records paths, by what follows the table in the path
-var recordsPathSuffixes = []string{"/records", "/records/query", "/records/{record}", "/records/delete"}
+var recordsPathSuffixes = []string{"/records", "/records/query", "/records/aggregate", "/records/{record}", "/records/delete"}
 
 // cachedSpec is a built spec and its ETag
 type cachedSpec struct {
@@ -210,7 +210,7 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 	keys := fieldKeys(fields, false)
 
 	read, write, bulkWrite := schemaObject{}, schemaObject{}, schemaObject{}
-	var selectable, sortable, filterable []string
+	var selectable, sortable, filterable, aggregatable []string
 	for _, f := range fields {
 		key := keys[f]
 		selectable = append(selectable, key)
@@ -249,6 +249,13 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 		}
 		if ops := filterOperators(f); len(ops) > 0 {
 			filterable = append(filterable, fmt.Sprintf("- `%s`: %s", key, strings.Join(ops, ", ")))
+		}
+		uses := aggregateUses(aggregateKind(f))
+		if f.Type == typeLookup {
+			uses = "group_by, by the looked-up value, when that field can be grouped (a record counts in each group it belongs to)"
+		}
+		if uses != "" {
+			aggregatable = append(aggregatable, fmt.Sprintf("- `%s`: %s", key, uses))
 		}
 	}
 
@@ -307,6 +314,9 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 		}
 		if suffix == "/records/query" {
 			describeQuery(child(item, "post"), sortable, filterable)
+		}
+		if suffix == "/records/aggregate" {
+			describeAggregate(child(item, "post"), aggregatable)
 		}
 		b.paths[tablePath+suffix] = item
 	}
@@ -390,6 +400,21 @@ func describeQuery(op schemaObject, sortable, filterable []string) {
 		text += ", " + strings.Join(sortable, ", ")
 	}
 	op["description"] = text + "."
+}
+
+// describeAggregate adds what each field of the table can be used for to POST /records/aggregate
+func describeAggregate(op schemaObject, aggregatable []string) {
+	if op == nil {
+		return
+	}
+	text := fmt.Sprint(op["description"]) + "\n\nFields of this table (`count` needs none; `created_at` and `updated_at`: " +
+		aggregateUses(kindDateTime) + "):"
+	if len(aggregatable) == 0 {
+		text += " none of the fields can be grouped or aggregated."
+	} else {
+		text += "\n\n" + strings.Join(aggregatable, "\n")
+	}
+	op["description"] = text
 }
 
 // withoutTableParams drops the base and table path parameters: a table's paths name them

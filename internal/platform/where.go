@@ -24,15 +24,24 @@ import (
 // operators work on the same field types.
 
 const (
-	maxWhereDepth      = 5  // groups inside groups
-	maxWhereConditions = 50 // conditions in the whole tree
+	maxWhereDepth = 5        // groups inside groups
+	maxConditions = 50       // conditions in one request: filter[...] values and the where tree together
+	maxInValues   = 100      // values in one in condition
+	maxInIDs      = maxLimit // record IDs in one id in condition: one full page
+	maxSortTerms  = 5        // sort fields, not counting the id tie-breaker added at the end
 )
+
+// tooManyConditions is the error for more than maxConditions conditions; filter[...] and where share the limit,
+// so many filter[...] parameters can't get around it
+func tooManyConditions() error {
+	return badRequest(fmt.Sprintf("at most %d conditions across filter[...] and where.", maxConditions))
+}
 
 const whereExample = `{"match": "all", "conditions": [{"field": "Status", "value": "Open"}]}`
 
 // parseWhereParam reads the where query parameter: the tree as JSON. ok is false when it filters nothing:
-// empty, null, {} or a group without conditions.
-func parseWhereParam(raw string, fields []*field, links linkResolver) (term filterTerm, ok bool, err error) {
+// empty, null, {} or a group without conditions. used is the number of conditions already in the request.
+func parseWhereParam(raw string, fields []*field, links linkResolver, used int) (term filterTerm, ok bool, err error) {
 	if strings.TrimSpace(raw) == "" {
 		return filterTerm{}, false, nil
 	}
@@ -45,7 +54,7 @@ func parseWhereParam(raw string, fields []*field, links linkResolver) (term filt
 	if emptyWhere(v) {
 		return filterTerm{}, false, nil
 	}
-	term, err = parseWhere(v, fields, links)
+	term, err = parseWhere(v, fields, links, used)
 	return term, err == nil, err
 }
 
@@ -77,8 +86,8 @@ func emptyWhere(v interface{}) bool {
 }
 
 // parseWhere reads a where tree decoded with json.Number numbers. The tree may also be a single condition.
-func parseWhere(v interface{}, fields []*field, links linkResolver) (filterTerm, error) {
-	p := &whereParser{fields: fields, links: links}
+func parseWhere(v interface{}, fields []*field, links linkResolver, used int) (filterTerm, error) {
+	p := &whereParser{fields: fields, links: links, count: used}
 	term, err := p.node(v, "where", 1)
 	if err != nil {
 		return filterTerm{}, err
@@ -156,8 +165,8 @@ func (p *whereParser) group(obj map[string]interface{}, path string, depth int) 
 
 func (p *whereParser) condition(obj map[string]interface{}, path string) (filterTerm, error) {
 	p.count++
-	if p.count > maxWhereConditions {
-		return filterTerm{}, badRequest(fmt.Sprintf("where: at most %d conditions.", maxWhereConditions))
+	if p.count > maxConditions {
+		return filterTerm{}, tooManyConditions()
 	}
 	if err := onlyKeys(obj, path, "field", "op", "value"); err != nil {
 		return filterTerm{}, err

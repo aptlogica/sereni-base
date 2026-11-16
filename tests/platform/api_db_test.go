@@ -4,11 +4,13 @@ package platform_test
 // that is dropped afterwards. Skipped unless PLATFORM_TEST_PG_PASSWORD is set; PLATFORM_TEST_PG_HOST,
 // PLATFORM_TEST_PG_PORT, PLATFORM_TEST_PG_USER and PLATFORM_TEST_PG_DB default to localhost, 5432, postgres
 // and serenibase. The database must already have SereniBase's public functions (any database the app has
-// started against does).
+// started against does), or set PLATFORM_TEST_PG_SETUP=1 to install them first, as the app does when it
+// starts (CI does this on its empty database).
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -84,6 +86,10 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		DatabaseName: env("PLATFORM_TEST_PG_DB", "serenibase"), SSLMode: "disable", MaxOpenConns: 4, MaxIdleConns: 2,
 	}})
 	require.NoError(t, err)
+	if os.Getenv("PLATFORM_TEST_PG_SETUP") == "1" {
+		// An empty database: create the public schema's tables and functions, as the app does when it starts
+		scripts.CreateMasterSchema(db)
+	}
 	ctx := context.Background()
 	s := e2eSchema
 
@@ -178,6 +184,45 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	addColumn(customers, "Company", "links", map[string]interface{}{
 		"relation": map[string]interface{}{"with": companies.Model.ID.String(), "type": "has-many"}})
 	createTable("In/Out")
+	// A formula field: the app calculates it in the browser, so the API leaves it out
+	addColumn(orders, "Margin", "formula", map[string]interface{}{"formula": "{Price} * 2"})
+	// A table that is deleted during the test, and a table linking to it, for expand of a deleted target
+	// A table with known values, for aggregations
+	sales := createTable("Sales")
+	addColumn(sales, "Region", "select", map[string]interface{}{"options": []interface{}{"North", "South"}})
+	addColumn(sales, "Amount", "decimal", nil)
+	addColumn(sales, "Took", "duration", nil)
+	addColumn(sales, "Done", "boolean", nil)
+	addColumn(sales, "Day", "date", nil)
+	addColumn(sales, "At", "datetime", nil)
+	// A table for keyset paging: duplicate and empty prices, and date-times apart by microseconds
+	pages := createTable("Pages")
+	addColumn(pages, "Price", "decimal", nil)
+	pagesAt := addColumn(pages, "At", "datetime", nil)
+	// Tables for grouping by link, multi-select and lookup: Deals -> Rep (many), with lookups of the rep's fields
+	reps := createTable("Reps")
+	repTitle := reps.Columns[0]
+	for _, c := range reps.Columns {
+		if (c.System == nil || !*c.System) && c.UIDT == "text" {
+			repTitle = c
+		}
+	}
+	repRegion := addColumn(reps, "Region", "select", map[string]interface{}{"options": []interface{}{"North", "South"}})
+	repActive := addColumn(reps, "Active", "boolean", nil)
+	deals := createTable("Deals")
+	addColumn(deals, "Amount", "decimal", nil)
+	addColumn(deals, "Labels", "multiSelect", map[string]interface{}{"options": []interface{}{"red", "blue"}})
+	repLink := addColumn(deals, "Rep", "links", map[string]interface{}{
+		"relation": map[string]interface{}{"with": reps.Model.ID.String(), "type": "many-to-many"}})
+	repRelation, _ := repLink.Meta["relation_id"].(string)
+	addColumn(deals, "Rep region", "lookup", map[string]interface{}{
+		"relation_id": repRelation, "lookup_column_id": repRegion.ID.String(), "link_column_id": repLink.ID.String()})
+	addColumn(deals, "Rep active", "lookup", map[string]interface{}{
+		"relation_id": repRelation, "lookup_column_id": repActive.ID.String(), "link_column_id": repLink.ID.String()})
+	scratch := createTable("Scratch")
+	notes := createTable("Notes")
+	addColumn(notes, "Ref", "links", map[string]interface{}{
+		"relation": map[string]interface{}{"with": scratch.Model.ID.String(), "type": "has-many"}})
 
 	// A table whose primary key was changed in the app (two fields), with a unique constraint and a NOT NULL
 	// field, and a table linking to it. Made before the first request, so the API's schema cache sees them.
@@ -371,6 +416,20 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 			assert.Contains(t, fields.Value.Properties, key)
 		}
 		assert.Equal(t, []interface{}{"Open", "Done"}, fields.Value.Properties["Status"].Value.Enum)
+
+		// Each table's aggregate says what its fields can be used for
+		aggregate := doc.Paths.Value("/bases/Main/tables/Sales/records/aggregate")
+		require.NotNil(t, aggregate)
+		require.NotNil(t, aggregate.Post)
+		for _, line := range []string{
+			"- `Region`: group_by, count_distinct",
+			"- `Amount`: group_by, count_distinct, sum, avg, min, max",
+			"- `Day`: group_by (also by day, week, month, year), count_distinct, min, max",
+			"- `At`: group_by by day, week, month or year, min, max",
+		} {
+			assert.Contains(t, aggregate.Post.Description, line)
+		}
+		assert.NotContains(t, fields.Value.Properties, "Margin", "formula fields are left out of the spec")
 	})
 
 	t.Run("validation", func(t *testing.T) {
@@ -499,6 +558,20 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("GET", ordersPath+"/records?search=open&filter[Price][gte]=20", nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 		assert.Equal(t, []string{"Bulk 3", "Bulk 5"}, titles(res.Data))
+
+		// Several words: each word in some field, in any order and across fields ("bulk" in Title, "open" in
+		// Status), not as one phrase
+		for _, s := range []string{"bulk open", "OPEN  Bulk"} {
+			code, res, _ = call("GET", ordersPath+"/records?sort=Price&search="+url.QueryEscape(s), nil)
+			require.Equal(t, http.StatusOK, code, res.Error)
+			assert.Equal(t, []string{"Bulk 1", "Bulk 3", "Bulk 5"}, titles(res.Data), s)
+		}
+		code, res, _ = call("GET", ordersPath+"/records?search="+url.QueryEscape("bulk nothing-matches-this"), nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Empty(t, records(res.Data), "every word must be found")
+		code, res, _ = call("GET", ordersPath+"/records?search="+url.QueryEscape("a b c d e f g h i j k"), nil)
+		assert.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "at most 10 words")
 
 		// In the body, paged with its cursor
 		code, res, _ = call("POST", ordersPath+"/records/query", map[string]interface{}{"search": "bulk", "limit": 4, "sort": "Price"})
@@ -928,6 +1001,11 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("GET", shipmentsPath+"/records?filter[Product][contains]="+prods[1].ID, nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 		assert.Len(t, records(res.Data), 1)
+		// Grouping by the link finds the linked record through its key columns, after the key change too
+		code, res, _ = call("POST", shipmentsPath+"/records/aggregate", map[string]interface{}{
+			"group_by": []string{"Product"}, "metrics": []interface{}{map[string]interface{}{"op": "count"}}})
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.JSONEq(t, fmt.Sprintf(`[{"group": {"Product": {"id": %q}}, "values": {"count": 1}}]`, prods[1].ID), string(res.Data))
 
 		// With a link in place, the app refuses to change the key again, so stored links can't break
 		_, err := pkSvc.Update(ctx, s, products.Model.ID.String(), dto.UpdatePrimaryKeyRequest{ColumnIDs: []string{sku.ID.String()}})
@@ -1114,5 +1192,453 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		code, res, _ = call("POST", badgesPath+"/records", map[string]interface{}{"fields": map[string]interface{}{
 			"Badge ID": badgeID, "Label": "Again"}})
 		assert.Equal(t, http.StatusUnprocessableEntity, code, "the same manual UUID twice is a duplicate key: %+v", res.Error)
+	})
+
+	// Another subtest adds a second table named Orders, so these use the table ID
+	ordersByID := base + "/bases/Main/tables/" + platform.EncodeUUID(platform.PrefixTable, orders.Model.ID.String())
+
+	t.Run("formula fields are left out", func(t *testing.T) {
+		code, res, _ := call("GET", ordersByID+"/records?limit=5", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		for _, r := range records(res.Data) {
+			assert.NotContains(t, r.Fields, "Margin", "the stored formula value can be empty or out of date")
+		}
+		for _, query := range []string{"sort=Margin", "filter[Margin]=1", "select=Margin"} {
+			code, res, _ = call("GET", ordersByID+"/records?"+query, nil)
+			require.Equal(t, http.StatusBadRequest, code, query)
+			assert.Contains(t, res.Error.Message, `"Margin" is a formula field. Formula fields aren't in the API yet`, query)
+		}
+		code, res, _ = call("POST", ordersByID+"/records", map[string]interface{}{"fields": map[string]interface{}{"Margin": "5"}})
+		require.NotNil(t, res.Error, "a formula can't be written")
+		require.Len(t, res.Error.Details, 1, res.Error)
+		assert.Equal(t, "Margin", res.Error.Details[0].Field)
+		assert.Contains(t, res.Error.Details[0].Issue, "formula field")
+		assert.GreaterOrEqual(t, code, 400)
+	})
+
+	t.Run("expand: 100 linked records per cell, the rest keep only their id", func(t *testing.T) {
+		customersTable := fmt.Sprintf(`"%s".%q`, s, customers.Model.Alias)
+		rows, err := db.DB.Query(fmt.Sprintf(`INSERT INTO %s SELECT FROM generate_series(1, 101) RETURNING id`, customersTable))
+		require.NoError(t, err)
+		var links []map[string]int64
+		for rows.Next() {
+			var id int64
+			require.NoError(t, rows.Scan(&id))
+			links = append(links, map[string]int64{"id": id})
+		}
+		require.NoError(t, rows.Err())
+		require.Len(t, links, 101)
+
+		code, res, _ := call("POST", ordersByID+"/records", map[string]interface{}{"fields": map[string]interface{}{"Price": 1}})
+		require.Equal(t, http.StatusCreated, code, res.Error)
+		order := record(res.Data)
+		raw, _ := json.Marshal(links)
+		orderID, _ := platform.DecodeRecordID(order.ID)
+		exec(fmt.Sprintf(`UPDATE "%s".%q SET %s = $1::jsonb WHERE id = $2`, s, orders.Model.Alias, quoteIdent(link.ColumnName)), string(raw), orderID)
+
+		code, res, _ = call("GET", ordersByID+"/records/"+order.ID+"?expand=Customer", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		list, _ := record(res.Data).Fields["Customer"].([]interface{})
+		require.Len(t, list, 101, "every link is returned")
+		for i, item := range list {
+			_, expanded := item.(map[string]interface{})["fields"]
+			assert.Equal(t, i < 100, expanded, "link %d", i)
+		}
+	})
+
+	t.Run("expand: the linked table was deleted", func(t *testing.T) {
+		notesPath := base + "/bases/Main/tables/Notes"
+		code, res, _ := call("POST", notesPath+"/records", map[string]interface{}{"fields": map[string]interface{}{}})
+		require.Equal(t, http.StatusCreated, code, res.Error)
+		code, res, _ = call("GET", notesPath+"/records?expand=Ref", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+
+		// Deleting a table also deletes the links to it. The API sees schema changes once its workspace
+		// lookup expires (10 s), the same wait as the rename test above.
+		require.NoError(t, tableSvc.DeleteTable(ctx, s, scratch.Model.ID.String()))
+		time.Sleep(11 * time.Second)
+		code, res, _ = call("GET", notesPath+"/records?expand=Ref", nil)
+		require.Equal(t, http.StatusBadRequest, code, "%+v", res.Error)
+		assert.Contains(t, res.Error.Message, `expand: No field named "Ref".`)
+		code, res, _ = call("GET", notesPath+"/records", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.NotContains(t, records(res.Data)[0].Fields, "Ref")
+	})
+	t.Run("aggregate: count, sum and group", func(t *testing.T) {
+		salesPath := base + "/bases/Main/tables/Sales"
+		code, res, _ := call("POST", salesPath+"/records", map[string]interface{}{"records": []interface{}{
+			map[string]interface{}{"fields": map[string]interface{}{"Region": "North", "Amount": 100, "Took": 30, "Done": true,
+				"Day": "2026-11-03", "At": "2026-11-30T19:30:00Z"}},
+			map[string]interface{}{"fields": map[string]interface{}{"Region": "North", "Amount": 50.5, "Took": 15, "Done": false,
+				"Day": "2026-11-10", "At": "2026-11-10T08:00:00Z"}},
+			map[string]interface{}{"fields": map[string]interface{}{"Region": "South", "Amount": 20, "Day": "2026-10-31",
+				"At": "2026-10-15T12:00:00Z"}},
+			map[string]interface{}{"fields": map[string]interface{}{}},
+		}})
+		require.Equal(t, http.StatusCreated, code, res.Error)
+
+		type group struct {
+			Group  map[string]interface{} `json:"group"`
+			Values map[string]interface{} `json:"values"`
+		}
+		aggregate := func(body map[string]interface{}) ([]group, map[string]interface{}) {
+			t.Helper()
+			code, res, _ := call("POST", salesPath+"/records/aggregate", body)
+			require.Equal(t, http.StatusOK, code, "%v: %+v", body, res.Error)
+			var out []group
+			require.NoError(t, json.Unmarshal(res.Data, &out), string(res.Data))
+			return out, res.Meta
+		}
+		pairs := func(groups []group, field, metric string) [][2]interface{} {
+			out := make([][2]interface{}, len(groups))
+			for i, g := range groups {
+				out[i] = [2]interface{}{g.Group[field], g.Values[metric]}
+			}
+			return out
+		}
+
+		// Count per region: empty values are their own group, last
+		groups, meta := aggregate(map[string]interface{}{"group_by": []string{"Region"}, "metrics": []interface{}{map[string]interface{}{"op": "count"}}})
+		assert.Equal(t, [][2]interface{}{{"North", 2.0}, {"South", 1.0}, {nil, 1.0}}, pairs(groups, "Region", "count"))
+		assert.Equal(t, false, meta["has_more"])
+
+		// Totals without group_by: one group; duration is summed as minutes
+		groups, _ = aggregate(map[string]interface{}{"metrics": []interface{}{
+			map[string]interface{}{"op": "count"},
+			map[string]interface{}{"op": "sum", "field": "Amount"},
+			map[string]interface{}{"op": "avg", "field": "Amount"},
+			map[string]interface{}{"op": "min", "field": "Amount"},
+			map[string]interface{}{"op": "max", "field": "Amount"},
+			map[string]interface{}{"op": "sum", "field": "Took", "as": "minutes"},
+			map[string]interface{}{"op": "count_distinct", "field": "Region", "as": "regions"},
+			map[string]interface{}{"op": "min", "field": "At", "as": "first"},
+			map[string]interface{}{"op": "max", "field": "Day", "as": "last_day"},
+		}})
+		require.Len(t, groups, 1)
+		v := groups[0].Values
+		assert.Empty(t, groups[0].Group)
+		assert.Equal(t, 4.0, v["count"])
+		assert.Equal(t, 170.5, v["sum_Amount"])
+		assert.InDelta(t, 56.8333, v["avg_Amount"], 0.001)
+		assert.Equal(t, 20.0, v["min_Amount"])
+		assert.Equal(t, 100.0, v["max_Amount"])
+		assert.Equal(t, 45.0, v["minutes"])
+		assert.Equal(t, 2.0, v["regions"], "empty values aren't counted")
+		assert.Equal(t, "2026-10-15T12:00:00Z", v["first"], "date-times come back in UTC, as in records")
+		assert.Equal(t, "2026-11-10", v["last_day"])
+
+		// Checkbox: unchecked and never set are both false
+		groups, _ = aggregate(map[string]interface{}{"group_by": []string{"Done"}, "metrics": []interface{}{map[string]interface{}{"op": "count"}}})
+		assert.Equal(t, [][2]interface{}{{false, 3.0}, {true, 1.0}}, pairs(groups, "Done", "count"))
+
+		// Per month: 19:30 UTC on 30 November is 1 December in India
+		month := map[string]interface{}{"group_by": []interface{}{map[string]interface{}{"field": "At", "by": "month"}},
+			"metrics": []interface{}{map[string]interface{}{"op": "count"}}}
+		groups, _ = aggregate(month)
+		assert.Equal(t, [][2]interface{}{{"2026-10-01", 1.0}, {"2026-11-01", 2.0}, {nil, 1.0}}, pairs(groups, "At", "count"))
+		month["timezone"] = "Asia/Kolkata"
+		groups, _ = aggregate(month)
+		assert.Equal(t, [][2]interface{}{{"2026-10-01", 1.0}, {"2026-11-01", 1.0}, {"2026-12-01", 1.0}, {nil, 1.0}}, pairs(groups, "At", "count"))
+
+		// Weeks start on Monday; a date has no time zone
+		groups, _ = aggregate(map[string]interface{}{"group_by": []interface{}{map[string]interface{}{"field": "Day", "by": "week"}},
+			"metrics": []interface{}{map[string]interface{}{"op": "sum", "field": "Amount", "as": "total"}}})
+		assert.Equal(t, [][2]interface{}{{"2026-10-26", 20.0}, {"2026-11-02", 100.0}, {"2026-11-09", 50.5}, {nil, 0.0}}, pairs(groups, "Day", "total"))
+
+		// Records created today, grouped by the day they were created
+		groups, _ = aggregate(map[string]interface{}{"group_by": []interface{}{map[string]interface{}{"field": "created_at", "by": "year"}},
+			"metrics": []interface{}{map[string]interface{}{"op": "count"}}})
+		require.Len(t, groups, 1)
+		assert.Equal(t, 4.0, groups[0].Values["count"])
+
+		// The same filter as the list: where and search
+		groups, _ = aggregate(map[string]interface{}{
+			"where":   map[string]interface{}{"field": "Amount", "op": "gte", "value": 50},
+			"search":  "nor",
+			"metrics": []interface{}{map[string]interface{}{"op": "count"}, map[string]interface{}{"op": "sum", "field": "Amount"}}})
+		assert.Equal(t, 2.0, groups[0].Values["count"])
+		assert.Equal(t, 150.5, groups[0].Values["sum_Amount"])
+
+		// Nothing matches: count and sum are 0, avg is null
+		groups, _ = aggregate(map[string]interface{}{"where": map[string]interface{}{"field": "Amount", "op": "gt", "value": 1000},
+			"metrics": []interface{}{map[string]interface{}{"op": "count"}, map[string]interface{}{"op": "sum", "field": "Amount"},
+				map[string]interface{}{"op": "avg", "field": "Amount"}}})
+		require.Len(t, groups, 1)
+		assert.Equal(t, 0.0, groups[0].Values["count"])
+		assert.Equal(t, 0.0, groups[0].Values["sum_Amount"])
+		assert.Nil(t, groups[0].Values["avg_Amount"])
+
+		// Top 1 by total, with has_more
+		groups, meta = aggregate(map[string]interface{}{"group_by": []string{"Region"},
+			"metrics": []interface{}{map[string]interface{}{"op": "sum", "field": "Amount", "as": "total"}}, "sort": "-total", "limit": 1})
+		assert.Equal(t, [][2]interface{}{{"North", 150.5}}, pairs(groups, "Region", "total"))
+		assert.Equal(t, true, meta["has_more"])
+		assert.Nil(t, meta["next_cursor"])
+
+		// QUERY works too; URL options are refused
+		code, res, _ = call("QUERY", salesPath+"/records/aggregate", map[string]interface{}{"metrics": []interface{}{map[string]interface{}{"op": "count"}}})
+		require.Equal(t, http.StatusOK, code, res.Error)
+		code, res, _ = call("POST", salesPath+"/records/aggregate?filter[Region]=North", map[string]interface{}{"metrics": []interface{}{map[string]interface{}{"op": "count"}}})
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "POST /records/aggregate reads its options from the body")
+	})
+
+	t.Run("aggregate: group by link, multi-select and lookup", func(t *testing.T) {
+		repsPath, dealsPath := base+"/bases/Main/tables/Reps", base+"/bases/Main/tables/Deals"
+		// Asha and Chen are in the North; Chen's Active was never set
+		code, res, _ := call("POST", repsPath+"/records", map[string]interface{}{"records": []interface{}{
+			map[string]interface{}{"fields": map[string]interface{}{repTitle.Title: "Asha", "Region": "North", "Active": true}},
+			map[string]interface{}{"fields": map[string]interface{}{repTitle.Title: "Ben", "Region": "South", "Active": false}},
+			map[string]interface{}{"fields": map[string]interface{}{repTitle.Title: "Chen", "Region": "North"}},
+		}})
+		require.Equal(t, http.StatusCreated, code, res.Error)
+		rep := records(res.Data)
+		asha, ben, chen := rep[0].ID, rep[1].ID, rep[2].ID
+		// Deal 2 has two reps, both in the North
+		for _, f := range []map[string]interface{}{
+			{"Amount": 100, "Labels": []string{"red"}, "Rep": []string{asha}},
+			{"Amount": 50, "Labels": []string{"red", "blue"}, "Rep": []string{asha, chen}},
+			{"Amount": 20, "Rep": []string{ben}},
+			{"Amount": 5},
+		} {
+			code, res, _ := call("POST", dealsPath+"/records", map[string]interface{}{"fields": f})
+			require.Equal(t, http.StatusCreated, code, res.Error)
+		}
+
+		type group struct {
+			Group  map[string]interface{} `json:"group"`
+			Values map[string]interface{} `json:"values"`
+		}
+		aggregate := func(body map[string]interface{}) []group {
+			t.Helper()
+			code, res, _ := call("POST", dealsPath+"/records/aggregate", body)
+			require.Equal(t, http.StatusOK, code, "%v: %+v", body, res.Error)
+			var out []group
+			require.NoError(t, json.Unmarshal(res.Data, &out), string(res.Data))
+			return out
+		}
+		pairs := func(groups []group, field, metric string) [][2]interface{} {
+			out := make([][2]interface{}, len(groups))
+			for i, g := range groups {
+				out[i] = [2]interface{}{g.Group[field], g.Values[metric]}
+			}
+			return out
+		}
+		repOf := func(id string) map[string]interface{} { return map[string]interface{}{"id": id} }
+		total := []interface{}{map[string]interface{}{"op": "sum", "field": "Amount", "as": "total"}}
+		count := []interface{}{map[string]interface{}{"op": "count"}}
+
+		// Per rep: deal 2 counts for both Asha and Chen; no rep is the empty group
+		groups := aggregate(map[string]interface{}{"group_by": []string{"Rep"}, "metrics": total, "sort": []string{"-total"}})
+		assert.Equal(t, [][2]interface{}{{repOf(asha), 150.0}, {repOf(chen), 50.0}, {repOf(ben), 20.0}, {nil, 5.0}},
+			pairs(groups, "Rep", "total"))
+
+		// Per label: deal 2 is in both; deals without labels are the empty group
+		groups = aggregate(map[string]interface{}{"group_by": []string{"Labels"}, "metrics": count})
+		assert.Equal(t, [][2]interface{}{{"blue", 1.0}, {"red", 2.0}, {nil, 2.0}}, pairs(groups, "Labels", "count"))
+
+		// Per rep region (a lookup): deal 2 counts once for the North, though both its reps are there
+		groups = aggregate(map[string]interface{}{"group_by": []string{"Rep region"}, "metrics": total})
+		assert.Equal(t, [][2]interface{}{{"North", 150.0}, {"South", 20.0}, {nil, 5.0}}, pairs(groups, "Rep region", "total"))
+
+		// A checkbox lookup: a rep's unset Active is false; a deal without a rep has no value
+		groups = aggregate(map[string]interface{}{"group_by": []string{"Rep active"}, "metrics": count})
+		assert.Equal(t, [][2]interface{}{{false, 2.0}, {true, 2.0}, {nil, 1.0}}, pairs(groups, "Rep active", "count"))
+
+		// A link and a lookup through it, with the list filter
+		groups = aggregate(map[string]interface{}{"group_by": []string{"Rep", "Rep region"}, "metrics": count,
+			"where": map[string]interface{}{"field": "Amount", "op": "gte", "value": 50}})
+		got := map[string]interface{}{}
+		for _, g := range groups {
+			id, _ := g.Group["Rep"].(map[string]interface{})["id"].(string)
+			got[id+"/"+fmt.Sprint(g.Group["Rep region"])] = g.Values["count"]
+		}
+		assert.Equal(t, map[string]interface{}{asha + "/North": 2.0, chen + "/North": 1.0}, got)
+
+		// Two lists in one request, and lists in metrics, are refused
+		code, res, _ = call("POST", dealsPath+"/records/aggregate", map[string]interface{}{"group_by": []string{"Rep", "Labels"}, "metrics": count})
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "one link or multi-select field per request")
+		code, res, _ = call("POST", dealsPath+"/records/aggregate", map[string]interface{}{
+			"metrics": []interface{}{map[string]interface{}{"op": "count_distinct", "field": "Rep region"}}})
+		require.Equal(t, http.StatusBadRequest, code)
+		assert.Contains(t, res.Error.Message, "can be used in group_by, not in metrics")
+
+		// A deleted rep: deal 3 has no rep left, so it joins the empty group
+		code, res, _ = call("DELETE", repsPath+"/records/"+ben, nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		groups = aggregate(map[string]interface{}{"group_by": []string{"Rep"}, "metrics": count})
+		assert.Equal(t, [][2]interface{}{{repOf(asha), 2.0}, {repOf(chen), 1.0}, {nil, 2.0}}, pairs(groups, "Rep", "count"))
+	})
+
+	t.Run("keyset paging: every record once, while records are added and deleted", func(t *testing.T) {
+		pagesPath := base + "/bases/Main/tables/Pages"
+		pagesTable := fmt.Sprintf(`"%s".%q`, s, pages.Model.Alias)
+		create := func(fields ...map[string]interface{}) []string {
+			t.Helper()
+			in := make([]interface{}, len(fields))
+			for i, f := range fields {
+				in[i] = map[string]interface{}{"fields": f}
+			}
+			code, res, _ := call("POST", pagesPath+"/records", map[string]interface{}{"records": in})
+			require.Equal(t, http.StatusCreated, code, res.Error)
+			var ids []string
+			for _, rec := range records(res.Data) {
+				ids = append(ids, rec.ID)
+			}
+			return ids
+		}
+		deleteRecord := func(id string) {
+			t.Helper()
+			exec(fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, pagesTable), strings.TrimPrefix(id, "rec_"))
+		}
+		// Prices sorted: 10, 20, 20, 20, 30, 40, 40, 50, empty, empty; pages of 3 split the 20s
+		prices := []interface{}{20, nil, 40, 10, 20, 50, nil, 30, 40, 20}
+		in := make([]map[string]interface{}, len(prices))
+		for i, p := range prices {
+			in[i] = map[string]interface{}{"Title": fmt.Sprintf("P%02d", i)}
+			if p != nil {
+				in[i]["Price"] = p
+			}
+		}
+		create(in...)
+
+		// Every page of a query, with between(page) run after each page but the last
+		walk := func(query string, between func(page int)) []string {
+			t.Helper()
+			var ids []string
+			path := pagesPath + "/records?limit=3&" + query
+			for page := 0; ; page++ {
+				require.Less(t, page, 20)
+				code, res, _ := call("GET", path, nil)
+				require.Equal(t, http.StatusOK, code, "%s: %+v", path, res.Error)
+				for _, rec := range records(res.Data) {
+					ids = append(ids, rec.ID)
+				}
+				next, _ := res.Meta["next_cursor"].(string)
+				if next == "" {
+					assert.Equal(t, false, res.Meta["has_more"])
+					return ids
+				}
+				if between != nil {
+					between(page)
+				}
+				path = pagesPath + "/records?limit=3&" + query + "&cursor=" + url.QueryEscape(next)
+			}
+		}
+		// The whole query in one page, for comparison
+		all := func(query string) []string {
+			t.Helper()
+			code, res, _ := call("GET", pagesPath+"/records?limit=200&"+query, nil)
+			require.Equal(t, http.StatusOK, code, res.Error)
+			var ids []string
+			for _, rec := range records(res.Data) {
+				ids = append(ids, rec.ID)
+			}
+			return ids
+		}
+		titles := func(query string) []string {
+			t.Helper()
+			code, res, _ := call("GET", pagesPath+"/records?limit=200&"+query, nil)
+			require.Equal(t, http.StatusOK, code, res.Error)
+			var out []string
+			for _, rec := range records(res.Data) {
+				out = append(out, fmt.Sprint(rec.Fields["Title"]))
+			}
+			return out
+		}
+
+		// Same records in the same order as one big page, for each sort; empty prices last ascending, first descending
+		for _, sort := range []string{"", "sort=Price", "sort=-Price", "sort=-Price,Title", "sort=Price,-Title", "sort=-id", "sort=Title"} {
+			assert.Equal(t, all(sort), walk(sort, nil), sort)
+		}
+		assert.Equal(t, []string{"P03", "P00", "P04", "P09", "P07", "P02", "P08", "P05", "P01", "P06"}, titles("sort=Price"))
+		assert.Equal(t, []string{"P01", "P06", "P05", "P02", "P08", "P07", "P00", "P04", "P09", "P03"}, titles("sort=-Price"))
+
+		// A record seen on page 1 is deleted: with "skip N records" the next page would miss one
+		before := all("sort=Price")
+		got := walk("sort=Price", func(page int) {
+			if page == 0 {
+				deleteRecord(before[0])
+			}
+		})
+		assert.Equal(t, before, got, "nothing missed")
+
+		// A record is added before the bookmark: with "skip N records" the next page would repeat one
+		before = all("sort=Price")
+		got = walk("sort=Price", func(page int) {
+			if page == 0 {
+				create(map[string]interface{}{"Title": "Cheap", "Price": 1})
+			}
+		})
+		assert.Equal(t, before, got, "no duplicates; the new record sorts before the bookmark")
+		// One added after the bookmark is seen, one deleted after it isn't
+		before = all("sort=-Price")
+		var late []string
+		got = walk("sort=-Price", func(page int) {
+			if page == 0 {
+				late = create(map[string]interface{}{"Title": "Late"}) // empty price: first when descending, so before the bookmark
+				late = append(late, create(map[string]interface{}{"Title": "Low", "Price": 2})...)
+				deleteRecord(before[len(before)-1])
+			}
+		})
+		// Low (2) takes the place of the deleted last record (Cheap, 1); Late isn't seen
+		want := append(append([]string{}, before[:len(before)-1]...), late[1])
+		assert.Equal(t, want, got)
+
+		// Date-times apart by microseconds, one shared: each record once
+		exec(fmt.Sprintf(`UPDATE %s SET %s = TIMESTAMP '2026-11-03 10:15:00' + (id %% 4) * INTERVAL '1 microsecond'`,
+			pagesTable, quoteIdent(pagesAt.ColumnName)))
+		for _, sort := range []string{"sort=At", "sort=-At"} {
+			assert.Equal(t, all(sort), walk(sort, nil), sort)
+		}
+
+		// POST, QUERY and GET carry on each other's cursors
+		body := map[string]interface{}{"sort": []interface{}{"-Price", "Title"}, "limit": 4}
+		code, res, _ := call("POST", pagesPath+"/records/query", body)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		next, _ := res.Meta["next_cursor"].(string)
+		require.NotEmpty(t, next)
+		body["cursor"] = next
+		code, res, _ = call("QUERY", pagesPath+"/records/query", body)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		var fromQuery []string
+		for _, rec := range records(res.Data) {
+			fromQuery = append(fromQuery, rec.ID)
+		}
+		assert.Equal(t, all("sort=-Price,Title")[4:8], fromQuery)
+		code, res, _ = call("GET", pagesPath+"/records?sort=-Price,Title&limit=4&cursor="+url.QueryEscape(next), nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		assert.Len(t, records(res.Data), 4)
+
+		// An old "skip N records" cursor from before the deploy still works, and hands out a new cursor
+		raw, err := base64.RawURLEncoding.DecodeString(next)
+		require.NoError(t, err)
+		var c struct {
+			V int             `json:"v"`
+			K json.RawMessage `json:"k"`
+			H string          `json:"h"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &c))
+		assert.Equal(t, 2, c.V)
+		old := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"v":1,"o":4,"h":%q}`, c.H)))
+		code, res, _ = call("GET", pagesPath+"/records?sort=-Price,Title&limit=4&cursor="+old, nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		var fromOld []string
+		for _, rec := range records(res.Data) {
+			fromOld = append(fromOld, rec.ID)
+		}
+		assert.Equal(t, fromQuery, fromOld)
+		next, _ = res.Meta["next_cursor"].(string)
+		raw, _ = base64.RawURLEncoding.DecodeString(next)
+		require.NoError(t, json.Unmarshal(raw, &c))
+		assert.Equal(t, 2, c.V, "the next page uses the new cursor")
+
+		// An edited cursor whose value doesn't suit the column: 400, not 500
+		forged := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"v":2,"k":["abc","Title",3],"h":%q}`, c.H)))
+		code, res, _ = call("GET", pagesPath+"/records?sort=-Price,Title&limit=4&cursor="+forged, nil)
+		assert.Equal(t, http.StatusBadRequest, code)
+		require.NotNil(t, res.Error)
+		assert.Contains(t, res.Error.Message, "cursor is not valid")
 	})
 }

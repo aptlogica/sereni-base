@@ -236,6 +236,7 @@ func (a *API) fields(ctx context.Context, ws workspaceRef, table *tableInfo) ([]
 	}
 	defer rows.Close()
 	fields := []*field{}
+	var formulas *hiddenFormulas
 	for rows.Next() {
 		var id, title, columnName, uidt, dt, rawMeta string
 		var system bool
@@ -247,10 +248,19 @@ func (a *API) fields(ctx context.Context, ws workspaceRef, table *tableInfo) ([]
 		_ = json.Unmarshal([]byte(rawMeta), &meta)
 		if f, ok := newField(id, title, columnName, uidt, dt, system, order, meta); ok {
 			fields = append(fields, f)
+		} else if strings.EqualFold(uidt, typeFormula) {
+			if formulas == nil {
+				formulas = &hiddenFormulas{byID: map[string]string{}, byName: map[string]bool{}}
+			}
+			formulas.byID[strings.ToLower(id)] = title
+			formulas.byName[title] = true
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	for _, f := range fields {
+		f.formulas = formulas
 	}
 	snap.fields[table.ID] = fields
 	return fields, nil
@@ -311,7 +321,13 @@ func (a *API) resolveTable(ctx context.Context, ws workspaceRef, base *baseInfo,
 
 // resolveField finds a field of the table by name or fld_ ID
 func resolveField(fields []*field, value string) (*field, error) {
-	return pick(fields, value, PrefixField, "field", func(f *field) string { return f.ID }, func(f *field) string { return f.Name })
+	f, err := pick(fields, value, PrefixField, "field", func(f *field) string { return f.ID }, func(f *field) string { return f.Name })
+	if apiErr, ok := err.(*Error); ok && apiErr.Code == CodeNotFound {
+		if name, isFormula := hiddenFormula(fields, value); isFormula {
+			return nil, formulaFieldError(name)
+		}
+	}
+	return f, err
 }
 
 // fieldByID returns the field with this column ID, or nil
