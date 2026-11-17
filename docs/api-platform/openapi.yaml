@@ -117,6 +117,36 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /bases/{base}/tables/{table}/columns:
+    parameters:
+      - $ref: "#/components/parameters/Base"
+      - $ref: "#/components/parameters/Table"
+    get:
+      tags: [Schema]
+      summary: Get a table's columns with their database types and constraints
+      operationId: listColumns
+      description: |
+        Every column of the table, system columns, formulas and buttons included, in the table's field order. Each
+        column has the app's metadata (`uidt`, `dt`, `meta`), the physical column (`db_type`, `db_nullable`,
+        `db_default`; null for columns without one, such as lookups), whether it is in the primary key and the
+        constraints it is part of. `primary_key` and `constraints` describe the table as Postgres has it, with the
+        title of each constraint made in the app. Read fresh on every request.
+      responses:
+        "200":
+          description: The table's primary key, constraints and columns
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TableColumns" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/AmbiguousName" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /bases/{base}/tables/{table}/records:
     parameters:
       - $ref: "#/components/parameters/Base"
@@ -858,6 +888,71 @@ components:
             fields:
               type: array
               items: { $ref: "#/components/schemas/Field" }
+    ColumnRef:
+      type: object
+      required: [name, column_name]
+      properties:
+        id: { type: string, description: "fld_ ID; missing for a column the app has no metadata for" }
+        name: { type: string }
+        column_name: { type: string, description: Physical column name }
+    Constraint:
+      type: object
+      required: [name, type, columns, definition]
+      properties:
+        name: { type: string, example: uq_products_3f9a2c1b }
+        type: { type: string, enum: [primary_key, unique, check, foreign_key, exclusion] }
+        title: { type: string, description: Set for constraints made in the app }
+        columns:
+          type: array
+          description: In key order
+          items: { $ref: "#/components/schemas/ColumnRef" }
+        definition: { type: string, example: "UNIQUE (note_1790232948)" }
+    Column:
+      type: object
+      required: [id, name, column_name, type, uidt, db_type, db_nullable, db_default, db_identity, primary_key, unique,
+                 constraints, system, virtual, read_only, record_field, order, meta]
+      properties:
+        id: { type: string, example: fld_3f2a9c1e7b4d4e8a9c3b1d2e3f4a5b6c }
+        name: { type: string }
+        column_name: { type: string, description: Physical column name }
+        description: { type: string }
+        type: { type: string, description: "The API type, as in Field; formula and button for those columns" }
+        uidt: { type: string, description: "The app's field type" }
+        dt: { type: string, description: "The app's data type, when set" }
+        db_type: { type: string, nullable: true, example: "character varying(255)" }
+        db_nullable: { type: boolean, nullable: true }
+        db_default: { type: string, nullable: true }
+        db_identity: { type: boolean }
+        primary_key: { type: boolean }
+        primary_key_position: { type: integer, description: "1-based position in the primary key; key columns only" }
+        unique: { type: boolean, description: "Alone, the column is the primary key or a unique key" }
+        constraints:
+          type: array
+          description: Names of the constraints the column is part of
+          items: { type: string }
+        system: { type: boolean }
+        virtual: { type: boolean }
+        read_only: { type: boolean }
+        record_field: { type: boolean, description: "Whether the column is a field of a record's fields object" }
+        order: { type: number }
+        meta: { type: object, additionalProperties: true, description: "The column's settings, as the app stores them" }
+    TableColumns:
+      type: object
+      required: [table_id, table_name, base_id, primary_key, constraints, columns]
+      properties:
+        table_id: { type: string }
+        table_name: { type: string }
+        base_id: { type: string }
+        primary_key:
+          type: array
+          description: The primary key columns, in key order
+          items: { $ref: "#/components/schemas/ColumnRef" }
+        constraints:
+          type: array
+          items: { $ref: "#/components/schemas/Constraint" }
+        columns:
+          type: array
+          items: { $ref: "#/components/schemas/Column" }
     Fields:
       type: object
       description: |

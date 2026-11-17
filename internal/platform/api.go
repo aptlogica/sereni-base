@@ -71,6 +71,7 @@ func (a *API) Register(api *gin.RouterGroup) {
 	ws.GET("/bases", a.listBases)
 	ws.GET("/bases/:base/tables", a.listTables)
 	ws.GET("/bases/:base/tables/:table", a.getTable)
+	ws.GET("/bases/:base/tables/:table/columns", a.listColumns)
 
 	records := ws.Group("/bases/:base/tables/:table/records")
 	records.GET("", a.listRecords)

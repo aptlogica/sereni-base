@@ -538,6 +538,112 @@ func TestAPISchemaEndpoints(t *testing.T) {
 	assert.Equal(t, "not_found", res.Error.Code)
 }
 
+func TestAPIColumnsEndpoint(t *testing.T) {
+	m := newMockAPI(t, 600)
+	m.mock.ExpectQuery(q(`FROM "public".bases WHERE workspace_id = $1`)).WithArgs(mockWSID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(mockBaseID, "Main"))
+	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID, mockWSID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}).AddRow(mockTableID, mockBaseID, "Orders", mockAlias))
+	cols := sqlmock.NewRows([]string{"id", "title", "column_name", "uidt", "dt", "description", "meta", "system", "virtual", "order_index"}).
+		AddRow("aaaaaaaa-0000-0000-0000-000000000001", "Id", "id", "number", "integer", "", "{}", true, false, 0).
+		AddRow("aaaaaaaa-0000-0000-0000-000000000003", "SKU", "sku_x", "text", "varchar", "Stock code", `{"max":20}`, false, false, 1).
+		AddRow("aaaaaaaa-0000-0000-0000-000000000004", "Region", "region_x", "select", "", "", `{"options":["EU"]}`, false, false, 2).
+		AddRow("aaaaaaaa-0000-0000-0000-000000000005", "Note", "note_x", "text", "", "", "{}", false, false, 3).
+		AddRow("aaaaaaaa-0000-0000-0000-000000000006", "Total", "total_x", "formula", "", "", "{}", false, true, 4).
+		AddRow("aaaaaaaa-0000-0000-0000-000000000007", "Email", "", "lookup", "", "", "{}", false, true, 5)
+	m.mock.ExpectQuery(q(`COALESCE(virtual, false)`)).WithArgs(mockTableID).WillReturnRows(cols)
+	m.mock.ExpectQuery(q(`FROM pg_attribute a`)).WithArgs(`"public"."` + mockAlias + `"`).
+		WillReturnRows(sqlmock.NewRows([]string{"attname", "type", "notnull", "default", "identity"}).
+			AddRow("id", "integer", true, "nextval('orders_id_seq'::regclass)", false).
+			AddRow("sku_x", "character varying(255)", true, "", false).
+			AddRow("region_x", "text", true, "", false).
+			AddRow("note_x", "text", false, "", false).
+			AddRow("total_x", "text", false, "", false))
+	m.mock.ExpectQuery(q(`FROM pg_constraint c`)).WithArgs(`"public"."` + mockAlias + `"`).
+		WillReturnRows(sqlmock.NewRows([]string{"conname", "contype", "def", "cols"}).
+			AddRow("orders_pkey", "p", "PRIMARY KEY (sku_x, region_x)", "{sku_x,region_x}").
+			AddRow("uq_orders_1", "u", "UNIQUE (note_x)", "{note_x}").
+			AddRow("uq_orders_id", "u", "UNIQUE (id)", "{id}"))
+	m.mock.ExpectQuery(q(`FROM "public".table_constraints WHERE model_id = $1`)).WithArgs(mockTableID).
+		WillReturnRows(sqlmock.NewRows([]string{"constraint_name", "title"}).AddRow("uq_orders_1", "One per note"))
+
+	w, res := m.do("GET", ordersURL+"/columns", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var out struct {
+		TableID    string `json:"table_id"`
+		PrimaryKey []struct {
+			ID, Name, ColumnName string
+		} `json:"primary_key"`
+		Constraints []struct {
+			Name, Type, Title, Definition string
+		} `json:"constraints"`
+		Columns []map[string]interface{} `json:"columns"`
+	}
+	require.NoError(t, json.Unmarshal(res.Data, &out))
+	assert.Equal(t, "tbl_33333333333333333333333333333333", out.TableID)
+	require.Len(t, out.PrimaryKey, 2)
+	assert.Equal(t, "SKU", out.PrimaryKey[0].Name)
+	assert.Equal(t, "Region", out.PrimaryKey[1].Name)
+	require.Len(t, out.Constraints, 3)
+	assert.Equal(t, "primary_key", out.Constraints[0].Type)
+	assert.Equal(t, "One per note", out.Constraints[1].Title)
+	assert.Empty(t, out.Constraints[0].Title, "constraints not made in the app have no title")
+
+	byName := map[string]map[string]interface{}{}
+	for _, c := range out.Columns {
+		byName[c["name"].(string)] = c
+	}
+	require.Len(t, out.Columns, 6, "system columns, formulas and lookups are all listed")
+
+	id := byName["Id"]
+	assert.Equal(t, true, id["system"])
+	assert.Equal(t, false, id["primary_key"])
+	assert.Equal(t, true, id["unique"])
+	assert.Equal(t, false, id["record_field"])
+	assert.Equal(t, "nextval('orders_id_seq'::regclass)", id["db_default"])
+
+	sku := byName["SKU"]
+	assert.Equal(t, "fld_aaaaaaaa000000000000000000000003", sku["id"])
+	assert.Equal(t, "text", sku["type"])
+	assert.Equal(t, "character varying(255)", sku["db_type"])
+	assert.Equal(t, false, sku["db_nullable"])
+	assert.Equal(t, true, sku["primary_key"])
+	assert.Equal(t, float64(1), sku["primary_key_position"])
+	assert.Equal(t, false, sku["unique"], "part of a two-column key is not unique alone")
+	assert.Equal(t, []interface{}{"orders_pkey"}, sku["constraints"])
+	assert.Equal(t, "Stock code", sku["description"])
+	assert.Equal(t, map[string]interface{}{"max": float64(20)}, sku["meta"])
+	assert.Equal(t, float64(2), byName["Region"]["primary_key_position"])
+	assert.Equal(t, "single_select", byName["Region"]["type"])
+
+	note := byName["Note"]
+	assert.Equal(t, true, note["unique"])
+	assert.Equal(t, true, note["db_nullable"])
+	assert.Nil(t, note["db_default"])
+	assert.Nil(t, note["primary_key_position"])
+
+	total := byName["Total"]
+	assert.Equal(t, "formula", total["type"])
+	assert.Equal(t, true, total["read_only"])
+	assert.Equal(t, false, total["record_field"])
+
+	email := byName["Email"]
+	assert.Equal(t, "lookup", email["type"])
+	assert.Nil(t, email["db_type"], "lookups have no physical column")
+	assert.Equal(t, []interface{}{}, email["constraints"])
+	require.NoError(t, m.mock.ExpectationsWereMet())
+
+	// Unknown table
+	m2 := newMockAPI(t, 600)
+	m2.mock.ExpectQuery(q(`FROM "public".bases WHERE workspace_id = $1`)).WithArgs(mockWSID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(mockBaseID, "Main"))
+	m2.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID, mockWSID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}))
+	w, res = m2.do("GET", "/api/v1/"+mockWS+"/bases/Main/tables/Nope/columns", nil)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, "not_found", res.Error.Code)
+}
+
 // lookupColumn is an extra column for expectSchema: a lookup through Customer of a Customers field
 func lookupColumn(id, title, targetColumnID string) [3]string {
 	return [3]string{id, title, `{"link_column_id":"aaaaaaaa-0000-0000-0000-00000000000c","lookup_column_id":"` + targetColumnID + `"}`}

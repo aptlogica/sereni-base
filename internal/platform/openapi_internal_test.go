@@ -1,8 +1,6 @@
 package platform
 
 import (
-	"bytes"
-	"os"
 	"slices"
 	"testing"
 
@@ -10,13 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The embedded base spec is a copy of the docs file; the two must not drift apart
-func TestOpenAPIBaseMatchesDocs(t *testing.T) {
-	docs, err := os.ReadFile("../../docs/api-platform/openapi.yaml")
+// The generic spec parses and has the paths the spec builder uses as templates
+func TestOpenAPIBaseParses(t *testing.T) {
+	doc, err := openAPIBase()
 	require.NoError(t, err)
-	normalize := func(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
-	assert.Equal(t, string(normalize(docs)), string(normalize(openAPIBaseYAML)),
-		"copy docs/api-platform/openapi.yaml to internal/platform/openapi_base.yaml")
+	paths := child(doc, "paths")
+	for _, suffix := range recordsPathSuffixes {
+		assert.NotNil(t, child(paths, genericTablePath+suffix), suffix)
+	}
 }
 
 // The operators the spec lists for each field type are exactly the ones buildFilter accepts

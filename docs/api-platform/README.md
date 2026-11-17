@@ -32,6 +32,7 @@ console.log(await res.json(), res.headers.get("X-Request-Id"));
 curl "$BASE/bases"
 curl "$BASE/bases/CRM/tables"
 curl "$BASE/bases/CRM/tables/Orders"          # the table with its fields, types and select options
+curl "$BASE/bases/CRM/tables/Orders/columns"  # every column: database type, nullable, default, primary key, constraints, meta
 ```
 
 Bases, tables and fields can be named or given by ID (`bse_...`, `tbl_...`, `fld_...`). Names are exact and case-sensitive, and URL-encoded in paths (`Sales%20Team`, `In%2FOut`). If two items share a name you get `409 ambiguous_name` with their IDs; IDs always work, and apps that must survive renames should use them. Changes made in the app (fields or tables added, renamed or deleted, the API turned off) apply to the next request.

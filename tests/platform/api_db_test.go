@@ -922,6 +922,55 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 
 	// A table whose primary key was changed in the app, with a unique constraint and a NOT NULL field, and a
 	// table that links to it: every endpoint keeps working, and constraint problems are 422s, not 500s
+	t.Run("columns with database types, primary key and constraints", func(t *testing.T) {
+		code, res, _ := call("GET", base+"/bases/Main/tables/Products/columns", nil)
+		require.Equal(t, http.StatusOK, code, res.Error)
+		var out struct {
+			PrimaryKey []struct {
+				Name string `json:"name"`
+			} `json:"primary_key"`
+			Constraints []struct {
+				Type  string `json:"type"`
+				Title string `json:"title"`
+			} `json:"constraints"`
+			Columns []struct {
+				Name        string   `json:"name"`
+				DBType      *string  `json:"db_type"`
+				DBNullable  *bool    `json:"db_nullable"`
+				PrimaryKey  bool     `json:"primary_key"`
+				Position    *int     `json:"primary_key_position"`
+				Unique      bool     `json:"unique"`
+				Constraints []string `json:"constraints"`
+				System      bool     `json:"system"`
+			} `json:"columns"`
+		}
+		require.NoError(t, json.Unmarshal(res.Data, &out), string(res.Data))
+		require.Len(t, out.PrimaryKey, 2)
+		assert.Equal(t, "SKU", out.PrimaryKey[0].Name)
+		assert.Equal(t, "Region", out.PrimaryKey[1].Name)
+		titles := map[string]string{}
+		for _, c := range out.Constraints {
+			titles[c.Type+":"+c.Title] = c.Title
+		}
+		assert.Contains(t, titles, "unique:One product per note", "the app's title of the unique constraint")
+		cols := map[string]int{}
+		for i, c := range out.Columns {
+			cols[c.Name] = i
+		}
+		for _, name := range []string{"SKU", "Region", "Note", "Size"} {
+			require.Contains(t, cols, name)
+			require.NotNil(t, out.Columns[cols[name]].DBType, name)
+		}
+		skuCol := out.Columns[cols["SKU"]]
+		assert.True(t, skuCol.PrimaryKey)
+		assert.Equal(t, 1, *skuCol.Position)
+		assert.False(t, skuCol.Unique, "part of a two-field key")
+		assert.True(t, out.Columns[cols["Note"]].Unique)
+		assert.Len(t, out.Columns[cols["Note"]].Constraints, 1)
+		assert.False(t, *out.Columns[cols["Size"]].DBNullable, "Size was set NOT NULL")
+		assert.True(t, *out.Columns[cols["Note"]].DBNullable)
+	})
+
 	t.Run("custom primary key and constraints", func(t *testing.T) {
 		productsPath := base + "/bases/Main/tables/Products"
 		code, res, _ := call("POST", productsPath+"/records", map[string]interface{}{"records": []interface{}{

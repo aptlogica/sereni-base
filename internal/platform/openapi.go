@@ -8,7 +8,6 @@ package platform
 import (
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,15 +16,14 @@ import (
 	"strings"
 	"sync"
 
+	apiplatform "github.com/aptlogica/sereni-base/docs/api-platform"
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 )
 
-// openAPIBaseYAML is docs/api-platform/openapi.yaml (a test keeps the two equal). Its components and schema
+// openAPIBaseYAML is docs/api-platform/openapi.yaml, embedded by that package. Its components and schema
 // paths are reused as they are; its generic records paths are the templates of every table's paths.
-//
-//go:embed openapi_base.yaml
-var openAPIBaseYAML []byte
+var openAPIBaseYAML = apiplatform.OpenAPIYAML
 
 var (
 	openAPIBaseOnce sync.Once
