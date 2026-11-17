@@ -64,8 +64,11 @@ func importBodyAt(t *testing.T, url string, fields map[string]string, body strin
 	for k, v := range fields {
 		_ = mw.WriteField(k, v)
 	}
-	part, _ := mw.CreateFormFile("file", "x.sbase.json")
-	_, _ = io.WriteString(part, body)
+	part, _ := mw.CreateFormFile("file", "x.sbase.zip")
+	zw := zip.NewWriter(part)
+	entry, _ := zw.Create("base.sbase.json")
+	_, _ = io.WriteString(entry, body)
+	_ = zw.Close()
 	_ = mw.Close()
 
 	w := httptest.NewRecorder()
@@ -125,12 +128,12 @@ func exportAs(t *testing.T, query string, skipped []string, automationsAllowed b
 	return svc, w
 }
 
-// include_data is the only export option: without it the download is the structure as .sbase.json, with it a
-// .sbase.zip that also carries the rows, the attachment files and the cover image.
+// An export is always a .sbase.zip: without include_data it holds the structure, with it also the rows, the
+// attachment files and the cover image.
 func TestExportBaseDownloadsAZipWhenDataIsIncluded(t *testing.T) {
 	plain := exportRequest(t, "", nil)
-	if plain.Code != http.StatusOK || !strings.HasPrefix(plain.Header().Get("Content-Type"), "application/json") ||
-		!strings.Contains(plain.Header().Get("Content-Disposition"), ".sbase.json") {
+	if plain.Code != http.StatusOK || plain.Header().Get("Content-Type") != "application/zip" ||
+		!strings.Contains(plain.Header().Get("Content-Disposition"), ".sbase.zip") || !isSbaseZip(plain.Body.Bytes(), "CRM") {
 		t.Fatalf("structure export: status %d, headers %v", plain.Code, plain.Header())
 	}
 	svc, zipped := exportWith(t, "include_data=true", nil)
@@ -146,11 +149,43 @@ func TestExportBaseDownloadsAZipWhenDataIsIncluded(t *testing.T) {
 	}
 }
 
-// The old options are gone: they are ignored, so they cannot switch anything on or off.
-func TestExportBaseIgnoresTheRemovedOptions(t *testing.T) {
+// Attachments do not depend on data: asked for alone they are exported (the cover image) without the rows.
+// Automations are still never exported without the permission.
+func TestExportBaseAttachmentsAreIndependentOfData(t *testing.T) {
 	svc, w := exportWith(t, "include_attachments=true&include_automations=true", nil)
-	if w.Code != http.StatusOK || svc.exported.IncludeAttachments || svc.exported.IncludeAutomations {
+	if w.Code != http.StatusOK || svc.exported.IncludeData || !svc.exported.IncludeAttachments || svc.exported.IncludeAutomations {
 		t.Fatalf("status %d, options %+v", w.Code, svc.exported)
+	}
+}
+
+func TestExportBaseFilterOptions(t *testing.T) {
+	// Without automations permission, automations are never included
+	svc, w := exportWith(t, "include_data=true&include_attachments=false&tables=Customers,Orders", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	if !svc.exported.IncludeData || svc.exported.IncludeAttachments {
+		t.Fatalf("attachments should be false: %+v", svc.exported)
+	}
+	if len(svc.exported.Tables) != 2 || svc.exported.Tables[0] != "Customers" || svc.exported.Tables[1] != "Orders" {
+		t.Fatalf("tables = %+v", svc.exported.Tables)
+	}
+
+	// With automations permission, automations can be toggled
+	svc, w = exportAs(t, "include_data=true&include_automations=false", nil, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	if svc.exported.IncludeAutomations {
+		t.Fatalf("automations should be false: %+v", svc.exported)
+	}
+
+	svc, w = exportAs(t, "include_data=true&include_automations=true", nil, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	if !svc.exported.IncludeAutomations {
+		t.Fatalf("automations should be true: %+v", svc.exported)
 	}
 }
 
@@ -232,7 +267,7 @@ func TestExportedJSONKeepsSQLReadable(t *testing.T) {
 	c.Set("schema", "s")
 	handlers.NewBaseTransferHandler(svc).ExportBase(c)
 
-	body := w.Body.String()
+	body := sbaseJSONOf(t, w.Body.Bytes())
 	if !strings.Contains(body, "{f_amount} >= 0 AND a < b & c") || strings.Contains(body, `\u003e`) {
 		t.Fatalf("the downloaded file escapes characters of the SQL:\n%s", body)
 	}
@@ -266,6 +301,31 @@ func TestImportTakesAutomationsFromTheFormOrTheURL(t *testing.T) {
 
 // isSbaseZip reports whether data is a SereniBase zip: base.sbase.json inside, for a base called title. The adapter
 // wrote it; the handler no longer writes any file format itself.
+// sbaseJSONOf returns the text of base.sbase.json inside a downloaded zip.
+func sbaseJSONOf(t *testing.T, data []byte) string {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("the download is not a zip: %v", err)
+	}
+	for _, f := range zr.File {
+		if f.Name == "base.sbase.json" {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rc.Close()
+			raw, err := io.ReadAll(rc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(raw)
+		}
+	}
+	t.Fatal("the zip has no base.sbase.json")
+	return ""
+}
+
 func isSbaseZip(data []byte, title string) bool {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {

@@ -45,6 +45,9 @@ type ExportOptions struct {
 	// IncludeData is true when the model has rows. For a format that can carry files, the result then also holds
 	// the attachment files and the cover image.
 	IncludeData bool
+	// IncludeFiles packs the files the model lists (the cover image, and the attachments when IncludeData is set)
+	// into a zip, also when there are no rows
+	IncludeFiles bool
 	// Files reads the files the model lists; it may be nil when the model lists none
 	Files FileSource
 }

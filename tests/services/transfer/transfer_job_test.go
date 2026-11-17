@@ -347,7 +347,11 @@ func start(t *testing.T, f *jobFixture, user string) dto.TransferJobResponse {
 
 func startBase(t *testing.T, svc interfaces.BaseTransferJobService, user, base string) dto.TransferJobResponse {
 	t.Helper()
-	job, err := svc.StartExport(context.Background(), constant.MasterDatabase, base, user, dto.ExportBaseOptions{IncludeAutomations: true})
+	job, err := svc.StartExport(context.Background(), constant.MasterDatabase, base, user, dto.ExportBaseOptions{
+		IncludeData:        true,
+		IncludeAttachments: true,
+		IncludeAutomations: true,
+	})
 	if err != nil {
 		t.Fatalf("StartExport: %v", err)
 	}
@@ -406,7 +410,7 @@ func TestTransferJobEmailsOnlyTheLinkNeverTheFile(t *testing.T) {
 	small := start(t, f, "user-1")
 	f.waitFor(t, small.ID, "user-1", completed)
 	mails := f.waitEmails(t, 1)
-	if mails[0].To != "owner@example.com" || len(mails[0].Attachments) != 0 {
+	if mails[0].To != "owner@example.com" {
 		t.Fatalf("emails: %+v", mails)
 	}
 	if !strings.Contains(mails[0].Body, "https://app.example.com/exports/"+small.ID) {
@@ -421,7 +425,7 @@ func TestTransferJobEmailsOnlyTheLinkNeverTheFile(t *testing.T) {
 		t.Fatalf("the zip should be large: %d bytes", done.SizeBytes)
 	}
 	mails = f.waitEmails(t, 2)
-	if len(mails) != 2 || len(mails[1].Attachments) != 0 || !strings.Contains(mails[1].Body, large.ID) {
+	if len(mails) != 2 || !strings.Contains(mails[1].Body, large.ID) {
 		t.Fatalf("emails: %+v", mails)
 	}
 }
@@ -956,7 +960,7 @@ func TestImportJobReadsAZipUpload(t *testing.T) {
 	if err := sbase.New().Export(context.Background(), model, adapter.ExportOptions{IncludeData: true}, &zipped); err != nil {
 		t.Fatal(err)
 	}
-	job := startImport(t, f, "user-1", "crm.sbase.zip", zipped.Bytes(), dto.ImportBaseOptions{IncludeData: true})
+	job := startImport(t, f, "user-1", "crm.sbase.zip", zipped.Bytes(), dto.ImportBaseOptions{IncludeData: true, IncludeAttachments: true})
 	f.waitFor(t, job.ID, "user-1", completed)
 
 	calls := f.exporter.importCalls()

@@ -81,9 +81,10 @@ func TestAdaptersImportNoDatabaseOrService(t *testing.T) {
 
 func TestSbaseDescribe(t *testing.T) {
 	a := sbase.New()
+	// an export is always a zip, with or without rows
 	name, ctype := a.Describe(adapter.ExportOptions{}, "Sales CRM")
-	assert.Equal(t, "Sales_CRM.sbase.json", name)
-	assert.Equal(t, "application/json", ctype)
+	assert.Equal(t, "Sales_CRM.sbase.zip", name)
+	assert.Equal(t, "application/zip", ctype)
 
 	name, ctype = a.Describe(adapter.ExportOptions{IncludeData: true}, "Sales CRM")
 	assert.Equal(t, "Sales_CRM.sbase.zip", name)
@@ -91,7 +92,7 @@ func TestSbaseDescribe(t *testing.T) {
 
 	// characters that are not safe in a file name, and a title with nothing usable in it
 	name, _ = a.Describe(adapter.ExportOptions{}, `a/b\c:"d"`)
-	assert.Equal(t, "a_b_c_d.sbase.json", name)
+	assert.Equal(t, "a_b_c_d.sbase.zip", name)
 	name, _ = a.Describe(adapter.ExportOptions{IncludeData: true}, "///")
 	assert.Equal(t, "base.sbase.zip", name)
 }
@@ -130,11 +131,31 @@ func (m memoryFiles) OpenFile(_ context.Context, path string) (io.ReadCloser, er
 	return io.NopCloser(strings.NewReader(data)), nil
 }
 
-func TestSbaseExportWithoutDataIsReadableJSON(t *testing.T) {
+// zipEntry returns the text of one file of a zip.
+func zipEntry(t *testing.T, data []byte, name string) string {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err, "an export is always a zip")
+	for _, f := range zr.File {
+		if f.Name == name {
+			rc, err := f.Open()
+			require.NoError(t, err)
+			defer rc.Close()
+			raw, err := io.ReadAll(rc)
+			require.NoError(t, err)
+			return string(raw)
+		}
+	}
+	t.Fatalf("the zip has no %s", name)
+	return ""
+}
+
+// Without data the export is still a zip: it holds base.sbase.json, readable and indented, and no other file.
+func TestSbaseExportWithoutDataIsAZipWithReadableJSON(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, sbase.New().Export(context.Background(), model(), adapter.ExportOptions{}, &out))
 
-	text := out.String()
+	text := zipEntry(t, out.Bytes(), "base.sbase.json")
 	assert.True(t, strings.HasPrefix(text, "{\n  \"base\": {\n    \"title\": \"CRM\""), "indented by two spaces: %s", text)
 	assert.True(t, strings.HasSuffix(text, "}\n"))
 	assert.Contains(t, text, "amount >= 0 & b < c", "SQL and conditions stay readable, not escaped")
@@ -192,9 +213,10 @@ func TestSbaseImportReadsWhatExportWrote(t *testing.T) {
 	a := sbase.New()
 	files := memoryFiles{"files/note": "hello note", "covers/1": "PNGDATA"}
 
-	// plain JSON
-	var js bytes.Buffer
-	require.NoError(t, a.Export(context.Background(), model(), adapter.ExportOptions{}, &js))
+	// plain JSON (an export is a zip, but import still reads a bare .sbase.json)
+	var structure bytes.Buffer
+	require.NoError(t, a.Export(context.Background(), model(), adapter.ExportOptions{}, &structure))
+	js := bytes.NewBufferString(zipEntry(t, structure.Bytes(), "base.sbase.json"))
 	got, err := a.Import(context.Background(), bytes.NewReader(js.Bytes()), int64(js.Len()), adapter.ImportOptions{Filename: "crm.sbase.json"})
 	require.NoError(t, err)
 	assert.Equal(t, "CRM", got.File.Base.Title)

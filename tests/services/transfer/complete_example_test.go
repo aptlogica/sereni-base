@@ -390,7 +390,7 @@ func TestCompleteBaseRoundTrips(t *testing.T) {
 	var parsed dto.BaseExportFile
 	must(t, json.Unmarshal(readZipFile(t, zr, "base.sbase.json"), &parsed))
 	fresh := newFakeDB() // an empty system: nothing of the original exists there
-	res, err := newService(fresh).svc.ImportBase(context.Background(), "s", workspace, "u", &parsed, dto.ImportBaseOptions{IncludeData: true, IncludeAutomations: true, Attachments: transfer.NewZipSource(zr)})
+	res, err := newService(fresh).svc.ImportBase(context.Background(), "s", workspace, "u", &parsed, dto.ImportBaseOptions{IncludeData: true, IncludeAutomations: true, IncludeAttachments: true, Attachments: transfer.NewZipSource(zr)})
 	must(t, err)
 	if res.Tables != 6 || res.Functions != 3 || res.Triggers != 3 || !res.Cover || res.Files < 6 || len(res.Warnings) != 0 {
 		t.Fatalf("result = %+v", res)
@@ -430,7 +430,7 @@ func TestCommittedCompleteZipImports(t *testing.T) {
 	if problems := transfer.ValidateBaseFile(&parsed); len(problems) > 0 {
 		t.Fatalf("complete.sbase.zip is not valid: %v", problems)
 	}
-	res, err := newService(newFakeDB()).svc.ImportBase(context.Background(), "s", workspace, "u", &parsed, dto.ImportBaseOptions{IncludeData: true, IncludeAutomations: true, Attachments: transfer.NewZipSource(zr)})
+	res, err := newService(newFakeDB()).svc.ImportBase(context.Background(), "s", workspace, "u", &parsed, dto.ImportBaseOptions{IncludeData: true, IncludeAutomations: true, IncludeAttachments: true, Attachments: transfer.NewZipSource(zr)})
 	must(t, err)
 	if res.Tables != 6 || len(res.Warnings) != 0 {
 		t.Fatalf("result = %+v", res)

@@ -6,6 +6,7 @@
 package handlers_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"io"
@@ -149,7 +150,7 @@ func TestExportWithoutDataIsStillADirectDownload(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "33cc3ba3-9fac-43d8-866f-0bd1e44548eb"}}
 	c.Set("schema", "s")
 	handlers.NewBaseTransferHandlerWithJobs(svc, jobs).ExportBase(c)
-	if w.Code != http.StatusOK || !strings.Contains(w.Header().Get("Content-Disposition"), ".sbase.json") || jobs.startedFor != "" {
+	if w.Code != http.StatusOK || !strings.Contains(w.Header().Get("Content-Disposition"), ".sbase.zip") || jobs.startedFor != "" {
 		t.Fatalf("status %d, headers %v, job started for %q", w.Code, w.Header(), jobs.startedFor)
 	}
 }
@@ -223,7 +224,15 @@ func importWithJobs(t *testing.T, jobs *fakeJobs, svc *capturingTransfer, fields
 		_ = mw.WriteField(k, v)
 	}
 	part, _ := mw.CreateFormFile("file", filename)
-	_, _ = io.WriteString(part, body)
+	if strings.HasSuffix(filename, ".zip") {
+		// the upload is a zip that holds the file
+		zw := zip.NewWriter(part)
+		entry, _ := zw.Create("base.sbase.json")
+		_, _ = io.WriteString(entry, body)
+		_ = zw.Close()
+	} else {
+		_, _ = io.WriteString(part, body)
+	}
 	_ = mw.Close()
 
 	w := httptest.NewRecorder()
@@ -237,19 +246,29 @@ func importWithJobs(t *testing.T, jobs *fakeJobs, svc *capturingTransfer, fields
 	return w
 }
 
+// Only a zip is taken: an export is always a .sbase.zip
+func TestImportRefusesAFileThatIsNotAZip(t *testing.T) {
+	jobs := &fakeJobs{}
+	w := importWithJobs(t, jobs, &capturingTransfer{}, nil, "crm.sbase.json", importFileJSON)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "only .zip files are supported") || jobs.startedFor != "" {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+}
+
 // An import returns 202 with a job and keeps the uploaded file for the job
 func TestImportStartsABackgroundJob(t *testing.T) {
 	jobs, svc := &fakeJobs{}, &capturingTransfer{}
-	w := importWithJobs(t, jobs, svc, map[string]string{"title": " My copy ", "include_data": "false", "include_automations": "true"}, "crm.sbase.json", importFileJSON)
+	w := importWithJobs(t, jobs, svc, map[string]string{"title": " My copy ", "include_data": "false", "include_automations": "true"}, "crm.sbase.zip", importFileJSON)
 
 	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), jobID) || !strings.Contains(w.Body.String(), `"type":"import"`) {
 		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
 	}
 	got := jobs.imported
-	if got.workspaceID != "ws-1" || got.userID != "user-1" || got.filename != "crm.sbase.json" {
+	if got.workspaceID != "ws-1" || got.userID != "user-1" || got.filename != "crm.sbase.zip" {
 		t.Fatalf("job started with %+v", got)
 	}
-	if got.data != importFileJSON || got.size != int64(len(importFileJSON)) {
+	zr, zerr := zip.NewReader(strings.NewReader(got.data), int64(len(got.data)))
+	if zerr != nil || len(zr.File) != 1 || got.size != int64(len(got.data)) {
 		t.Fatalf("the job must get the whole uploaded file, got %d bytes: %q", got.size, got.data)
 	}
 	if got.opts.Title != "My copy" || got.opts.IncludeData || !got.opts.IncludeAutomations {
@@ -263,7 +282,7 @@ func TestImportStartsABackgroundJob(t *testing.T) {
 // A broken file is still refused at once, before any job exists
 func TestImportOfABrokenFileIsRefusedBeforeAJobStarts(t *testing.T) {
 	jobs, svc := &fakeJobs{}, &capturingTransfer{}
-	w := importWithJobs(t, jobs, svc, nil, "x.sbase.json", "{not json")
+	w := importWithJobs(t, jobs, svc, nil, "x.sbase.zip", "{not json")
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "the file is not valid JSON") {
 		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
 	}
@@ -273,7 +292,7 @@ func TestImportOfABrokenFileIsRefusedBeforeAJobStarts(t *testing.T) {
 }
 
 func TestImportOverTheLimitIsRefusedWith429(t *testing.T) {
-	w := importWithJobs(t, &fakeJobs{err: app_errors.TransferLimitReached}, &capturingTransfer{}, nil, "x.sbase.json", importFileJSON)
+	w := importWithJobs(t, &fakeJobs{err: app_errors.TransferLimitReached}, &capturingTransfer{}, nil, "x.sbase.zip", importFileJSON)
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
 	}

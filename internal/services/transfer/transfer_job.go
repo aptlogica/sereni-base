@@ -249,7 +249,7 @@ func (s *transferJobService) StartExport(ctx context.Context, schemaName, baseID
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.process(schemaName, job, opts.IncludeAutomations)
+		s.process(schemaName, job, opts)
 	}()
 	return s.response(job), nil
 }
@@ -423,9 +423,9 @@ func (s *transferJobService) response(job tenant.TransferJob) dto.TransferJobRes
 // Running a job
 // ---------------------------------------------------------------------------
 
-// process runs one job: builds the zip into the file store, then tells the user. includeAutomations is the user's
-// permission to read triggers and functions, decided when they clicked Export; it is passed in memory.
-func (s *transferJobService) process(schemaName string, job tenant.TransferJob, includeAutomations bool) {
+// process runs one job: builds the zip into the file store, then tells the user. opts carries the export options
+// decided when they clicked Export; it is passed in memory.
+func (s *transferJobService) process(schemaName string, job tenant.TransferJob, opts dto.ExportBaseOptions) {
 	ctx, cancel := context.WithTimeout(s.ctx, s.cfg.Timeout)
 	defer cancel()
 	defer func() {
@@ -440,7 +440,7 @@ func (s *transferJobService) process(schemaName string, job tenant.TransferJob, 
 	defer stopProgress()
 	ctx = WithProgress(ctx, report)
 
-	size, fileName, fileURL, err := s.build(ctx, schemaName, job, includeAutomations)
+	size, fileName, fileURL, err := s.build(ctx, schemaName, job, opts)
 	stopProgress() // before the final update, so a late save can never overwrite it
 	if err != nil {
 		if s.ctx.Err() != nil {
@@ -539,7 +539,9 @@ func (s *transferJobService) runImport(ctx context.Context, schemaName string, j
 	if err != nil {
 		return dto.ImportBaseResult{}, &importFileError{msg: err.Error()}
 	}
-	opts.Attachments = read.Attachments
+	if opts.IncludeAttachments {
+		opts.Attachments = read.Attachments
+	}
 	return s.transfer.ImportBase(ctx, schemaName, job.WorkspaceID, job.UserID, read.File, opts)
 }
 
@@ -634,12 +636,9 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 // build reads the base and streams its zip into the file store. It returns the size, the name the download gets and
 // the link the file store gave to the zip (empty when it has none).
-func (s *transferJobService) build(ctx context.Context, schemaName string, job tenant.TransferJob, includeAutomations bool) (int64, string, string, error) {
-	file, err := s.transfer.ExportBase(ctx, schemaName, job.BaseID, dto.ExportBaseOptions{
-		IncludeData:        true,
-		IncludeAttachments: true,
-		IncludeAutomations: includeAutomations,
-	})
+func (s *transferJobService) build(ctx context.Context, schemaName string, job tenant.TransferJob, opts dto.ExportBaseOptions) (int64, string, string, error) {
+	opts.IncludeData = true
+	file, err := s.transfer.ExportBase(ctx, schemaName, job.BaseID, opts)
 	if err != nil {
 		return 0, "", "", err
 	}

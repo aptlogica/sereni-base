@@ -45,25 +45,18 @@ func (sbaseAdapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{Structure: true, Rows: true, Links: true, Lookups: true, Views: true, Constraints: true, Files: true}
 }
 
-// Describe: without data the download is the JSON; with data it is the zip, which also carries the files
+// Describe: an export is always a .sbase.zip (with or without rows and files); import still reads a plain .sbase.json
 func (sbaseAdapter) Describe(opt adapter.ExportOptions, title string) (string, string) {
 	name := strings.Trim(unsafeFileNameChars.ReplaceAllString(title, "_"), "_")
 	if name == "" {
 		name = "base"
 	}
-	if opt.IncludeData {
-		return name + ".sbase.zip", "application/zip"
-	}
-	return name + ".sbase.json", "application/json"
+	return name + ".sbase.zip", "application/zip"
 }
 
-// Export writes the model as .sbase.json, or with data as a zip of base.sbase.json and the files. File sizes and
+// Export writes the model as a zip: base.sbase.json, plus the files when the model lists any. File sizes and
 // checksums are taken from what is actually read, so the index in the JSON always matches the zip.
 func (sbaseAdapter) Export(ctx context.Context, file *dto.BaseExportFile, opt adapter.ExportOptions, out io.Writer) error {
-	if !opt.IncludeData {
-		return encodeJSON(out, file)
-	}
-
 	zw := zip.NewWriter(out)
 	hasFiles := file.Base.Cover != nil || (file.Data != nil && len(file.Data.Attachments) > 0)
 	if hasFiles && opt.Files == nil {

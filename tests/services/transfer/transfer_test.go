@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	transfer "github.com/aptlogica/sereni-base/internal/services/transfer"
@@ -456,7 +457,7 @@ func importZip(t *testing.T, c *crm, raw []byte) (dto.ImportBaseResult, error) {
 	zr := openZip(t, raw)
 	var file dto.BaseExportFile
 	must(t, json.Unmarshal(readZipFile(t, zr, "base.sbase.json"), &file))
-	return newService(c.db).svc.ImportBase(context.Background(), "s", workspace, "u", &file, dto.ImportBaseOptions{IncludeData: true, Attachments: transfer.NewZipSource(zr)})
+	return newService(c.db).svc.ImportBase(context.Background(), "s", workspace, "u", &file, dto.ImportBaseOptions{IncludeData: true, IncludeAttachments: true, Attachments: transfer.NewZipSource(zr)})
 }
 
 func TestImportZipRestoresAttachments(t *testing.T) {
@@ -763,7 +764,7 @@ func TestStructureOnlyZipStillCarriesCover(t *testing.T) {
 	zr := openZip(t, buf.Bytes())
 	var parsed dto.BaseExportFile
 	must(t, json.Unmarshal(readZipFile(t, zr, "base.sbase.json"), &parsed))
-	res, err := svc.svc.ImportBase(context.Background(), "s", workspace, "u", &parsed, dto.ImportBaseOptions{Attachments: transfer.NewZipSource(zr)})
+	res, err := svc.svc.ImportBase(context.Background(), "s", workspace, "u", &parsed, dto.ImportBaseOptions{IncludeAttachments: true, Attachments: transfer.NewZipSource(zr)})
 	must(t, err)
 	if !res.Cover || res.Rows != 0 {
 		t.Fatalf("result = %+v", res)
@@ -777,7 +778,7 @@ func TestCoverThatCannotBeSetIsOnlyAWarning(t *testing.T) {
 	var file dto.BaseExportFile
 	must(t, json.Unmarshal(readZipFile(t, zr, "base.sbase.json"), &file))
 	file.Base.Cover.Filename = "cover.bad" // the fake base service refuses this type, like the real one does for bad images
-	res, err := newService(c.db).svc.ImportBase(context.Background(), "s", workspace, "u", &file, dto.ImportBaseOptions{IncludeData: true, Attachments: transfer.NewZipSource(zr)})
+	res, err := newService(c.db).svc.ImportBase(context.Background(), "s", workspace, "u", &file, dto.ImportBaseOptions{IncludeData: true, IncludeAttachments: true, Attachments: transfer.NewZipSource(zr)})
 	must(t, err)
 	if res.Cover || !strings.Contains(strings.Join(res.Warnings, " "), "unsupported image type") {
 		t.Fatalf("result = %+v", res)
@@ -1434,5 +1435,113 @@ func TestTheSQLFormOfAnEventNamesTheTimingOnce(t *testing.T) {
 				t.Errorf("trigger %q repeats its timing: %s", tr.Title, tr.Context)
 			}
 		}
+	}
+}
+
+func TestExportBaseTableFilter(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+
+	// 1. Export only Customers table
+	file, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{
+		IncludeData:        true,
+		IncludeAttachments: true,
+		IncludeAutomations: true,
+		Tables:             []string{"Customers"},
+	})
+	must(t, err)
+
+	if len(file.Schema.Tables) != 1 || file.Schema.Tables[0].Title != "Customers" {
+		t.Fatalf("expected only Customers table, got %d tables: %+v", len(file.Schema.Tables), file.Schema.Tables)
+	}
+	if file.Data == nil || len(file.Data.Tables) != 1 {
+		t.Fatalf("expected data for only 1 table, got: %+v", file.Data)
+	}
+
+	// Validate the exported file - it should be completely valid even though Orders was excluded
+	if problems := transfer.ValidateBaseFile(roundTrip(t, file)); len(problems) > 0 {
+		t.Fatalf("validation failed for table-filtered export: %v", problems)
+	}
+
+	// 2. Exporting an unknown table returns TableNotFound
+	_, err = svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{
+		Tables: []string{"NonExistentTable"},
+	})
+	if !errors.Is(err, app_errors.TableNotFound) {
+		t.Fatalf("expected TableNotFound, got %v", err)
+	}
+}
+
+func TestExportBaseFiltersDataAttachmentsAndAutomations(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+
+	// 1. IncludeData: true, IncludeAttachments: false
+	noAtt, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{
+		IncludeData:        true,
+		IncludeAttachments: false,
+	})
+	must(t, err)
+	if noAtt.Data == nil || len(noAtt.Data.Tables) == 0 {
+		t.Fatal("data should be present")
+	}
+	if len(noAtt.Data.Attachments) != 0 {
+		t.Fatalf("attachments should be empty when IncludeAttachments is false, got %d", len(noAtt.Data.Attachments))
+	}
+	if noAtt.Base.Cover != nil {
+		t.Fatal("cover should be nil when IncludeAttachments is false")
+	}
+
+	// 2. IncludeAutomations: false
+	db, baseID := completeBase(t)
+	fullSvc := newService(db)
+	noAuto, err := fullSvc.svc.ExportBase(ctx, "s", baseID, dto.ExportBaseOptions{
+		IncludeAutomations: false,
+	})
+	must(t, err)
+	for _, tbl := range noAuto.Schema.Tables {
+		if len(tbl.Functions) > 0 || len(tbl.Triggers) > 0 {
+			t.Fatalf("automations should be empty when IncludeAutomations is false in %s", tbl.Title)
+		}
+	}
+
+	// 3. IncludeAutomations: true
+	withAuto, err := fullSvc.svc.ExportBase(ctx, "s", baseID, dto.ExportBaseOptions{
+		IncludeAutomations: true,
+	})
+	must(t, err)
+	hasFnOrTrig := false
+	for _, tbl := range withAuto.Schema.Tables {
+		if len(tbl.Functions) > 0 || len(tbl.Triggers) > 0 {
+			hasFnOrTrig = true
+			break
+		}
+	}
+	if !hasFnOrTrig {
+		t.Fatal("expected automations (functions or triggers) to be exported")
+	}
+}
+
+// ExportDependencies tells which table needs which, so the dialog can warn before a table is left out.
+func TestExportDependenciesFindsLinks(t *testing.T) {
+	c := seedCRM(t)
+	got, err := newService(c.db).svc.ExportDependencies(context.Background(), "s", c.baseID, true)
+	must(t, err)
+	if len(got.Tables) != 3 {
+		t.Fatalf("tables = %+v", got.Tables)
+	}
+	found := false
+	for _, d := range got.Dependencies {
+		if d.Kind == dto.ExportDependencyLink && d.DependsOnID != d.TableID {
+			found = true
+		}
+		if d.TableID == d.DependsOnID {
+			t.Fatalf("a table never depends on itself: %+v", d)
+		}
+	}
+	if !found {
+		t.Fatalf("expected a link dependency between Customers and Orders, got %+v", got.Dependencies)
 	}
 }

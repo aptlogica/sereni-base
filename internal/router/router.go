@@ -393,6 +393,12 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 			automationsAccess(middlewares, appConstant.ActionCodes.Read),
 			handlers.BaseTransfer.ExportBase)
 
+		// Which table needs which, for the warnings of the export dialog. Same permissions as the export.
+		base.GET("/:id/export-dependencies",
+			objectGuard(middlewares, appConstant.ResourceCodes.Records, appConstant.ActionCodes.Export, baseParam),
+			automationsAccess(middlewares, appConstant.ActionCodes.Read),
+			handlers.BaseTransfer.ExportDependencies)
+
 		// All access operations
 		base.GET("/:id", baseAccess, handlers.Base.GetBaseByID)
 		base.GET("/:id/tables", baseAccess, handlers.Base.GetTablesByBaseId)

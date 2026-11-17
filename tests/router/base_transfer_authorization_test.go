@@ -6,6 +6,7 @@
 package tests
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"io"
@@ -91,8 +92,11 @@ func importUploadAt(t *testing.T, query string, fields map[string]string) *http.
 	for k, v := range fields {
 		_ = mw.WriteField(k, v)
 	}
-	part, _ := mw.CreateFormFile("file", "x.sbase.json")
-	_, _ = io.WriteString(part, `{"base":{"title":"X"},"schema":{"tables":[]},"data":null}`)
+	part, _ := mw.CreateFormFile("file", "x.sbase.zip")
+	zw := zip.NewWriter(part)
+	entry, _ := zw.Create("base.sbase.json")
+	_, _ = io.WriteString(entry, `{"base":{"title":"X"},"schema":{"tables":[]},"data":null}`)
+	_ = zw.Close()
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/ws-attacker/import-base"+query, &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())

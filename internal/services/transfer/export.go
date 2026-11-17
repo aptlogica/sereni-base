@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -37,6 +38,13 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 		return nil, err
 	}
 
+	if len(opts.Tables) > 0 {
+		tableResponses = filterTableResponses(tableResponses, opts.Tables)
+		if len(tableResponses) == 0 {
+			return nil, app_errors.TableNotFound
+		}
+	}
+
 	reportProgress(ctx, 2)
 	file := &dto.BaseExportFile{
 		Base: dto.BaseExportBase{
@@ -57,6 +65,13 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 	reportProgress(ctx, 8)
 	warnings := &file.Skipped
 	skipped := s.skippedColumns(tables, warnings)
+
+	skippedKeys := map[string]struct{}{}
+	for id := range skipped {
+		if key, ok := idMap[id]; ok {
+			skippedKeys[key] = struct{}{}
+		}
+	}
 
 	// Files (attachments, cover image) travel only in a zip, and only when storage can be read
 	withFiles := opts.IncludeAttachments && s.storage != nil
@@ -81,7 +96,7 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 		}
 		table.PrimaryKey = s.exportPrimaryKey(ctx, schemaName, t, skipped, warnings)
 		table.Constraints = s.exportConstraints(ctx, schemaName, t, skipped, warnings)
-		views, err := s.exportViews(ctx, schemaName, t, idMap)
+		views, err := s.exportViews(ctx, schemaName, t, idMap, skippedKeys)
 		if err != nil {
 			return nil, err
 		}
@@ -174,12 +189,26 @@ func (s *baseTransferService) loadExportTables(ctx context.Context, schemaName s
 func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]string) map[string]struct{} {
 	skipped := map[string]struct{}{}
 	titles := map[string]string{}
+	tableIDs := map[string]struct{}{}
+	for _, t := range tables {
+		tableIDs[t.model.ID.String()] = struct{}{}
+	}
+
 	for _, t := range tables {
 		for _, c := range t.columns {
 			titles[c.ID.String()] = t.model.Title + "." + c.Title
 			if !boolOf(c.System) && !isSupportedUIDT(c.UIDT) {
 				skipped[c.ID.String()] = struct{}{}
 				*warnings = append(*warnings, fmt.Sprintf("field %s (%s) not exported: type %q is not supported yet", titles[c.ID.String()], c.ID, c.UIDT))
+			}
+			if c.UIDT == uidtLinks {
+				withID := idString(nestedString(c.Meta, "relation", "with"))
+				if withID != "" {
+					if _, ok := tableIDs[withID]; !ok {
+						skipped[c.ID.String()] = struct{}{}
+						*warnings = append(*warnings, fmt.Sprintf("field %s not exported: linked table is not exported", titles[c.ID.String()]))
+					}
+				}
 			}
 		}
 	}
@@ -247,7 +276,7 @@ func (s *baseTransferService) exportTableSchema(t *exportTable, idMap map[string
 	return out
 }
 
-func (s *baseTransferService) exportViews(ctx context.Context, schemaName string, t *exportTable, idMap map[string]string) ([]dto.BaseExportView, error) {
+func (s *baseTransferService) exportViews(ctx context.Context, schemaName string, t *exportTable, idMap map[string]string, skippedKeys map[string]struct{}) ([]dto.BaseExportView, error) {
 	views, err := s.tableService.GetViewsByModelID(ctx, schemaName, t.model.ID.String())
 	if err != nil {
 		return nil, err
@@ -269,10 +298,93 @@ func (s *baseTransferService) exportViews(ctx context.Context, schemaName string
 		}
 		if v.Meta != nil {
 			view.Meta = rewriteMap(*v.Meta, idMap)
+			rewritten := rewriteMap(*v.Meta, idMap)
+			if len(skippedKeys) > 0 {
+				rewritten = cleanViewMeta(rewritten, skippedKeys)
+			}
+			view.Meta = rewritten
 		}
 		out = append(out, view)
 	}
 	return out, nil
+}
+
+func filterTableResponses(responses []dto.TableResponse, filters []string) []dto.TableResponse {
+	allowed := make(map[string]struct{}, len(filters))
+	for _, f := range filters {
+		f = strings.ToLower(strings.TrimSpace(f))
+		if f != "" {
+			allowed[f] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		return responses
+	}
+	var filtered []dto.TableResponse
+	for _, r := range responses {
+		id := strings.ToLower(r.Model.ID.String())
+		title := strings.ToLower(r.Model.Title)
+		alias := strings.ToLower(r.Model.Alias)
+		matched := false
+		for a := range allowed {
+			if a == id || a == title || a == alias || strings.TrimPrefix(a, "t_") == title {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+func cleanViewMeta(meta map[string]interface{}, skippedKeys map[string]struct{}) map[string]interface{} {
+	if meta == nil || len(skippedKeys) == 0 {
+		return meta
+	}
+	out := make(map[string]interface{}, len(meta))
+	for k, v := range meta {
+		switch k {
+		case "filters", "sorts", "groups":
+			if list, ok := v.([]interface{}); ok {
+				var filtered []interface{}
+				for _, item := range list {
+					if m, isMap := item.(map[string]interface{}); isMap {
+						col := idString(m["column"])
+						if _, skip := skippedKeys[col]; skip {
+							continue
+						}
+					}
+					filtered = append(filtered, item)
+				}
+				out[k] = filtered
+				continue
+			}
+		case "fieldConfig":
+			if list, ok := v.([]interface{}); ok {
+				var filtered []interface{}
+				for _, item := range list {
+					if m, isMap := item.(map[string]interface{}); isMap {
+						id := idString(m["id"])
+						if _, skip := skippedKeys[id]; skip {
+							continue
+						}
+					}
+					filtered = append(filtered, item)
+				}
+				out[k] = filtered
+				continue
+			}
+		}
+		if str, isStr := v.(string); isStr {
+			if _, skip := skippedKeys[str]; skip {
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // pkColumn returns the column whose values link cells of this table hold.

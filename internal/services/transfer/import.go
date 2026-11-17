@@ -71,6 +71,10 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 	if len(problems) > 0 {
 		return dto.ImportBaseResult{}, &dto.ImportValidationError{Problems: problems}
 	}
+	// without IncludeAttachments the files of the zip are never read
+	if !opts.IncludeAttachments {
+		opts.Attachments = nil
+	}
 
 	if problems := checkAttachmentFiles(file, opts); len(problems) > 0 {
 		return dto.ImportBaseResult{}, &dto.ImportValidationError{Problems: problems}
@@ -114,7 +118,10 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 			run.result.Rows += len(t.Rows)
 		}
 		run.result.Files = len(run.index)
-		if len(run.index) > 0 && run.attachments == nil {
+		if len(run.index) > 0 && !opts.IncludeAttachments {
+			run.result.Files = 0
+			run.warn("attachments were not imported as requested; attachment cells are left empty")
+		} else if len(run.index) > 0 && run.attachments == nil {
 			run.result.Files = 0
 			run.warn("attachment files were not imported: upload the .sbase.zip to import them; attachment cells are left empty")
 		}

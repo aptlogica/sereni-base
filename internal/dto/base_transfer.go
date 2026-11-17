@@ -168,6 +168,8 @@ type ExportBaseOptions struct {
 	// IncludeAutomations writes the trigger functions and triggers of the tables. They hold SQL, so the handler sets
 	// it only for a user who has the automations permission.
 	IncludeAutomations bool
+	// Tables limits the export to specific tables by ID, title, or key. If empty, all tables are exported.
+	Tables []string
 }
 
 // ImportBaseOptions are the options of a base import
@@ -178,6 +180,8 @@ type ImportBaseOptions struct {
 	IncludeData bool
 	// Attachments holds the files of a zip upload; nil for a plain JSON upload
 	Attachments AttachmentSource
+	// IncludeAttachments imports the attachment files of a zip and the cover image. When false they are left out and the attachment cells stay empty.
+	IncludeAttachments bool
 	// IncludeAutomations creates the trigger functions and triggers of the file in Postgres. They run SQL from the
 	// file, so this is off by default and needs the automations permission.
 	IncludeAutomations bool
@@ -227,4 +231,38 @@ type TransferJobResponse struct {
 	Reused      bool            `json:"reused,omitempty"`
 	DownloadURL string          `json:"download_url,omitempty"`
 	FileURL     string          `json:"file_url,omitempty"`
+}
+
+// Kinds of ExportDependency
+const (
+	ExportDependencyLink    = "link"
+	ExportDependencyLookup  = "lookup"
+	ExportDependencyTrigger = "trigger"
+)
+
+// ExportTableInfo is a table that can be picked for an export
+type ExportTableInfo struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// ExportDependency says that a table needs another table of the same base: one of its link fields points at it, a
+// lookup or rollup reads through such a link, or a trigger or function uses it. Exporting the table without the other
+// table leaves that item out.
+type ExportDependency struct {
+	TableID        string `json:"table_id"`
+	TableTitle     string `json:"table_title"`
+	DependsOnID    string `json:"depends_on_id"`
+	DependsOnTitle string `json:"depends_on_title"`
+	// Kind is one of the ExportDependency* constants
+	Kind string `json:"kind"`
+	// Item is the title of the field, trigger or function
+	Item string `json:"item"`
+}
+
+// ExportDependencies lists the tables of a base and what depends on what, so a client can warn before an export that
+// leaves a table out
+type ExportDependencies struct {
+	Tables       []ExportTableInfo  `json:"tables"`
+	Dependencies []ExportDependency `json:"dependencies"`
 }

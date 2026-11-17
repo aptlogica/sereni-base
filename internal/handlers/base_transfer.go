@@ -6,7 +6,6 @@
 package handlers
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -62,16 +61,40 @@ func (h *BaseTransferHandler) format() adapter.Adapter {
 // functions and triggers of the base. Without it (or when false) an export leaves them out.
 const AutomationsAllowedKey = "base_transfer_automations_allowed"
 
+// ExportDependencies lists the tables of a base and which table needs which, for the export dialog's warnings.
+// GET /base/:id/export-dependencies
+// Triggers and functions are only looked at for a user who has the automations permission.
+func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
+	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
+	}
+	schemaName, _ := c.Get("schema")
+	schema, _ := schemaName.(string)
+	result, err := h.transferService.ExportDependencies(c.Request.Context(), schema, id, c.GetBool(AutomationsAllowedKey))
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	response.SendSuccess(c, "export dependencies loaded", result)
+}
+
 // ExportBase exports a base.
 // GET /base/:id/export?include_data=true
-// include_data is the only option. Without it the download is a .sbase.json with the structure. With it the
-// export is a .sbase.zip: base.sbase.json with the rows, plus the attachment files and the cover image. That can
-// take a while, so it runs as a background job: the response is 202 with the job (poll GET /export-job/:id, then
-// download it from GET /export-job/:id/download); the finished zip is also sent to the user's email. A user can
-// have two exports active at once; asking again for a base that is already being exported returns that job
-// ("reused": true), and a third one at the same time is refused with 429.
-// The trigger functions and triggers are always part of the export, for a user who has the automations
-// permission (the router sets AutomationsAllowedKey); for a user who does not, they are left out.
+// Options:
+// - include_data: boolean (default false). When true, exports records.
+// - include_attachments: boolean (default matches include_data). When true, packs attachment files into the zip.
+// - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
+// - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
+//
+// Without include_data the download is a .sbase.json with the structure. With it the export is a .sbase.zip:
+// base.sbase.json with the rows, plus the attachment files and the cover image. That can take a while, so it runs
+// as a background job: the response is 202 with the job (poll GET /export-job/:id, then download it from
+// GET /export-job/:id/download); the finished zip is also sent to the user's email. A user can have two exports
+// active at once; asking again for a base that is already being exported returns that job ("reused": true), and a
+// third one at the same time is refused with 429.
+// Triggers and trigger functions are only exported for a user who has the automations permission
+// (the router sets AutomationsAllowedKey); for a user who does not, they are left out.
 func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 	id := c.Param("id")
 	if !validateBaseID(c, id) {
@@ -82,7 +105,53 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
 	}
-	includeAutomations := c.GetBool(AutomationsAllowedKey)
+
+	includeAttachments := includeData
+	if c.Query("include_attachments") != "" {
+		includeAttachments, err = queryBool(c, "include_attachments", includeData)
+		if err != nil {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return
+		}
+	} else if c.Query("attachments") != "" {
+		includeAttachments, err = queryBool(c, "attachments", includeData)
+		if err != nil {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return
+		}
+	}
+
+	automationsAllowed := c.GetBool(AutomationsAllowedKey)
+	includeAutomations := automationsAllowed
+
+	if c.Query("include_automations") != "" {
+		incAuto, err := queryBool(c, "include_automations", automationsAllowed)
+		if err != nil {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return
+		}
+		includeAutomations = automationsAllowed && incAuto
+	} else if c.Query("automations") != "" {
+		incAuto, err := queryBool(c, "automations", automationsAllowed)
+		if err != nil {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return
+		}
+		includeAutomations = automationsAllowed && incAuto
+	} else if c.Query("include_triggers") != "" || c.Query("include_functions") != "" {
+		incTrig, _ := queryBool(c, "include_triggers", automationsAllowed)
+		incFn, _ := queryBool(c, "include_functions", automationsAllowed)
+		includeAutomations = automationsAllowed && (incTrig || incFn)
+	}
+
+	tables := queryTables(c)
+
+	exportOpts := dto.ExportBaseOptions{
+		IncludeData:        includeData,
+		IncludeAttachments: includeAttachments,
+		IncludeAutomations: includeAutomations,
+		Tables:             tables,
+	}
 
 	schemaName, _ := c.Get("schema")
 	schema, _ := schemaName.(string)
@@ -90,11 +159,7 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 	if includeData && h.jobs != nil {
 		userID, _ := c.Get("user_id")
 		user, _ := userID.(string)
-		job, err := h.jobs.StartExport(c.Request.Context(), schema, id, user, dto.ExportBaseOptions{
-			IncludeData:        true,
-			IncludeAttachments: true,
-			IncludeAutomations: includeAutomations,
-		})
+		job, err := h.jobs.StartExport(c.Request.Context(), schema, id, user, exportOpts)
 		if errors.Is(err, app_errors.TransferLimitReached) {
 			response.SendError(c, responseConst.BaseError.TransferLimitReached)
 			return
@@ -107,11 +172,7 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 		return
 	}
 
-	file, err := h.transferService.ExportBase(c.Request.Context(), schema, id, dto.ExportBaseOptions{
-		IncludeData:        includeData,
-		IncludeAttachments: includeData,
-		IncludeAutomations: includeAutomations,
-	})
+	file, err := h.transferService.ExportBase(c.Request.Context(), schema, id, exportOpts)
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
@@ -119,19 +180,9 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 
 	// the core service read the base into a model; the adapter writes it as a file
 	format := h.format()
-	opts := adapter.ExportOptions{IncludeData: includeData, Files: h.transferService}
+	opts := adapter.ExportOptions{IncludeData: includeData, IncludeFiles: includeAttachments, Files: h.transferService}
 	filename, contentType := format.Describe(opts, file.Base.Title)
-	if includeData {
-		h.sendArchive(c, format, opts, file, filename, contentType)
-		return
-	}
-	var out bytes.Buffer
-	if err := format.Export(c.Request.Context(), file, opts, &out); err != nil {
-		response.CheckAndSendError(c, err)
-		return
-	}
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	c.Data(http.StatusOK, contentType, out.Bytes())
+	h.sendArchive(c, format, opts, file, filename, contentType)
 }
 
 // sendArchive downloads the export that holds files (a zip). It is built in a temporary file first, so a failure
@@ -179,11 +230,21 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		response.SendError(c, responseConst.AssetError.FilesNotFound)
 		return
 	}
+	// an export is always a .sbase.zip, and that is the only file an import takes
+	if !strings.HasSuffix(strings.ToLower(upload.Filename), ".zip") {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "only .zip files are supported")
+		return
+	}
 	if upload.Size > maxBaseImportBytes {
 		response.SendError(c, responseConst.AssetError.FileTooLargeError)
 		return
 	}
 	includeData, err := formBool(c, "include_data", true)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+	includeAttachments, err := formBool(c, "include_attachments", true)
 	if err != nil {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
@@ -229,6 +290,7 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, upfile, upload.Filename, upload.Size, dto.ImportBaseOptions{
 			Title:              title,
 			IncludeData:        includeData,
+			IncludeAttachments: includeAttachments,
 			IncludeAutomations: includeAutomations,
 		})
 		if errors.Is(err, app_errors.TransferLimitReached) {
@@ -247,6 +309,7 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		Title:              title,
 		IncludeData:        includeData,
 		Attachments:        read.Attachments,
+		IncludeAttachments: includeAttachments,
 		IncludeAutomations: includeAutomations,
 	})
 	var invalid *dto.ImportValidationError
@@ -274,6 +337,27 @@ func ImportAutomationsRequested(c *gin.Context) (bool, error) {
 
 func queryBool(c *gin.Context, name string, fallback bool) (bool, error) {
 	return parseBool(c.Query(name), fallback)
+}
+
+func queryTables(c *gin.Context) []string {
+	var raw []string
+	for _, s := range append(c.QueryArray("tables"), c.QueryArray("table_ids")...) {
+		for _, part := range strings.Split(s, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				raw = append(raw, part)
+			}
+		}
+	}
+	var result []string
+	seen := map[string]bool{}
+	for _, t := range raw {
+		if !seen[t] {
+			seen[t] = true
+			result = append(result, t)
+		}
+	}
+	return result
 }
 
 func formBool(c *gin.Context, name string, fallback bool) (bool, error) {
