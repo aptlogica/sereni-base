@@ -82,10 +82,10 @@ func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
 // ExportBase exports a base.
 // GET /base/:id/export?include_data=true
 // Options:
-// - include_data: boolean (default false). When true, exports records.
-// - include_attachments: boolean (default matches include_data). When true, packs attachment files into the zip.
-// - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
-// - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
+//   - include_data: boolean (default false). When true, exports records.
+//   - include_attachments: boolean (default matches include_data). When true, packs attachment files into the zip.
+//   - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
+//   - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
 //
 // Without include_data the download is a .sbase.json with the structure. With it the export is a .sbase.zip:
 // base.sbase.json with the rows, plus the attachment files and the cover image. That can take a while, so it runs

@@ -64,10 +64,12 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 	}
 	reportProgress(ctx, 8)
 	warnings := &file.Skipped
-	skipped := s.skippedColumns(tables, warnings)
+	skipped, asText := s.skippedColumns(tables, warnings)
+	// Fields that a view, a trigger, a key or a constraint cannot use as they were: left out, or turned into text
+	unusable := unionOf(skipped, asText)
 
 	skippedKeys := map[string]struct{}{}
-	for id := range skipped {
+	for id := range unusable {
 		if key, ok := idMap[id]; ok {
 			skippedKeys[key] = struct{}{}
 		}
@@ -82,7 +84,7 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 
 	var automations map[string]*exportedAutomations
 	if opts.IncludeAutomations {
-		automations, err = s.exportAutomations(ctx, schemaName, tables, skipped, warnings)
+		automations, err = s.exportAutomations(ctx, schemaName, tables, unusable, warnings)
 		if err != nil {
 			return nil, err
 		}
@@ -90,12 +92,12 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 
 	for ti, t := range tables {
 		reportFraction(ctx, 8, 15, ti, len(tables))
-		table := s.exportTableSchema(t, idMap, skipped)
+		table := s.exportTableSchema(t, idMap, skipped, asText)
 		if a := automations[t.key]; a != nil {
 			table.Functions, table.Triggers = a.functions, a.triggers
 		}
-		table.PrimaryKey = s.exportPrimaryKey(ctx, schemaName, t, skipped, warnings)
-		table.Constraints = s.exportConstraints(ctx, schemaName, t, skipped, warnings)
+		table.PrimaryKey = s.exportPrimaryKey(ctx, schemaName, t, unusable, warnings)
+		table.Constraints = s.exportConstraints(ctx, schemaName, t, unusable, warnings)
 		views, err := s.exportViews(ctx, schemaName, t, idMap, skippedKeys)
 		if err != nil {
 			return nil, err
@@ -105,7 +107,7 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 	}
 
 	if opts.IncludeData {
-		data, err := s.exportData(ctx, schemaName, tables, skipped, withFiles, warnings)
+		data, err := s.exportData(ctx, schemaName, tables, skipped, asText, withFiles, warnings)
 		if err != nil {
 			return nil, err
 		}
@@ -186,8 +188,11 @@ func (s *baseTransferService) loadExportTables(ctx context.Context, schemaName s
 }
 
 // skippedColumns finds fields that import cannot create (unsupported type, or built on such a field) and says so.
-func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]string) map[string]struct{} {
+// A link to a table that is not exported cannot stay a link: it is returned in the second set, with the lookups and
+// rollups built on it, and is exported as a text field.
+func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]string) (map[string]struct{}, map[string]struct{}) {
 	skipped := map[string]struct{}{}
+	asText := map[string]struct{}{}
 	titles := map[string]string{}
 	tableIDs := map[string]struct{}{}
 	for _, t := range tables {
@@ -205,8 +210,8 @@ func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]
 				withID := idString(nestedString(c.Meta, "relation", "with"))
 				if withID != "" {
 					if _, ok := tableIDs[withID]; !ok {
-						skipped[c.ID.String()] = struct{}{}
-						*warnings = append(*warnings, fmt.Sprintf("field %s not exported: linked table is not exported", titles[c.ID.String()]))
+						asText[c.ID.String()] = struct{}{}
+						*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: linked table is not exported", titles[c.ID.String()]))
 					}
 				}
 			}
@@ -216,23 +221,50 @@ func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]
 	for changed := true; changed; {
 		changed = false
 		for _, t := range tables {
+			// the relations of the links of this table that become text: a lookup names its link by field id or by relation
+			textRelations := map[string]struct{}{}
+			for _, c := range t.columns {
+				if _, ok := asText[c.ID.String()]; ok && c.UIDT == uidtLinks {
+					if rid := idString(c.Meta["relation_id"]); rid != "" {
+						textRelations[rid] = struct{}{}
+					}
+				}
+			}
 			for _, c := range t.columns {
 				id := c.ID.String()
 				if _, done := skipped[id]; done || boolOf(c.System) {
 					continue
 				}
-				if containsString(normalizeMap(c.Meta), skipped) {
+				if _, done := asText[id]; done {
+					continue
+				}
+				meta := normalizeMap(c.Meta)
+				if containsString(meta, skipped) {
 					skipped[id] = struct{}{}
 					*warnings = append(*warnings, fmt.Sprintf("field %s not exported: it depends on a field that is not exported", titles[id]))
+					changed = true
+				} else if _, throughText := textRelations[idString(c.Meta["relation_id"])]; isLookupLike(c.UIDT) && throughText && !containsString(meta, asText) {
+					asText[id] = struct{}{}
+					*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: it reads through a link that is exported as text", titles[id]))
+					changed = true
+				} else if containsString(meta, asText) {
+					// a lookup or rollup of a link that becomes text becomes text; anything else built on it cannot
+					if isLookupLike(c.UIDT) {
+						asText[id] = struct{}{}
+						*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: it reads through a link that is exported as text", titles[id]))
+					} else {
+						skipped[id] = struct{}{}
+						*warnings = append(*warnings, fmt.Sprintf("field %s not exported: it depends on a field that is exported as text", titles[id]))
+					}
 					changed = true
 				}
 			}
 		}
 	}
-	return skipped
+	return skipped, asText
 }
 
-func (s *baseTransferService) exportTableSchema(t *exportTable, idMap map[string]string, skipped map[string]struct{}) dto.BaseExportTable {
+func (s *baseTransferService) exportTableSchema(t *exportTable, idMap map[string]string, skipped, asText map[string]struct{}) dto.BaseExportTable {
 	out := dto.BaseExportTable{
 		Key:        t.key,
 		Title:      t.model.Title,
@@ -265,6 +297,9 @@ func (s *baseTransferService) exportTableSchema(t *exportTable, idMap map[string
 			// System fields are not created by import; the column name lets it find them in the new table
 			field.System = true
 			field.ColumnName = c.ColumnName
+		} else if _, text := asText[c.ID.String()]; text {
+			// a link, lookup or rollup exported as text: a plain text field, with none of the relation
+			field.UIDT, field.DT, field.Meta = textFieldType, "TEXT", nil
 		} else {
 			field.Meta = rewriteMap(c.Meta, idMap)
 			if len(field.Meta) == 0 {
@@ -403,7 +438,7 @@ func (s *baseTransferService) pkColumn(ctx context.Context, schemaName, modelID 
 	return pk.ColumnNames[0]
 }
 
-func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped map[string]struct{}, withFiles bool, warnings *[]string) (*dto.BaseExportData, error) {
+func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped, asText map[string]struct{}, withFiles bool, warnings *[]string) (*dto.BaseExportData, error) {
 	data := &dto.BaseExportData{
 		RowCounts: map[string]int{},
 		Tables:    map[string]dto.BaseExportTableRow{},
@@ -437,6 +472,12 @@ func (s *baseTransferService) exportData(ctx context.Context, schemaName string,
 		}
 	}
 
+	// The display text of the rows that the links exported as text pointed at
+	linkTexts, err := s.loadLinkTexts(ctx, schemaName, tables, asText, warnings)
+	if err != nil {
+		return nil, err
+	}
+
 	// Pass 2: values by field key.
 	attachments := newAttachmentCollector()
 	attachmentWarned := map[string]bool{}
@@ -455,7 +496,23 @@ func (s *baseTransferService) exportData(ctx context.Context, schemaName string,
 			values := map[string]interface{}{}
 			for _, c := range t.columns {
 				id := c.ID.String()
-				if _, skip := skipped[id]; skip || boolOf(c.System) || c.UIDT == uidtLookup {
+				if _, skip := skipped[id]; skip || boolOf(c.System) {
+					continue
+				}
+				if _, text := asText[id]; text {
+					// a link, lookup or rollup exported as text: the text of what it showed
+					var cell string
+					if c.UIDT == uidtLinks {
+						cell = linkCellText(rec[c.ColumnName], linkTexts[id])
+					} else {
+						cell = valueText(rec[c.ColumnName])
+					}
+					if cell != "" {
+						values[t.fieldKeys[id]] = cell
+					}
+					continue
+				}
+				if c.UIDT == uidtLookup {
 					continue
 				}
 				val := rec[c.ColumnName]

@@ -1545,3 +1545,58 @@ func TestExportDependenciesFindsLinks(t *testing.T) {
 		t.Fatalf("expected a link dependency between Customers and Orders, got %+v", got.Dependencies)
 	}
 }
+
+// A link to a table that is not exported becomes a text field holding what it showed, and the file is still valid.
+func TestExportLinksToUnselectedTablesAsText(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+
+	fieldOf := func(f *dto.BaseExportFile, title string) *dto.BaseExportField {
+		for i := range f.Schema.Tables[0].Fields {
+			if f.Schema.Tables[0].Fields[i].Title == title {
+				return &f.Schema.Tables[0].Fields[i]
+			}
+		}
+		return nil
+	}
+
+	file, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, Tables: []string{"Customers"}})
+	must(t, err)
+	orders := fieldOf(file, "Orders")
+	if orders == nil || orders.UIDT != "longText" || len(orders.Meta) != 0 {
+		t.Fatalf("the link to Orders must become a plain text field, got %+v", orders)
+	}
+	if problems := transfer.ValidateBaseFile(roundTrip(t, file)); len(problems) > 0 {
+		t.Fatalf("the export with a link as text is not valid: %v", problems)
+	}
+	if !strings.Contains(strings.Join(file.Skipped, " "), "exported as text") {
+		t.Fatalf("expected a warning that the field is exported as text, got %v", file.Skipped)
+	}
+	// the first customer had two orders: the cell is text, not a list of _rid
+	first := file.Data.Tables[file.Schema.Tables[0].Key].Rows[0]
+	if text, ok := first.Values[orders.Key].(string); !ok || text == "" {
+		t.Fatalf("expected the text of the linked orders, got %#v", first.Values[orders.Key])
+	}
+}
+
+// A lookup that reads through a link exported as text is exported as text too.
+func TestExportLookupThroughATextLinkIsText(t *testing.T) {
+	c := seedCRM(t)
+	file, err := newService(c.db).svc.ExportBase(context.Background(), "s", c.baseID, dto.ExportBaseOptions{Tables: []string{"Orders"}})
+	must(t, err)
+	types := map[string]string{}
+	for _, f := range file.Schema.Tables[0].Fields {
+		types[f.Title] = f.UIDT
+	}
+	if types["Customer name"] != "longText" || types["Customer"] != "longText" {
+		t.Fatalf("the lookup and the link it reads through must both be text, got %v", types)
+	}
+	// Tags is not exported either, so that link is text too
+	if types["Tags"] != "longText" {
+		t.Fatalf("the link to Tags must be text, got %v", types)
+	}
+	if problems := transfer.ValidateBaseFile(roundTrip(t, file)); len(problems) > 0 {
+		t.Fatalf("the export is not valid: %v", problems)
+	}
+}
