@@ -70,15 +70,15 @@ func (a *API) idempotent() gin.HandlerFunc {
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		sum := sha256.Sum256(append([]byte(c.Request.Method+" "+c.Request.URL.Path+"\n"), body...))
 		hash := hex.EncodeToString(sum[:])
-		ws := currentWorkspace(c)
+		base := currentBase(c)
 
-		claimed, err := a.claimKey(ws.ID, key, hash)
+		claimed, err := a.claimKey(base.ID, key, hash)
 		if err != nil {
 			respondError(c, err)
 			return
 		}
 		if !claimed {
-			a.replay(c, ws.ID, key, hash)
+			a.replay(c, base.ID, key, hash)
 			return
 		}
 
@@ -89,33 +89,33 @@ func (a *API) idempotent() gin.HandlerFunc {
 		status := w.Status()
 		if status >= http.StatusInternalServerError {
 			// Nothing was written, so a retry with the same key may run again
-			if _, err := a.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE workspace_id = $1 AND "key" = $2`, a.idempotencyTable()), ws.ID, key); err != nil {
+			if _, err := a.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE base_id = $1 AND "key" = $2`, a.idempotencyTable()), base.ID, key); err != nil {
 				logger.Get().Error().Err(err).Msg("failed to release idempotency key")
 			}
 			return
 		}
-		if _, err := a.db.Exec(fmt.Sprintf(`UPDATE %s SET status = $3, status_code = $4, response_body = $5 WHERE workspace_id = $1 AND "key" = $2`,
-			a.idempotencyTable()), ws.ID, key, tenant.IdempotencyDone, status, w.body.String()); err != nil {
+		if _, err := a.db.Exec(fmt.Sprintf(`UPDATE %s SET status = $3, status_code = $4, response_body = $5 WHERE base_id = $1 AND "key" = $2`,
+			a.idempotencyTable()), base.ID, key, tenant.IdempotencyDone, status, w.body.String()); err != nil {
 			logger.Get().Error().Err(err).Msg("failed to store idempotent response")
 		}
 	}
 }
 
-// claimKey stores the key as in progress; false when the workspace already used it. A key older than the
+// claimKey stores the key as in progress; false when the base already used it. A key older than the
 // retention period is treated as new, even before the cleanup removes it.
-func (a *API) claimKey(workspaceID, key, hash string) (bool, error) {
-	insert := fmt.Sprintf(`INSERT INTO %s (workspace_id, "key", request_hash, status) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+func (a *API) claimKey(baseID, key, hash string) (bool, error) {
+	insert := fmt.Sprintf(`INSERT INTO %s (base_id, "key", request_hash, status) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
 		a.idempotencyTable())
 	for attempt := 0; attempt < 2; attempt++ {
-		res, err := a.db.Exec(insert, workspaceID, key, hash, tenant.IdempotencyInProgress)
+		res, err := a.db.Exec(insert, baseID, key, hash, tenant.IdempotencyInProgress)
 		if err != nil {
 			return false, err
 		}
 		if n, _ := res.RowsAffected(); n == 1 {
 			return true, nil
 		}
-		expired, err := a.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE workspace_id = $1 AND "key" = $2 AND created_time < CURRENT_TIMESTAMP - interval '%s'`,
-			a.idempotencyTable(), idempotencyRetention), workspaceID, key)
+		expired, err := a.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE base_id = $1 AND "key" = $2 AND created_time < CURRENT_TIMESTAMP - interval '%s'`,
+			a.idempotencyTable(), idempotencyRetention), baseID, key)
 		if err != nil {
 			return false, err
 		}
@@ -127,11 +127,11 @@ func (a *API) claimKey(workspaceID, key, hash string) (bool, error) {
 }
 
 // replay answers a retry: the stored response, or a conflict
-func (a *API) replay(c *gin.Context, workspaceID, key, hash string) {
+func (a *API) replay(c *gin.Context, baseID, key, hash string) {
 	var storedHash, status, body string
 	var code int
-	err := a.db.QueryRow(fmt.Sprintf(`SELECT request_hash, status, COALESCE(status_code, 0), COALESCE(response_body, '') FROM %s WHERE workspace_id = $1 AND "key" = $2`,
-		a.idempotencyTable()), workspaceID, key).Scan(&storedHash, &status, &code, &body)
+	err := a.db.QueryRow(fmt.Sprintf(`SELECT request_hash, status, COALESCE(status_code, 0), COALESCE(response_body, '') FROM %s WHERE base_id = $1 AND "key" = $2`,
+		a.idempotencyTable()), baseID, key).Scan(&storedHash, &status, &code, &body)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Released by a failed first request between our insert and this read
 		respondError(c, NewError(CodeConflict, "This Idempotency-Key is being used by another request. Try again."))

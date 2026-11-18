@@ -101,10 +101,12 @@ func CreateMasterSchema(dbService *pkg.DatabaseService) {
 	// serenibase tables
 	createTableUsingSchema(dbService, tenant.Assets{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Workspace{}.TableSchema(appConstant.MasterDatabase))
-	createTableUsingSchema(dbService, tenant.WorkspaceAPI{}.TableSchema(appConstant.MasterDatabase))
-	addCheckConstraints(dbService, tenant.WorkspaceAPI{}.CheckConstraints(appConstant.MasterDatabase))
-	createTableUsingSchema(dbService, tenant.APIIdempotencyKey{}.TableSchema(appConstant.MasterDatabase))
+	// The public API moved from workspaces to bases: drop the old-shaped tables before the new ones are created
+	MigratePublicAPIToBase(dbService, appConstant.MasterDatabase)
 	createTableUsingSchema(dbService, tenant.Base{}.TableSchema(appConstant.MasterDatabase))
+	createTableUsingSchema(dbService, tenant.BaseAPI{}.TableSchema(appConstant.MasterDatabase))
+	addCheckConstraints(dbService, tenant.BaseAPI{}.CheckConstraints(appConstant.MasterDatabase))
+	createTableUsingSchema(dbService, tenant.APIIdempotencyKey{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.WorkspaceMember{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Model{}.TableSchema(appConstant.MasterDatabase))
 	createTableUsingSchema(dbService, tenant.Column{}.TableSchema(appConstant.MasterDatabase))

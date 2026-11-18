@@ -29,13 +29,13 @@ type RecordWriter interface {
 	UpdateRawDataForLinks(ctx context.Context, schemaName string, req dto.UpdateRowDataLinksRequest) (dto.RecordResponse, error)
 }
 
-// API serves the workspace public API at /api/v1/{ws}
+// API serves the base public API at /api/v1/{bs}
 type API struct {
 	db                 pgInterfaces.DB
 	schema             string // schema holding the metadata and the records tables
 	records            RecordWriter
 	rateLimitPerMinute int
-	workspaces         *workspaceCache
+	bases              *baseCache
 	schemas            *schemaCache
 	now                func() time.Time
 }
@@ -50,30 +50,29 @@ func NewAPI(db pgInterfaces.DB, schema string, records RecordWriter, rateLimitPe
 		schema:             schema,
 		records:            records,
 		rateLimitPerMinute: rateLimitPerMinute,
-		workspaces:         &workspaceCache{entries: map[string]workspaceEntry{}},
-		schemas:            &schemaCache{byWorkspace: map[string]*schemaSnapshot{}},
+		bases:              &baseCache{entries: map[string]baseEntry{}},
+		schemas:            &schemaCache{byBase: map[string]*schemaSnapshot{}},
 		now:                time.Now,
 	}
 }
 
 func (a *API) schemaIdent() string { return pq.QuoteIdentifier(a.schema) }
 
-// Register adds the /:ws routes to the /api/v1 group. Existing /api/v1/<name> routes always win; any other
-// first segment is looked up as a workspace public ID.
+// Register adds the /:bs routes to the /api/v1 group. Existing /api/v1/<name> routes always win; any other
+// first segment is looked up as a base public ID.
 func (a *API) Register(api *gin.RouterGroup) {
-	ws := api.Group("/:ws", a.resolveWorkspace(), authPlaceholder(), a.rateLimit())
+	bs := api.Group("/:bs", a.resolveBase(), authPlaceholder(), a.rateLimit())
 
-	// The workspace's own spec and its docs pages, as FastAPI serves them
-	ws.GET("/openapi.json", a.openAPISpec)
-	ws.GET("/docs", a.swaggerUI)
-	ws.GET("/redoc", a.redoc)
+	// The base's own spec and its docs pages, as FastAPI serves them
+	bs.GET("/openapi.json", a.openAPISpec)
+	bs.GET("/docs", a.swaggerUI)
+	bs.GET("/redoc", a.redoc)
 
-	ws.GET("/bases", a.listBases)
-	ws.GET("/bases/:base/tables", a.listTables)
-	ws.GET("/bases/:base/tables/:table", a.getTable)
-	ws.GET("/bases/:base/tables/:table/columns", a.listColumns)
+	bs.GET("/tables", a.listTables)
+	bs.GET("/tables/:table", a.getTable)
+	bs.GET("/tables/:table/columns", a.listColumns)
 
-	records := ws.Group("/bases/:base/tables/:table/records")
+	records := bs.Group("/tables/:table/records")
 	records.GET("", a.listRecords)
 	records.GET("/:record", a.getRecord)
 	records.POST("", a.idempotent(), a.createRecords)
@@ -91,49 +90,49 @@ func (a *API) Register(api *gin.RouterGroup) {
 // MethodQuery is the HTTP QUERY method: safe and idempotent like GET, with a body like POST
 const MethodQuery = "QUERY"
 
-// NotFound answers unknown /api/v1/ws_... paths in the API's envelope
+// NotFound answers unknown /api/v1/bs_... paths in the API's envelope
 func NotFound(c *gin.Context) {
 	respondError(c, notFound("No such endpoint. See the API docs for the available paths."))
 }
 
-// ---- Pipeline: resolve workspace, auth placeholder, rate limit ----
+// ---- Pipeline: resolve base, auth placeholder, rate limit ----
 
-const ctxWorkspace = "platform.workspace"
+const ctxBase = "platform.base"
 
-var publicIDPattern = regexp.MustCompile(`^ws_[0-9a-z]{10}$`)
+var publicIDPattern = regexp.MustCompile(`^bs_[0-9a-z]{10}$`)
 
-// resolveWorkspace turns the ws path segment into the workspace; unknown and disabled workspaces are 404
-func (a *API) resolveWorkspace() gin.HandlerFunc {
+// resolveBase turns the bs path segment into the base; unknown, disabled and archived bases are 404
+func (a *API) resolveBase() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		publicID := c.Param("ws")
+		publicID := c.Param("bs")
 		if !publicIDPattern.MatchString(publicID) {
-			respondError(c, notFound("No such workspace or endpoint."))
+			respondError(c, notFound("No such base or endpoint."))
 			return
 		}
-		ref, found, err := a.lookupWorkspace(c, publicID)
+		ref, found, err := a.lookupBase(c, publicID)
 		if err != nil {
 			respondError(c, err)
 			return
 		}
 		if !found {
-			respondError(c, notFound(fmt.Sprintf("No workspace with ID %q, or its API is turned off.", publicID)))
+			respondError(c, notFound(fmt.Sprintf("No base with ID %q, or its API is turned off.", publicID)))
 			return
 		}
-		c.Set(ctxWorkspace, ref)
-		c.Set(middleware.PublicWorkspaceIDKey, ref.PublicID)
+		c.Set(ctxBase, ref)
+		c.Set(middleware.PublicBaseIDKey, ref.PublicID)
 		// For respondError: did a missing column or table come from a schema change during this request?
 		c.Set(ctxSchemaCheck, func() bool {
-			now, found, err := a.readWorkspace(c.Request.Context(), publicID)
+			now, found, err := a.readBase(c.Request.Context(), publicID)
 			return err == nil && (!found || now.SchemaVersion != ref.SchemaVersion)
 		})
 		c.Next()
 	}
 }
 
-func currentWorkspace(c *gin.Context) workspaceRef {
-	ref, _ := c.Get(ctxWorkspace)
-	ws, _ := ref.(workspaceRef)
-	return ws
+func currentBase(c *gin.Context) baseRef {
+	ref, _ := c.Get(ctxBase)
+	base, _ := ref.(baseRef)
+	return base
 }
 
 // authPlaceholder is where API keys plug in during the security stage. The routes are only registered
@@ -142,44 +141,39 @@ func authPlaceholder() gin.HandlerFunc {
 	return func(c *gin.Context) { c.Next() }
 }
 
-// rateLimit allows rateLimitPerMinute requests per workspace per minute
+// rateLimit allows rateLimitPerMinute requests per base per minute
 func (a *API) rateLimit() gin.HandlerFunc {
 	return middleware.RateLimiterBy(
-		func(c *gin.Context) string { return currentWorkspace(c).ID },
+		func(c *gin.Context) string { return currentBase(c).ID },
 		a.rateLimitPerMinute,
 		func(c *gin.Context, retryAfter time.Duration) {
 			c.Header("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
 			respondError(c, NewError(CodeRateLimited, fmt.Sprintf(
-				"Too many requests: this workspace allows %d per minute. Try again after the time in Retry-After.", a.rateLimitPerMinute)))
+				"Too many requests: this base allows %d per minute. Try again after the time in Retry-After.", a.rateLimitPerMinute)))
 		})
 }
 
 // ---- Path resolution shared by the handlers ----
 
-// tableContext is the workspace, base, table and fields a records request addresses
+// tableContext is the base, table and fields a records request addresses
 type tableContext struct {
-	ws     workspaceRef
-	base   *baseInfo
+	base   baseRef
 	table  *tableInfo
 	fields []*field
 	key    *recordKey // the table's primary key, read when a record is addressed
 }
 
 func (a *API) resolveTablePath(c *gin.Context) (*tableContext, error) {
-	ws := currentWorkspace(c)
-	base, err := a.resolveBase(c, ws, c.Param("base"))
+	base := currentBase(c)
+	table, err := a.resolveTable(c, base, c.Param("table"))
 	if err != nil {
 		return nil, err
 	}
-	table, err := a.resolveTable(c, ws, base, c.Param("table"))
+	fields, err := a.fields(c, base, table)
 	if err != nil {
 		return nil, err
 	}
-	fields, err := a.fields(c, ws, table)
-	if err != nil {
-		return nil, err
-	}
-	return &tableContext{ws: ws, base: base, table: table, fields: fields}, nil
+	return &tableContext{base: base, table: table, fields: fields}, nil
 }
 
 // recordsTable is the quoted physical table of the records

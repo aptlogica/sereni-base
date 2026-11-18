@@ -83,8 +83,6 @@ func TestObjectLevelAuthorizationWiring(t *testing.T) {
 		{http.MethodDelete, "/api/v1/workspace/ws-victim"},
 		{http.MethodGet, "/api/v1/workspace/ws-victim/members"},
 		{http.MethodPost, "/api/v1/workspace/ws-victim/remove"},
-		{http.MethodGet, "/api/v1/workspace/ws-victim/api"},
-		{http.MethodPost, "/api/v1/workspace/ws-victim/api/enable"},
 		// Base
 		{http.MethodGet, "/api/v1/base/base-victim"},
 		{http.MethodGet, "/api/v1/base/base-victim/tables"},
@@ -92,6 +90,8 @@ func TestObjectLevelAuthorizationWiring(t *testing.T) {
 		{http.MethodDelete, "/api/v1/base/base-victim"},
 		{http.MethodPost, "/api/v1/base/base-victim/image"},
 		{http.MethodGet, "/api/v1/base/base-victim/members"},
+		{http.MethodGet, "/api/v1/base/base-victim/api"},
+		{http.MethodPost, "/api/v1/base/base-victim/api/enable"},
 		{http.MethodGet, "/api/v1/base/unknown-base"},
 		// User profile
 		{http.MethodGet, "/api/v1/user/profile/user-a"},

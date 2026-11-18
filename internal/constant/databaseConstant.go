@@ -1087,9 +1087,9 @@ var DefinedFunctions = []Function{
 		`,
 	},
 	{
-		// Row trigger on bases, models and columns: a change to a workspace's bases, tables or fields bumps
-		// workspace_api.schema_version, in the same transaction. Workspaces without the API have no row.
-		FunctionName:   "workspace_api_bump_schema_version",
+		// Row trigger on bases, models and columns: a change to a base, its tables or its fields bumps
+		// base_api.schema_version, in the same transaction. Bases without the API have no row.
+		FunctionName:   "base_api_bump_schema_version",
 		FunctionParams: "",
 		FunctionSQL: `
 			RETURNS TRIGGER
@@ -1097,23 +1097,21 @@ var DefinedFunctions = []Function{
 			$$
 			DECLARE
 				r RECORD;
-				ws TEXT;
+				bid TEXT;
 			BEGIN
 				IF TG_OP = 'DELETE' THEN
 					r := OLD;
 				ELSE
 					r := NEW;
 				END IF;
-				IF TG_TABLE_NAME = 'columns' THEN
-					-- Fields are found through their base; when the base itself is being deleted its own trigger bumps
-					EXECUTE format('SELECT workspace_id::text FROM %I.bases WHERE id::text = $1', TG_TABLE_SCHEMA)
-						INTO ws USING r.base_id::text;
+				IF TG_TABLE_NAME = 'bases' THEN
+					bid := r.id::text;
 				ELSE
-					ws := r.workspace_id::text;
+					bid := r.base_id::text;
 				END IF;
-				IF ws IS NOT NULL THEN
-					EXECUTE format('UPDATE %I.workspace_api SET schema_version = schema_version + 1 WHERE workspace_id = $1', TG_TABLE_SCHEMA)
-						USING ws;
+				IF bid IS NOT NULL THEN
+					EXECUTE format('UPDATE %I.base_api SET schema_version = schema_version + 1 WHERE base_id = $1', TG_TABLE_SCHEMA)
+						USING bid;
 				END IF;
 				RETURN NULL;
 			END;
@@ -1127,30 +1125,30 @@ var DefinedFunctions = []Function{
 const InstallSchemaVersionTriggersQuery = `
 	DROP TRIGGER IF EXISTS sb_schema_version_change ON %[1]s.bases;
 	CREATE TRIGGER sb_schema_version_change AFTER INSERT OR DELETE ON %[1]s.bases
-		FOR EACH ROW EXECUTE FUNCTION %[1]s.workspace_api_bump_schema_version();
+		FOR EACH ROW EXECUTE FUNCTION %[1]s.base_api_bump_schema_version();
 	DROP TRIGGER IF EXISTS sb_schema_version_update ON %[1]s.bases;
 	CREATE TRIGGER sb_schema_version_update AFTER UPDATE OF title, status ON %[1]s.bases
 		FOR EACH ROW WHEN (OLD.title IS DISTINCT FROM NEW.title OR OLD.status IS DISTINCT FROM NEW.status)
-		EXECUTE FUNCTION %[1]s.workspace_api_bump_schema_version();
+		EXECUTE FUNCTION %[1]s.base_api_bump_schema_version();
 
 	DROP TRIGGER IF EXISTS sb_schema_version_change ON %[1]s.models;
 	CREATE TRIGGER sb_schema_version_change AFTER INSERT OR DELETE ON %[1]s.models
-		FOR EACH ROW EXECUTE FUNCTION %[1]s.workspace_api_bump_schema_version();
+		FOR EACH ROW EXECUTE FUNCTION %[1]s.base_api_bump_schema_version();
 	DROP TRIGGER IF EXISTS sb_schema_version_update ON %[1]s.models;
 	CREATE TRIGGER sb_schema_version_update AFTER UPDATE OF title, deleted, order_index ON %[1]s.models
 		FOR EACH ROW WHEN (OLD.title IS DISTINCT FROM NEW.title OR OLD.deleted IS DISTINCT FROM NEW.deleted
 			OR OLD.order_index IS DISTINCT FROM NEW.order_index)
-		EXECUTE FUNCTION %[1]s.workspace_api_bump_schema_version();
+		EXECUTE FUNCTION %[1]s.base_api_bump_schema_version();
 
 	DROP TRIGGER IF EXISTS sb_schema_version_change ON %[1]s.columns;
 	CREATE TRIGGER sb_schema_version_change AFTER INSERT OR DELETE ON %[1]s.columns
-		FOR EACH ROW EXECUTE FUNCTION %[1]s.workspace_api_bump_schema_version();
+		FOR EACH ROW EXECUTE FUNCTION %[1]s.base_api_bump_schema_version();
 	DROP TRIGGER IF EXISTS sb_schema_version_update ON %[1]s.columns;
 	CREATE TRIGGER sb_schema_version_update AFTER UPDATE OF title, uidt, dt, meta, deleted, order_index ON %[1]s.columns
 		FOR EACH ROW WHEN (OLD.title IS DISTINCT FROM NEW.title OR OLD.uidt IS DISTINCT FROM NEW.uidt
 			OR OLD.dt IS DISTINCT FROM NEW.dt OR OLD.meta IS DISTINCT FROM NEW.meta
 			OR OLD.deleted IS DISTINCT FROM NEW.deleted OR OLD.order_index IS DISTINCT FROM NEW.order_index)
-		EXECUTE FUNCTION %[1]s.workspace_api_bump_schema_version();`
+		EXECUTE FUNCTION %[1]s.base_api_bump_schema_version();`
 
 // DroppedFunctions are signatures replaced by a new signature or no longer used; they are dropped
 // before DefinedFunctions are installed so stale overloads are not left behind.
@@ -1161,6 +1159,8 @@ var DroppedFunctions = []string{
 	"remove_link_back_references(JSON[], BIGINT[], TEXT)",
 	// Placeholder key values for new rows are no longer generated; CASCADE drops its sb_key_defaults triggers
 	"key_fill_defaults() CASCADE",
+	// Replaced by base_api_bump_schema_version; CASCADE drops the triggers that used it (they are reinstalled right after)
+	"workspace_api_bump_schema_version() CASCADE",
 }
 
 // LinkColumnsToMigrateQuery lists link columns still stored as row ids (INT / INT[]) with their table and target table

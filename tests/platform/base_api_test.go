@@ -22,13 +22,13 @@ import (
 
 const (
 	schema      = "public"
-	workspaceID = "740da362-0722-41b7-b8cc-3b04bdf8fcbd"
-	publicID    = "ws_8f3k2m9qx7"
+	baseID = "740da362-0722-41b7-b8cc-3b04bdf8fcbd"
+	publicID    = "bs_8f3k2m9qx7"
 )
 
-var publicIDPattern = regexp.MustCompile(`^ws_[0-9a-z]{10}$`)
+var publicIDPattern = regexp.MustCompile(`^bs_[0-9a-z]{10}$`)
 
-// mockTableService implements the table calls the workspace API service makes; the embedded
+// mockTableService implements the table calls the base API service makes; the embedded
 // interface is nil, so any other call panics
 type mockTableService struct {
 	pgInterfaces.Table
@@ -59,14 +59,14 @@ func (m *mockTableService) UpdateByColumns(tableName string, where dbModels.Comp
 	return args.Get(0).(map[string]interface{}), args.Error(1)
 }
 
-func setup() (interfaces.WorkspaceAPIService, *mockTableService, string) {
+func setup() (interfaces.BaseAPIService, *mockTableService, string) {
 	m := &mockTableService{}
-	return platform.NewWorkspaceAPIService(&pkg.DatabaseService{TableService: m}), m, tenant.WorkspaceAPI{}.TableName(schema)
+	return platform.NewBaseAPIService(&pkg.DatabaseService{TableService: m}), m, tenant.BaseAPI{}.TableName(schema)
 }
 
 func row(enabled bool) map[string]interface{} {
 	r := map[string]interface{}{
-		"workspace_id":       workspaceID,
+		"base_id":       baseID,
 		"public_id":          publicID,
 		"enabled":            enabled,
 		"enabled_at":         nil,
@@ -97,17 +97,17 @@ func TestNewPublicIDFormat(t *testing.T) {
 }
 
 func TestBasePath(t *testing.T) {
-	assert.Equal(t, "/api/v1/ws_8f3k2m9qx7", platform.BasePath(publicID))
+	assert.Equal(t, "/api/v1/bs_8f3k2m9qx7", platform.BasePath(publicID))
 }
 
 func TestGetWithoutRowIsDisabled(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
 
-	out, err := svc.Get(context.Background(), schema, workspaceID)
+	out, err := svc.Get(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
-	assert.Equal(t, workspaceID, out.WorkspaceID)
+	assert.Equal(t, baseID, out.BaseID)
 	assert.False(t, out.Enabled)
 	assert.Empty(t, out.PublicID)
 	assert.Empty(t, out.BasePath)
@@ -117,10 +117,10 @@ func TestGetWithoutRowIsDisabled(t *testing.T) {
 func TestGetReturnsRow(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.MatchedBy(func(p dbModels.QueryParams) bool {
-		return len(p.Filters) == 1 && p.Filters[0].Column == "workspace_id" && p.Filters[0].Value == workspaceID
+		return len(p.Filters) == 1 && p.Filters[0].Column == "base_id" && p.Filters[0].Value == baseID
 	})).Return([]map[string]interface{}{row(true)}, nil)
 
-	out, err := svc.Get(context.Background(), schema, workspaceID)
+	out, err := svc.Get(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
 	assert.True(t, out.Enabled)
@@ -133,7 +133,7 @@ func TestGetDatabaseError(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return(nil, errors.New("connection refused"))
 
-	_, err := svc.Get(context.Background(), schema, workspaceID)
+	_, err := svc.Get(context.Background(), schema, baseID)
 
 	assert.ErrorIs(t, err, app_errors.DatabaseError)
 }
@@ -144,10 +144,10 @@ func TestEnableCreatesRow(t *testing.T) {
 	m.On("CreateRecord", table, mock.MatchedBy(func(data map[string]interface{}) bool {
 		id, _ := data["public_id"].(string)
 		_, hasEnabledAt := data["enabled_at"].(time.Time)
-		return data["workspace_id"] == workspaceID && data["enabled"] == true && hasEnabledAt && publicIDPattern.MatchString(id)
+		return data["base_id"] == baseID && data["enabled"] == true && hasEnabledAt && publicIDPattern.MatchString(id)
 	})).Return(row(true), nil)
 
-	out, err := svc.Enable(context.Background(), schema, workspaceID)
+	out, err := svc.Enable(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
 	assert.True(t, out.Enabled)
@@ -161,7 +161,7 @@ func TestEnableAlreadyEnabledWritesNothing(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{row(true)}, nil)
 
-	out, err := svc.Enable(context.Background(), schema, workspaceID)
+	out, err := svc.Enable(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
 	assert.True(t, out.Enabled)
@@ -175,7 +175,7 @@ func TestEnableTurnsDisabledRowBackOn(t *testing.T) {
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{row(false)}, nil)
 	m.On("UpdateByColumns", table,
 		mock.MatchedBy(func(where dbModels.ComplexFilter) bool {
-			return len(where.Filters) == 1 && where.Filters[0].Column == "workspace_id" && where.Filters[0].Value == workspaceID
+			return len(where.Filters) == 1 && where.Filters[0].Column == "base_id" && where.Filters[0].Value == baseID
 		}),
 		mock.MatchedBy(func(data map[string]any) bool {
 			_, hasEnabledAt := data["enabled_at"].(time.Time)
@@ -184,7 +184,7 @@ func TestEnableTurnsDisabledRowBackOn(t *testing.T) {
 		}),
 	).Return(row(true), nil)
 
-	out, err := svc.Enable(context.Background(), schema, workspaceID)
+	out, err := svc.Enable(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
 	assert.True(t, out.Enabled)
@@ -195,10 +195,10 @@ func TestEnableTurnsDisabledRowBackOn(t *testing.T) {
 func TestEnableRetriesWhenPublicIDTaken(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
-	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23505", "workspace_api_public_id_key")).Once()
+	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23505", "base_api_public_id_key")).Once()
 	m.On("CreateRecord", table, mock.Anything).Return(row(true), nil).Once()
 
-	out, err := svc.Enable(context.Background(), schema, workspaceID)
+	out, err := svc.Enable(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
 	assert.Equal(t, publicID, out.PublicID)
@@ -208,35 +208,35 @@ func TestEnableRetriesWhenPublicIDTaken(t *testing.T) {
 func TestEnableGivesUpAfterFiveTakenPublicIDs(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
-	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23505", "workspace_api_public_id_key"))
+	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23505", "base_api_public_id_key"))
 
-	_, err := svc.Enable(context.Background(), schema, workspaceID)
+	_, err := svc.Enable(context.Background(), schema, baseID)
 
-	assert.ErrorIs(t, err, app_errors.WorkspaceAPIPublicIDFailed)
+	assert.ErrorIs(t, err, app_errors.BaseAPIPublicIDFailed)
 	m.AssertNumberOfCalls(t, "CreateRecord", 5)
 }
 
 func TestEnableConcurrentRequestCreatedRowFirst(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil).Once()
-	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23505", "workspace_api_pkey")).Once()
+	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23505", "base_api_pkey")).Once()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{row(true)}, nil).Once()
 
-	out, err := svc.Enable(context.Background(), schema, workspaceID)
+	out, err := svc.Enable(context.Background(), schema, baseID)
 
 	require.NoError(t, err)
 	assert.Equal(t, publicID, out.PublicID, "the row the other request created is returned")
 	m.AssertNumberOfCalls(t, "CreateRecord", 1)
 }
 
-func TestEnableMissingWorkspace(t *testing.T) {
+func TestEnableMissingBase(t *testing.T) {
 	svc, m, table := setup()
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
-	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23503", "workspace_api_workspace_id_fkey"))
+	m.On("CreateRecord", table, mock.Anything).Return(nil, pgError("23503", "base_api_base_id_fkey"))
 
-	_, err := svc.Enable(context.Background(), schema, workspaceID)
+	_, err := svc.Enable(context.Background(), schema, baseID)
 
-	assert.ErrorIs(t, err, app_errors.WorkspaceNotFound)
+	assert.ErrorIs(t, err, app_errors.BaseNotFound)
 }
 
 func TestEnableOtherDatabaseError(t *testing.T) {
@@ -244,7 +244,7 @@ func TestEnableOtherDatabaseError(t *testing.T) {
 	m.On("GetTableData", table, mock.Anything).Return([]map[string]interface{}{}, nil)
 	m.On("CreateRecord", table, mock.Anything).Return(nil, errors.New("connection reset"))
 
-	_, err := svc.Enable(context.Background(), schema, workspaceID)
+	_, err := svc.Enable(context.Background(), schema, baseID)
 
 	assert.ErrorIs(t, err, app_errors.DatabaseError)
 }

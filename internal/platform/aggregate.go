@@ -132,7 +132,7 @@ func (a *API) aggregateRecords(c *gin.Context) {
 	defer cancel()
 	fail := func(err error) { respondError(c, timeoutError(ctx, err)) }
 
-	opts, err := parseAggregate(body, tc.fields, a.aggTargets(ctx, tc.ws))
+	opts, err := parseAggregate(body, tc.fields, a.aggTargets(ctx, tc.base))
 	if err != nil {
 		fail(err)
 		return
@@ -142,7 +142,7 @@ func (a *API) aggregateRecords(c *gin.Context) {
 		fail(err)
 		return
 	}
-	filters, err := parseFilters(filterParams, tc.fields, a.linkResolver(ctx, tc.ws))
+	filters, err := parseFilters(filterParams, tc.fields, a.linkResolver(ctx, tc.base))
 	if err != nil {
 		fail(err)
 		return
@@ -165,13 +165,13 @@ func (a *API) aggregateRecords(c *gin.Context) {
 }
 
 // aggTargets finds link fields' linked tables, once each per request
-func (a *API) aggTargets(ctx context.Context, ws workspaceRef) aggTargets {
+func (a *API) aggTargets(ctx context.Context, base baseRef) aggTargets {
 	found := map[*field]*aggTarget{}
 	return func(link *field) (*aggTarget, error) {
 		if t, ok := found[link]; ok {
 			return t, nil
 		}
-		tc, err := a.linkedTable(ctx, ws, link)
+		tc, err := a.linkedTable(ctx, base, link)
 		if err != nil || tc == nil {
 			return nil, err
 		}

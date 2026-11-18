@@ -13,11 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type baseOut struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
 type tableOut struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -51,29 +46,9 @@ type tableDetailOut struct {
 	Fields []fieldOut `json:"fields"`
 }
 
-// GET /bases
-func (a *API) listBases(c *gin.Context) {
-	bases, err := a.bases(c, currentWorkspace(c))
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	out := make([]baseOut, len(bases))
-	for i, b := range bases {
-		out[i] = baseOut{ID: EncodeUUID(PrefixBase, b.ID), Name: b.Title}
-	}
-	respond(c, http.StatusOK, out)
-}
-
-// GET /bases/{base}/tables
+// GET /tables
 func (a *API) listTables(c *gin.Context) {
-	ws := currentWorkspace(c)
-	base, err := a.resolveBase(c, ws, c.Param("base"))
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	tables, err := a.tables(c, ws, base)
+	tables, err := a.tables(c, currentBase(c))
 	if err != nil {
 		respondError(c, err)
 		return
@@ -85,7 +60,7 @@ func (a *API) listTables(c *gin.Context) {
 	respond(c, http.StatusOK, out)
 }
 
-// GET /bases/{base}/tables/{table}: the table with its fields. Lookups are not listed as fields: they are
+// GET /tables/{table}: the table with its fields. Lookups are not listed as fields: they are
 // listed under the link field whose objects carry them.
 func (a *API) getTable(c *gin.Context) {
 	tc, err := a.resolveTablePath(c)
@@ -126,7 +101,7 @@ func (a *API) getTable(c *gin.Context) {
 
 // linkLookupFields lists the lookups that go through a link field, as keyed in its objects
 func (a *API) linkLookupFields(c *gin.Context, tc *tableContext, link *field) ([]lookupOut, error) {
-	targets, keys, err := a.linkObjectKeys(c, tc.ws, tc.fields, link)
+	targets, keys, err := a.linkObjectKeys(c, tc.base, tc.fields, link)
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +113,14 @@ func (a *API) linkLookupFields(c *gin.Context, tc *tableContext, link *field) ([
 }
 
 // linkObjectKeys returns the looked-up fields a link field's objects carry besides id, with their keys by name
-func (a *API) linkObjectKeys(ctx context.Context, ws workspaceRef, fields []*field, link *field) ([]*field, map[*field]string, error) {
+func (a *API) linkObjectKeys(ctx context.Context, base baseRef, fields []*field, link *field) ([]*field, map[*field]string, error) {
 	var lookups []*field
 	for _, f := range fields {
 		if f.Type == typeLookup && strings.EqualFold(f.LookupLinkColumnID, link.ID) {
 			lookups = append(lookups, f)
 		}
 	}
-	_, targets, err := a.lookupTargets(ctx, ws, link, lookups)
+	_, targets, err := a.lookupTargets(ctx, base, link, lookups)
 	if err != nil {
 		return nil, nil, err
 	}

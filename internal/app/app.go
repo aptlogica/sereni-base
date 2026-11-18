@@ -227,9 +227,9 @@ func New(cfg *config.Config) (*App, error) {
 	)
 
 	organizationService := services.NewOrganizationService(dbService)
-	workspaceAPIService := platform.NewWorkspaceAPIService(dbService)
+	baseAPIService := platform.NewBaseAPIService(dbService)
 
-	// Workspace public API, open without authentication: only built when PUBLIC_API_OPEN_ACCESS is on
+	// Base public API, open without authentication: only built when PUBLIC_API_OPEN_ACCESS is on
 	var publicAPI *platform.API
 	if cfg.PublicAPI.OpenAccess {
 		recordWriter, ok := tableManagementService.(platform.RecordWriter)
@@ -250,9 +250,7 @@ func New(cfg *config.Config) (*App, error) {
 	automationHandler := handlers.NewAutomationHandler(automationService)
 	tableConstraintHandler := handlers.NewTableConstraintHandler(tableConstraintService)
 	primaryKeyHandler := handlers.NewPrimaryKeyHandler(primaryKeyService)
-	workspaceAPIHandler := handlers.NewWorkspaceAPIHandler(workspaceAPIService)
-
-
+	baseAPIHandler := handlers.NewBaseAPIHandler(baseAPIService)
 
 	handlerGroups := router.Handlers{
 		Auth:            authHandler,
@@ -264,10 +262,9 @@ func New(cfg *config.Config) (*App, error) {
 		Organization:    organizationHandler,
 		Automation:      automationHandler,
 		TableConstraint: tableConstraintHandler,
-		PrimaryKey:   primaryKeyHandler,
-		WorkspaceAPI: workspaceAPIHandler,
-		PublicAPI:    publicAPI,
-
+		PrimaryKey:      primaryKeyHandler,
+		BaseAPI:         baseAPIHandler,
+		PublicAPI:       publicAPI,
 	}
 
 	middlewareGroups := router.Middlewares{
@@ -369,9 +366,9 @@ func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, 
 	if err := scripts.RegisterOwner(repo, authProvider, cfg); err != nil {
 		fmt.Printf("⚠ Warning: Owner registration failed: %v\n", err)
 	}
-	// Test workspaces for the public API, only while it is open without authentication
+	// Test bases for the public API, only while it is open without authentication
 	if cfg.PublicAPI.OpenAccess && cfg.PublicAPI.SeedWorkspaces != "" {
-		scripts.SeedAPIWorkspaces(repo, cfg.PublicAPI.SeedWorkspaces)
+		scripts.SeedAPIBases(repo, cfg.PublicAPI.SeedWorkspaces)
 	}
 }
 

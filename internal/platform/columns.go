@@ -102,17 +102,12 @@ type pgConstraint struct {
 	Columns                []string
 }
 
-// GET /bases/{base}/tables/{table}/columns: every column of the table with its metadata, its database type,
+// GET /tables/{table}/columns: every column of the table with its metadata, its database type,
 // nullability and default, whether it is in the primary key, and the constraints it is part of. Read fresh on
-// every request: constraint changes don't change the workspace's schema version.
+// every request: constraint changes don't change the base's schema version.
 func (a *API) listColumns(c *gin.Context) {
-	ws := currentWorkspace(c)
-	base, err := a.resolveBase(c, ws, c.Param("base"))
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	table, err := a.resolveTable(c, ws, base, c.Param("table"))
+	base := currentBase(c)
+	table, err := a.resolveTable(c, base, c.Param("table"))
 	if err != nil {
 		respondError(c, err)
 		return
@@ -125,7 +120,7 @@ func (a *API) listColumns(c *gin.Context) {
 	respond(c, http.StatusOK, out)
 }
 
-func (a *API) tableColumns(ctx context.Context, base *baseInfo, table *tableInfo) (*tableColumnsOut, error) {
+func (a *API) tableColumns(ctx context.Context, base baseRef, table *tableInfo) (*tableColumnsOut, error) {
 	metas, err := a.columnMetas(ctx, table)
 	if err != nil {
 		return nil, err

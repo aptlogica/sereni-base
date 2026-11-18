@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	specURL  = "/api/v1/" + mockWS + "/openapi.json"
+	specURL  = "/api/v1/" + mockBS + "/openapi.json"
 	mockTID  = "tbl_33333333333333333333333333333333"
-	ordersAt = "/bases/Main/tables/Orders"
+	ordersAt = "/tables/Orders"
 )
 
 // expectLinkLookups expects the reads of Customer's linked table and its fields, for the link objects' lookups
@@ -66,16 +66,16 @@ func TestOpenAPISpecDescribesTheTables(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, doc.Validate(context.Background()))
 
-	assert.Equal(t, []interface{}{map[string]interface{}{"url": "/api/v1/" + mockWS}}, spec["servers"])
+	assert.Equal(t, []interface{}{map[string]interface{}{"url": "/api/v1/" + mockBS}}, spec["servers"])
 	paths := obj(t, spec, "paths")
-	for _, p := range []string{"/bases", "/bases/{base}/tables/{table}", ordersAt + "/records", ordersAt + "/records/{record}", ordersAt + "/records/delete"} {
+	for _, p := range []string{"/tables", "/tables/{table}", ordersAt + "/records", ordersAt + "/records/{record}", ordersAt + "/records/delete"} {
 		assert.Contains(t, paths, p)
 	}
-	assert.NotContains(t, paths, "/bases/{base}/tables/{table}/records", "the generic records paths give way to the tables'")
+	assert.NotContains(t, paths, "/tables/{table}/records", "the generic records paths give way to the tables'")
 
 	list := obj(t, paths, ordersAt+"/records", "get")
 	assert.Equal(t, "listRecords_"+mockTID, list["operationId"])
-	assert.Equal(t, []interface{}{"Main / Orders"}, list["tags"])
+	assert.Equal(t, []interface{}{"Orders"}, list["tags"])
 	assert.Empty(t, obj(t, paths, ordersAt+"/records")["parameters"], "no base or table parameters")
 
 	schemas := obj(t, spec, "components", "schemas")
@@ -98,10 +98,10 @@ func TestOpenAPISpecDescribesTheTables(t *testing.T) {
 	assert.Contains(t, obj(t, write, "Customer", "items"), "oneOf")
 	assert.NotContains(t, obj(t, schemas, "FieldsBulkWrite_"+mockTID, "properties"), "Customer", "no links in bulk writes")
 
-	// Reading it again is cached: only the workspace lookup every request makes, and the ETag answers 304
+	// Reading it again is cached: only the base lookup every request makes, and the ETag answers 304
 	etag := w.Header().Get("ETag")
 	require.NotEmpty(t, etag)
-	m.expectWorkspace()
+	m.expectBase()
 	req := httptest.NewRequest("GET", specURL, nil)
 	req.Header.Set("If-None-Match", etag)
 	w = httptest.NewRecorder()
@@ -110,32 +110,18 @@ func TestOpenAPISpecDescribesTheTables(t *testing.T) {
 	require.NoError(t, m.mock.ExpectationsWereMet())
 }
 
-func TestOpenAPISpecForOneBase(t *testing.T) {
-	m := newMockAPI(t, 600)
-	m.expectSchema()
-
-	w, spec := getSpec(t, m, specURL+"?base=Main")
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	assert.Contains(t, obj(t, spec, "paths"), ordersAt+"/records")
-
-	w, res := m.do("GET", specURL+"?base=Nope", nil)
-	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.Equal(t, "not_found", res.Error.Code)
-	require.NoError(t, m.mock.ExpectationsWereMet())
-}
-
 func TestDocsPagesLoadTheSpec(t *testing.T) {
 	m := newMockAPI(t, 600)
 
-	w, _ := m.do("GET", "/api/v1/"+mockWS+"/docs", nil)
+	w, _ := m.do("GET", "/api/v1/"+mockBS+"/docs", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "text/html; charset=utf-8", w.Header().Get("Content-Type"))
 	assert.Contains(t, w.Body.String(), `SwaggerUIBundle({url: "openapi.json"`)
 	assert.Contains(t, w.Body.String(), `/swagger/swagger-ui-bundle.js`)
 
-	w, _ = m.do("GET", "/api/v1/"+mockWS+"/redoc?base=Main", nil)
+	w, _ = m.do("GET", "/api/v1/"+mockBS+"/redoc", nil)
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), `<redoc spec-url="openapi.json?base=Main">`)
+	assert.Contains(t, w.Body.String(), `<redoc spec-url="openapi.json">`)
 	assert.Contains(t, w.Body.String(), `redoc@2.1.5/bundles/redoc.standalone.js`)
 	require.NoError(t, m.mock.ExpectationsWereMet())
 }

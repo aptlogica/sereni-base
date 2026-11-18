@@ -123,13 +123,13 @@ type CORSConfig struct {
 	AllowCredentials bool   `mapstructure:"allow_credentials"`
 }
 
-// PublicAPIConfig holds the workspace public API (/api/v1/{ws}) settings
+// PublicAPIConfig holds the base public API (/api/v1/{bs}) settings
 type PublicAPIConfig struct {
 	// OpenAccess registers the public API routes without authentication. Dev only: the server
 	// refuses to start with it on when SERVER_ENV is prod.
 	OpenAccess         bool `mapstructure:"open_access"`
 	RateLimitPerMinute int  `mapstructure:"rate_limit_per_minute"`
-	// Comma-separated workspace slugs whose API is enabled at startup when open access is on
+	// Comma-separated workspace slugs whose bases all get the API enabled at startup when open access is on
 	SeedWorkspaces string `mapstructure:"seed_workspaces"`
 }
 

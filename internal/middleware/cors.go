@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PublicAPIPathPrefix starts every workspace public API path (/api/v1/{ws}/...). No internal route may start with it.
-const PublicAPIPathPrefix = "/api/v1/ws_"
+// PublicAPIPathPrefix starts every base public API path (/api/v1/{bs}/...). No internal route may start with it.
+const PublicAPIPathPrefix = "/api/v1/bs_"
 
 const (
 	publicAPIAllowMethods   = "GET, POST, PATCH, DELETE, QUERY, OPTIONS"
@@ -24,7 +24,7 @@ const (
 	publicAPIPreflightCache = "600"
 )
 
-// publicAPICORS lets a site on any origin call the workspace public API. It uses no cookies or sessions, so
+// publicAPICORS lets a site on any origin call the base public API. It uses no cookies or sessions, so
 // browsers send no credentials and "*" is safe; access will be decided by API keys sent in headers.
 func publicAPICORS(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", "*")

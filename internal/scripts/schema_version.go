@@ -12,7 +12,7 @@ import (
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 )
 
-// InstallSchemaVersionTriggers (re)installs the triggers that bump workspace_api.schema_version whenever a base,
+// InstallSchemaVersionTriggers (re)installs the triggers that bump base_api.schema_version whenever a base,
 // table or field changes. Safe to run on every start.
 func InstallSchemaVersionTriggers(repo *pkg.DatabaseService, schemaName string) error {
 	if repo == nil || repo.DB == nil {

@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	mockWS       = "ws_abcdefghij"
+	mockBS       = "bs_abcdefghij"
 	mockWSID     = "11111111-1111-1111-1111-111111111111"
 	mockBaseID   = "22222222-2222-2222-2222-222222222222"
 	mockTableID  = "33333333-3333-3333-3333-333333333333"
@@ -69,15 +69,15 @@ type mockAPI struct {
 	r      *gin.Engine
 	mock   sqlmock.Sqlmock
 	writer *fakeWriter
-	// noWorkspace stops do from expecting the workspace lookup, for tests that expect it themselves
-	noWorkspace bool
+	// noBase stops do from expecting the base lookup, for tests that expect it themselves
+	noBase bool
 }
 
 func newMockAPI(t *testing.T, rateLimit int) *mockAPI {
 	t.Helper()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	// Every request reads the workspace first (do expects it), so the workspace lookup comes after the queries a
+	// Every request reads the base first (do expects it), so the base lookup comes after the queries a
 	// test expects up front; other queries still match in the order they were expected
 	mock.MatchExpectationsInOrder(false)
 	t.Cleanup(func() { _ = db.Close() })
@@ -92,18 +92,16 @@ func newMockAPI(t *testing.T, rateLimit int) *mockAPI {
 
 func q(s string) string { return regexp.QuoteMeta(s) }
 
-// expectWorkspace expects the workspace lookup every request makes: found, at schema version 1
-func (m *mockAPI) expectWorkspace() {
-	m.mock.ExpectQuery(q(`FROM "public".workspace_api WHERE public_id = $1 AND enabled = true`)).WithArgs(mockWS).
-		WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}).AddRow(mockWSID, 1))
+// expectBase expects the base lookup every request makes: found, at schema version 1
+func (m *mockAPI) expectBase() {
+	m.mock.ExpectQuery(q(`FROM "public".base_api a JOIN "public".bases b ON b.id = a.base_id WHERE a.public_id = $1 AND a.enabled = true`)).WithArgs(mockBS).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "schema_version"}).AddRow(mockBaseID, mockWSID, 1))
 }
 
 // expectSchema expects the reads of the base, the table and its fields; extra
 // columns are added after the table's own
 func (m *mockAPI) expectSchema(extra ...[3]string) {
-	m.mock.ExpectQuery(q(`FROM "public".bases WHERE workspace_id = $1`)).WithArgs(mockWSID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(mockBaseID, "Main"))
-	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID, mockWSID).
+	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}).AddRow(mockTableID, mockBaseID, "Orders", mockAlias))
 	cols := sqlmock.NewRows([]string{"id", "title", "column_name", "uidt", "dt", "meta", "system", "order_index"})
 	add := func(id, title, column, uidt, meta string, system bool) {
@@ -133,7 +131,7 @@ func (m *mockAPI) expectSchema(extra ...[3]string) {
 }
 
 func (m *mockAPI) expectLinkTarget() {
-	m.mock.ExpectQuery(q(`FROM "public".models WHERE id = $1 AND workspace_id = $2`)).WithArgs(mockTargetID, mockWSID).
+	m.mock.ExpectQuery(q(`FROM "public".models WHERE id = $1 AND base_id = $2`)).WithArgs(mockTargetID, mockBaseID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}).AddRow(mockTargetID, mockBaseID, "Customers", "customers_x"))
 }
 
@@ -143,8 +141,8 @@ func (m *mockAPI) expectDefaultKey() {
 }
 
 func (m *mockAPI) do(method, path string, body interface{}) (*httptest.ResponseRecorder, apiEnvelope) {
-	if !m.noWorkspace && strings.HasPrefix(path, "/api/v1/"+mockWS+"/") {
-		m.expectWorkspace()
+	if !m.noBase && strings.HasPrefix(path, "/api/v1/"+mockBS+"/") {
+		m.expectBase()
 	}
 	var reader *bytes.Reader
 	if body != nil {
@@ -160,15 +158,15 @@ func (m *mockAPI) do(method, path string, body interface{}) (*httptest.ResponseR
 	return w, out
 }
 
-const ordersURL = "/api/v1/" + mockWS + "/bases/Main/tables/Orders"
+const ordersURL = "/api/v1/" + mockBS + "/tables/Orders"
 
-func TestAPIUnknownWorkspaceIsCachedAsMiss(t *testing.T) {
+func TestAPIUnknownBaseIsCachedAsMiss(t *testing.T) {
 	m := newMockAPI(t, 600)
-	m.noWorkspace = true
-	m.mock.ExpectQuery(q(`FROM "public".workspace_api`)).WithArgs(mockWS).WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}))
+	m.noBase = true
+	m.mock.ExpectQuery(q(`FROM "public".base_api a JOIN`)).WithArgs(mockBS).WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "schema_version"}))
 
 	for i := 0; i < 2; i++ {
-		w, res := m.do("GET", "/api/v1/"+mockWS+"/bases", nil)
+		w, res := m.do("GET", "/api/v1/"+mockBS+"/tables", nil)
 		assert.Equal(t, http.StatusNotFound, w.Code)
 		require.NotNil(t, res.Error)
 		assert.Equal(t, "not_found", res.Error.Code)
@@ -178,7 +176,7 @@ func TestAPIUnknownWorkspaceIsCachedAsMiss(t *testing.T) {
 	assert.NoError(t, m.mock.ExpectationsWereMet(), "the second request is answered from the cache")
 
 	// Not a public ID at all: no query
-	w, res := m.do("GET", "/api/v1/workspace-x/bases", nil)
+	w, res := m.do("GET", "/api/v1/base-x/tables", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "not_found", res.Error.Code)
 }
@@ -472,7 +470,7 @@ func TestAPIWriteErrorsKeepTheAppMessage(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "database", "database errors are not shown")
 }
 
-// A column that no longer exists is schema_changed (409, try again) when the workspace's schema_version moved
+// A column that no longer exists is schema_changed (409, try again) when the base's schema_version moved
 // on during the request, and internal_error (500) when it didn't: then the SQL is wrong, a bug to fix
 func TestAPIMissingColumnIsSchemaChangedOnlyAfterAChange(t *testing.T) {
 	cases := []struct {
@@ -485,14 +483,14 @@ func TestAPIMissingColumnIsSchemaChangedOnlyAfterAChange(t *testing.T) {
 	}
 	for _, tc := range cases {
 		m := newMockAPI(t, 600)
-		m.noWorkspace = true
-		m.expectWorkspace() // the request starts at schema version 1
+		m.noBase = true
+		m.expectBase() // the request starts at schema version 1
 		m.expectSchema()
 		m.mock.ExpectQuery(q(`SELECT row_to_json(t)::text`)).
 			WillReturnError(&pq.Error{Code: "42703", Message: `column "price_x" does not exist`})
-		// The check: the workspace read again
-		m.mock.ExpectQuery(q(`FROM "public".workspace_api WHERE public_id = $1 AND enabled = true`)).WithArgs(mockWS).
-			WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}).AddRow(mockWSID, tc.versionAfter))
+		// The check: the base read again
+		m.mock.ExpectQuery(q(`FROM "public".base_api a JOIN "public".bases b ON b.id = a.base_id WHERE a.public_id = $1 AND a.enabled = true`)).WithArgs(mockBS).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "schema_version"}).AddRow(mockBaseID, mockWSID, tc.versionAfter))
 
 		w, res := m.do("GET", ordersURL+"/records", nil)
 		assert.Equal(t, tc.status, w.Code, tc.code)
@@ -503,15 +501,15 @@ func TestAPIMissingColumnIsSchemaChangedOnlyAfterAChange(t *testing.T) {
 	}
 }
 
-func TestAPIRateLimitPerWorkspace(t *testing.T) {
+func TestAPIRateLimitPerBase(t *testing.T) {
 	m := newMockAPI(t, 2)
-	m.mock.ExpectQuery(q(`FROM "public".bases`)).WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
+	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}))
 
 	for i := 0; i < 2; i++ {
-		w, _ := m.do("GET", "/api/v1/"+mockWS+"/bases", nil)
+		w, _ := m.do("GET", "/api/v1/"+mockBS+"/tables", nil)
 		require.Equal(t, http.StatusOK, w.Code)
 	}
-	w, res := m.do("GET", "/api/v1/"+mockWS+"/bases", nil)
+	w, res := m.do("GET", "/api/v1/"+mockBS+"/tables", nil)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 	assert.Equal(t, "rate_limited", res.Error.Code)
 	assert.NotEmpty(t, w.Header().Get("Retry-After"))
@@ -531,18 +529,16 @@ func TestAPISchemaEndpoints(t *testing.T) {
 	assert.NotContains(t, body, `"name":"Created Time"`)
 
 	// By ID, and an ID that doesn't exist
-	w, _ = m.do("GET", "/api/v1/"+mockWS+"/bases/bse_22222222222222222222222222222222/tables/tbl_33333333333333333333333333333333", nil)
+	w, _ = m.do("GET", "/api/v1/"+mockBS+"/tables/tbl_33333333333333333333333333333333", nil)
 	assert.Equal(t, http.StatusOK, w.Code)
-	w, res = m.do("GET", "/api/v1/"+mockWS+"/bases/Main/tables/tbl_99999999999999999999999999999999", nil)
+	w, res = m.do("GET", "/api/v1/"+mockBS+"/tables/tbl_99999999999999999999999999999999", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "not_found", res.Error.Code)
 }
 
 func TestAPIColumnsEndpoint(t *testing.T) {
 	m := newMockAPI(t, 600)
-	m.mock.ExpectQuery(q(`FROM "public".bases WHERE workspace_id = $1`)).WithArgs(mockWSID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(mockBaseID, "Main"))
-	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID, mockWSID).
+	m.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}).AddRow(mockTableID, mockBaseID, "Orders", mockAlias))
 	cols := sqlmock.NewRows([]string{"id", "title", "column_name", "uidt", "dt", "description", "meta", "system", "virtual", "order_index"}).
 		AddRow("aaaaaaaa-0000-0000-0000-000000000001", "Id", "id", "number", "integer", "", "{}", true, false, 0).
@@ -635,11 +631,9 @@ func TestAPIColumnsEndpoint(t *testing.T) {
 
 	// Unknown table
 	m2 := newMockAPI(t, 600)
-	m2.mock.ExpectQuery(q(`FROM "public".bases WHERE workspace_id = $1`)).WithArgs(mockWSID).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow(mockBaseID, "Main"))
-	m2.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID, mockWSID).
+	m2.mock.ExpectQuery(q(`FROM "public".models WHERE base_id = $1`)).WithArgs(mockBaseID).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}))
-	w, res = m2.do("GET", "/api/v1/"+mockWS+"/bases/Main/tables/Nope/columns", nil)
+	w, res = m2.do("GET", "/api/v1/"+mockBS+"/tables/Nope/columns", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "not_found", res.Error.Code)
 }
@@ -759,4 +753,21 @@ func TestAPIEmptyFiltersListEverything(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code, "%s: %s", query, w.Body.String())
 	}
 	assert.NoError(t, m.mock.ExpectationsWereMet())
+}
+
+// A link to a table of another base is not resolved: the target is looked up within the request's base only,
+// so the field is listed without lookups instead of failing the request
+func TestAPILinkToTableInAnotherBaseIsNotResolved(t *testing.T) {
+	m := newMockAPI(t, 600)
+	m.expectSchema(lookupColumn("aaaaaaaa-0000-0000-0000-000000000020", "Customer email", "bbbbbbbb-0000-0000-0000-000000000001"))
+	// The base-scoped lookup finds nothing for a table that belongs to another base
+	m.mock.ExpectQuery(q(`FROM "public".models WHERE id = $1 AND base_id = $2`)).WithArgs(mockTargetID, mockBaseID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "base_id", "title", "alias"}))
+
+	w, res := m.do("GET", ordersURL, nil)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, string(res.Data), `"name":"Customer","type":"links"`)
+	assert.Contains(t, string(res.Data), `"lookups":[]`)
+	require.NoError(t, m.mock.ExpectationsWereMet())
 }

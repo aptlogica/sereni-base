@@ -20,7 +20,7 @@ func corsRouter(handled *bool) *gin.Engine {
 		*handled = true
 		c.Status(http.StatusOK)
 	}
-	r.GET("/api/v1/ws_abcdefghij/bases", handler)
+	r.GET("/api/v1/bs_abcdefghij/tables", handler)
 	r.GET("/api/v1/workspace/w1", handler)
 	return r
 }
@@ -30,7 +30,7 @@ func TestCORS_PublicAPIAllowsAnyOrigin(t *testing.T) {
 	r := corsRouter(&handled)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ws_abcdefghij/bases", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bs_abcdefghij/tables", nil)
 	req.Header.Set("Origin", "https://my-app.example")
 	r.ServeHTTP(w, req)
 
@@ -46,7 +46,7 @@ func TestCORS_PublicAPIPreflight(t *testing.T) {
 	r := corsRouter(&handled)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodOptions, "/api/v1/ws_abcdefghij/bases", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/bs_abcdefghij/tables", nil)
 	req.Header.Set("Origin", "https://my-app.example")
 	req.Header.Set("Access-Control-Request-Method", "PATCH")
 	req.Header.Set("Access-Control-Request-Headers", "content-type,idempotency-key,x-client-version")

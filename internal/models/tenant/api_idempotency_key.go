@@ -15,7 +15,7 @@ import (
 // APIIdempotencyKey stores the response of a public API POST sent with an Idempotency-Key header, so a
 // retry with the same key gets the same response instead of writing twice. Rows are kept for 24 hours.
 type APIIdempotencyKey struct {
-	WorkspaceID  string `db:"workspace_id" json:"workspace_id" mapstructure:"workspace_id"`
+	BaseID       string `db:"base_id" json:"base_id" mapstructure:"base_id"`
 	Key          string `db:"key" json:"key" mapstructure:"key"`
 	RequestHash  string `db:"request_hash" json:"request_hash" mapstructure:"request_hash"`
 	Status       string `db:"status" json:"status" mapstructure:"status"`
@@ -39,7 +39,7 @@ func (tbl APIIdempotencyKey) TableSchema(prefix string) models.CreateTableReques
 	return models.CreateTableRequest{
 		Name: tbl.TableName(prefix),
 		Columns: []models.ColumnDefinition{
-			{Name: "workspace_id", DataType: "varchar", NotNull: true},
+			{Name: "base_id", DataType: "varchar", NotNull: true},
 			{Name: "key", DataType: "varchar(255)", NotNull: true},
 			{Name: "request_hash", DataType: "varchar(64)", NotNull: true},
 			{Name: "status", DataType: "varchar(16)", NotNull: true, DefaultValue: StrPtr("'in_progress'")},
@@ -47,15 +47,15 @@ func (tbl APIIdempotencyKey) TableSchema(prefix string) models.CreateTableReques
 			{Name: "response_body", DataType: "text"},
 			CreateTimestampColumn("created_time", true, false),
 		},
-		PrimaryKey: []string{"workspace_id", "key"},
+		PrimaryKey: []string{"base_id", "key"},
 		Indexes: []models.IndexDefinition{
 			{Name: "idx_api_idempotency_keys_created_time", Columns: []string{"created_time"}},
 		},
 		ForeignKeys: []models.ForeignKeyDef{
 			{
-				Name:              "fk_api_idempotency_keys_workspace_id",
-				Columns:           []string{"workspace_id"},
-				ReferencedTable:   fmt.Sprintf("\"%s\".workspaces", prefix),
+				Name:              "fk_api_idempotency_keys_base_id",
+				Columns:           []string{"base_id"},
+				ReferencedTable:   fmt.Sprintf("\"%s\".bases", prefix),
 				ReferencedColumns: []string{"id"},
 				OnDelete:          "CASCADE",
 			},

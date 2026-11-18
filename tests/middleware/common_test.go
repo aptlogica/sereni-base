@@ -413,7 +413,7 @@ func TestExtractScopeFromHeaders_AllScopeTypes(t *testing.T) {
 // TestExtractScopeFromHeaders_WithScopeIDs tests scope ID extraction
 func TestExtractScopeFromHeaders_WithScopeIDs(t *testing.T) {
 	scopeIDs := []string{
-		"ws_123456",
+		"bs_123456",
 		"base_789",
 		"org_abc",
 		"",

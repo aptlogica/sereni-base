@@ -44,18 +44,18 @@ type Middlewares struct {
 }
 
 type Handlers struct {
-	Auth         *handlers.AuthHandler
-	Workspace    *handlers.WorkspaceHandler
-	Base         *handlers.BaseHandler
-	Asset        *handlers.AssetsHandler
-	Table        *handlers.TableHandler
-	User         *handlers.UserHandler
-	Organization *handlers.OrganizationHandler
-	Automation   *handlers.AutomationHandler
-	PrimaryKey   *handlers.PrimaryKeyHandler
+	Auth            *handlers.AuthHandler
+	Workspace       *handlers.WorkspaceHandler
+	Base            *handlers.BaseHandler
+	Asset           *handlers.AssetsHandler
+	Table           *handlers.TableHandler
+	User            *handlers.UserHandler
+	Organization    *handlers.OrganizationHandler
+	Automation      *handlers.AutomationHandler
+	PrimaryKey      *handlers.PrimaryKeyHandler
 	TableConstraint *handlers.TableConstraintHandler
-	WorkspaceAPI *handlers.WorkspaceAPIHandler
-	// PublicAPI serves /api/v1/{ws}; registered only when PUBLIC_API_OPEN_ACCESS is on
+	BaseAPI         *handlers.BaseAPIHandler
+	// PublicAPI serves /api/v1/{bs}; registered only when PUBLIC_API_OPEN_ACCESS is on
 	PublicAPI *platform.API
 }
 
@@ -131,11 +131,11 @@ func Setup(cfg *config.Config,
 		setupAssetRoutes(private, handlerGroups, middlewareGroups)
 	}
 
-	// Workspace public API (/api/v1/{ws}); no authentication yet, so only when open access is on (never in prod)
+	// Base public API (/api/v1/{bs}); no authentication yet, so only when open access is on (never in prod)
 	if cfg.PublicAPI.OpenAccess && handlerGroups.PublicAPI != nil {
 		handlerGroups.PublicAPI.Register(api)
 	}
-	// Unknown /api/v1/ws_... paths get the public API's 404 envelope; everything else keeps gin's plain 404
+	// Unknown /api/v1/bs_... paths get the public API's 404 envelope; everything else keeps gin's plain 404
 	r.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, middleware.PublicAPIPathPrefix) {
 			platform.NotFound(c)
@@ -300,14 +300,6 @@ func setupWorkspaceRoutes(private *gin.RouterGroup, handlers Handlers, middlewar
 				lk.AccessMemberParam("id", appConstant.ScopeLevels.Workspace)),
 			handlers.Auth.RemoveAccessMemberByID)
 
-		// Workspace public API: any member sees the status; only those who can update the workspace turn it on
-		workspace.GET("/:id/api",
-			objectGuard(middlewares, appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Read, wsParam),
-			handlers.WorkspaceAPI.GetWorkspaceAPI)
-		workspace.POST("/:id/api/enable",
-			objectGuard(middlewares, appConstant.ResourceCodes.Workspace, appConstant.ActionCodes.Update, wsParam),
-			handlers.WorkspaceAPI.EnableWorkspaceAPI)
-
 		// All access operations
 		workspace.GET("/:id/bases", wsAccess, handlers.Workspace.GetBasesByWorkspaceId)
 		workspace.GET("/:id", wsAccess, handlers.Workspace.GetWorkspaceByID)
@@ -366,6 +358,14 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		base.DELETE("/:id",
 			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Delete, baseParam),
 			handlers.Base.DeleteBase)
+
+		// Base public API: any member sees the status; only those who can update the base turn it on
+		base.GET("/:id/api",
+			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Read, baseParam),
+			handlers.BaseAPI.GetBaseAPI)
+		base.POST("/:id/api/enable",
+			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, baseParam),
+			handlers.BaseAPI.EnableBaseAPI)
 
 		// All access operations
 		base.GET("/:id", baseAccess, handlers.Base.GetBaseByID)
@@ -458,7 +458,7 @@ func setupColumnRoutes(private *gin.RouterGroup, handlers Handlers, middlewares 
 		column.POST("/remove-duplicates", updateByBody, handlers.Table.RemoveDuplicates)
 		column.POST("/merge-columns", updateByBody, handlers.Table.MergeColumns)
 		column.POST("/extract-substring", updateByBody, handlers.Table.ExtractSubstring)
-		column.POST("/fuzzy-duplicates",updateByBody,handlers.Table.FuzzyDuplicates)
+		column.POST("/fuzzy-duplicates", updateByBody, handlers.Table.FuzzyDuplicates)
 	}
 }
 

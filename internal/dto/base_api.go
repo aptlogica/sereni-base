@@ -7,14 +7,14 @@ package dto
 
 import "time"
 
-// WorkspaceAPIResponse is the public API status of a workspace. PublicID, BasePath and EnabledAt are
+// BaseAPIResponse is the public API status of a base. PublicID, BasePath and EnabledAt are
 // empty until the API is turned on for the first time.
-type WorkspaceAPIResponse struct {
-	WorkspaceID string `json:"workspace_id"`
-	Enabled     bool   `json:"enabled"`
-	// Permanent public ID, e.g. ws_8f3k2m9qx7
+type BaseAPIResponse struct {
+	BaseID  string `json:"base_id"`
+	Enabled bool   `json:"enabled"`
+	// Permanent public ID, e.g. bs_8f3k2m9qx7
 	PublicID string `json:"public_id,omitempty"`
-	// Path of the workspace's public API, e.g. /api/v1/ws_8f3k2m9qx7
+	// Path of the base's public API, e.g. /api/v1/bs_8f3k2m9qx7
 	BasePath  string     `json:"base_path,omitempty"`
 	EnabledAt *time.Time `json:"enabled_at,omitempty"`
 }

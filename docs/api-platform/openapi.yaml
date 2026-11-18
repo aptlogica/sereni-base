@@ -1,15 +1,15 @@
 openapi: 3.0.3
 info:
-  title: SereniBase Workspace API
+  title: SereniBase Base API
   version: "1.0.0-stage1"
   description: |
-    Read and write the records of a SereniBase workspace from your own apps.
+    Read and write the records of a SereniBase base from your own apps.
 
     **Development only:** there is no authentication yet. The API exists only when the server runs with
     `PUBLIC_API_OPEN_ACCESS=true`, which is refused when `SERVER_ENV=prod`. API keys come with the security stage.
 
-    Bases, tables and fields can be named (exact, case-sensitive, URL-encoded in paths) or given by ID
-    (`bse_`, `tbl_`, `fld_` + 32 hex characters). Records are `rec_` + an integer.
+    Tables and fields can be named (exact, case-sensitive, URL-encoded in paths) or given by ID
+    (`tbl_`, `fld_` + 32 hex characters). Records are `rec_` + an integer.
 
     Every response is `{data, error, meta}`; `meta.request_id` equals the `X-Request-Id` header.
 
@@ -22,55 +22,31 @@ info:
     (`503 query_timeout`). Formula fields aren't in the API yet: the app calculates their values, so the value
     stored on the server can be empty or out of date.
 
-    This file is the generic contract. Each workspace also serves its own spec, with a typed path and record
-    type for every table, at `/api/v1/{ws}/openapi.json` (`?base=` limits it to one base), and shows it at
-    `/api/v1/{ws}/docs` (Swagger UI) and `/api/v1/{ws}/redoc` (ReDoc).
+    This file is the generic contract. Each base also serves its own spec, with a typed path and record
+    type for every table, at `/api/v1/{bs}/openapi.json`, and shows it at
+    `/api/v1/{bs}/docs` (Swagger UI) and `/api/v1/{bs}/redoc` (ReDoc).
 
     CORS is open: any origin may call the API from a browser (`Access-Control-Allow-Origin: *`, no credentials),
     and `X-Request-Id`, `Retry-After` and `Idempotent-Replayed` are readable.
     See [README.md](README.md) for a quick start and `../API_PLATFORM_FOUNDATION.md` for the design.
 servers:
-  - url: http://localhost:8080/api/v1/{ws}
+  - url: http://localhost:8080/api/v1/{bs}
     variables:
-      ws:
-        default: ws_8f3k2m9qx7
-        description: The workspace's public ID, shown in the app under Home → Workspace API.
+      bs:
+        default: bs_8f3k2m9qx7
+        description: The base's public ID, shown in the app under the base's API settings.
 
 # No authentication yet (development only). API keys add a security scheme here in the security stage.
 security: []
 
 tags:
   - name: Schema
-    description: Bases, tables and fields of the workspace (read-only; set them up in the SereniBase app)
+    description: Tables and fields of the base (read-only; set them up in the SereniBase app)
   - name: Records
     description: Read and write the records of a table
 
 paths:
-  /bases:
-    get:
-      tags: [Schema]
-      summary: List bases
-      operationId: listBases
-      responses:
-        "200":
-          description: The workspace's active bases
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/Envelope"
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items: { $ref: "#/components/schemas/Base" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-  /bases/{base}/tables:
-    parameters:
-      - $ref: "#/components/parameters/Base"
+  /tables:
     get:
       tags: [Schema]
       summary: List tables in a base
@@ -88,14 +64,12 @@ paths:
                       data:
                         type: array
                         items: { $ref: "#/components/schemas/Table" }
-        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /bases/{base}/tables/{table}:
+  /tables/{table}:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
     get:
       tags: [Schema]
@@ -117,9 +91,8 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /bases/{base}/tables/{table}/columns:
+  /tables/{table}/columns:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
     get:
       tags: [Schema]
@@ -147,9 +120,8 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /bases/{base}/tables/{table}/records:
+  /tables/{table}/records:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
     get:
       tags: [Records]
@@ -341,9 +313,8 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /bases/{base}/tables/{table}/records/query:
+  /tables/{table}/records/query:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
     post:
       tags: [Records]
@@ -452,9 +423,8 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/QueryTimeout" }
 
-  /bases/{base}/tables/{table}/records/aggregate:
+  /tables/{table}/records/aggregate:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
     post:
       tags: [Records]
@@ -597,9 +567,8 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/QueryTimeout" }
 
-  /bases/{base}/tables/{table}/records/{record}:
+  /tables/{table}/records/{record}:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
       - name: record
         in: path
@@ -686,9 +655,8 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
-  /bases/{base}/tables/{table}/records/delete:
+  /tables/{table}/records/delete:
     parameters:
-      - $ref: "#/components/parameters/Base"
       - $ref: "#/components/parameters/Table"
     post:
       tags: [Records]
@@ -738,12 +706,6 @@ paths:
 
 components:
   parameters:
-    Base:
-      name: base
-      in: path
-      required: true
-      description: Base name (URL-encoded) or ID (`bse_...`)
-      schema: { type: string }
     Table:
       name: table
       in: path
@@ -839,11 +801,6 @@ components:
                   id: { type: string }
                   issue: { type: string }
         meta: { $ref: "#/components/schemas/Meta" }
-    Base:
-      type: object
-      properties:
-        id: { type: string, example: bse_3f2a9c1e7b4d4e8a9c3b1d2e3f4a5b6c }
-        name: { type: string }
     Table:
       type: object
       properties:
@@ -1039,7 +996,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     NotFound:
-      description: Workspace (or its API is off), base, table, field or record not found
+      description: Base (or its API is off), table, field or record not found
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -1064,7 +1021,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     RateLimited:
-      description: Too many requests for this workspace
+      description: Too many requests for this base
       headers:
         Retry-After: { $ref: "#/components/headers/RetryAfter" }
       content:

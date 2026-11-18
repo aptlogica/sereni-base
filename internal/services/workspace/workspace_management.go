@@ -8,10 +8,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aptlogica/go-postgres-rest/pkg"
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
+	"github.com/aptlogica/sereni-base/internal/providers/logger"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/helpers"
 
@@ -169,6 +172,52 @@ func (s workspaceManagementService) getAllBasesWithWorkspaceRole(ctx context.Con
 	return response, nil
 }
 
+// normalizeBaseID turns a base id value from a query row into a comparable key
+func normalizeBaseID(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return strings.ToLower(strings.TrimSpace(t))
+	case []byte:
+		return strings.ToLower(strings.TrimSpace(string(t)))
+	default:
+		return strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
+	}
+}
+
+// markAPIEnabled sets APIEnabled on the bases whose public API is switched on, using one lookup.
+// A failed lookup is logged and leaves every flag false, so the list never fails because of it.
+func (s workspaceManagementService) markAPIEnabled(schemaName string, bases []dto.BaseResponse) {
+	if len(bases) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(bases))
+	for _, b := range bases {
+		ids = append(ids, b.ID.String())
+	}
+	lg := logger.Get()
+	rows, err := s.repo.TableService.GetTableData(tenant.BaseAPI{}.TableName(schemaName), dbModels.QueryParams{
+		Select: []string{"base_id"},
+		Filters: []dbModels.QueryFilter{
+			{Column: "base_id", Operator: "in", Value: ids},
+			{Column: "enabled", Operator: "eq", Value: true},
+		},
+	})
+	if err != nil {
+		lg.Warn().Err(err).Msg("Failed to look up API-enabled bases")
+		return
+	}
+	// Match ids ignoring case and surrounding spaces, and accept text returned as bytes
+	enabled := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		enabled[normalizeBaseID(row["base_id"])] = true
+	}
+	// TEMPORARY debug: remove once the API tag is confirmed working
+	lg.Debug().Strs("searched_base_ids", ids).Int("enabled_rows", len(rows)).Msg("API-enabled base lookup")
+	for i := range bases {
+		bases[i].APIEnabled = enabled[normalizeBaseID(bases[i].ID.String())]
+	}
+}
+
 // getSystemLevelRole checks if user has system-level Owner or CoOwner role
 func (s workspaceManagementService) getSystemLevelRole(ctx context.Context, schemaName string, accessMembers []dto.AccessMemberDTO) string {
 	for _, member := range accessMembers {
@@ -262,7 +311,21 @@ func (s workspaceManagementService) getBasesWithAccess(ctx context.Context, sche
 	return response, nil
 }
 
+// GetAllBasesByWorkspaceId returns the bases the user can see in a workspace, each flagged with
+// whether its public API is on (one lookup for the whole list, whichever access branch built it).
 func (s workspaceManagementService) GetAllBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
+	response, err := s.collectBasesByWorkspaceId(ctx, schemaName, workspaceID, role, userID)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("response: ", response)
+	s.markAPIEnabled(schemaName, response)
+	fmt.Println("response: ", response)
+	return response, nil
+}
+
+// collectBasesByWorkspaceId builds the visible base list by access level (system, workspace or base)
+func (s workspaceManagementService) collectBasesByWorkspaceId(ctx context.Context, schemaName string, workspaceID string, role string, userID string) ([]dto.BaseResponse, error) {
 	// Get user's access members to check for system/workspace/base-level access
 	accessMembers, err := s.rbacManagementService.GetUserAccessMembers(ctx, schemaName, userID)
 	if err != nil {

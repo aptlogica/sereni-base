@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	dbModels "github.com/aptlogica/go-postgres-rest/pkg/models"
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/models/tenant"
@@ -317,7 +318,8 @@ func TestGetBasesByWorkspaceId(t *testing.T) {
 
 func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	t.Run("workspace-level role", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		baseSvc := &StubBaseManagementService{
 			GetBasesByWorkspaceFn: func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
 				return []tenant.Base{{ID: uuid.New()}}, nil
@@ -334,7 +336,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("workspace role base fetch error", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		baseSvc := &StubBaseManagementService{
 			GetBasesByWorkspaceFn: func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
 				return nil, errors.New("fail")
@@ -349,7 +352,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("access members error", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		rbacSvc := &StubRBACManagementService{
 			GetUserAccessMembersFn: func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 				return nil, errors.New("fail")
@@ -364,7 +368,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("workspace access via members", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		workspaceID := "ws"
 		scopeID := workspaceID
 		roleID := uuid.New()
@@ -392,7 +397,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("no base access", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		rbacSvc := &StubRBACManagementService{
 			GetUserAccessMembersFn: func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
 				return []dto.AccessMemberDTO{{ScopeType: "workspace", ScopeID: nil, RoleID: ""}}, nil
@@ -408,7 +414,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("base access with role id fallback", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		workspaceID := "ws"
 		baseID := uuid.New().String()
 		scopeID := baseID
@@ -436,7 +443,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("base access with resolved role name", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		workspaceID := "ws"
 		baseID := uuid.New().String()
 		scopeID := baseID
@@ -465,7 +473,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("base access with role lookup error", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		workspaceID := "ws"
 		baseID := uuid.New().String()
 		scopeID := baseID
@@ -494,7 +503,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("base access with empty role id", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		workspaceID := "ws"
 		baseID := uuid.New().String()
 		scopeID := baseID
@@ -519,7 +529,8 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 	})
 
 	t.Run("base access get base error", func(t *testing.T) {
-		db, _ := setupMockDB()
+		db, mt := setupMockDB()
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{}, nil).Maybe()
 		workspaceID := "ws"
 		baseID := uuid.New().String()
 		scopeID := baseID
@@ -543,6 +554,76 @@ func TestGetAllBasesByWorkspaceId(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Empty(t, rows)
+	})
+
+	t.Run("api_enabled set only for enabled bases", func(t *testing.T) {
+		db, mt := setupMockDB()
+		enabledID, disabledID := uuid.New(), uuid.New()
+		baseSvc := &StubBaseManagementService{
+			GetBasesByWorkspaceFn: func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
+				return []tenant.Base{{ID: enabledID}, {ID: disabledID}}, nil
+			},
+		}
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.MatchedBy(func(p dbModels.QueryParams) bool {
+			return len(p.Filters) == 2 &&
+				p.Filters[0].Column == "base_id" && p.Filters[0].Operator == "in" &&
+				p.Filters[1].Column == "enabled" && p.Filters[1].Operator == "eq" && p.Filters[1].Value == true
+		})).Return([]map[string]interface{}{{"base_id": enabledID.String()}}, nil).Once()
+
+		svc := services.NewWorkspaceManagementService(db, &StubWorkspaceService{}, &StubWorkspaceMemberService{}, baseSvc, &StubTableManagementService{}, &StubRBACManagementService{})
+
+		rows, err := svc.GetAllBasesByWorkspaceId(context.Background(), "schema", "ws", appConstant.RBACRoleNames.Owner, "user")
+
+		assert.NoError(t, err)
+		assert.Len(t, rows, 2)
+		for _, r := range rows {
+			assert.Equal(t, r.ID == enabledID, r.APIEnabled)
+		}
+		mt.AssertExpectations(t)
+	})
+
+	t.Run("api_enabled lookup error leaves flags false", func(t *testing.T) {
+		db, mt := setupMockDB()
+		baseSvc := &StubBaseManagementService{
+			GetBasesByWorkspaceFn: func(ctx context.Context, schemaName string, workspaceID string) ([]tenant.Base, error) {
+				return []tenant.Base{{ID: uuid.New()}}, nil
+			},
+		}
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return(nil, errors.New("db down")).Once()
+
+		svc := services.NewWorkspaceManagementService(db, &StubWorkspaceService{}, &StubWorkspaceMemberService{}, baseSvc, &StubTableManagementService{}, &StubRBACManagementService{})
+
+		rows, err := svc.GetAllBasesByWorkspaceId(context.Background(), "schema", "ws", appConstant.RBACRoleNames.Owner, "user")
+
+		assert.NoError(t, err)
+		assert.Len(t, rows, 1)
+		assert.False(t, rows[0].APIEnabled)
+	})
+
+	t.Run("api_enabled via base-level access", func(t *testing.T) {
+		db, mt := setupMockDB()
+		workspaceID := "ws"
+		baseID := uuid.New()
+		scopeID := baseID.String()
+		rbacSvc := &StubRBACManagementService{
+			GetUserAccessMembersFn: func(ctx context.Context, schemaName string, userID string) ([]dto.AccessMemberDTO, error) {
+				return []dto.AccessMemberDTO{{ScopeType: "base", WorkspaceID: &workspaceID, ScopeID: &scopeID, RoleID: ""}}, nil
+			},
+		}
+		baseSvc := &StubBaseManagementService{
+			GetBaseByIDFn: func(ctx context.Context, schemaName string, id string) (tenant.Base, error) {
+				return tenant.Base{ID: baseID}, nil
+			},
+		}
+		mt.On("GetTableData", tenant.BaseAPI{}.TableName("schema"), mock.Anything).Return([]map[string]interface{}{{"base_id": baseID.String()}}, nil).Once()
+
+		svc := services.NewWorkspaceManagementService(db, &StubWorkspaceService{}, &StubWorkspaceMemberService{}, baseSvc, &StubTableManagementService{}, rbacSvc)
+
+		rows, err := svc.GetAllBasesByWorkspaceId(context.Background(), "schema", workspaceID, "base-member", "user")
+
+		assert.NoError(t, err)
+		assert.Len(t, rows, 1)
+		assert.True(t, rows[0].APIEnabled)
 	})
 }
 

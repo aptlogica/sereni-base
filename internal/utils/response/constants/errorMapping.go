@@ -93,7 +93,7 @@ var errorMappings = []ErrorMappingEntry{
 	{app_errors.WorkspaceMemberNotFound, WorkspaceError.WorkspaceMemberNotFound},
 	{app_errors.ErrUserAlreadyInWorkspace, WorkspaceError.ErrUserAlreadyInWorkspace},
 	{app_errors.WorkspaceNotFound, WorkspaceError.ErrNotFound},
-	{app_errors.WorkspaceAPIPublicIDFailed, WorkspaceAPIError.PublicIDFailed},
+	{app_errors.BaseAPIPublicIDFailed, BaseAPIError.PublicIDFailed},
 
 	// base management
 	{app_errors.BaseNotFound, BaseError.BaseNotFound},

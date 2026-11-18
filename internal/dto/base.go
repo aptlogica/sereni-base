@@ -203,5 +203,8 @@ type BaseResponse struct {
 
 	AccessLevel string `db:"access_level" json:"access_level" mapstructure:"access_level"`
 
+	// APIEnabled is true when the base's public API is switched on (filled in by the workspace list)
+	APIEnabled bool `db:"-" json:"api_enabled" mapstructure:"api_enabled"`
+
 	Tables []TableResponse `db:"tables" json:"tables" mapstructure:"tables"`
 }

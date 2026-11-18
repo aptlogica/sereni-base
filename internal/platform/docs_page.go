@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
-	"net/url"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,21 +49,18 @@ var redocPage = template.Must(template.New("redoc").Parse(`<!doctype html>
 </html>
 `))
 
-// GET /docs: Swagger UI for the workspace's spec
+// GET /docs: Swagger UI for the base's spec
 func (a *API) swaggerUI(c *gin.Context) { docsPage(c, swaggerUIPage, "API docs") }
 
-// GET /redoc: ReDoc for the workspace's spec
+// GET /redoc: ReDoc for the base's spec
 func (a *API) redoc(c *gin.Context) { docsPage(c, redocPage, "API reference") }
 
-// docsPage renders a page that loads ./openapi.json, passing on ?base=
+// docsPage renders a page that loads ./openapi.json
 func docsPage(c *gin.Context, page *template.Template, title string) {
-	ws := currentWorkspace(c)
+	base := currentBase(c)
 	specURL := "openapi.json"
-	if base := c.Query("base"); base != "" {
-		specURL += "?base=" + url.QueryEscape(base)
-	}
 	var html bytes.Buffer
-	if err := page.Execute(&html, map[string]string{"Title": ws.PublicID + " " + title, "SpecURL": specURL}); err != nil {
+	if err := page.Execute(&html, map[string]string{"Title": base.PublicID + " " + title, "SpecURL": specURL}); err != nil {
 		respondError(c, err)
 		return
 	}

@@ -37,7 +37,7 @@ func TestAppNew_OpenPublicAPIOutsideProduction(t *testing.T) {
 	}
 	found := false
 	for _, route := range appInstance.Router().Routes() {
-		if route.Path == "/api/v1/:ws/bases/:base/tables/:table/records" {
+		if route.Path == "/api/v1/:bs/tables/:table/records" {
 			found = true
 		}
 	}

@@ -108,9 +108,9 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		err  error
 	}{
 		{"workspaces", db.TableService.CreateTable(tenant.Workspace{}.TableSchema(s))},
-		{"workspace_api", db.TableService.CreateTable(tenant.WorkspaceAPI{}.TableSchema(s))},
-		{"api_idempotency_keys", db.TableService.CreateTable(tenant.APIIdempotencyKey{}.TableSchema(s))},
 		{"bases", db.TableService.CreateTable(tenant.Base{}.TableSchema(s))},
+		{"base_api", db.TableService.CreateTable(tenant.BaseAPI{}.TableSchema(s))},
+		{"api_idempotency_keys", db.TableService.CreateTable(tenant.APIIdempotencyKey{}.TableSchema(s))},
 		{"models", db.TableService.CreateTable(tenant.Model{}.TableSchema(s))},
 		{"columns", db.TableService.CreateTable(tenant.Column{}.TableSchema(s))},
 		{"views", db.TableService.CreateTable(tenant.View{}.TableSchema(s))},
@@ -120,11 +120,11 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	for _, tb := range tables {
 		require.NoError(t, tb.err, tb.name)
 	}
-	for _, stmt := range (tenant.WorkspaceAPI{}).CheckConstraints(s) {
+	for _, stmt := range (tenant.BaseAPI{}).CheckConstraints(s) {
 		exec(stmt)
 	}
 	for _, fn := range appConstant.DefinedFunctions {
-		if fn.FunctionName == "workspace_api_bump_schema_version" {
+		if fn.FunctionName == "base_api_bump_schema_version" {
 			exec(fmt.Sprintf(`CREATE OR REPLACE FUNCTION "%s".%s(%s) %s`, s, fn.FunctionName, fn.FunctionParams, fn.FunctionSQL))
 		}
 	}
@@ -299,10 +299,10 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	contactLevel := addColumn(contacts, "Level", "select", map[string]interface{}{"options": []interface{}{"Gold", "Silver"}})
 	contactTags := addColumn(contacts, "Tags", "multiSelect", map[string]interface{}{"options": []interface{}{"vip", "new"}})
 
-	workspaceAPI, err := platform.NewWorkspaceAPIService(db).Enable(ctx, s, wsID)
+	baseAPI, err := platform.NewBaseAPIService(db).Enable(ctx, s, baseID)
 	require.NoError(t, err)
 
-	// The router as the app builds it: request IDs, raw paths, the /:ws group and the 404 fallback
+	// The router as the app builds it: request IDs, raw paths, the /:bs group and the 404 fallback
 	gin.SetMode(gin.TestMode)
 	recordWriter, ok := tableSvc.(platform.RecordWriter)
 	require.True(t, ok)
@@ -312,13 +312,13 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	r.Use(middleware.RequestID())
 	api.Register(r.Group("/api/v1"))
 	r.NoRoute(func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/ws_") {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/bs_") {
 			platform.NotFound(c)
 		}
 	})
 
-	base := "/api/v1/" + workspaceAPI.PublicID
-	ordersPath := base + "/bases/Main/tables/Orders"
+	base := "/api/v1/" + baseAPI.PublicID
+	ordersPath := base + "/tables/Orders"
 	call := func(method, path string, body interface{}, headers ...string) (int, apiEnvelope, http.Header) {
 		t.Helper()
 		var reader *bytes.Reader
@@ -354,7 +354,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	}
 
 	// Two customers, created through the API, for the links
-	code, res, _ := call("POST", base+"/bases/Main/tables/Customers/records", map[string]interface{}{
+	code, res, _ := call("POST", base+"/tables/Customers/records", map[string]interface{}{
 		"records": []interface{}{
 			map[string]interface{}{"fields": map[string]interface{}{customerTitle.Title: "Asha"}},
 			map[string]interface{}{"fields": map[string]interface{}{customerTitle.Title: "Ravi"}},
@@ -364,11 +364,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	require.Len(t, cust, 2)
 
 	t.Run("schema endpoints", func(t *testing.T) {
-		code, res, _ := call("GET", base+"/bases", nil)
-		require.Equal(t, http.StatusOK, code)
-		assert.Contains(t, string(res.Data), `"name":"Main"`)
-
-		code, res, _ = call("GET", base+"/bases/Main/tables", nil)
+		code, res, _ := call("GET", base+"/tables", nil)
 		require.Equal(t, http.StatusOK, code)
 		assert.Contains(t, string(res.Data), `"name":"Orders"`)
 		assert.Contains(t, string(res.Data), `"name":"In/Out"`)
@@ -383,7 +379,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.NotContains(t, body, `"name":"Created Time"`, "system columns are not fields")
 
 		// URL-encoded names reach the handler
-		code, _, _ = call("GET", base+"/bases/Main/tables/In%2FOut", nil)
+		code, _, _ = call("GET", base+"/tables/In%2FOut", nil)
 		assert.Equal(t, http.StatusOK, code)
 	})
 
@@ -422,7 +418,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		doc, err := openapi3.NewLoader().LoadFromData(w.Body.Bytes())
 		require.NoError(t, err)
 		require.NoError(t, doc.Validate(ctx))
-		assert.NotNil(t, doc.Paths.Value("/bases/Main/tables/In%2FOut/records"), "names are URL-encoded in paths")
+		assert.NotNil(t, doc.Paths.Value("/tables/In%2FOut/records"), "names are URL-encoded in paths")
 
 		// Every key of a real record is a property of the table's record type
 		fields := doc.Components.Schemas["Fields_"+platform.EncodeUUID(platform.PrefixTable, orders.Model.ID.String())]
@@ -433,7 +429,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Equal(t, []interface{}{"Open", "Done"}, fields.Value.Properties["Status"].Value.Enum)
 
 		// Each table's aggregate says what its fields can be used for
-		aggregate := doc.Paths.Value("/bases/Main/tables/Sales/records/aggregate")
+		aggregate := doc.Paths.Value("/tables/Sales/records/aggregate")
 		require.NotNil(t, aggregate)
 		require.NotNil(t, aggregate.Post)
 		for _, line := range []string{
@@ -606,7 +602,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("number and multi-user filters are exact", func(t *testing.T) {
-		tasksPath := base + "/bases/Main/tables/Tasks"
+		tasksPath := base + "/tables/Tasks"
 		code, res, _ := call("POST", tasksPath+"/records", map[string]interface{}{"records": []interface{}{
 			map[string]interface{}{"fields": map[string]interface{}{"Hours": 1}},
 			map[string]interface{}{"fields": map[string]interface{}{"Hours": 2}},
@@ -658,11 +654,11 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 
 	t.Run("expand linked records", func(t *testing.T) {
 		// Asha's company
-		code, res, _ := call("POST", base+"/bases/Main/tables/Companies/records", map[string]interface{}{
+		code, res, _ := call("POST", base+"/tables/Companies/records", map[string]interface{}{
 			"fields": map[string]interface{}{"Title": "Acme Group"}})
 		require.Equal(t, http.StatusCreated, code, res.Error)
 		company := record(res.Data)
-		code, res, _ = call("PATCH", base+"/bases/Main/tables/Customers/records/"+cust[0].ID, map[string]interface{}{
+		code, res, _ = call("PATCH", base+"/tables/Customers/records/"+cust[0].ID, map[string]interface{}{
 			"fields": map[string]interface{}{"Company": []string{company.ID}}})
 		require.Equal(t, http.StatusOK, code, res.Error)
 
@@ -701,7 +697,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Equal(t, []interface{}{map[string]interface{}{"id": company.ID}}, customer.Fields["Company"],
 			"inside an expanded record, links hold only ids, without their lookups (G4)")
 		// Read directly, the customer's Company link carries its lookup
-		code, res, _ = call("GET", base+"/bases/Main/tables/Customers/records/"+cust[0].ID, nil)
+		code, res, _ = call("GET", base+"/tables/Customers/records/"+cust[0].ID, nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 		assert.Equal(t, "Acme Group", linked(record(res.Data), "Company")[0][companyTitle.Title])
 
@@ -867,7 +863,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Len(t, records(res.Data), 2)
 
 		// Deleting a customer removes it from the orders that link to it
-		code, _, _ = call("DELETE", base+"/bases/Main/tables/Customers/records/"+cust[1].ID, nil)
+		code, _, _ = call("DELETE", base+"/tables/Customers/records/"+cust[1].ID, nil)
 		require.Equal(t, http.StatusOK, code)
 		code, res, _ = call("GET", ordersPath+"/records/"+first.ID, nil)
 		require.Equal(t, http.StatusOK, code)
@@ -875,11 +871,11 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("names, ambiguity and unknown paths", func(t *testing.T) {
-		code, res, _ := call("GET", base+"/bases/Nope/tables", nil)
+		code, res, _ := call("GET", base+"/nothing", nil)
 		assert.Equal(t, http.StatusNotFound, code)
 		assert.Equal(t, "not_found", res.Error.Code)
 
-		code, res, _ = call("GET", "/api/v1/ws_0000000000/bases", nil)
+		code, res, _ = call("GET", "/api/v1/bs_0000000000/tables", nil)
 		assert.Equal(t, http.StatusNotFound, code)
 		assert.Equal(t, "not_found", res.Error.Code)
 
@@ -887,25 +883,25 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, code)
 		assert.Equal(t, "not_found", res.Error.Code)
 
-		// A second table named Orders bumps schema_version; once the 10 s workspace cache expires, the name is ambiguous
+		// A second table named Orders bumps schema_version; once the 10 s base cache expires, the name is ambiguous
 		var before, after int64
-		require.NoError(t, db.DB.QueryRow(fmt.Sprintf(`SELECT schema_version FROM "%s".workspace_api WHERE workspace_id = $1`, s), wsID).Scan(&before))
+		require.NoError(t, db.DB.QueryRow(fmt.Sprintf(`SELECT schema_version FROM "%s".base_api WHERE base_id = $1`, s), baseID).Scan(&before))
 		dup := createTable("Orders")
-		require.NoError(t, db.DB.QueryRow(fmt.Sprintf(`SELECT schema_version FROM "%s".workspace_api WHERE workspace_id = $1`, s), wsID).Scan(&after))
+		require.NoError(t, db.DB.QueryRow(fmt.Sprintf(`SELECT schema_version FROM "%s".base_api WHERE base_id = $1`, s), baseID).Scan(&after))
 		assert.Greater(t, after, before, "creating a table bumps schema_version")
 
-		// The second Orders table is seen by the very next request (the workspace is read on every request)
+		// The second Orders table is seen by the very next request (the base is read on every request)
 		code, res, _ = call("GET", ordersPath+"/records", nil)
 		require.Equal(t, http.StatusConflict, code)
 		assert.Equal(t, "ambiguous_name", res.Error.Code)
 
-		// Turned off, the workspace is 404 at once; turned back on, it answers again once the miss, cached for
+		// Turned off, the base is 404 at once; turned back on, it answers again once the miss, cached for
 		// 10 s so random IDs can't load the database, expires
 		setEnabled := func(on bool) {
-			exec(fmt.Sprintf(`UPDATE "%s".workspace_api SET enabled = $1 WHERE workspace_id = $2`, s), on, wsID)
+			exec(fmt.Sprintf(`UPDATE "%s".base_api SET enabled = $1 WHERE base_id = $2`, s), on, baseID)
 		}
 		setEnabled(false)
-		code, res, _ = call("GET", base+"/bases", nil)
+		code, res, _ = call("GET", base+"/tables", nil)
 		assert.Equal(t, http.StatusNotFound, code)
 		assert.Equal(t, "not_found", res.Error.Code)
 		setEnabled(true)
@@ -916,14 +912,14 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Equal(t, "ambiguous_name", res.Error.Code)
 		assert.Len(t, res.Error.Details, 2)
 
-		code, _, _ = call("GET", base+"/bases/Main/tables/"+platform.EncodeUUID(platform.PrefixTable, dup.Model.ID.String())+"/records", nil)
+		code, _, _ = call("GET", base+"/tables/"+platform.EncodeUUID(platform.PrefixTable, dup.Model.ID.String())+"/records", nil)
 		assert.Equal(t, http.StatusOK, code, "IDs always work")
 	})
 
 	// A table whose primary key was changed in the app, with a unique constraint and a NOT NULL field, and a
 	// table that links to it: every endpoint keeps working, and constraint problems are 422s, not 500s
 	t.Run("columns with database types, primary key and constraints", func(t *testing.T) {
-		code, res, _ := call("GET", base+"/bases/Main/tables/Products/columns", nil)
+		code, res, _ := call("GET", base+"/tables/Products/columns", nil)
 		require.Equal(t, http.StatusOK, code, res.Error)
 		var out struct {
 			PrimaryKey []struct {
@@ -972,7 +968,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("custom primary key and constraints", func(t *testing.T) {
-		productsPath := base + "/bases/Main/tables/Products"
+		productsPath := base + "/tables/Products"
 		code, res, _ := call("POST", productsPath+"/records", map[string]interface{}{"records": []interface{}{
 			map[string]interface{}{"fields": map[string]interface{}{"SKU": "A1", "Region": "IN", "Note": "first", "Size": "M"}},
 			map[string]interface{}{"fields": map[string]interface{}{"SKU": "A1", "Region": "US", "Note": "second", "Size": "L"}},
@@ -1091,7 +1087,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.JSONEq(t, fmt.Sprintf(`[{"id": %q, "key": {"SKU": "B_1/x y", "Region": "IN"}, "deleted": true}]`, odd.ID), string(res.Data))
 
 		// Links to a table with a custom key: write, read back as rec_ IDs, and filter by the linked record
-		shipmentsPath := base + "/bases/Main/tables/Shipments"
+		shipmentsPath := base + "/tables/Shipments"
 		code, res, _ = call("POST", shipmentsPath+"/records", map[string]interface{}{"fields": map[string]interface{}{"Product": []interface{}{prods[1].ID}}})
 		require.Equal(t, http.StatusCreated, code, res.Error)
 		shipment := record(res.Data)
@@ -1148,7 +1144,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("automations: their own messages, a failed automation", func(t *testing.T) {
-		stockPath := base + "/bases/Main/tables/Stock"
+		stockPath := base + "/tables/Stock"
 		issue := func(res apiEnvelope) string {
 			t.Helper()
 			require.NotNil(t, res.Error)
@@ -1209,7 +1205,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("field settings: format checks on and off, decimals, time, options", func(t *testing.T) {
-		contactsPath := base + "/bases/Main/tables/Contacts"
+		contactsPath := base + "/tables/Contacts"
 		issues := func(res apiEnvelope) map[string]string {
 			t.Helper()
 			require.NotNil(t, res.Error)
@@ -1279,7 +1275,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		}
 
 		// Auto: the field is read-only; a create without it gets a generated v7 UUID
-		devicesPath := base + "/bases/Main/tables/Devices"
+		devicesPath := base + "/tables/Devices"
 		assert.Equal(t, true, uuidField(devicesPath, "Device ID")["read_only"])
 		code, res, _ := call("POST", devicesPath+"/records", map[string]interface{}{"records": []interface{}{
 			map[string]interface{}{"fields": map[string]interface{}{"Label": "Phone"}},
@@ -1309,7 +1305,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, code, res.Error)
 
 		// Manual: the field is writable and, being the primary key, required
-		badgesPath := base + "/bases/Main/tables/Badges"
+		badgesPath := base + "/tables/Badges"
 		assert.Equal(t, false, uuidField(badgesPath, "Badge ID")["read_only"])
 		code, res, _ = call("POST", badgesPath+"/records", map[string]interface{}{"fields": map[string]interface{}{"Label": "Visitor"}})
 		assert.Equal(t, http.StatusUnprocessableEntity, code, "a manual UUID key must be sent: %+v", res.Error)
@@ -1327,7 +1323,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	// Another subtest adds a second table named Orders, so these use the table ID
-	ordersByID := base + "/bases/Main/tables/" + platform.EncodeUUID(platform.PrefixTable, orders.Model.ID.String())
+	ordersByID := base + "/tables/" + platform.EncodeUUID(platform.PrefixTable, orders.Model.ID.String())
 
 	t.Run("formula fields are left out", func(t *testing.T) {
 		code, res, _ := call("GET", ordersByID+"/records?limit=5", nil)
@@ -1379,7 +1375,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("expand: the linked table was deleted", func(t *testing.T) {
-		notesPath := base + "/bases/Main/tables/Notes"
+		notesPath := base + "/tables/Notes"
 		code, res, _ := call("POST", notesPath+"/records", map[string]interface{}{"fields": map[string]interface{}{}})
 		require.Equal(t, http.StatusCreated, code, res.Error)
 		code, res, _ = call("GET", notesPath+"/records?expand=Ref", nil)
@@ -1396,7 +1392,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 		assert.NotContains(t, records(res.Data)[0].Fields, "Ref")
 	})
 	t.Run("aggregate: count, sum and group", func(t *testing.T) {
-		salesPath := base + "/bases/Main/tables/Sales"
+		salesPath := base + "/tables/Sales"
 		code, res, _ := call("POST", salesPath+"/records", map[string]interface{}{"records": []interface{}{
 			map[string]interface{}{"fields": map[string]interface{}{"Region": "North", "Amount": 100, "Took": 30, "Done": true,
 				"Day": "2026-11-03", "At": "2026-11-30T19:30:00Z"}},
@@ -1515,7 +1511,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("aggregate: group by link, multi-select and lookup", func(t *testing.T) {
-		repsPath, dealsPath := base+"/bases/Main/tables/Reps", base+"/bases/Main/tables/Deals"
+		repsPath, dealsPath := base+"/tables/Reps", base+"/tables/Deals"
 		// Asha and Chen are in the North; Chen's Active was never set
 		code, res, _ := call("POST", repsPath+"/records", map[string]interface{}{"records": []interface{}{
 			map[string]interface{}{"fields": map[string]interface{}{repTitle.Title: "Asha", "Region": "North", "Active": true}},
@@ -1605,7 +1601,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	// The deals and reps of the subtest above: deal 100 → Asha (North, active); 50 → Asha and Chen (North, Active
 	// never set); 20 → nobody (Ben was deleted); 5 → nobody
 	t.Run("filter by a linked field or a lookup, and count", func(t *testing.T) {
-		dealsPath := base + "/bases/Main/tables/Deals"
+		dealsPath := base + "/tables/Deals"
 		amounts := func(method, path string, body interface{}) ([]float64, map[string]interface{}) {
 			t.Helper()
 			code, res, _ := call(method, path, body)
@@ -1661,7 +1657,7 @@ func TestPublicAPIAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("keyset paging: every record once, while records are added and deleted", func(t *testing.T) {
-		pagesPath := base + "/bases/Main/tables/Pages"
+		pagesPath := base + "/tables/Pages"
 		pagesTable := fmt.Sprintf(`"%s".%q`, s, pages.Model.Alias)
 		create := func(fields ...map[string]interface{}) []string {
 			t.Helper()

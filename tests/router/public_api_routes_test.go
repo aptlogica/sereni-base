@@ -44,20 +44,20 @@ func TestPublicAPIRoutesSitNextToExistingRoutes(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Serenibase is running")
 
-	// Any other first segment is a workspace public ID, looked up by the resolver
-	mock.ExpectQuery(`FROM "public".workspace_api`).WithArgs("ws_abcdefghij").
-		WillReturnRows(sqlmock.NewRows([]string{"workspace_id", "schema_version"}))
-	w = serve(r, "/api/v1/ws_abcdefghij/bases")
+	// Any other first segment is a base public ID, looked up by the resolver
+	mock.ExpectQuery(`FROM "public".base_api`).WithArgs("bs_abcdefghij").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "workspace_id", "schema_version"}))
+	w = serve(r, "/api/v1/bs_abcdefghij/tables")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), `"code":"not_found"`)
-	assert.NoError(t, mock.ExpectationsWereMet(), "the request reached the workspace resolver")
+	assert.NoError(t, mock.ExpectationsWereMet(), "the request reached the base resolver")
 
 	// A first segment that is not a public ID is a 404 without a database lookup
 	w = serve(r, "/api/v1/auth/bases")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
-	// Unknown paths under a workspace get the public API's envelope; other unknown paths keep gin's 404
-	w = serve(r, "/api/v1/ws_abcdefghij/nothing")
+	// Unknown paths under a base get the public API's envelope; other unknown paths keep gin's 404
+	w = serve(r, "/api/v1/bs_abcdefghij/nothing")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), `"error":{"code":"not_found"`)
 	w = serve(r, "/nothing")
@@ -81,9 +81,9 @@ func TestPublicAPIPreflightFromAnyOrigin(t *testing.T) {
 	middlewares.CORS = middleware.CORS
 	r := router.Setup(cfg, handlers, middlewares)
 
-	// There is no OPTIONS route: the preflight is answered by the CORS middleware before the workspace lookup
+	// There is no OPTIONS route: the preflight is answered by the CORS middleware before the base lookup
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodOptions, "/api/v1/ws_abcdefghij/bases/Main/tables/Orders/records", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/bs_abcdefghij/tables/Orders/records", nil)
 	req.Header.Set("Origin", "https://my-app.example")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	req.Header.Set("Access-Control-Request-Headers", "content-type")
@@ -97,9 +97,9 @@ func TestPublicAPIPreflightFromAnyOrigin(t *testing.T) {
 func TestPublicAPIRoutesOnlyWithOpenAccess(t *testing.T) {
 	r, mock := publicAPIRouter(t, false)
 	for _, route := range r.Routes() {
-		assert.NotContains(t, route.Path, ":ws", "no public API route without PUBLIC_API_OPEN_ACCESS")
+		assert.NotContains(t, route.Path, ":bs", "no public API route without PUBLIC_API_OPEN_ACCESS")
 	}
-	w := serve(r, "/api/v1/ws_abcdefghij/bases")
+	w := serve(r, "/api/v1/bs_abcdefghij/tables")
 	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.NoError(t, mock.ExpectationsWereMet(), "no workspace lookup")
+	assert.NoError(t, mock.ExpectationsWereMet(), "no base lookup")
 }

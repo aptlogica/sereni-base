@@ -147,9 +147,9 @@ var (
 	WorkspaceNotFound         = errors.New("workspace not found")
 )
 
-// workspace API
+// base API
 var (
-	WorkspaceAPIPublicIDFailed = errors.New("could not generate a unique workspace API ID")
+	BaseAPIPublicIDFailed = errors.New("could not generate a unique base API ID")
 )
 
 // RecordWriteError is a record of a multi-record write that could not be saved; Index is its position in the

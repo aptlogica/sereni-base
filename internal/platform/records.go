@@ -166,12 +166,12 @@ func (a *API) buildRecords(ctx context.Context, tc *tableContext, rows []map[str
 		for i, row := range rows {
 			cells[i] = row[f.ColumnName]
 		}
-		ids, err := a.resolveLinks(ctx, tc.ws, f, cells)
+		ids, err := a.resolveLinks(ctx, tc.base, f, cells)
 		if err != nil {
 			return nil, err
 		}
 		linkIDs[f] = ids
-		values, err := a.linkLookups(ctx, tc.ws, f, carried[f], ids, keysByID)
+		values, err := a.linkLookups(ctx, tc.base, f, carried[f], ids, keysByID)
 		if err != nil {
 			return nil, err
 		}
@@ -230,15 +230,15 @@ type linkLookup struct {
 
 // lookupTargets returns the linked table and the looked-up fields of the lookups, in order and once each.
 // Lookups whose linked table or field no longer exists, or isn't stored, are left out.
-func (a *API) lookupTargets(ctx context.Context, ws workspaceRef, link *field, lookups []*field) (*tableInfo, []*field, error) {
+func (a *API) lookupTargets(ctx context.Context, base baseRef, link *field, lookups []*field) (*tableInfo, []*field, error) {
 	if len(lookups) == 0 || link.LinkTargetModelID == "" {
 		return nil, nil, nil
 	}
-	target, err := a.tableByID(ctx, ws, link.LinkTargetModelID)
+	target, err := a.tableByID(ctx, base, link.LinkTargetModelID)
 	if err != nil || target == nil {
 		return nil, nil, err
 	}
-	targetFields, err := a.fields(ctx, ws, target)
+	targetFields, err := a.fields(ctx, base, target)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -268,8 +268,8 @@ func lookupKeys(targets []*field, keysByID bool) map[*field]string {
 }
 
 // linkLookups returns the lookups a link field carries, with their values in the linked records
-func (a *API) linkLookups(ctx context.Context, ws workspaceRef, link *field, lookups []*field, linkIDs [][]int64, keysByID bool) ([]linkLookup, error) {
-	target, targets, err := a.lookupTargets(ctx, ws, link, lookups)
+func (a *API) linkLookups(ctx context.Context, base baseRef, link *field, lookups []*field, linkIDs [][]int64, keysByID bool) ([]linkLookup, error) {
+	target, targets, err := a.lookupTargets(ctx, base, link, lookups)
 	if err != nil || len(targets) == 0 {
 		return nil, err
 	}
@@ -301,11 +301,11 @@ func (a *API) linkLookups(ctx context.Context, ws workspaceRef, link *field, loo
 
 // resolveLinks returns, for each link cell, the IDs of the linked records. Cells hold the linked records'
 // primary key objects: {"id": 12} on most tables, the key columns on tables with a custom primary key.
-func (a *API) resolveLinks(ctx context.Context, ws workspaceRef, f *field, cells []interface{}) ([][]int64, error) {
+func (a *API) resolveLinks(ctx context.Context, base baseRef, f *field, cells []interface{}) ([][]int64, error) {
 	out := make([][]int64, len(cells))
 	var target *tableInfo
 	if f.LinkTargetModelID != "" {
-		t, err := a.tableByID(ctx, ws, f.LinkTargetModelID)
+		t, err := a.tableByID(ctx, base, f.LinkTargetModelID)
 		if err != nil {
 			return nil, err
 		}
@@ -468,13 +468,13 @@ func (a *API) queryPage(ctx context.Context, query string, args ...interface{}) 
 type apiLinks struct {
 	a       *API
 	ctx     context.Context
-	ws      workspaceRef
+	base    baseRef
 	targets map[*field]*tableContext
 	idKey   map[string]bool // by table ID
 }
 
-func (a *API) linkResolver(ctx context.Context, ws workspaceRef) linkResolver {
-	return &apiLinks{a: a, ctx: ctx, ws: ws, targets: map[*field]*tableContext{}, idKey: map[string]bool{}}
+func (a *API) linkResolver(ctx context.Context, base baseRef) linkResolver {
+	return &apiLinks{a: a, ctx: ctx, base: base, targets: map[*field]*tableContext{}, idKey: map[string]bool{}}
 }
 
 // table is a link field's linked table; nil when it no longer exists
@@ -482,7 +482,7 @@ func (l *apiLinks) table(link *field) (*tableContext, error) {
 	if t, ok := l.targets[link]; ok {
 		return t, nil
 	}
-	t, err := l.a.linkedTable(l.ctx, l.ws, link)
+	t, err := l.a.linkedTable(l.ctx, l.base, link)
 	if err != nil {
 		return nil, err
 	}
@@ -698,7 +698,7 @@ func (a *API) runList(c *gin.Context, tc *tableContext, params url.Values) {
 	defer cancel()
 	fail := func(err error) { respondError(c, timeoutError(ctx, err)) }
 
-	opts, err := parseListOptions(params, tc.fields, a.linkResolver(ctx, tc.ws))
+	opts, err := parseListOptions(params, tc.fields, a.linkResolver(ctx, tc.base))
 	if err != nil {
 		fail(err)
 		return
@@ -1079,7 +1079,7 @@ func (a *API) checkLinkTargets(ctx context.Context, tc *tableContext, links map[
 		if !ok || len(ids) == 0 {
 			continue
 		}
-		target, err := a.tableByID(ctx, tc.ws, f.LinkTargetModelID)
+		target, err := a.tableByID(ctx, tc.base, f.LinkTargetModelID)
 		if err != nil {
 			return nil, err
 		}
@@ -1119,7 +1119,7 @@ func (a *API) applyLinks(ctx context.Context, tc *tableContext, row map[string]i
 		if !ok {
 			continue
 		}
-		current, err := a.resolveLinks(ctx, tc.ws, f, []interface{}{row[f.ColumnName]})
+		current, err := a.resolveLinks(ctx, tc.base, f, []interface{}{row[f.ColumnName]})
 		if err != nil {
 			return err
 		}

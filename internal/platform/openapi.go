@@ -48,7 +48,7 @@ func openAPIBase() (schemaObject, error) {
 }
 
 const (
-	genericTablePath = "/bases/{base}/tables/{table}"
+	genericTablePath = "/tables/{table}"
 	schemasPrefix    = "#/components/schemas/"
 )
 
@@ -61,20 +61,10 @@ type cachedSpec struct {
 	etag string
 }
 
-// GET /openapi.json: the workspace's spec, with typed paths and records for every table. ?base= limits it to
-// one base. It is the spec itself, not wrapped in the envelope, so tools can read it directly.
+// GET /openapi.json: the base's spec, with typed paths and records for every table.
+// It is the spec itself, not wrapped in the envelope, so tools can read it directly.
 func (a *API) openAPISpec(c *gin.Context) {
-	ws := currentWorkspace(c)
-	var only *baseInfo
-	if raw := c.Query("base"); raw != "" {
-		base, err := a.resolveBase(c, ws, raw)
-		if err != nil {
-			respondError(c, err)
-			return
-		}
-		only = base
-	}
-	spec, err := a.spec(c, ws, only)
+	spec, err := a.spec(c, currentBase(c))
 	if err != nil {
 		respondError(c, err)
 		return
@@ -89,35 +79,31 @@ func (a *API) openAPISpec(c *gin.Context) {
 }
 
 // spec returns the built spec, cached with the rest of the schema until schema_version changes
-func (a *API) spec(ctx context.Context, ws workspaceRef, only *baseInfo) (cachedSpec, error) {
-	key := ""
-	if only != nil {
-		key = only.ID
-	}
-	snap := a.schemas.snapshot(ws)
+func (a *API) spec(ctx context.Context, base baseRef) (cachedSpec, error) {
+	snap := a.schemas.snapshot(base)
 	snap.mu.Lock()
-	cached, ok := snap.specs[key]
+	cached := snap.spec
 	snap.mu.Unlock()
-	if ok {
-		return cached, nil
+	if cached != nil {
+		return *cached, nil
 	}
 
-	body, err := a.buildSpec(ctx, ws, only)
+	body, err := a.buildSpec(ctx, base)
 	if err != nil {
 		return cachedSpec{}, err
 	}
 	sum := sha256.Sum256(body)
-	cached = cachedSpec{body: body, etag: `"` + hex.EncodeToString(sum[:8]) + `"`}
+	built := cachedSpec{body: body, etag: `"` + hex.EncodeToString(sum[:8]) + `"`}
 	snap.mu.Lock()
-	snap.specs[key] = cached
+	snap.spec = &built
 	snap.mu.Unlock()
-	return cached, nil
+	return built, nil
 }
 
-// specBuilder adds the tables of a workspace to a copy of the generic spec
+// specBuilder adds the tables of a base to a copy of the generic spec
 type specBuilder struct {
 	a         *API
-	ws        workspaceRef
+	base      baseRef
 	doc       schemaObject
 	paths     schemaObject
 	schemas   schemaObject
@@ -126,17 +112,17 @@ type specBuilder struct {
 	tagNames  map[string]bool
 }
 
-func (a *API) buildSpec(ctx context.Context, ws workspaceRef, only *baseInfo) ([]byte, error) {
+func (a *API) buildSpec(ctx context.Context, base baseRef) ([]byte, error) {
 	doc, err := openAPIBase()
 	if err != nil {
 		return nil, err
 	}
 	info := child(doc, "info")
-	info["title"] = "SereniBase Workspace API: " + ws.PublicID
-	doc["servers"] = []any{schemaObject{"url": "/api/v1/" + ws.PublicID}}
+	info["title"] = "SereniBase Base API: " + base.PublicID
+	doc["servers"] = []any{schemaObject{"url": "/api/v1/" + base.PublicID}}
 
 	b := &specBuilder{
-		a: a, ws: ws, doc: doc,
+		a: a, base: base, doc: doc,
 		paths:     child(doc, "paths"),
 		schemas:   child(child(doc, "components"), "schemas"),
 		templates: map[string]schemaObject{},
@@ -155,26 +141,15 @@ func (a *API) buildSpec(ctx context.Context, ws workspaceRef, only *baseInfo) ([
 		}
 	}
 
-	bases, err := a.bases(ctx, ws)
+	tables, err := a.tables(ctx, base)
 	if err != nil {
 		return nil, err
 	}
-	baseNames := nameCounts(bases, func(x *baseInfo) string { return x.Title })
-	if only != nil {
-		bases = []*baseInfo{only}
-	}
-	for _, base := range bases {
-		tables, err := a.tables(ctx, ws, base)
-		if err != nil {
+	tableNames := nameCounts(tables, func(x *tableInfo) string { return x.Title })
+	for _, table := range tables {
+		tablePath := "/tables/" + pathSegment(table.Title, table.ID, PrefixTable, tableNames)
+		if err := b.addTable(ctx, table, tablePath); err != nil {
 			return nil, err
-		}
-		tableNames := nameCounts(tables, func(x *tableInfo) string { return x.Title })
-		basePath := "/bases/" + pathSegment(base.Title, base.ID, PrefixBase, baseNames)
-		for _, table := range tables {
-			tablePath := basePath + "/tables/" + pathSegment(table.Title, table.ID, PrefixTable, tableNames)
-			if err := b.addTable(ctx, base, table, tablePath); err != nil {
-				return nil, err
-			}
 		}
 	}
 	doc["tags"] = b.tags
@@ -199,8 +174,8 @@ func pathSegment(name, id, prefix string, counts map[string]int) string {
 }
 
 // addTable adds the table's record types and its records paths
-func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *tableInfo, tablePath string) error {
-	fields, err := b.a.fields(ctx, b.ws, table)
+func (b *specBuilder) addTable(ctx context.Context, table *tableInfo, tablePath string) error {
+	fields, err := b.a.fields(ctx, b.base, table)
 	if err != nil {
 		return err
 	}
@@ -278,7 +253,7 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 		},
 	}
 
-	tag := base.Title + " / " + table.Title
+	tag := table.Title
 	if b.tagNames[tag] {
 		tag += " (" + tid + ")"
 	}
@@ -325,7 +300,7 @@ func (b *specBuilder) addTable(ctx context.Context, base *baseInfo, table *table
 
 // addLinkRef adds the schema of a link field's objects: the linked record's id and the lookups through the link
 func (b *specBuilder) addLinkRef(ctx context.Context, tid string, fields []*field, link *field) (string, error) {
-	targets, keys, err := b.a.linkObjectKeys(ctx, b.ws, fields, link)
+	targets, keys, err := b.a.linkObjectKeys(ctx, b.base, fields, link)
 	if err != nil {
 		return "", err
 	}

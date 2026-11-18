@@ -43,7 +43,7 @@ func (a *API) parseExpand(ctx context.Context, tc *tableContext, values ...strin
 	set := expandSet{}
 	count, budget := 0, maxExpandTotal
 	for _, path := range paths {
-		if err := a.addExpand(ctx, tc.ws, set, tc.fields, path, path, 1, &count, &budget); err != nil {
+		if err := a.addExpand(ctx, tc.base, set, tc.fields, path, path, 1, &count, &budget); err != nil {
 			return nil, err
 		}
 	}
@@ -52,7 +52,7 @@ func (a *API) parseExpand(ctx context.Context, tc *tableContext, values ...strin
 
 // addExpand adds one path to set. fields are the fields of the table the path starts in; full is the path as
 // the client sent it, for errors.
-func (a *API) addExpand(ctx context.Context, ws workspaceRef, set expandSet, fields []*field, path, full string, depth int, count, budget *int) error {
+func (a *API) addExpand(ctx context.Context, base baseRef, set expandSet, fields []*field, path, full string, depth int, count, budget *int) error {
 	if depth > maxExpandDepth {
 		return badRequest(fmt.Sprintf("expand: %q goes deeper than %d levels. Read the linked records' own links with another request.",
 			full, maxExpandDepth))
@@ -69,7 +69,7 @@ func (a *API) addExpand(ctx context.Context, ws workspaceRef, set expandSet, fie
 		if *count++; *count > maxExpandFields {
 			return badRequest(fmt.Sprintf("expand: at most %d link fields in one request.", maxExpandFields))
 		}
-		target, err := a.linkedTable(ctx, ws, f)
+		target, err := a.linkedTable(ctx, base, f)
 		if err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func (a *API) addExpand(ctx context.Context, ws workspaceRef, set expandSet, fie
 	if rest == "" {
 		return nil
 	}
-	return a.addExpand(ctx, ws, node.children, node.target.fields, rest, full, depth+1, count, budget)
+	return a.addExpand(ctx, base, node.children, node.target.fields, rest, full, depth+1, count, budget)
 }
 
 // splitExpandPath finds the field a path starts with: the whole path when it names a field (names may hold
@@ -104,19 +104,19 @@ func splitExpandPath(fields []*field, path string) (*field, string, error) {
 }
 
 // linkedTable returns the table a link field points to, with its fields; nil when it no longer exists
-func (a *API) linkedTable(ctx context.Context, ws workspaceRef, link *field) (*tableContext, error) {
+func (a *API) linkedTable(ctx context.Context, base baseRef, link *field) (*tableContext, error) {
 	if link.LinkTargetModelID == "" {
 		return nil, nil
 	}
-	table, err := a.tableByID(ctx, ws, link.LinkTargetModelID)
+	table, err := a.tableByID(ctx, base, link.LinkTargetModelID)
 	if err != nil || table == nil {
 		return nil, err
 	}
-	fields, err := a.fields(ctx, ws, table)
+	fields, err := a.fields(ctx, base, table)
 	if err != nil {
 		return nil, err
 	}
-	return &tableContext{ws: ws, table: table, fields: fields}, nil
+	return &tableContext{base: base, table: table, fields: fields}, nil
 }
 
 // expandedRecords reads the linked records of one expanded link field with one query and returns their fields
