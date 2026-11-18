@@ -1777,3 +1777,37 @@ func TestExportDependenciesListsFilterableFields(t *testing.T) {
 	}
 	t.Fatal("no Orders table in the response")
 }
+
+// A name the user types for the new base must be free: it is refused when the workspace already has a base with it
+// (ignoring case), instead of being changed to "name (2)". The name stored in the file is still made free with (2).
+func TestImportRefusesABaseNameThatIsAlreadyUsed(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+	file, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{})
+	must(t, err)
+
+	for _, title := range []string{"CRM", "crm", "  Crm  "} {
+		before := len(c.db.bases)
+		_, err := svc.svc.ImportBase(ctx, "s", workspace, "u", roundTrip(t, file), dto.ImportBaseOptions{Title: title})
+		if !errors.Is(err, app_errors.BaseNameExists) {
+			t.Fatalf("title %q: expected BaseNameExists, got %v", title, err)
+		}
+		if len(c.db.bases) != before {
+			t.Fatalf("title %q: nothing may be left behind, bases went from %d to %d", title, before, len(c.db.bases))
+		}
+	}
+
+	// a free name works
+	res, err := svc.svc.ImportBase(ctx, "s", workspace, "u", roundTrip(t, file), dto.ImportBaseOptions{Title: "CRM copy"})
+	must(t, err)
+	if res.Title != "CRM copy" {
+		t.Fatalf("title = %q", res.Title)
+	}
+	// no name typed: the name in the file is used, and made free
+	res, err = svc.svc.ImportBase(ctx, "s", workspace, "u", roundTrip(t, file), dto.ImportBaseOptions{})
+	must(t, err)
+	if res.Title != "CRM (2)" {
+		t.Fatalf("the name from the file must be made free, got %q", res.Title)
+	}
+}

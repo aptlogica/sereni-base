@@ -309,4 +309,7 @@ var (
 	TransferJobNotReady  = errors.New("export is not ready")
 	TransferJobExpired   = errors.New("export expired")
 	TransferLimitReached = errors.New("too many active exports")
+
+	// BaseNameExists is returned by an import that is given a base name the workspace already uses
+	BaseNameExists = errors.New("a base with this name already exists")
 )

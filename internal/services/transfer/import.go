@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -33,6 +34,9 @@ type importRun struct {
 	userID      string
 	plan        *importPlan
 	includeData bool
+	// titleGiven is true when the request names the new base; a name that is already used is then refused instead of
+	// being changed to "name (2)"
+	titleGiven bool
 
 	baseID uuid.UUID
 	// "@key" -> new id, for tables, fields and relations
@@ -84,6 +88,7 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 		s: s, ctx: ctx, schema: schemaName, workspaceID: workspaceID, userID: userID,
 		plan:        plan,
 		includeData: opts.IncludeData && file.Data != nil,
+		titleGiven:  strings.TrimSpace(opts.Title) != "",
 		ids:         map[string]string{},
 		tables:      map[string]dto.TableResponse{},
 		columns:     map[string]dto.ColumnResponse{},
@@ -248,6 +253,10 @@ func (r *importRun) createBase() error {
 	title, err := r.uniqueBaseTitle(r.result.Title)
 	if err != nil {
 		return err
+	}
+	// a name the user typed must be free; the name stored in the file is made free with "(2)"
+	if r.titleGiven && !strings.EqualFold(title, r.result.Title) {
+		return app_errors.BaseNameExists
 	}
 	description := r.plan.file.Base.Description
 	base, err := r.s.baseService.CreateBaseWithoutTable(r.ctx, dto.CreateBaseRequest{

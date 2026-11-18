@@ -391,6 +391,10 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		response.SendErrorWithData(c, responseConst.Error.ValidationFailed, "the base file is not valid", invalid.Problems)
 		return
 	}
+	if errors.Is(err, app_errors.BaseNameExists) {
+		response.SendError(c, responseConst.BaseError.BaseAlreadyExists)
+		return
+	}
 	if err != nil {
 		response.CheckAndSendError(c, err)
 		return
