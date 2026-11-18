@@ -112,7 +112,7 @@ func attachmentItems(cell interface{}) []map[string]interface{} {
 }
 
 // OpenFile opens a stored file (an attachment or the cover image) for an export adapter, which packs it into the
-// file it writes. It implements adapter.FileSource.
+// file it writes. It is passed to the adapter as an adapter.OpenFileFunc.
 func (s *baseTransferService) OpenFile(ctx context.Context, storagePath string) (io.ReadCloser, error) {
 	if s.storage == nil {
 		return nil, errors.New("files cannot be exported: no storage provider is configured")
@@ -121,12 +121,12 @@ func (s *baseTransferService) OpenFile(ctx context.Context, storagePath string) 
 }
 
 // NewZipSource wraps an opened zip as the attachment source of an import.
-func NewZipSource(zr *zip.Reader) dto.AttachmentSource {
+func NewZipSource(zr *zip.Reader) *dto.Attachments {
 	return sbase.NewZipSource(zr)
 }
 
 // readFile reads one file of the zip, checking its size and checksum against the index.
-func readFile(src dto.AttachmentSource, name, path, checksum string) ([]byte, error) {
+func readFile(src *dto.Attachments, name, path, checksum string) ([]byte, error) {
 	rc, err := src.Open(path)
 	if err != nil {
 		return nil, err

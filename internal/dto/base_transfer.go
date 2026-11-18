@@ -143,10 +143,11 @@ type BaseExportAttachment struct {
 	StoragePath string `json:"-"`
 }
 
-// AttachmentSource gives import the files of a zip, by path.
-type AttachmentSource interface {
-	Has(path string) bool
-	Open(path string) (io.ReadCloser, error)
+// Attachments gives import the files a file format carried, by path. It is a plain struct (not an interface) so
+// that the adapter layer has one interface only: adapter.Adapter. A nil *Attachments means the file carried none.
+type Attachments struct {
+	Has  func(path string) bool
+	Open func(path string) (io.ReadCloser, error)
 }
 
 type BaseExportTableRow struct {
@@ -216,7 +217,7 @@ type ImportBaseOptions struct {
 	// IncludeData is ignored when the file has no data
 	IncludeData bool
 	// Attachments holds the files of a zip upload; nil for a plain JSON upload
-	Attachments AttachmentSource
+	Attachments *Attachments
 	// IncludeAttachments imports the attachment files of a zip and the cover image. When false they are left out and the attachment cells stay empty.
 	IncludeAttachments bool
 	// IncludeAutomations creates the trigger functions and triggers of the file in Postgres. They run SQL from the

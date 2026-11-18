@@ -87,8 +87,8 @@ func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
 //   - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
 //   - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
 //
-// Without include_data the download is a .sbase.json with the structure. With it the export is a .sbase.zip:
-// base.sbase.json with the rows, plus the attachment files and the cover image. That can take a while, so it runs
+// An export is always a .sbase.zip (base.sbase.json plus the attachment files and cover image when asked).
+// Without include_data it is returned directly. With it, it can take a while, so it runs
 // as a background job: the response is 202 with the job (poll GET /export-job/:id, then download it from
 // GET /export-job/:id/download); the finished zip is also sent to the user's email. A user can have two exports
 // active at once; asking again for a base that is already being exported returns that job ("reused": true), and a
@@ -241,7 +241,7 @@ func (h *BaseTransferHandler) runExport(c *gin.Context, id string, exportOpts dt
 
 	// the core service read the base into a model; the adapter writes it as a file
 	format := h.format()
-	opts := adapter.ExportOptions{IncludeData: includeData, IncludeFiles: includeAttachments, Files: h.transferService}
+	opts := adapter.ExportOptions{IncludeData: includeData, IncludeFiles: includeAttachments, OpenFile: h.transferService.OpenFile}
 	filename, contentType := format.Describe(opts, file.Base.Title)
 	h.sendArchive(c, format, opts, file, filename, contentType)
 }
@@ -287,7 +287,7 @@ func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter
 	c.DataFromReader(http.StatusOK, info.Size(), contentType, tmp, nil)
 }
 
-// ImportBase creates a new base in a workspace from an uploaded .sbase.json (or .sbase.zip) file.
+// ImportBase creates a new base in a workspace from an uploaded .sbase.zip file.
 // POST /workspace/:id/import-base  (multipart: file, title, include_data, include_automations;
 // include_automations may also be a URL parameter)
 // A broken file is refused at once (400). Otherwise the import runs as a background job: the response is 202 with the

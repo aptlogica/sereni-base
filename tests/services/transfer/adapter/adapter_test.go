@@ -166,7 +166,7 @@ func TestSbaseExportWithDataIsAZipWithTheFilesAndTheIndexMatchesThem(t *testing.
 	files := memoryFiles{"files/note": "hello note", "covers/1": "PNGDATA"}
 	m := withFiles()
 	var out bytes.Buffer
-	require.NoError(t, sbase.New().Export(context.Background(), m, adapter.ExportOptions{IncludeData: true, Files: files}, &out))
+	require.NoError(t, sbase.New().Export(context.Background(), m, adapter.ExportOptions{IncludeData: true, OpenFile: files.OpenFile}, &out))
 
 	zr, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
 	require.NoError(t, err)
@@ -190,7 +190,7 @@ func TestSbaseExportWithDataIsAZipWithTheFilesAndTheIndexMatchesThem(t *testing.
 	assert.NotContains(t, names["base.sbase.json"], "storage_path", "where a file is read from is never written")
 }
 
-func TestSbaseExportWithFilesNeedsAFileSource(t *testing.T) {
+func TestSbaseExportWithFilesNeedsAnOpenFile(t *testing.T) {
 	err := sbase.New().Export(context.Background(), withFiles(), adapter.ExportOptions{IncludeData: true}, io.Discard)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no storage provider")
@@ -200,7 +200,7 @@ func TestSbaseExportWithFilesNeedsAFileSource(t *testing.T) {
 }
 
 func TestSbaseExportReportsAFileThatCannotBeRead(t *testing.T) {
-	err := sbase.New().Export(context.Background(), withFiles(), adapter.ExportOptions{IncludeData: true, Files: memoryFiles{}}, io.Discard)
+	err := sbase.New().Export(context.Background(), withFiles(), adapter.ExportOptions{IncludeData: true, OpenFile: memoryFiles{}.OpenFile}, io.Discard)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `read "note.txt"`)
 }
@@ -224,7 +224,7 @@ func TestSbaseImportReadsWhatExportWrote(t *testing.T) {
 
 	// zip with files
 	var zp bytes.Buffer
-	require.NoError(t, a.Export(context.Background(), withFiles(), adapter.ExportOptions{IncludeData: true, Files: files}, &zp))
+	require.NoError(t, a.Export(context.Background(), withFiles(), adapter.ExportOptions{IncludeData: true, OpenFile: files.OpenFile}, &zp))
 	got, err = a.Import(context.Background(), bytes.NewReader(zp.Bytes()), int64(zp.Len()), adapter.ImportOptions{Filename: "CRM.SBASE.ZIP"})
 	require.NoError(t, err)
 	assert.Equal(t, "CRM", got.File.Base.Title)

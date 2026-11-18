@@ -547,7 +547,7 @@ func (s *transferJobService) runImport(ctx context.Context, schemaName string, j
 
 // progressFiles counts the files the adapter reads while it packs the zip and reports 70..99 percent
 type progressFiles struct {
-	src   adapter.FileSource
+	src   adapter.OpenFileFunc
 	ctx   context.Context
 	total int
 	mu    sync.Mutex
@@ -555,7 +555,7 @@ type progressFiles struct {
 }
 
 func (p *progressFiles) OpenFile(ctx context.Context, storagePath string) (io.ReadCloser, error) {
-	rc, err := p.src.OpenFile(ctx, storagePath)
+	rc, err := p.src(ctx, storagePath)
 	if err == nil {
 		p.mu.Lock()
 		p.done++
@@ -644,9 +644,9 @@ func (s *transferJobService) build(ctx context.Context, schemaName string, job t
 	}
 
 	// the zip takes the last part of the progress: each stored file that is packed moves it on
-	exportOpts := adapter.ExportOptions{IncludeData: true, Files: s.transfer}
+	exportOpts := adapter.ExportOptions{IncludeData: true, OpenFile: s.transfer.OpenFile}
 	if file.Data != nil && len(file.Data.Attachments) > 0 {
-		exportOpts.Files = &progressFiles{src: s.transfer, ctx: ctx, total: len(file.Data.Attachments)}
+		exportOpts.OpenFile = (&progressFiles{src: s.transfer.OpenFile, ctx: ctx, total: len(file.Data.Attachments)}).OpenFile
 	}
 	reportProgress(ctx, 70)
 

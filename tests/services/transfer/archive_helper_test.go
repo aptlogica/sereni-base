@@ -11,7 +11,7 @@ import (
 )
 
 // writeArchive writes an export with data as the SereniBase adapter does: base.sbase.json and the files as a zip.
-// The core service only builds the model and reads the stored files (it is the adapter's FileSource).
+// The core service only builds the model and reads the stored files (its OpenFile is the adapter's file reader).
 func writeArchive(svc interfaces.BaseTransferService, file *dto.BaseExportFile, w io.Writer) error {
-	return sbase.New().Export(context.Background(), file, adapter.ExportOptions{IncludeData: true, Files: svc}, w)
+	return sbase.New().Export(context.Background(), file, adapter.ExportOptions{IncludeData: true, OpenFile: svc.OpenFile}, w)
 }

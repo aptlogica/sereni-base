@@ -33,12 +33,10 @@ type Capabilities struct {
 	Structure, Rows, Links, Lookups, Views, Constraints, Files bool
 }
 
-// FileSource gives an export the bytes of the files (attachments, cover image) the model lists. The core service
-// implements it, so the adapter needs no storage code.
-type FileSource interface {
-	// OpenFile opens a stored file by the StoragePath of the model entry that lists it
-	OpenFile(ctx context.Context, storagePath string) (io.ReadCloser, error)
-}
+// OpenFileFunc gives an export the bytes of the files (attachments, cover image) the model lists, by the
+// StoragePath of the model entry that lists it. The core service supplies it, so the adapter needs no storage code.
+// It is a function, not an interface: Adapter is the only interface of this layer.
+type OpenFileFunc func(ctx context.Context, storagePath string) (io.ReadCloser, error)
 
 // ExportOptions are the options of one export
 type ExportOptions struct {
@@ -48,8 +46,8 @@ type ExportOptions struct {
 	// IncludeFiles packs the files the model lists (the cover image, and the attachments when IncludeData is set)
 	// into a zip, also when there are no rows
 	IncludeFiles bool
-	// Files reads the files the model lists; it may be nil when the model lists none
-	Files FileSource
+	// OpenFile reads the files the model lists; it may be nil when the model lists none
+	OpenFile OpenFileFunc
 }
 
 // ImportOptions are the options of one import
@@ -65,7 +63,7 @@ type ImportResult struct {
 	File *dto.BaseExportFile
 	// Attachments gives the files a zip carried, by path; nil when the file carried none. It reads from the input
 	// given to Import, so the input must stay open until the import is done.
-	Attachments dto.AttachmentSource
+	Attachments *dto.Attachments
 }
 
 // Adapter reads and writes one file format

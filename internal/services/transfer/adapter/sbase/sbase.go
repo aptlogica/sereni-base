@@ -59,13 +59,13 @@ func (sbaseAdapter) Describe(opt adapter.ExportOptions, title string) (string, s
 func (sbaseAdapter) Export(ctx context.Context, file *dto.BaseExportFile, opt adapter.ExportOptions, out io.Writer) error {
 	zw := zip.NewWriter(out)
 	hasFiles := file.Base.Cover != nil || (file.Data != nil && len(file.Data.Attachments) > 0)
-	if hasFiles && opt.Files == nil {
+	if hasFiles && opt.OpenFile == nil {
 		return errors.New("files cannot be exported: no storage provider is configured")
 	}
 	if file.Data != nil {
 		for i := range file.Data.Attachments {
 			a := &file.Data.Attachments[i]
-			size, sum, err := packFile(ctx, zw, opt.Files, a.Filename, a.Path, a.StoragePath)
+			size, sum, err := packFile(ctx, zw, opt.OpenFile, a.Filename, a.Path, a.StoragePath)
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ func (sbaseAdapter) Export(ctx context.Context, file *dto.BaseExportFile, opt ad
 		}
 	}
 	if c := file.Base.Cover; c != nil {
-		size, sum, err := packFile(ctx, zw, opt.Files, c.Filename, c.Path, c.StoragePath)
+		size, sum, err := packFile(ctx, zw, opt.OpenFile, c.Filename, c.Path, c.StoragePath)
 		if err != nil {
 			return err
 		}
@@ -98,8 +98,8 @@ func encodeJSON(w io.Writer, v interface{}) error {
 }
 
 // packFile copies one stored file into the zip and returns the size and checksum of what was actually read.
-func packFile(ctx context.Context, zw *zip.Writer, files adapter.FileSource, name, path, storagePath string) (int64, string, error) {
-	rc, err := files.OpenFile(ctx, storagePath)
+func packFile(ctx context.Context, zw *zip.Writer, openFile adapter.OpenFileFunc, name, path, storagePath string) (int64, string, error) {
+	rc, err := openFile(ctx, storagePath)
 	if err != nil {
 		return 0, "", fmt.Errorf("read %q: %w", name, err)
 	}
@@ -129,7 +129,7 @@ func (sbaseAdapter) Import(_ context.Context, in io.Reader, size int64, opt adap
 	}
 
 	reader := in
-	var source dto.AttachmentSource
+	var source *dto.Attachments
 	if strings.HasSuffix(strings.ToLower(opt.Filename), ".zip") {
 		ra, ok := in.(io.ReaderAt)
 		if !ok {
@@ -175,31 +175,25 @@ func findZipEntry(zr *zip.Reader) *zip.File {
 	return nil
 }
 
-// zipSource serves the files of an uploaded zip.
-type zipSource struct {
-	files map[string]*zip.File
-}
-
-// NewZipSource wraps an opened zip as the attachment source of an import.
-func NewZipSource(zr *zip.Reader) dto.AttachmentSource {
-	src := &zipSource{files: map[string]*zip.File{}}
+// NewZipSource wraps an opened zip as the attachments of an import.
+func NewZipSource(zr *zip.Reader) *dto.Attachments {
+	files := map[string]*zip.File{}
 	for _, f := range zr.File {
 		if !f.FileInfo().IsDir() {
-			src.files[f.Name] = f
+			files[f.Name] = f
 		}
 	}
-	return src
-}
-
-func (z *zipSource) Has(path string) bool {
-	_, ok := z.files[path]
-	return ok
-}
-
-func (z *zipSource) Open(path string) (io.ReadCloser, error) {
-	f, ok := z.files[path]
-	if !ok {
-		return nil, fmt.Errorf("%s is not in the zip", path)
+	return &dto.Attachments{
+		Has: func(path string) bool {
+			_, ok := files[path]
+			return ok
+		},
+		Open: func(path string) (io.ReadCloser, error) {
+			f, ok := files[path]
+			if !ok {
+				return nil, fmt.Errorf("%s is not in the zip", path)
+			}
+			return f.Open()
+		},
 	}
-	return f.Open()
 }

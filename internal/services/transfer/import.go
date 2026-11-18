@@ -49,7 +49,7 @@ type importRun struct {
 	defaultView map[string]*dto.ViewResponse
 
 	// attachments is the zip's files (nil for a plain JSON file); index is the file's list of them by ref
-	attachments dto.AttachmentSource
+	attachments *dto.Attachments
 	index       map[string]dto.BaseExportAttachment
 	// assetIDs are the files uploaded so far, so a failed import can delete them
 	assetIDs []string

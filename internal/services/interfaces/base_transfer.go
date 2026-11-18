@@ -24,7 +24,7 @@ type BaseTransferService interface {
 	// *dto.ExportFilterError that lists every problem
 	ValidateExportFilters(ctx context.Context, schemaName, baseID string, tables []string, filters map[string]dto.ExportTableFilter) error
 	// OpenFile opens a stored file (an attachment or the cover image) by the StoragePath of the model entry that lists
-	// it. An export adapter uses it to pack the files into the file it writes (adapter.FileSource).
+	// it. An export adapter uses it to pack the files into the file it writes (adapter.OpenFileFunc).
 	OpenFile(ctx context.Context, storagePath string) (io.ReadCloser, error)
 	// ImportBase validates the file and creates it as a new base in the workspace. Nothing is left behind on failure.
 	ImportBase(ctx context.Context, schemaName, workspaceID, userID string, file *dto.BaseExportFile, opts dto.ImportBaseOptions) (dto.ImportBaseResult, error)
