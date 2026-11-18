@@ -20,6 +20,9 @@ type BaseTransferService interface {
 	// ExportDependencies lists the tables of a base and which table needs which (links, lookups, triggers), so a client
 	// can warn before an export that leaves a table out
 	ExportDependencies(ctx context.Context, schemaName, baseID string, includeAutomations bool) (*dto.ExportDependencies, error)
+	// ValidateExportFilters checks the row filters of an export before it starts; the error is a
+	// *dto.ExportFilterError that lists every problem
+	ValidateExportFilters(ctx context.Context, schemaName, baseID string, tables []string, filters map[string]dto.ExportTableFilter) error
 	// OpenFile opens a stored file (an attachment or the cover image) by the StoragePath of the model entry that lists
 	// it. An export adapter uses it to pack the files into the file it writes (adapter.FileSource).
 	OpenFile(ctx context.Context, storagePath string) (io.ReadCloser, error)

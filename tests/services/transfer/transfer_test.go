@@ -1600,3 +1600,180 @@ func TestExportLookupThroughATextLinkIsText(t *testing.T) {
 		t.Fatalf("the export is not valid: %v", problems)
 	}
 }
+
+// columnID returns the id of a field of a table by its title.
+func columnID(t *testing.T, c *crm, tableID, title string) string {
+	t.Helper()
+	cols, err := c.db.GetColumnsByModelID(context.Background(), "s", tableID)
+	must(t, err)
+	for _, col := range cols {
+		if col.Title == title {
+			return col.ID.String()
+		}
+	}
+	t.Fatalf("no field %q", title)
+	return ""
+}
+
+func rowsOf(file *dto.BaseExportFile, tableKey string) int {
+	if file.Data == nil {
+		return 0
+	}
+	return len(file.Data.Tables[tableKey].Rows)
+}
+
+// A row filter keeps only the rows that match; files, links and counts only see those rows.
+func TestExportRowFilter(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+	amount := columnID(t, c, c.orders, "Amount")
+	filter := func(conds ...dto.ExportFilterCondition) map[string]dto.ExportTableFilter {
+		return map[string]dto.ExportTableFilter{"Orders": {Conditions: conds}}
+	}
+
+	// Amount > 100 keeps order 1 (120.5) and drops order 2 (80)
+	file, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, IncludeAttachments: true,
+		Filters: filter(dto.ExportFilterCondition{Column: amount, Operator: "greater than", Value: "100"})})
+	must(t, err)
+	if got := file.Data.RowCounts["t_orders"]; got != 1 || rowsOf(file, "t_orders") != 1 {
+		t.Fatalf("expected 1 order, got %v", file.Data.RowCounts)
+	}
+	if got := file.Data.RowCounts["t_customers"]; got != 2 {
+		t.Fatalf("a table with no filter keeps all its rows, got %v", file.Data.RowCounts)
+	}
+	// Acme was linked to both orders; the link to the order that was filtered out is dropped
+	acme := file.Data.Tables["t_customers"].Rows[0]
+	if links, _ := acme.Values["f_orders"].([]string); len(links) != 1 {
+		t.Fatalf("expected one link left, got %#v", acme.Values["f_orders"])
+	}
+	if problems := transfer.ValidateBaseFile(roundTrip(t, file)); len(problems) > 0 {
+		t.Fatalf("the filtered export is not valid: %v", problems)
+	}
+
+	// OR: Amount > 100 OR Amount < 90 keeps both
+	file, err = svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, Filters: filter(
+		dto.ExportFilterCondition{Column: amount, Operator: "greater than", Value: "100"},
+		dto.ExportFilterCondition{Column: amount, Operator: "less than", Value: "90", Logic: "OR"})})
+	must(t, err)
+	if file.Data.RowCounts["t_orders"] != 2 {
+		t.Fatalf("OR must keep both orders, got %v", file.Data.RowCounts)
+	}
+
+	// AND: Amount > 100 AND Amount < 90 keeps none
+	file, err = svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, Filters: filter(
+		dto.ExportFilterCondition{Column: amount, Operator: "greater than", Value: "100"},
+		dto.ExportFilterCondition{Column: amount, Operator: "less than", Value: "90", Logic: "AND"})})
+	must(t, err)
+	if file.Data.RowCounts["t_orders"] != 0 {
+		t.Fatalf("AND must keep none, got %v", file.Data.RowCounts)
+	}
+
+	// the conditions go from first to last: (A AND B) OR C, where A and B fail and C matches, keeps the row
+	file, err = svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, Filters: filter(
+		dto.ExportFilterCondition{Column: amount, Operator: "greater than", Value: "1000"},
+		dto.ExportFilterCondition{Column: amount, Operator: "greater than", Value: "1", Logic: "AND"},
+		dto.ExportFilterCondition{Column: amount, Operator: "less than", Value: "90", Logic: "OR"})})
+	must(t, err)
+	if file.Data.RowCounts["t_orders"] != 1 {
+		t.Fatalf("(A AND B) OR C must keep the row that matches C, got %v", file.Data.RowCounts)
+	}
+
+	// text: "contains" ignores case; "is equal" does not
+	name := columnID(t, c, c.customers, "Name")
+	cust := func(op, val string) int {
+		f, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, Filters: map[string]dto.ExportTableFilter{
+			"Customers": {Conditions: []dto.ExportFilterCondition{{Column: name, Operator: op, Value: val}}}}})
+		must(t, err)
+		return f.Data.RowCounts["t_customers"]
+	}
+	if cust("contains", "ACM") != 1 || cust("is equal", "acme") != 0 || cust("is equal", "Acme") != 1 || cust("is not empty", "") != 2 {
+		t.Fatal("text operators do not behave as in a table view")
+	}
+}
+
+// The filters are checked before the export starts, and every problem is listed.
+func TestValidateExportFilters(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+	amount := columnID(t, c, c.orders, "Amount")
+	name := columnID(t, c, c.customers, "Name")
+	check := func(tables []string, filters map[string]dto.ExportTableFilter) []string {
+		err := svc.svc.ValidateExportFilters(ctx, "s", c.baseID, tables, filters)
+		if err == nil {
+			return nil
+		}
+		var invalid *dto.ExportFilterError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("expected an ExportFilterError, got %v", err)
+		}
+		return invalid.Problems
+	}
+	one := func(cond dto.ExportFilterCondition) map[string]dto.ExportTableFilter {
+		return map[string]dto.ExportTableFilter{"Orders": {Conditions: []dto.ExportFilterCondition{cond}}}
+	}
+
+	if p := check(nil, one(dto.ExportFilterCondition{Column: amount, Operator: "greater than", Value: "100"})); p != nil {
+		t.Fatalf("a valid filter was refused: %v", p)
+	}
+	if p := check(nil, nil); p != nil {
+		t.Fatalf("no filters is valid: %v", p)
+	}
+	cases := []struct {
+		name    string
+		tables  []string
+		filters map[string]dto.ExportTableFilter
+		want    string
+	}{
+		{"unknown field", nil, one(dto.ExportFilterCondition{Column: "nope", Operator: "is equal", Value: "1"}), "does not exist"},
+		{"operator of another type", nil, one(dto.ExportFilterCondition{Column: amount, Operator: "contains", Value: "1"}), "cannot be used"},
+		{"value is not a number", nil, one(dto.ExportFilterCondition{Column: amount, Operator: "is equal", Value: "abc"}), "is not a number"},
+		{"value missing", nil, one(dto.ExportFilterCondition{Column: amount, Operator: "is equal"}), "a value is needed"},
+		{"field of another table", nil, one(dto.ExportFilterCondition{Column: name, Operator: "is equal", Value: "x"}), "does not exist"},
+		{"bad logic", nil, map[string]dto.ExportTableFilter{"Orders": {Conditions: []dto.ExportFilterCondition{
+			{Column: amount, Operator: "is equal", Value: "1"}, {Column: amount, Operator: "is equal", Value: "2", Logic: "XOR"}}}}, "AND or OR"},
+		{"unknown table", nil, map[string]dto.ExportTableFilter{"Nope": {Conditions: []dto.ExportFilterCondition{{Column: amount, Operator: "is equal", Value: "1"}}}}, "does not exist"},
+		{"table not in the export", []string{"Customers"}, one(dto.ExportFilterCondition{Column: amount, Operator: "is equal", Value: "1"}), "not part of the export"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := check(tc.tables, tc.filters)
+			if len(p) == 0 || !strings.Contains(strings.Join(p, " | "), tc.want) {
+				t.Fatalf("expected a problem with %q, got %v", tc.want, p)
+			}
+		})
+	}
+	// a field a view's filter cannot use (a link) cannot be used here either
+	link := columnID(t, c, c.customers, "Orders")
+	p := check(nil, map[string]dto.ExportTableFilter{"Customers": {Conditions: []dto.ExportFilterCondition{{Column: link, Operator: "is equal", Value: "1"}}}})
+	if len(p) == 0 || !strings.Contains(p[0], "cannot be filtered") {
+		t.Fatalf("a link field cannot be filtered, got %v", p)
+	}
+}
+
+// The dependencies response lists the fields a filter can use.
+func TestExportDependenciesListsFilterableFields(t *testing.T) {
+	c := seedCRM(t)
+	got, err := newService(c.db).svc.ExportDependencies(context.Background(), "s", c.baseID, false)
+	must(t, err)
+	for _, tbl := range got.Tables {
+		if tbl.Title != "Orders" {
+			continue
+		}
+		titles := map[string]string{}
+		for _, f := range tbl.Fields {
+			titles[f.Title] = f.UIDT
+		}
+		if titles["Amount"] != "decimal" || titles["Status"] != "select" {
+			t.Fatalf("expected Amount and Status, got %v", titles)
+		}
+		for _, hidden := range []string{"Id", "Customer", "Tags", "Files", "Customer name", "Created Time"} {
+			if _, ok := titles[hidden]; ok {
+				t.Fatalf("%s cannot be filtered and must not be listed: %v", hidden, titles)
+			}
+		}
+		return
+	}
+	t.Fatal("no Orders table in the response")
+}

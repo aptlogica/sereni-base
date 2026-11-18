@@ -30,6 +30,17 @@ type capturingTransfer struct {
 	called bool
 	// exported are the options of the last export
 	exported dto.ExportBaseOptions
+	// filterProblems makes ValidateExportFilters refuse the filters; validated holds what it was asked to check
+	filterProblems []string
+	validated      map[string]dto.ExportTableFilter
+}
+
+func (c *capturingTransfer) ValidateExportFilters(_ context.Context, _, _ string, _ []string, filters map[string]dto.ExportTableFilter) error {
+	c.validated = filters
+	if len(c.filterProblems) > 0 {
+		return &dto.ExportFilterError{Problems: c.filterProblems}
+	}
+	return nil
 }
 
 func (c *capturingTransfer) ImportBase(_ context.Context, _, _, _ string, _ *dto.BaseExportFile, opts dto.ImportBaseOptions) (dto.ImportBaseResult, error) {
@@ -348,4 +359,64 @@ func isSbaseZip(data []byte, title string) bool {
 		return json.NewDecoder(rc).Decode(&doc) == nil && doc.Base.Title == title
 	}
 	return false
+}
+
+// exportBody sends POST /export with a JSON body.
+func exportBody(t *testing.T, body string, problems []string) (*capturingTransfer, *httptest.ResponseRecorder) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	svc := &capturingTransfer{file: &dto.BaseExportFile{Base: dto.BaseExportBase{Title: "CRM"}}, filterProblems: problems}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "33cc3ba3-9fac-43d8-866f-0bd1e44548eb"}}
+	c.Set("schema", "s")
+	c.Set(handlers.AutomationsAllowedKey, true)
+	handlers.NewBaseTransferHandler(svc).ExportBaseWithBody(c)
+	return svc, w
+}
+
+const filterBody = `{"include_data": %s, "tables": ["Orders"], "filters": {"Orders": {"conditions": [
+	{"column": "f1", "operator": "is equal", "value": "Paid"}, {"column": "f2", "operator": "greater than", "value": "100", "logic": "AND"}]}}}`
+
+// The body carries the options and the filters; the filters are checked before the export starts.
+func TestExportWithBodyPassesTheFilters(t *testing.T) {
+	svc, w := exportBody(t, strings.Replace(filterBody, "%s", "true", 1), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+	f := svc.exported.Filters["Orders"]
+	if !svc.exported.IncludeData || len(svc.exported.Tables) != 1 || len(f.Conditions) != 2 || f.Conditions[1].Logic != "AND" || svc.validated == nil {
+		t.Fatalf("options %+v, validated %v", svc.exported, svc.validated)
+	}
+}
+
+// Filters keep only some rows, so they mean nothing without data.
+func TestExportWithFiltersNeedsData(t *testing.T) {
+	_, w := exportBody(t, strings.Replace(filterBody, "%s", "false", 1), nil)
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "include_data") {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+}
+
+// A filter that is not valid is refused (422, like an invalid import file) with the list of what is wrong, and nothing is exported.
+func TestExportWithAnInvalidFilterIsRefused(t *testing.T) {
+	svc, w := exportBody(t, strings.Replace(filterBody, "%s", "true", 1), []string{"filter of Orders, condition 2: \"x\" is not a number"})
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "is not a number") {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+	if len(svc.exported.Filters) != 0 {
+		t.Fatalf("nothing must be exported, got %+v", svc.exported)
+	}
+}
+
+func TestExportWithBodyDefaultsLikeTheQuery(t *testing.T) {
+	svc, w := exportBody(t, `{"include_data": true}`, nil)
+	if w.Code != http.StatusOK || !svc.exported.IncludeData || !svc.exported.IncludeAttachments || !svc.exported.IncludeAutomations || svc.validated != nil {
+		t.Fatalf("status %d, options %+v", w.Code, svc.exported)
+	}
+	if _, w = exportBody(t, `not json`, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("a body that is not JSON must be refused, got %d", w.Code)
+	}
 }

@@ -8,6 +8,7 @@ package dto
 import (
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -170,6 +171,42 @@ type ExportBaseOptions struct {
 	IncludeAutomations bool
 	// Tables limits the export to specific tables by ID, title, or key. If empty, all tables are exported.
 	Tables []string
+	// Filters keeps only the rows that match, per table (by id, title or alias, like Tables). A table with no entry
+	// exports all its rows. Only used with IncludeData.
+	Filters map[string]ExportTableFilter
+}
+
+// ExportFilterCondition is one condition of a row filter. It is the condition the filter builder of a table view
+// makes. Column is the id of the field.
+type ExportFilterCondition struct {
+	Column   string `json:"column"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+	// Logic joins this condition to the ones before it: "AND" (default) or "OR". The first condition has none.
+	Logic string `json:"logic,omitempty"`
+}
+
+// ExportTableFilter is the filter of one table: its conditions, combined from first to last
+type ExportTableFilter struct {
+	Conditions []ExportFilterCondition `json:"conditions"`
+}
+
+// ExportBaseRequest is the body of POST /base/:id/export: the options of the GET request, and the row filters
+type ExportBaseRequest struct {
+	IncludeData        *bool                        `json:"include_data"`
+	IncludeAttachments *bool                        `json:"include_attachments"`
+	IncludeAutomations *bool                        `json:"include_automations"`
+	Tables             []string                     `json:"tables"`
+	Filters            map[string]ExportTableFilter `json:"filters"`
+}
+
+// ExportFilterError says why the filters of an export are not valid, in words for the user
+type ExportFilterError struct {
+	Problems []string
+}
+
+func (e *ExportFilterError) Error() string {
+	return "the export filters are not valid: " + strings.Join(e.Problems, "; ")
 }
 
 // ImportBaseOptions are the options of a base import
@@ -240,10 +277,21 @@ const (
 	ExportDependencyTrigger = "trigger"
 )
 
+// ExportFieldInfo is a field of a table that a row filter can use
+type ExportFieldInfo struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	UIDT  string `json:"uidt"`
+	// Options are the choices of a select or multi-select field
+	Options []string `json:"options,omitempty"`
+}
+
 // ExportTableInfo is a table that can be picked for an export
 type ExportTableInfo struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	// Fields are the fields a row filter can use
+	Fields []ExportFieldInfo `json:"fields"`
 }
 
 // ExportDependency says that a table needs another table of the same base: one of its link fields points at it, a

@@ -144,14 +144,75 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 		includeAutomations = automationsAllowed && (incTrig || incFn)
 	}
 
-	tables := queryTables(c)
-
-	exportOpts := dto.ExportBaseOptions{
+	h.runExport(c, id, dto.ExportBaseOptions{
 		IncludeData:        includeData,
 		IncludeAttachments: includeAttachments,
 		IncludeAutomations: includeAutomations,
-		Tables:             tables,
+		Tables:             queryTables(c),
+	})
+}
+
+// ExportBaseWithBody exports a base with the options in a JSON body, which can also hold row filters.
+// POST /base/:id/export
+// Body: {"include_data": true, "include_attachments": true, "include_automations": false, "tables": ["<table>"],
+// "filters": {"<table>": {"conditions": [{"column": "<field id>", "operator": "is equal", "value": "Active"},
+// {"column": "<field id>", "operator": "greater than", "value": "100", "logic": "AND"}]}}}
+// The options mean the same as in the query of GET. A filter keeps only the matching rows of its table, so it needs
+// include_data; a table that has a filter must be part of the export. A filter that is not valid is refused with
+// 400 and the list of what is wrong. The response is the same as for GET: a zip, or 202 with a job.
+func (h *BaseTransferHandler) ExportBaseWithBody(c *gin.Context) {
+	id := c.Param("id")
+	if !validateBaseID(c, id) {
+		return
 	}
+	var req dto.ExportBaseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+	includeData := req.IncludeData != nil && *req.IncludeData
+	includeAttachments := includeData
+	if req.IncludeAttachments != nil {
+		includeAttachments = *req.IncludeAttachments
+	}
+	automationsAllowed := c.GetBool(AutomationsAllowedKey)
+	includeAutomations := automationsAllowed
+	if req.IncludeAutomations != nil {
+		includeAutomations = automationsAllowed && *req.IncludeAutomations
+	}
+	opts := dto.ExportBaseOptions{
+		IncludeData:        includeData,
+		IncludeAttachments: includeAttachments,
+		IncludeAutomations: includeAutomations,
+		Tables:             cleanTableNames(req.Tables),
+		Filters:            req.Filters,
+	}
+
+	if len(opts.Filters) > 0 {
+		if !includeData {
+			response.SendErrorWithData(c, responseConst.Error.ValidationFailed, "the export filters are not valid",
+				[]string{"row filters need include_data to be true"})
+			return
+		}
+		schemaName, _ := c.Get("schema")
+		schema, _ := schemaName.(string)
+		err := h.transferService.ValidateExportFilters(c.Request.Context(), schema, id, opts.Tables, opts.Filters)
+		var invalid *dto.ExportFilterError
+		if errors.As(err, &invalid) {
+			response.SendErrorWithData(c, responseConst.Error.ValidationFailed, "the export filters are not valid", invalid.Problems)
+			return
+		}
+		if err != nil {
+			response.CheckAndSendError(c, err)
+			return
+		}
+	}
+	h.runExport(c, id, opts)
+}
+
+// runExport exports a base with the options: as a background job when it has data, otherwise as a direct download.
+func (h *BaseTransferHandler) runExport(c *gin.Context, id string, exportOpts dto.ExportBaseOptions) {
+	includeData, includeAttachments := exportOpts.IncludeData, exportOpts.IncludeAttachments
 
 	schemaName, _ := c.Get("schema")
 	schema, _ := schemaName.(string)
@@ -183,6 +244,19 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 	opts := adapter.ExportOptions{IncludeData: includeData, IncludeFiles: includeAttachments, Files: h.transferService}
 	filename, contentType := format.Describe(opts, file.Base.Title)
 	h.sendArchive(c, format, opts, file, filename, contentType)
+}
+
+// cleanTableNames trims the names of the tables of an export and drops blanks and duplicates
+func cleanTableNames(names []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n != "" && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // sendArchive downloads the export that holds files (a zip). It is built in a temporary file first, so a failure

@@ -107,7 +107,7 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 	}
 
 	if opts.IncludeData {
-		data, err := s.exportData(ctx, schemaName, tables, skipped, asText, withFiles, warnings)
+		data, err := s.exportData(ctx, schemaName, tables, skipped, asText, resolveFilters(tableResponses, opts.Filters), withFiles, warnings)
 		if err != nil {
 			return nil, err
 		}
@@ -438,7 +438,7 @@ func (s *baseTransferService) pkColumn(ctx context.Context, schemaName, modelID 
 	return pk.ColumnNames[0]
 }
 
-func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped, asText map[string]struct{}, withFiles bool, warnings *[]string) (*dto.BaseExportData, error) {
+func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped, asText map[string]struct{}, filters map[string]dto.ExportTableFilter, withFiles bool, warnings *[]string) (*dto.BaseExportData, error) {
 	data := &dto.BaseExportData{
 		RowCounts: map[string]int{},
 		Tables:    map[string]dto.BaseExportTableRow{},
@@ -457,6 +457,11 @@ func (s *baseTransferService) exportData(ctx context.Context, schemaName string,
 		}
 		recs := res.Records
 		sort.SliceStable(recs, func(i, j int) bool { return numericID(recs[i]["id"]) < numericID(recs[j]["id"]) })
+		// A row filter keeps only the rows that match. It runs before the rows get a _rid, so links to a row that was
+		// filtered out are dropped, and files, row counts and the rest only see the rows that stay.
+		if f, ok := filters[modelID]; ok {
+			recs = filterRecords(recs, t.columns, f)
+		}
 		records[modelID] = recs
 
 		pk := s.pkColumn(ctx, schemaName, modelID, warnings)

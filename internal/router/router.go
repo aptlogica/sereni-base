@@ -393,6 +393,12 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 			automationsAccess(middlewares, appConstant.ActionCodes.Read),
 			handlers.BaseTransfer.ExportBase)
 
+		// The same export with the options in a JSON body, which can also hold row filters
+		base.POST("/:id/export",
+			objectGuard(middlewares, appConstant.ResourceCodes.Records, appConstant.ActionCodes.Export, baseParam),
+			automationsAccess(middlewares, appConstant.ActionCodes.Read),
+			handlers.BaseTransfer.ExportBaseWithBody)
+
 		// Which table needs which, for the warnings of the export dialog. Same permissions as the export.
 		base.GET("/:id/export-dependencies",
 			objectGuard(middlewares, appConstant.ResourceCodes.Records, appConstant.ActionCodes.Export, baseParam),

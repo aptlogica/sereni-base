@@ -34,7 +34,13 @@ func (s *baseTransferService) ExportDependencies(ctx context.Context, schemaName
 	byID := map[string]*exportTable{}
 	for _, t := range tables {
 		byID[t.model.ID.String()] = t
-		out.Tables = append(out.Tables, dto.ExportTableInfo{ID: t.model.ID.String(), Title: t.model.Title})
+		info := dto.ExportTableInfo{ID: t.model.ID.String(), Title: t.model.Title, Fields: []dto.ExportFieldInfo{}}
+		for _, c := range t.columns {
+			if isFilterableField(c) {
+				info.Fields = append(info.Fields, dto.ExportFieldInfo{ID: c.ID.String(), Title: c.Title, UIDT: c.UIDT, Options: filterOptions(c)})
+			}
+		}
+		out.Tables = append(out.Tables, info)
 	}
 
 	seen := map[string]struct{}{}
