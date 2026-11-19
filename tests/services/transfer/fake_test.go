@@ -133,10 +133,10 @@ func (f *fakeDB) CreateTableWithDefaultsImport(_ context.Context, req dto.Create
 		title string
 		uidt  string
 		order float64
-	}{{"Id", "number", 0}, {"Created Time", "datetime", 2}, {"Last Modified Time", "datetime", 3}}
+	}{{"Id", "number", 0}, {"Created Time", "datetime", 2}, {"Last Modified Time", "datetime", 3}, {"Created By", "text", 4}}
 	for _, s := range system {
 		f.columns[id] = append(f.columns[id], dto.ColumnResponse{
-			DT: map[string]string{"number": "BIGSERIAL", "datetime": "TIMESTAMP"}[s.uidt],
+			DT: map[string]string{"number": "BIGSERIAL", "datetime": "TIMESTAMP", "text": "TEXT"}[s.uidt],
 			ID: uuid.New(), ModelID: m.ID, BaseID: baseID, Title: s.title, ColumnName: columnName(s.title),
 			UIDT: s.uidt, System: ptr(true), Deleted: ptr(false), OrderIndex: ptr(s.order), Meta: map[string]interface{}{},
 		})
@@ -331,6 +331,14 @@ func (f *fakeDB) CreateRowsWithValues(_ context.Context, _ string, modelID strin
 		f.nextRow[modelID]++
 		row := map[string]interface{}{"id": f.nextRow[modelID]}
 		for colID, val := range in {
+			// like the real service: the import can give the id of a row
+			if name, ok := strings.CutPrefix(colID, "@system:"); ok {
+				row[name] = val
+				if n, isInt := val.(int); isInt && n > f.nextRow[modelID] {
+					f.nextRow[modelID] = n
+				}
+				continue
+			}
 			col, ok := f.columnByID(colID)
 			if !ok || col.ModelID.String() != modelID {
 				return nil, fmt.Errorf("unknown column %s", colID)
@@ -717,4 +725,17 @@ func isAutoUUIDColumn(col dto.ColumnResponse) bool {
 	}
 	cfg, _ := col.Meta["idGeneration"].(map[string]interface{})
 	return cfg["mode"] == "auto"
+}
+
+// RestoreRowSystemValues writes system columns of a row as they are, like the real service.
+func (f *fakeDB) RestoreRowSystemValues(_ context.Context, _ string, modelID string, rowID int, values map[string]interface{}) error {
+	for _, row := range f.rows[modelID] {
+		if id, _ := row["id"].(int); id == rowID {
+			for k, v := range values {
+				row[k] = v
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("no row %d", rowID)
 }

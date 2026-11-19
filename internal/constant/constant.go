@@ -11,6 +11,10 @@ import (
 )
 
 const (
+	// SystemValueKeyPrefix marks a key of a row given to CreateRowsWithValues as a value of a system column (by column
+	// name: id, created_time, ...) instead of a column id. Only the base import uses it, to restore the source columns.
+	SystemValueKeyPrefix = "@system:"
+
 	MasterDatabase = "public"
 
 	// Email footer notice

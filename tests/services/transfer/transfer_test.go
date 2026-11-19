@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/dto"
@@ -1809,5 +1810,112 @@ func TestImportRefusesABaseNameThatIsAlreadyUsed(t *testing.T) {
 	must(t, err)
 	if res.Title != "CRM (2)" {
 		t.Fatalf("the name from the file must be made free, got %q", res.Title)
+	}
+}
+
+// setSourceValues gives the rows of a table a created time and user, so source columns have something to write.
+func setSourceValues(db *fakeDB, modelID string) {
+	for i, row := range db.rows[modelID] {
+		row["created_time"] = time.Date(2024, 1, 2+i, 10, 0, 0, 0, time.UTC)
+		row["last_modified_time"] = time.Date(2025, 3, 4+i, 11, 30, 0, 0, time.UTC)
+		row["created_by"] = "source-user"
+	}
+}
+
+func TestExportWithSourceColumns(t *testing.T) {
+	c := seedCRM(t)
+	setSourceValues(c.db, c.customers)
+	svc := newService(c.db)
+	ctx := context.Background()
+
+	off, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true})
+	must(t, err)
+	if _, has := off.Data.Tables["t_customers"].Rows[0].Values["f_created_time"]; has {
+		t.Fatal("source columns must not be written unless asked for")
+	}
+
+	on, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, IncludeSystemColumns: true})
+	must(t, err)
+	first := on.Data.Tables["t_customers"].Rows[0].Values
+	if first["f_id"] != int64(1) || first["f_created_time"] != "2024-01-02T10:00:00Z" || first["f_created_by"] != "source-user" {
+		t.Fatalf("source values = %#v", first)
+	}
+	if problems := transfer.ValidateBaseFile(roundTrip(t, on)); len(problems) > 0 {
+		t.Fatalf("own export is not valid: %v", problems)
+	}
+
+	// without data the option does nothing and says so
+	noData, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeSystemColumns: true})
+	must(t, err)
+	if noData.Data != nil || !strings.Contains(strings.Join(noData.Skipped, " "), "source columns") {
+		t.Fatalf("expected a warning and no data, got %v", noData.Skipped)
+	}
+}
+
+func TestImportRestoresSourceColumnsOnlyWhenAsked(t *testing.T) {
+	c := seedCRM(t)
+	setSourceValues(c.db, c.customers)
+	// a row id the new base would not hand out by itself
+	c.db.rows[c.customers][1]["id"] = 40
+	svc := newService(c.db)
+	ctx := context.Background()
+	file, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, IncludeSystemColumns: true})
+	must(t, err)
+
+	newCustomers := func(baseID string) []map[string]interface{} {
+		for id, m := range c.db.models {
+			if m.BaseID.String() == baseID && m.Title == "Customers" {
+				return c.db.rows[id]
+			}
+		}
+		t.Fatal("no customers table")
+		return nil
+	}
+
+	res, err := svc.svc.ImportBase(ctx, "s", workspace, "importer", roundTrip(t, file), dto.ImportBaseOptions{IncludeData: true, IncludeSystemColumns: true})
+	must(t, err)
+	rows := newCustomers(res.BaseID)
+	if len(rows) != 2 || rows[1]["id"] != 40 {
+		t.Fatalf("ids were not restored: %v", rows)
+	}
+	if rows[0]["created_time"] != time.Date(2024, 1, 2, 10, 0, 0, 0, time.UTC) || rows[0]["created_by"] != "source-user" {
+		t.Fatalf("source values were not restored: %v", rows[0])
+	}
+
+	res, err = svc.svc.ImportBase(ctx, "s", workspace, "importer", roundTrip(t, file), dto.ImportBaseOptions{IncludeData: true})
+	must(t, err)
+	rows = newCustomers(res.BaseID)
+	if rows[1]["id"] == 40 || rows[0]["created_by"] != nil {
+		t.Fatalf("source columns were restored although the option was off: %v", rows)
+	}
+}
+
+func TestValidationOfSourceColumnValues(t *testing.T) {
+	c := seedCRM(t)
+	file, err := newService(c.db).svc.ExportBase(context.Background(), "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, IncludeSystemColumns: true})
+	must(t, err)
+	bad := roundTrip(t, file)
+	rows := bad.Data.Tables["t_customers"].Rows
+	rows[0].Values["f_created_time"] = "yesterday"
+	rows[1].Values["f_id"] = rows[0].Values["f_id"]
+	problems := strings.Join(transfer.ValidateBaseFile(bad), "\n")
+	if !strings.Contains(problems, "a time must be text") || !strings.Contains(problems, "is used by another row") {
+		t.Fatalf("problems = %s", problems)
+	}
+}
+
+// The database may give a TIMESTAMP as text without a zone; the export still writes RFC 3339, which validates.
+func TestSourceTimesGivenAsTextWithoutZone(t *testing.T) {
+	c := seedCRM(t)
+	c.db.rows[c.customers][0]["created_time"] = "2025-01-31T10:00:00.123456"
+	c.db.rows[c.customers][0]["last_modified_time"] = "2025-01-31 10:00:00"
+	file, err := newService(c.db).svc.ExportBase(context.Background(), "s", c.baseID, dto.ExportBaseOptions{IncludeData: true, IncludeSystemColumns: true})
+	must(t, err)
+	v := file.Data.Tables["t_customers"].Rows[0].Values
+	if v["f_created_time"] != "2025-01-31T10:00:00.123456Z" || v["f_last_modified_time"] != "2025-01-31T10:00:00Z" {
+		t.Fatalf("times = %v, %v", v["f_created_time"], v["f_last_modified_time"])
+	}
+	if problems := transfer.ValidateBaseFile(roundTrip(t, file)); len(problems) > 0 {
+		t.Fatalf("problems: %v", problems)
 	}
 }

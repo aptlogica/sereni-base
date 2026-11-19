@@ -2671,6 +2671,7 @@ func (s tableManagementService) CreateRowsWithValues(
 	// Each record is inserted with its values in one statement; if one fails, the records created before it
 	// by this request are removed, so nothing is half done
 	var created []int
+	restoredID := false
 	for _, row := range rowsInput {
 		inserted, err := s.insertRowValues(ctx, schemaName, model, row, createdBy, updatedBy)
 		if err != nil {
@@ -2684,6 +2685,18 @@ func (s tableManagementService) CreateRowsWithValues(
 		}
 		created = append(created, rowID)
 		rows = append(rows, inserted)
+		if _, given := row[constant.SystemValueKeyPrefix+"id"]; given {
+			restoredID = true
+		}
+	}
+	// Rows that came with their own id do not move the id counter: move it past the largest id, so the next
+	// row created in the app does not get an id that is taken
+	if restoredID {
+		query := fmt.Sprintf("SELECT setval(pg_get_serial_sequence('%s', 'id'), (SELECT COALESCE(MAX(id), 1) FROM %s))", strings.ReplaceAll(tableName, "'", "''"), tableName)
+		if _, err := s.repo.DB.Exec(query); err != nil {
+			s.removeCreatedRows(tableName, created)
+			return nil, fmt.Errorf("move the id counter of %s: %w", tableName, err)
+		}
 	}
 
 	return rows, nil

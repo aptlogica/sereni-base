@@ -84,6 +84,7 @@ func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
 // Options:
 //   - include_data: boolean (default false). When true, exports records.
 //   - include_attachments: boolean (default matches include_data). When true, packs attachment files into the zip.
+//   - include_system_columns: boolean (default false). Writes id, created / modified time and user of every row; needs include_data.
 //   - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
 //   - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
 //
@@ -121,6 +122,12 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 		}
 	}
 
+	includeSystemColumns, err := queryBool(c, "include_system_columns", false)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+
 	automationsAllowed := c.GetBool(AutomationsAllowedKey)
 	includeAutomations := automationsAllowed
 
@@ -148,13 +155,15 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 		IncludeData:        includeData,
 		IncludeAttachments: includeAttachments,
 		IncludeAutomations: includeAutomations,
-		Tables:             queryTables(c),
+		// source columns are values of the rows, so they need the data
+		IncludeSystemColumns: includeSystemColumns && includeData,
+		Tables:               queryTables(c),
 	})
 }
 
 // ExportBaseWithBody exports a base with the options in a JSON body, which can also hold row filters.
 // POST /base/:id/export
-// Body: {"include_data": true, "include_attachments": true, "include_automations": false, "tables": ["<table>"],
+// Body: {"include_data": true, "include_attachments": true, "include_automations": false, "include_system_columns": false, "tables": ["<table>"],
 // "filters": {"<table>": {"conditions": [{"column": "<field id>", "operator": "is equal", "value": "Active"},
 // {"column": "<field id>", "operator": "greater than", "value": "100", "logic": "AND"}]}}}
 // The options mean the same as in the query of GET. A filter keeps only the matching rows of its table, so it needs
@@ -181,11 +190,12 @@ func (h *BaseTransferHandler) ExportBaseWithBody(c *gin.Context) {
 		includeAutomations = automationsAllowed && *req.IncludeAutomations
 	}
 	opts := dto.ExportBaseOptions{
-		IncludeData:        includeData,
-		IncludeAttachments: includeAttachments,
-		IncludeAutomations: includeAutomations,
-		Tables:             cleanTableNames(req.Tables),
-		Filters:            req.Filters,
+		IncludeData:          includeData,
+		IncludeAttachments:   includeAttachments,
+		IncludeAutomations:   includeAutomations,
+		IncludeSystemColumns: includeData && req.IncludeSystemColumns != nil && *req.IncludeSystemColumns,
+		Tables:               cleanTableNames(req.Tables),
+		Filters:              req.Filters,
 	}
 
 	if len(opts.Filters) > 0 {
@@ -288,7 +298,7 @@ func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter
 }
 
 // ImportBase creates a new base in a workspace from an uploaded .sbase.zip file.
-// POST /workspace/:id/import-base  (multipart: file, title, include_data, include_automations;
+// POST /workspace/:id/import-base  (multipart: file, title, include_data, include_system_columns, include_automations;
 // include_automations may also be a URL parameter)
 // A broken file is refused at once (400). Otherwise the import runs as a background job: the response is 202 with the
 // job (poll GET /import-job/:id until it is completed or failed).
@@ -328,6 +338,13 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
 	}
+	includeSystemColumns, err := formBool(c, "include_system_columns", false)
+	if err != nil {
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return
+	}
+	// source columns are values of the rows, so they need the data
+	includeSystemColumns = includeSystemColumns && includeData
 
 	// the adapter reads the file into a model; it stays open until the import is done, because the files of a zip
 	// are read from it while the base is created
@@ -362,10 +379,11 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 			return
 		}
 		job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, upfile, upload.Filename, upload.Size, dto.ImportBaseOptions{
-			Title:              title,
-			IncludeData:        includeData,
-			IncludeAttachments: includeAttachments,
-			IncludeAutomations: includeAutomations,
+			Title:                title,
+			IncludeData:          includeData,
+			IncludeAttachments:   includeAttachments,
+			IncludeAutomations:   includeAutomations,
+			IncludeSystemColumns: includeSystemColumns,
 		})
 		if errors.Is(err, app_errors.TransferLimitReached) {
 			response.SendError(c, responseConst.BaseError.TransferLimitReached)
@@ -380,11 +398,12 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 	}
 
 	result, err := h.transferService.ImportBase(c.Request.Context(), schema, workspaceID, user, read.File, dto.ImportBaseOptions{
-		Title:              title,
-		IncludeData:        includeData,
-		Attachments:        read.Attachments,
-		IncludeAttachments: includeAttachments,
-		IncludeAutomations: includeAutomations,
+		Title:                title,
+		IncludeData:          includeData,
+		Attachments:          read.Attachments,
+		IncludeAttachments:   includeAttachments,
+		IncludeAutomations:   includeAutomations,
+		IncludeSystemColumns: includeSystemColumns,
 	})
 	var invalid *dto.ImportValidationError
 	if errors.As(err, &invalid) {

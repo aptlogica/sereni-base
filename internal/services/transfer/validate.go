@@ -7,6 +7,7 @@ package services
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -324,6 +325,7 @@ func validateData(plan *importPlan, problems *problemList) {
 		}
 	}
 	refs := validateAttachmentIndex(data, problems)
+	usedIDs := map[string]struct{}{}
 	for tkey, rows := range data.Tables {
 		for i, r := range rows.Rows {
 			for fkey, val := range r.Values {
@@ -332,6 +334,16 @@ func validateData(plan *importPlan, problems *problemList) {
 				switch {
 				case !ok || plan.fieldTable[fkey] != tkey:
 					problems.add("%s: field is not in table %s", where, tkey)
+				case f.System && isSourceColumn(f.ColumnName):
+					checkSourceValue(f, val, where, problems)
+					if f.ColumnName == "id" {
+						// two rows of a table cannot get the same id
+						k := tkey + "|" + cellKey(val)
+						if _, dup := usedIDs[k]; dup {
+							problems.add("%s: the id %s is used by another row of table %s", where, cellKey(val), tkey)
+						}
+						usedIDs[k] = struct{}{}
+					}
 				case f.System || f.UIDT == uidtLookup:
 					problems.add("%s: %s fields are calculated and cannot hold values", where, describeField(f))
 				case f.UIDT == uidtLinks:
@@ -340,6 +352,25 @@ func validateData(plan *importPlan, problems *problemList) {
 					checkAttachmentCell(val, refs, where, problems)
 				}
 			}
+		}
+	}
+}
+
+// checkSourceValue checks the value of a source column (id, created / modified time and user) of a row.
+func checkSourceValue(f dto.BaseExportField, val interface{}, where string, problems *problemList) {
+	switch f.ColumnName {
+	case "id":
+		if n := numericID(val); n < 1 || n != math.Trunc(n) {
+			problems.add("%s: the id must be a whole number above 0", where)
+		}
+	case "created_time", "last_modified_time":
+		text, _ := val.(string)
+		if _, ok := parseSourceTime(text); !ok {
+			problems.add("%s: a time must be text like 2025-01-31T10:00:00Z", where)
+		}
+	default:
+		if _, ok := val.(string); !ok {
+			problems.add("%s: a user must be text", where)
 		}
 	}
 }

@@ -133,6 +133,8 @@ func (s tableManagementService) insertRowValues(
 	createdBy string,
 	updatedBy string,
 ) (dto.RecordResponse, error) {
+	// values of system columns (the import restores the id) are not cells: they are set by column name
+	values, system := splitSystemValues(values)
 	byName, err := s.rowValuesByName(ctx, schemaName, values)
 	if err != nil {
 		return dto.RecordResponse{}, err
@@ -158,12 +160,64 @@ func (s tableManagementService) insertRowValues(
 	data["last_modified_by"] = updatedBy
 	data["created_time"] = now
 	data["last_modified_time"] = now
+	for name, value := range system {
+		data[name] = value
+	}
 
 	record, err := s.repo.TableService.CreateRecord(fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias), data)
 	if err != nil {
 		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to create row with values")
 	}
 	return dto.RecordResponse{Record: record}, nil
+}
+
+// splitSystemValues separates the values given for system columns (keys with constant.SystemValueKeyPrefix, followed
+// by the column name) from the cells, which are keyed by column id.
+func splitSystemValues(values map[string]interface{}) (cells, system map[string]interface{}) {
+	for key, value := range values {
+		if name, ok := strings.CutPrefix(key, constant.SystemValueKeyPrefix); ok {
+			if system == nil {
+				system = map[string]interface{}{}
+				cells = make(map[string]interface{}, len(values)-1)
+				for k, v := range values {
+					if !strings.HasPrefix(k, constant.SystemValueKeyPrefix) {
+						cells[k] = v
+					}
+				}
+			}
+			system[name] = value
+		}
+	}
+	if system == nil {
+		return values, nil
+	}
+	return cells, system
+}
+
+// restorableSystemColumns are the system columns RestoreRowSystemValues may write
+var restorableSystemColumns = map[string]struct{}{
+	"created_time": {}, "last_modified_time": {}, "created_by": {}, "last_modified_by": {},
+}
+
+// RestoreRowSystemValues writes the created / modified time and user of a record exactly as given. It does not touch
+// the modified time or user itself, unlike a normal update. Used by the base import to restore the source columns.
+func (s tableManagementService) RestoreRowSystemValues(ctx context.Context, schemaName, modelID string, rowID int, values map[string]interface{}) error {
+	model, err := s.modelService.GetModelByID(ctx, schemaName, modelID)
+	if err != nil {
+		return err
+	}
+	data := make(map[string]interface{}, len(values))
+	for name, value := range values {
+		if _, ok := restorableSystemColumns[name]; !ok {
+			return fmt.Errorf("%q is not a system column that can be restored", name)
+		}
+		data[name] = value
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	_, err = s.repo.TableService.UpdateRecord(fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias), rowID, data)
+	return err
 }
 
 // cellValue prepares a value for its column: array columns always get a slice

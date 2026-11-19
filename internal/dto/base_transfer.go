@@ -170,6 +170,9 @@ type ExportBaseOptions struct {
 	// IncludeAutomations writes the trigger functions and triggers of the tables. They hold SQL, so the handler sets
 	// it only for a user who has the automations permission.
 	IncludeAutomations bool
+	// IncludeSystemColumns writes the source (system) columns of every row: id, created and modified time, created
+	// and modified by. Needs IncludeData.
+	IncludeSystemColumns bool
 	// Tables limits the export to specific tables by ID, title, or key. If empty, all tables are exported.
 	Tables []string
 	// Filters keeps only the rows that match, per table (by id, title or alias, like Tables). A table with no entry
@@ -194,11 +197,13 @@ type ExportTableFilter struct {
 
 // ExportBaseRequest is the body of POST /base/:id/export: the options of the GET request, and the row filters
 type ExportBaseRequest struct {
-	IncludeData        *bool                        `json:"include_data"`
-	IncludeAttachments *bool                        `json:"include_attachments"`
-	IncludeAutomations *bool                        `json:"include_automations"`
-	Tables             []string                     `json:"tables"`
-	Filters            map[string]ExportTableFilter `json:"filters"`
+	IncludeData        *bool `json:"include_data"`
+	IncludeAttachments *bool `json:"include_attachments"`
+	IncludeAutomations *bool `json:"include_automations"`
+	// IncludeSystemColumns adds the source columns (id, created / modified time and user) to the rows. Needs include_data.
+	IncludeSystemColumns *bool                        `json:"include_system_columns"`
+	Tables               []string                     `json:"tables"`
+	Filters              map[string]ExportTableFilter `json:"filters"`
 }
 
 // ExportFilterError says why the filters of an export are not valid, in words for the user
@@ -223,6 +228,9 @@ type ImportBaseOptions struct {
 	// IncludeAutomations creates the trigger functions and triggers of the file in Postgres. They run SQL from the
 	// file, so this is off by default and needs the automations permission.
 	IncludeAutomations bool
+	// IncludeSystemColumns restores the source columns of the rows from the file: id, created / modified time and
+	// created / modified by. When false the rows get a new id, the time of the import and the importing user.
+	IncludeSystemColumns bool
 }
 
 // ImportBaseResult is what an import reports

@@ -34,6 +34,8 @@ type importRun struct {
 	userID      string
 	plan        *importPlan
 	includeData bool
+	// systemColumns restores the source columns (id, created / modified time and user) from the file
+	systemColumns bool
 	// titleGiven is true when the request names the new base; a name that is already used is then refused instead of
 	// being changed to "name (2)"
 	titleGiven bool
@@ -86,16 +88,17 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 
 	run := &importRun{
 		s: s, ctx: ctx, schema: schemaName, workspaceID: workspaceID, userID: userID,
-		plan:        plan,
-		includeData: opts.IncludeData && file.Data != nil,
-		titleGiven:  strings.TrimSpace(opts.Title) != "",
-		ids:         map[string]string{},
-		tables:      map[string]dto.TableResponse{},
-		columns:     map[string]dto.ColumnResponse{},
-		defaultView: map[string]*dto.ViewResponse{},
-		rows:        map[string]rowRef{},
-		attachments: opts.Attachments,
-		index:       map[string]dto.BaseExportAttachment{},
+		plan:          plan,
+		includeData:   opts.IncludeData && file.Data != nil,
+		systemColumns: opts.IncludeSystemColumns && opts.IncludeData && file.Data != nil,
+		titleGiven:    strings.TrimSpace(opts.Title) != "",
+		ids:           map[string]string{},
+		tables:        map[string]dto.TableResponse{},
+		columns:       map[string]dto.ColumnResponse{},
+		defaultView:   map[string]*dto.ViewResponse{},
+		rows:          map[string]rowRef{},
+		attachments:   opts.Attachments,
+		index:         map[string]dto.BaseExportAttachment{},
 
 		includeAutomations: opts.IncludeAutomations,
 		functionNames:      map[string]string{},
@@ -172,6 +175,10 @@ func (r *importRun) execute() error {
 	}
 	if r.includeData {
 		steps = append(steps, step{r.createRows, 50}, step{r.linkRows, 6})
+		if r.systemColumns {
+			// last, because linking rows changes their modified time and user
+			steps = append(steps, step{r.restoreSystemColumns, 4})
+		}
 	}
 	// Constraints come last, so the rows being inserted are never held up by a rule
 	steps = append(steps, step{r.createConstraints, 3}, step{r.createAutomations, 3})
@@ -543,6 +550,13 @@ func (r *importRun) valuesByColumn(row dto.BaseExportRow) (map[string]interface{
 	out := make(map[string]interface{}, len(row.Values))
 	for key, val := range row.Values {
 		f := r.plan.fields[key]
+		if f.System {
+			// only the id is given when the row is created; the times and users are restored once the rows are linked
+			if r.systemColumns && f.ColumnName == "id" {
+				out[constant.SystemValueKeyPrefix+"id"] = int(numericID(val))
+			}
+			continue
+		}
 		if f.UIDT == uidtLinks || val == nil {
 			continue
 		}
@@ -724,6 +738,56 @@ func (r *importRun) createConstraints() error {
 			if _, err := r.s.constraints.Create(r.ctx, r.schema, req); err != nil {
 				return fmt.Errorf("create %s constraint %q on table %q: %w", c.Type, c.Title, t.Title, err)
 			}
+		}
+	}
+	return nil
+}
+
+// systemRestorer is implemented by the table service: it writes the source columns of a row as they are, without
+// touching the modified time or user.
+type systemRestorer interface {
+	RestoreRowSystemValues(ctx context.Context, schemaName, modelID string, rowID int, values map[string]interface{}) error
+}
+
+// restoreSystemColumns writes the created / modified time and user of the file onto the new rows. The id was given
+// when the row was created.
+func (r *importRun) restoreSystemColumns() error {
+	restorer, ok := r.s.tableService.(systemRestorer)
+	if !ok {
+		r.warn("source columns were not restored: the table service cannot write them")
+		return nil
+	}
+	total, done := 0, 0
+	for _, t := range r.plan.file.Schema.Tables {
+		total += len(r.plan.file.Data.Tables[t.Key].Rows)
+	}
+	for _, t := range r.plan.file.Schema.Tables {
+		modelID := r.tables[t.Key].Model.ID.String()
+		for _, row := range r.plan.file.Data.Tables[t.Key].Rows {
+			done++
+			values := map[string]interface{}{}
+			for key, val := range row.Values {
+				f := r.plan.fields[key]
+				if !f.System || f.ColumnName == "id" || !isSourceColumn(f.ColumnName) || val == nil {
+					continue
+				}
+				if f.ColumnName == "created_time" || f.ColumnName == "last_modified_time" {
+					// validated when the file was read, so this parses
+					ts, ok := parseSourceTime(fmt.Sprint(val))
+					if !ok {
+						continue
+					}
+					values[f.ColumnName] = ts
+					continue
+				}
+				values[f.ColumnName] = fmt.Sprint(val)
+			}
+			if len(values) > 0 {
+				if err := restorer.RestoreRowSystemValues(r.ctx, r.schema, modelID, r.rows[row.RID].id, values); err != nil {
+					return fmt.Errorf("restore source columns of %s: %w", row.RID, err)
+				}
+			}
+			reportFraction(r.ctx, r.progressFrom, r.progressTo, done, total)
 		}
 	}
 	return nil

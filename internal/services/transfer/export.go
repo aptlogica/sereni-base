@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/constant"
@@ -106,8 +107,11 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 		file.Schema.Tables = append(file.Schema.Tables, table)
 	}
 
+	if opts.IncludeSystemColumns && !opts.IncludeData {
+		*warnings = append(*warnings, "source columns not exported: they are values of the rows, so they need the data")
+	}
 	if opts.IncludeData {
-		data, err := s.exportData(ctx, schemaName, tables, skipped, asText, resolveFilters(tableResponses, opts.Filters), withFiles, warnings)
+		data, err := s.exportData(ctx, schemaName, tables, skipped, asText, resolveFilters(tableResponses, opts.Filters), withFiles, opts.IncludeSystemColumns, warnings)
 		if err != nil {
 			return nil, err
 		}
@@ -438,7 +442,7 @@ func (s *baseTransferService) pkColumn(ctx context.Context, schemaName, modelID 
 	return pk.ColumnNames[0]
 }
 
-func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped, asText map[string]struct{}, filters map[string]dto.ExportTableFilter, withFiles bool, warnings *[]string) (*dto.BaseExportData, error) {
+func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped, asText map[string]struct{}, filters map[string]dto.ExportTableFilter, withFiles, systemColumns bool, warnings *[]string) (*dto.BaseExportData, error) {
 	data := &dto.BaseExportData{
 		RowCounts: map[string]int{},
 		Tables:    map[string]dto.BaseExportTableRow{},
@@ -493,7 +497,7 @@ func (s *baseTransferService) exportData(ctx context.Context, schemaName string,
 		// the cells of a row are written in the order of the fields of the table
 		valueOrder := make([]string, 0, len(t.columns))
 		for _, c := range t.columns {
-			if !boolOf(c.System) {
+			if !boolOf(c.System) || (systemColumns && isSourceColumn(c.ColumnName)) {
 				valueOrder = append(valueOrder, t.fieldKeys[c.ID.String()])
 			}
 		}
@@ -501,7 +505,16 @@ func (s *baseTransferService) exportData(ctx context.Context, schemaName string,
 			values := map[string]interface{}{}
 			for _, c := range t.columns {
 				id := c.ID.String()
-				if _, skip := skipped[id]; skip || boolOf(c.System) {
+				if boolOf(c.System) {
+					// the source columns are written only when asked for; the other system fields never
+					if systemColumns && isSourceColumn(c.ColumnName) {
+						if v := sourceValue(c.ColumnName, rec[c.ColumnName]); v != nil {
+							values[t.fieldKeys[id]] = v
+						}
+					}
+					continue
+				}
+				if _, skip := skipped[id]; skip {
 					continue
 				}
 				if _, text := asText[id]; text {
@@ -717,4 +730,62 @@ func exportConstraint(kind string, c dto.TableConstraintResponse, t *exportTable
 func isAutoUUID(meta map[string]interface{}) bool {
 	cfg, ok := dto.IDGenerationFromMeta(meta)
 	return ok && cfg.Mode == constant.IDModeAuto
+}
+
+// sourceColumns are the system columns that "include source columns" writes and import restores.
+var sourceColumns = map[string]struct{}{
+	"id": {}, "created_time": {}, "last_modified_time": {}, "created_by": {}, "last_modified_by": {},
+}
+
+func isSourceColumn(columnName string) bool {
+	_, ok := sourceColumns[columnName]
+	return ok
+}
+
+// sourceValue turns the value of a source column into what the file holds: the id as a number, a time as RFC 3339
+// in UTC, a user as text. It returns nil for an empty value, which is then left out.
+func sourceValue(columnName string, v interface{}) interface{} {
+	switch x := v.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		return x.UTC().Format(time.RFC3339Nano)
+	}
+	switch columnName {
+	case "id":
+		if n := numericID(v); n > 0 {
+			return int64(n)
+		}
+		return nil
+	case "created_time", "last_modified_time":
+		// the database may give the time as text, with or without a zone: the file always holds RFC 3339 in UTC
+		if ts, ok := parseSourceTime(valueText(v)); ok {
+			return ts.Format(time.RFC3339Nano)
+		}
+		return nil
+	}
+	if text := valueText(v); text != "" {
+		return text
+	}
+	return nil
+}
+
+// sourceTimeLayouts are the forms a time may have: RFC 3339, or the text of a TIMESTAMP column (no zone, UTC).
+var sourceTimeLayouts = []string{
+	time.RFC3339Nano,
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999Z07:00",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02",
+}
+
+// parseSourceTime reads the time of a source column and returns it in UTC.
+func parseSourceTime(text string) (time.Time, bool) {
+	text = strings.TrimSpace(text)
+	for _, layout := range sourceTimeLayouts {
+		if ts, err := time.Parse(layout, text); err == nil {
+			return ts.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
