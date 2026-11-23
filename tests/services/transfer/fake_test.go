@@ -372,6 +372,32 @@ func (f *fakeDB) CreateRowsWithValues(_ context.Context, _ string, modelID strin
 	return out, nil
 }
 
+// UpdateColumn applies the meta of an update, and, when a field becomes auto-generated and a backfill is asked for,
+// gives the empty cells a value, like the real service.
+func (f *fakeDB) UpdateColumn(_ context.Context, _ string, id string, req dto.ColumnUpdate) (dto.ColumnResponse, error) {
+	for modelID, cols := range f.columns {
+		for i, c := range cols {
+			if c.ID.String() != id {
+				continue
+			}
+			wasAuto := isAutoUUIDColumn(c)
+			if req.Meta != nil {
+				c.Meta = *req.Meta
+				f.columns[modelID][i] = c
+			}
+			if !wasAuto && isAutoUUIDColumn(c) && req.Backfill != nil && *req.Backfill {
+				for _, row := range f.rows[modelID] {
+					if row[c.ColumnName] == nil {
+						row[c.ColumnName] = uuid.NewString()
+					}
+				}
+			}
+			return c, nil
+		}
+	}
+	return dto.ColumnResponse{}, errors.New("column not found")
+}
+
 // colByTitle finds a live column of a table by its title.
 func (f *fakeDB) colByTitle(modelID, title string) dto.ColumnResponse {
 	for _, c := range f.columns[modelID] {

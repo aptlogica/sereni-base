@@ -239,7 +239,11 @@ func fieldTitles(header []string) []string {
 
 // buildTable turns the records of one file into a table and its rows
 func buildTable(index int, fileName string, records [][]string, lines []int, usedKeys map[string]bool, refs *attachmentIndex, source *dto.ImportSource) (dto.BaseExportTable, []dto.BaseExportRow) {
-	title := uniqueTableTitle(index, fileName, usedKeys)
+	return buildTitledTable(index, fileName, uniqueTableTitle(index, fileName, usedKeys), records, lines, usedKeys, refs, source)
+}
+
+// buildTitledTable is buildTable for a caller that has already chosen the title of the table
+func buildTitledTable(index int, fileName, title string, records [][]string, lines []int, usedKeys map[string]bool, refs *attachmentIndex, source *dto.ImportSource) (dto.BaseExportTable, []dto.BaseExportRow) {
 	table := dto.BaseExportTable{
 		Key:        uniqueKey("t_", title, usedKeys),
 		Title:      title,

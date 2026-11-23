@@ -739,12 +739,6 @@ func (w *cellWriter) writeValue(t *exportTable, c dto.ColumnResponse, val interf
 	switch c.UIDT {
 	case uidtAttachment:
 		w.writeAttachments(t, c, val, values)
-	case constant.UIDTUUID:
-		// An auto uuid field is filled in by the system for every new row, and the app refuses a written value
-		if isAutoUUID(c.Meta) {
-			return
-		}
-		values[t.fieldKeys[id]] = val
 	case uidtLinks:
 		target := nestedString(c.Meta, "relation", "with")
 		linked := linkedRIDs(val, w.rids[target])

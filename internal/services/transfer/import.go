@@ -61,7 +61,9 @@ type importRun struct {
 	// import can drop them again, and functionNames are the names the functions of the file got in the new base
 	includeAutomations bool
 	automationIDs      []string
-	functionNames      map[string]string
+	// autoUUIDs are the auto uuid fields created as manual ones while the rows are inserted (see createPlainFields)
+	autoUUIDs     []pendingAutoUUID
+	functionNames map[string]string
 
 	// skipFailed leaves out the rows the database refuses instead of failing the import; skipped are those left out,
 	// and source says where each row came from, for the error log
@@ -201,7 +203,8 @@ func (r *importRun) execute() error {
 		{r.createViews, 4},
 	}
 	if r.includeData {
-		steps = append(steps, step{r.createRows, 50}, step{r.linkRows, 6})
+		// The auto uuid fields were created as manual fields so the rows could keep their values; now they become auto
+		steps = append(steps, step{r.createRows, 50}, step{r.makeUUIDsAuto, 1}, step{r.linkRows, 6})
 		if r.systemColumns {
 			// last, because linking rows changes their modified time and user
 			steps = append(steps, step{r.restoreSystemColumns, 4})
@@ -453,9 +456,46 @@ func (r *importRun) createPlainFields() error {
 			if f.System || f.UIDT == uidtLinks || f.UIDT == uidtLookup {
 				continue
 			}
-			if _, err := r.addColumn(t, f, r.metaFor(f.Meta)); err != nil {
+			meta := r.metaFor(f.Meta)
+			// The app refuses a written value for an auto uuid field, so with data the field is created as a manual
+			// one, the rows keep the uuids of the file, and makeUUIDsAuto then makes it auto again
+			if r.includeData && f.UIDT == constant.UIDTUUID && isAutoUUID(meta) {
+				r.autoUUIDs = append(r.autoUUIDs, pendingAutoUUID{key: f.Key, meta: meta})
+				meta = manualUUIDMeta(meta)
+			}
+			if _, err := r.addColumn(t, f, meta); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// pendingAutoUUID is an auto uuid field that was created as a manual one, with the meta it has in the file
+type pendingAutoUUID struct {
+	key  string
+	meta map[string]interface{}
+}
+
+// manualUUIDMeta is the meta of a uuid field with its generation set to manual
+func manualUUIDMeta(meta map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(meta))
+	for k, v := range meta {
+		out[k] = v
+	}
+	out[constant.MetaIDGenerationKey] = map[string]interface{}{"mode": constant.IDModeManual}
+	return out
+}
+
+// makeUUIDsAuto makes the auto uuid fields auto-generated again, once the rows are in. The rows keep the uuids of the
+// file; a row that had none (a file from an older export) gets a new one.
+func (r *importRun) makeUUIDsAuto() error {
+	backfill := true
+	for _, p := range r.autoUUIDs {
+		meta := p.meta
+		col := r.columns[p.key]
+		if _, err := r.s.tableService.UpdateColumn(r.ctx, r.schema, col.ID.String(), dto.ColumnUpdate{Meta: &meta, Backfill: &backfill, UpdatedBy: r.userID}); err != nil {
+			return fmt.Errorf("make field %q auto-generated: %w", col.Title, err)
 		}
 	}
 	return nil
@@ -631,10 +671,6 @@ func (r *importRun) valuesByColumn(row dto.BaseExportRow) (map[string]interface{
 // columnValue gives the value to write for a field of a row; ok is false when the field has nothing to write
 func (r *importRun) columnValue(f dto.BaseExportField, val interface{}) (interface{}, bool, error) {
 	if f.UIDT == uidtLinks || val == nil {
-		return nil, false, nil
-	}
-	// New rows get new uuids from the system; the app refuses a written value for an auto uuid field
-	if f.UIDT == constant.UIDTUUID && isAutoUUID(f.Meta) {
 		return nil, false, nil
 	}
 	if f.UIDT == uidtAttachment {

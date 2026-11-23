@@ -105,3 +105,43 @@ func TestExportBaseWithBodyTakesTheFormatAndDelimiter(t *testing.T) {
 		t.Fatalf("no format is sbase: status %d, %+v", w.Code, svc.exported)
 	}
 }
+
+// an xlsx export is one workbook, not a zip; links become text, and triggers and system columns are switched off
+func TestExportBaseXLSXIsADirectWorkbook(t *testing.T) {
+	svc, w := exportAs(t, "format=xlsx&include_system_columns=true&include_automations=true", nil, true)
+	if w.Code != http.StatusOK ||
+		w.Header().Get("Content-Type") != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), "CRM.xlsx") || strings.Contains(w.Header().Get("Content-Disposition"), ".zip") {
+		t.Fatalf("status %d, headers %v", w.Code, w.Header())
+	}
+	got := svc.exported
+	if got.Format != "xlsx" || !got.LinksAsText || got.IncludeAutomations || got.IncludeSystemColumns || got.Delimiter != 0 {
+		t.Fatalf("xlsx options: %+v", got)
+	}
+}
+
+// a workbook has no delimiter
+func TestExportBaseXLSXRefusesADelimiter(t *testing.T) {
+	svc, w := exportWith(t, "format=xlsx&delimiter=tab", nil)
+	if w.Code != http.StatusBadRequest || svc.exported.Format != "" {
+		t.Fatalf("status %d, options %+v", w.Code, svc.exported)
+	}
+}
+
+// with data the attachment files are asked for (on by default), so the export is a zip of the workbook and attachments/
+func TestExportBaseXLSXWithFilesIsAZip(t *testing.T) {
+	svc, w := exportAs(t, "format=xlsx&include_data=true&include_attachments=true", nil, true)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/zip" ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), "CRM.xlsx.zip") {
+		t.Fatalf("status %d, headers %v", w.Code, w.Header())
+	}
+	if got := svc.exported; got.Format != "xlsx" || !got.IncludeAttachments || !got.LinksAsText {
+		t.Fatalf("xlsx options: %+v", got)
+	}
+	// without the files it is the plain workbook
+	_, w = exportAs(t, "format=xlsx&include_data=true&include_attachments=false", nil, true)
+	if w.Header().Get("Content-Type") != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), "CRM.xlsx") || strings.Contains(w.Header().Get("Content-Disposition"), ".zip") {
+		t.Fatalf("headers %v", w.Header())
+	}
+}

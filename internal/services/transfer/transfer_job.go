@@ -269,7 +269,7 @@ func (s *transferJobService) StartExport(ctx context.Context, schemaName, baseID
 
 // exportFileName is the name the zip of an export gets, for the format and options it asks for
 func exportFileName(format adapter.Adapter, opts dto.ExportBaseOptions, title string) string {
-	name, _ := format.Describe(adapter.ExportOptions{IncludeData: true, Delimiter: opts.Delimiter}, title)
+	name, _ := format.Describe(adapter.ExportOptions{IncludeData: true, IncludeFiles: opts.IncludeAttachments, Delimiter: opts.Delimiter}, title)
 	return name
 }
 
@@ -666,7 +666,7 @@ func (s *transferJobService) build(ctx context.Context, schemaName string, job t
 
 	// the zip takes the last part of the progress: each stored file that is packed moves it on
 	format := s.adapterFor(opts.Format)
-	exportOpts := adapter.ExportOptions{IncludeData: true, OpenFile: s.transfer.OpenFile, Delimiter: opts.Delimiter}
+	exportOpts := adapter.ExportOptions{IncludeData: true, IncludeFiles: opts.IncludeAttachments, OpenFile: s.transfer.OpenFile, Delimiter: opts.Delimiter}
 	if file.Data != nil && len(file.Data.Attachments) > 0 {
 		exportOpts.OpenFile = (&progressFiles{src: s.transfer.OpenFile, ctx: ctx, total: len(file.Data.Attachments)}).OpenFile
 	}

@@ -1379,41 +1379,58 @@ func TestImportResultFieldNames(t *testing.T) {
 	}
 }
 
-func TestAutoUUIDValuesAreNotExportedAndNewRowsGetTheirOwn(t *testing.T) {
+// the uuid of an auto uuid field is exported like any value, and an import keeps it: the field is created as a manual
+// one while the rows go in (the app refuses a written auto uuid) and is auto-generated again afterwards
+func TestAutoUUIDValuesAreExportedAndImportedWithoutLoss(t *testing.T) {
 	c := seedCRM(t)
 	svc := newService(c.db)
 	ctx := context.Background()
 	file, err := svc.svc.ExportBase(ctx, "s", c.baseID, dto.ExportBaseOptions{IncludeData: true})
 	must(t, err)
 
-	// the system makes the value of an auto uuid field, so it is not in the file; a manual uuid travels like any value
 	row := file.Data.Tables["t_tags"].Rows[0]
-	if _, has := row.Values["f_ref"]; has {
-		t.Fatalf("an auto uuid value must not be exported: %v", row.Values)
+	if row.Values["f_ref"] != "018f0000-0000-7000-8000-000000000001" {
+		t.Fatalf("an auto uuid value must be exported: %v", row.Values)
 	}
 	if row.Values["f_external_id"] != "6d1f2c3e-1a2b-4c3d-8e9f-0a1b2c3d4e5f" {
 		t.Fatalf("a manual uuid must be exported: %v", row.Values)
 	}
 
-	// importing works (the real service refuses a written auto uuid), and each new row gets its own value
 	res, err := svc.svc.ImportBase(ctx, "s", workspace, "u", roundTrip(t, file), dto.ImportBaseOptions{IncludeData: true})
 	must(t, err)
 	newTags := tableOf(c, res.BaseID, "Tags")
-	ref := c.db.cell(newTags, 0, "Ref")
-	if ref == nil || ref == "018f0000-0000-7000-8000-000000000001" {
-		t.Fatalf("the copy must get a new uuid, got %v", ref)
+	if got := c.db.cell(newTags, 0, "Ref"); got != "018f0000-0000-7000-8000-000000000001" {
+		t.Fatalf("the copy must keep the uuid, got %v", got)
 	}
 	if got := c.db.cell(newTags, 0, "External id"); got != "6d1f2c3e-1a2b-4c3d-8e9f-0a1b2c3d4e5f" {
 		t.Fatalf("a manual uuid must be copied, got %v", got)
 	}
+	// the field is auto-generated again: a new row gets its own value, and a written value is refused
+	if ref := c.db.colByTitle(newTags, "Ref"); !isAutoUUIDColumn(ref) {
+		t.Fatalf("the copy must be an auto uuid field again: %v", ref.Meta)
+	}
+	created, err := c.db.CreateRowsWithValues(ctx, "s", newTags, []map[string]interface{}{{}}, "u", "u")
+	must(t, err)
+	if v := created[0].Record[c.db.colByTitle(newTags, "Ref").ColumnName]; v == nil || v == "018f0000-0000-7000-8000-000000000001" {
+		t.Fatalf("a new row must get its own uuid, got %v", v)
+	}
 
-	// a file that does hold a value for an auto uuid field (an older export) still imports: the value is ignored
-	withValue := roundTrip(t, file)
-	r := withValue.Data.Tables["t_tags"].Rows[0]
-	r.Values["f_ref"] = "018f0000-0000-7000-8000-000000000001"
-	withValue.Data.Tables["t_tags"].Rows[0] = r
-	if _, err := svc.svc.ImportBase(ctx, "s", workspace, "u", withValue, dto.ImportBaseOptions{IncludeData: true}); err != nil {
-		t.Fatalf("a value for an auto uuid field must be ignored, not fail the import: %v", err)
+	// without data there are no rows to keep: the field is created auto at once
+	empty, err := svc.svc.ImportBase(ctx, "s", workspace, "u", roundTrip(t, file), dto.ImportBaseOptions{IncludeData: false})
+	must(t, err)
+	if ref := c.db.colByTitle(tableOf(c, empty.BaseID, "Tags"), "Ref"); !isAutoUUIDColumn(ref) {
+		t.Fatalf("the field must be auto without data: %v", ref.Meta)
+	}
+
+	// a file with no value for an auto uuid field (an older export) still imports: the rows get new uuids
+	old := roundTrip(t, file)
+	r := old.Data.Tables["t_tags"].Rows[0]
+	delete(r.Values, "f_ref")
+	old.Data.Tables["t_tags"].Rows[0] = r
+	res, err = svc.svc.ImportBase(ctx, "s", workspace, "u", old, dto.ImportBaseOptions{IncludeData: true})
+	must(t, err)
+	if got := c.db.cell(tableOf(c, res.BaseID, "Tags"), 0, "Ref"); got == nil || got == "018f0000-0000-7000-8000-000000000001" {
+		t.Fatalf("a row without a uuid must get a new one, got %v", got)
 	}
 }
 

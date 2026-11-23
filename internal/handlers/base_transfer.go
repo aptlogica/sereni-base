@@ -21,6 +21,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
 	csvformat "github.com/aptlogica/sereni-base/internal/services/transfer/adapter/csv"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/sbase"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/xlsx"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/formats"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
@@ -88,11 +89,13 @@ func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
 //   - include_system_columns: boolean (default false). Writes id, created / modified time and user of every row; needs include_data.
 //   - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
 //   - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
-//   - format: "sbase" (default) or "csv". A csv is a zip with one file per table (and attachments/ with the files);
-//     links and lookups are written as text, and triggers and system columns are not exported.
-//   - delimiter: only for csv: "comma" (default), "semicolon", "tab" or "pipe". Anything else is 400.
+//   - format: "sbase" (default), "csv" or "xlsx". A csv is a zip with one file per table (and attachments/ with the files);
+//     an xlsx is one workbook with one sheet per table (and, with attachments, a zip of the workbook and attachments/).
+//     In both, links and lookups are written as text, and triggers and system columns are not exported.
+//   - delimiter: only for csv: "comma" (default), "semicolon", "tab" or "pipe". Anything else is 400; so is a delimiter with xlsx.
 //
-// An export is always a zip: .sbase.zip (base.sbase.json plus the attachment files and cover image when asked).
+// An export is a zip, .sbase.zip (base.sbase.json plus the attachment files and cover image when asked), except an xlsx
+// export, which is a single .xlsx file unless it carries attachment files (then .xlsx.zip).
 // Without include_data it is returned directly. With it, it can take a while, so it runs
 // as a background job: the response is 202 with the job (poll GET /export-job/:id, then download it from
 // GET /export-job/:id/download); the finished zip is also sent to the user's email. A user can have two exports
@@ -178,6 +181,18 @@ func applyExportFormat(c *gin.Context, opts *dto.ExportBaseOptions, format, deli
 	switch format {
 	case "", sbase.Name:
 		opts.Format = sbase.Name
+		return true
+	case xlsx.Name:
+		// a workbook has no delimiter and carries no triggers or system columns; links become text. The attachment
+		// files travel next to it in a zip when they are asked for (include_attachments, on with the data).
+		if delimiter != "" {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return false
+		}
+		opts.Format = xlsx.Name
+		opts.LinksAsText = true
+		opts.IncludeAutomations = false
+		opts.IncludeSystemColumns = false
 		return true
 	case csvformat.Name:
 		opts.Format = csvformat.Name
@@ -347,13 +362,19 @@ func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter
 	c.DataFromReader(http.StatusOK, info.Size(), contentType, tmp, nil)
 }
 
-// ImportBase creates a new base in a workspace from an uploaded .sbase.zip file, or from a zip of CSV files.
+// ImportBase creates a new base in a workspace from an uploaded .sbase.zip file, from a zip of CSV files, or from an
+// .xlsx workbook.
 // POST /workspace/:id/import-base  (multipart: file, title, format, include_data, include_attachments,
 // include_system_columns, include_automations; include_automations may also be a URL parameter)
 // format is "sbase" (default) or "csv": a zip with one .csv file per table (the file an export with
 // format=csv writes), whose first row holds the field titles. The delimiter of each file is found from its header,
 // the types are inferred from the values, and the paths of files in attachments/ become attachment fields. The new
 // base is named after the file unless title is given. Triggers and system columns are not imported from a CSV.
+// With format=xlsx the file is what an export with format=xlsx writes: an .xlsx workbook, or a .zip of one workbook and
+// an attachments/ folder. One table is made per visible sheet with data, named after the sheet, the first row holding
+// the field titles; the types are inferred from the values, a column of paths of files in attachments/ becomes an
+// attachment field, and a formula is read as the value it last calculated. Any other file is refused with 400
+// "only .xlsx or .zip files are supported". Triggers and system columns are not imported from a workbook.
 // A broken file is refused at once (400). Otherwise the import runs as a background job: the response is 202 with the
 // job (poll GET /import-job/:id until it is completed or failed).
 // A user can have two imports active at once; a third is refused with 429.
@@ -368,8 +389,23 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		response.SendError(c, responseConst.AssetError.FilesNotFound)
 		return
 	}
-	// an export is always a .sbase.zip, and that is the only file an import takes
-	if !strings.HasSuffix(strings.ToLower(upload.Filename), ".zip") {
+	// the format of the upload: a SereniBase export (default), a zip of CSV files, or an Excel workbook
+	importFormat := strings.ToLower(strings.TrimSpace(c.PostForm("format")))
+	switch importFormat {
+	case "", sbase.Name, csvformat.Name, xlsx.Name:
+	default:
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase, csv or xlsx")
+		return
+	}
+	// an sbase or csv export is a zip, and that is the only file an import of them takes; an xlsx export is a
+	// workbook (.xlsx), or a zip of the workbook and its attachment files
+	lowerName := strings.ToLower(upload.Filename)
+	if importFormat == xlsx.Name {
+		if !strings.HasSuffix(lowerName, xlsx.Extension) && !strings.HasSuffix(lowerName, ".zip") {
+			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "only .xlsx or .zip files are supported")
+			return
+		}
+	} else if !strings.HasSuffix(lowerName, ".zip") {
 		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "only .zip files are supported")
 		return
 	}
@@ -400,18 +436,14 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 	// source columns are values of the rows, so they need the data
 	includeSystemColumns = includeSystemColumns && includeData
 
-	// the format of the upload: a SereniBase export (default) or a zip of CSV files. A CSV has no triggers and no
-	// system columns, so those are not imported from it.
-	importFormat := strings.ToLower(strings.TrimSpace(c.PostForm("format")))
+	// A CSV or a workbook has no triggers and no system columns, so those are not imported from it, and a workbook
+	// has no files.
 	switch importFormat {
 	case "", sbase.Name:
 		importFormat = sbase.Name
-	case csvformat.Name:
+	case csvformat.Name, xlsx.Name:
 		includeAutomations = false
 		includeSystemColumns = false
-	default:
-		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase or csv")
-		return
 	}
 
 	// the adapter reads the file into a model; it stays open until the import is done, because the files of a zip
@@ -453,7 +485,7 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 			IncludeAutomations:   includeAutomations,
 			IncludeSystemColumns: includeSystemColumns,
 			Format:               importFormat,
-			SkipFailedRows:       importFormat == csvformat.Name,
+			SkipFailedRows:       importFormat != sbase.Name,
 		})
 		if errors.Is(err, app_errors.TransferLimitReached) {
 			response.SendError(c, responseConst.BaseError.TransferLimitReached)
@@ -475,7 +507,7 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		IncludeAutomations:   includeAutomations,
 		IncludeSystemColumns: includeSystemColumns,
 		Format:               importFormat,
-		SkipFailedRows:       importFormat == csvformat.Name,
+		SkipFailedRows:       importFormat != sbase.Name,
 		Source:               read.Source,
 	})
 	var invalid *dto.ImportValidationError
@@ -619,7 +651,11 @@ func (h *BaseTransferHandler) DownloadExportJob(c *gin.Context) {
 		name = "base.sbase.zip"
 	}
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
-	c.DataFromReader(http.StatusOK, job.SizeBytes, "application/zip", f, nil)
+	contentType := "application/zip"
+	if strings.HasSuffix(strings.ToLower(name), xlsx.Extension) {
+		contentType = xlsx.ContentType
+	}
+	c.DataFromReader(http.StatusOK, job.SizeBytes, contentType, f, nil)
 }
 
 // transferJobRequest reads the job id and the user from a request; it answers the request itself when they are not usable.
