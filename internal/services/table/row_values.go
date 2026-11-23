@@ -166,9 +166,28 @@ func (s tableManagementService) insertRowValues(
 
 	record, err := s.repo.TableService.CreateRecord(fmt.Sprintf(SchemaTableFormat, schemaName, model.Alias), data)
 	if err != nil {
-		return dto.RecordResponse{}, s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to create row with values")
+		return dto.RecordResponse{}, WithDatabaseReason(s.keyWriteError(ctx, schemaName, model.Alias, err, "failed to create row with values"), err)
 	}
 	return dto.RecordResponse{Record: record}, nil
+}
+
+// WithDatabaseReason adds the reason the database gave (for example `value "100021000410003" is out of range for
+// type integer`) to a plain database error, which would otherwise say only "database error". The error stays a
+// database error for errors.Is. An import uses the reason to tell the user why a row was refused; it holds Postgres'
+// own message only, never the table or schema names of the full error.
+func WithDatabaseReason(result, cause error) error {
+	if result != app_errors.DatabaseError {
+		return result
+	}
+	dbErr, ok := app_errors.DBError(cause)
+	if !ok || strings.TrimSpace(dbErr.Message) == "" {
+		return result
+	}
+	reason := strings.TrimSpace(dbErr.Message)
+	if dbErr.Column != "" {
+		reason += " (column " + dbErr.Column + ")"
+	}
+	return app_errors.WithMessage(result, reason)
 }
 
 // splitSystemValues separates the values given for system columns (keys with constant.SystemValueKeyPrefix, followed

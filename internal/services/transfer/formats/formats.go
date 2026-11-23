@@ -8,6 +8,7 @@ package formats
 
 import (
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/csv"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/sbase"
 )
 
@@ -15,5 +16,6 @@ import (
 func Registry() *adapter.Registry {
 	r := adapter.NewRegistry()
 	r.Register(sbase.New())
+	r.Register(csv.New())
 	return r
 }

@@ -98,9 +98,11 @@ type transferJobService struct {
 	mailer    email.EmailService
 	userEmail UserEmailLookup
 	cfg       TransferJobSettings
-	// format writes the zip: the export goes through the adapter of the SereniBase format
+	// format reads an import (the SereniBase format); an export goes through the adapter of the format it asks for
 	format adapter.Adapter
-	now    func() time.Time
+	// formats finds the adapter of an export by its format name
+	formats *adapter.Registry
+	now     func() time.Time
 
 	// start serializes the per-user check and the insert, so two clicks at the same moment cannot both pass it
 	start  sync.Mutex
@@ -152,10 +154,11 @@ func newTransferJobService(
 	cfg TransferJobSettings,
 ) *transferJobService {
 	ctx, cancel := context.WithCancel(context.Background())
-	format, _ := formats.Registry().Get(sbase.Name)
+	registry := formats.Registry()
+	format, _ := registry.Get(sbase.Name)
 	return &transferJobService{
 		store: store, files: files, transfer: transfer, bases: bases, mailer: mailer, userEmail: userEmail,
-		cfg: cfg.withDefaults(), format: format, now: time.Now, ctx: ctx, cancel: cancel,
+		cfg: cfg.withDefaults(), format: format, formats: registry, now: time.Now, ctx: ctx, cancel: cancel,
 	}
 }
 
@@ -164,6 +167,14 @@ func newTransferJobService(
 func (s *transferJobService) Stop() {
 	s.cancel()
 	s.wg.Wait()
+}
+
+// exportAdapter returns the adapter of the format a request asks for; an empty or unknown name is the SereniBase format
+func (s *transferJobService) adapterFor(name string) adapter.Adapter {
+	if a, ok := s.formats.Get(name); ok && name != "" {
+		return a
+	}
+	return s.format
 }
 
 // exportFileKey is where the zip of an export is kept. The last part of the key is the name the file is downloaded
@@ -236,6 +247,8 @@ func (s *transferJobService) StartExport(ctx context.Context, schemaName, baseID
 		Type:      tenant.TransferJobTypeExport,
 		BaseID:    baseID,
 		BaseTitle: base.Title,
+		// the name of the file is known from the start, so the stored zip and the download have the same name
+		FileName: exportFileName(s.adapterFor(opts.Format), opts, base.Title),
 		// kept so the jobs of a workspace can be listed
 		WorkspaceID: base.WorkspaceID,
 		UserID:      userID,
@@ -254,6 +267,12 @@ func (s *transferJobService) StartExport(ctx context.Context, schemaName, baseID
 	return s.response(job), nil
 }
 
+// exportFileName is the name the zip of an export gets, for the format and options it asks for
+func exportFileName(format adapter.Adapter, opts dto.ExportBaseOptions, title string) string {
+	name, _ := format.Describe(adapter.ExportOptions{IncludeData: true, Delimiter: opts.Delimiter}, title)
+	return name
+}
+
 // isActive reports whether a job is waiting or running
 func isActive(j tenant.TransferJob) bool {
 	return j.Status == tenant.TransferJobQueued || j.Status == tenant.TransferJobRunning
@@ -261,11 +280,11 @@ func isActive(j tenant.TransferJob) bool {
 
 // StartImport keeps the uploaded file, stores a queued job and returns at once; the import runs in the background.
 // A user may have as many active imports as active exports (MaxPerUser), counted separately.
-func (s *transferJobService) StartImport(ctx context.Context, schemaName, workspaceID, userID string, file io.Reader, filename string, size int64, opts dto.ImportBaseOptions) (dto.TransferJobResponse, error) {
+func (s *transferJobService) StartImport(ctx context.Context, schemaName, workspaceID, userID string, upload dto.ImportUpload, opts dto.ImportBaseOptions) (dto.TransferJobResponse, error) {
 	id := uuid.NewString()
 	// The job reads the file after this request has ended, so it is kept. It is stored before the limit is checked so
 	// that a big upload does not hold the lock; it is removed again when the job is refused.
-	if _, err := s.files.Put(ctx, importFileKey(id), file, size); err != nil {
+	if _, err := s.files.Put(ctx, importFileKey(id), upload.File, upload.Size); err != nil {
 		return dto.TransferJobResponse{}, err
 	}
 
@@ -275,8 +294,8 @@ func (s *transferJobService) StartImport(ctx context.Context, schemaName, worksp
 		Type:        tenant.TransferJobTypeImport,
 		WorkspaceID: workspaceID,
 		BaseTitle:   opts.Title,
-		FileName:    filename,
-		SizeBytes:   size,
+		FileName:    upload.Filename,
+		SizeBytes:   upload.Size,
 		UserID:      userID,
 		Status:      tenant.TransferJobQueued,
 		CreatedAt:   now,
@@ -535,13 +554,15 @@ func (s *transferJobService) runImport(ctx context.Context, schemaName string, j
 	}
 	reportProgress(ctx, 0) // the file is read; the reporter starts counting from here
 
-	read, err := s.format.Import(ctx, tmp, size, adapter.ImportOptions{Filename: job.FileName, MaxBytes: adapter.DefaultMaxImportBytes})
+	read, err := s.adapterFor(opts.Format).Import(ctx, tmp, size, adapter.ImportOptions{Filename: job.FileName, MaxBytes: adapter.DefaultMaxImportBytes})
 	if err != nil {
 		return dto.ImportBaseResult{}, &importFileError{msg: err.Error()}
 	}
 	if opts.IncludeAttachments {
 		opts.Attachments = read.Attachments
 	}
+	// where each row came from, to name a row the database refuses in the error log
+	opts.Source = read.Source
 	return s.transfer.ImportBase(ctx, schemaName, job.WorkspaceID, job.UserID, read.File, opts)
 }
 
@@ -644,7 +665,8 @@ func (s *transferJobService) build(ctx context.Context, schemaName string, job t
 	}
 
 	// the zip takes the last part of the progress: each stored file that is packed moves it on
-	exportOpts := adapter.ExportOptions{IncludeData: true, OpenFile: s.transfer.OpenFile}
+	format := s.adapterFor(opts.Format)
+	exportOpts := adapter.ExportOptions{IncludeData: true, OpenFile: s.transfer.OpenFile, Delimiter: opts.Delimiter}
 	if file.Data != nil && len(file.Data.Attachments) > 0 {
 		exportOpts.OpenFile = (&progressFiles{src: s.transfer.OpenFile, ctx: ctx, total: len(file.Data.Attachments)}).OpenFile
 	}
@@ -664,7 +686,7 @@ func (s *transferJobService) build(ctx context.Context, schemaName string, job t
 	}()
 	counted := &countingWriter{w: pw}
 	// the core service reads the base into the model; the adapter writes the model as a file (with the files it lists)
-	writeErr := s.format.Export(ctx, file, exportOpts, counted)
+	writeErr := format.Export(ctx, file, exportOpts, counted)
 	pw.CloseWithError(writeErr) // nil ends the stream normally
 	put := <-putDone
 	if writeErr != nil || put.err != nil {
@@ -675,7 +697,7 @@ func (s *transferJobService) build(ctx context.Context, schemaName string, job t
 		return 0, "", "", put.err
 	}
 
-	fileName, _ := s.format.Describe(exportOpts, file.Base.Title)
+	fileName, _ := format.Describe(exportOpts, file.Base.Title)
 	return counted.n, fileName, put.url, nil
 }
 

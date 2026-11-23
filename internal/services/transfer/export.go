@@ -16,6 +16,7 @@ import (
 	app_errors "github.com/aptlogica/sereni-base/internal/app-errors"
 	"github.com/aptlogica/sereni-base/internal/constant"
 	"github.com/aptlogica/sereni-base/internal/dto"
+	"github.com/aptlogica/sereni-base/internal/models/tenant"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
 )
 
@@ -34,19 +35,113 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 	if err != nil {
 		return nil, err
 	}
-	tableResponses, err := s.tableService.GetModelByBaseID(ctx, schemaName, baseID)
+	tableResponses, err := s.selectedTableResponses(ctx, schemaName, baseID, opts)
 	if err != nil {
 		return nil, err
 	}
 
+	reportProgress(ctx, 2)
+	file := newExportFile(base)
+
+	tables, idMap, err := s.loadExportTables(ctx, schemaName, tableResponses)
+	if err != nil {
+		return nil, err
+	}
+	reportProgress(ctx, 8)
+	warnings := &file.Skipped
+	skipped, asText := s.skippedColumns(tables, opts.LinksAsText, warnings)
+	// Fields that a view, a trigger, a key or a constraint cannot use as they were: left out, or turned into text
+	unusable := unionOf(skipped, asText)
+
+	skippedKeys := skippedKeysOf(unusable, idMap)
+
+	withFiles := s.exportsFiles(opts, warnings)
+	file.Base.Cover = s.exportCover(ctx, schemaName, base.Image, withFiles, warnings)
+
+	automations, err := s.optionalAutomations(ctx, schemaName, tables, unusable, opts, warnings)
+	if err != nil {
+		return nil, err
+	}
+
+	scope := exportScope{
+		schemaName: schemaName, idMap: idMap, skipped: skipped, asText: asText,
+		unusable: unusable, skippedKeys: skippedKeys, automations: automations, warnings: warnings,
+	}
+	for ti, t := range tables {
+		reportFraction(ctx, 8, 15, ti, len(tables))
+		table, err := s.exportFullTable(ctx, scope, t)
+		if err != nil {
+			return nil, err
+		}
+		file.Schema.Tables = append(file.Schema.Tables, table)
+	}
+
+	if opts.IncludeSystemColumns && !opts.IncludeData {
+		*warnings = append(*warnings, "source columns not exported: they are values of the rows, so they need the data")
+	}
+	if opts.IncludeData {
+		file.Data, err = s.exportData(ctx, schemaName, tables, exportDataOptions{
+			skipped: skipped, asText: asText, filters: resolveFilters(tableResponses, opts.Filters),
+			withFiles: withFiles, systemColumns: opts.IncludeSystemColumns, warnings: warnings,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	reportProgress(ctx, 65)
+	// What was left out is only logged: the file and the response carry nothing about the export run
+	for _, w := range file.Skipped {
+		logger.Get().Warn().Str("base_id", baseID).Msg("base export: " + w)
+	}
+	return file, nil
+}
+
+// skippedKeysOf turns the ids of the fields that cannot be used as they were into their keys in the file
+func skippedKeysOf(unusable map[string]struct{}, idMap map[string]string) map[string]struct{} {
+	skippedKeys := map[string]struct{}{}
+	for id := range unusable {
+		if key, ok := idMap[id]; ok {
+			skippedKeys[key] = struct{}{}
+		}
+	}
+	return skippedKeys
+}
+
+// exportsFiles tells whether files travel in the export: they travel only in a zip (attachments, cover image), and
+// only when storage can be read
+func (s *baseTransferService) exportsFiles(opts dto.ExportBaseOptions, warnings *[]string) bool {
+	withFiles := opts.IncludeAttachments && s.storage != nil
+	if opts.IncludeAttachments && !withFiles {
+		*warnings = append(*warnings, "files not exported: no storage provider is configured")
+	}
+	return withFiles
+}
+
+// optionalAutomations exports the functions and triggers of the tables when the options ask for them
+func (s *baseTransferService) optionalAutomations(ctx context.Context, schemaName string, tables []*exportTable, unusable map[string]struct{}, opts dto.ExportBaseOptions, warnings *[]string) (map[string]*exportedAutomations, error) {
+	if !opts.IncludeAutomations {
+		return nil, nil
+	}
+	return s.exportAutomations(ctx, schemaName, tables, unusable, warnings)
+}
+
+// selectedTableResponses reads the tables of a base, keeping only the ones the options name
+func (s *baseTransferService) selectedTableResponses(ctx context.Context, schemaName, baseID string, opts dto.ExportBaseOptions) ([]dto.TableResponse, error) {
+	tableResponses, err := s.tableService.GetModelByBaseID(ctx, schemaName, baseID)
+	if err != nil {
+		return nil, err
+	}
 	if len(opts.Tables) > 0 {
 		tableResponses = filterTableResponses(tableResponses, opts.Tables)
 		if len(tableResponses) == 0 {
 			return nil, app_errors.TableNotFound
 		}
 	}
+	return tableResponses, nil
+}
 
-	reportProgress(ctx, 2)
+// newExportFile starts the file of a base: its title, settings, meta and description
+func newExportFile(base tenant.Base) *dto.BaseExportFile {
 	file := &dto.BaseExportFile{
 		Base: dto.BaseExportBase{
 			Title:    base.Title,
@@ -58,86 +153,41 @@ func (s *baseTransferService) ExportBase(ctx context.Context, schemaName, baseID
 	if base.Description != nil {
 		file.Base.Description = *base.Description
 	}
+	return file
+}
 
-	tables, idMap, err := s.loadExportTables(ctx, schemaName, tableResponses)
+// exportScope is what the export of every table needs besides the table itself
+type exportScope struct {
+	schemaName  string
+	idMap       map[string]string
+	skipped     map[string]struct{}
+	asText      map[string]struct{}
+	unusable    map[string]struct{}
+	skippedKeys map[string]struct{}
+	automations map[string]*exportedAutomations
+	warnings    *[]string
+}
+
+// exportFullTable exports the schema of one table with its automations, keys, constraints and views
+func (s *baseTransferService) exportFullTable(ctx context.Context, scope exportScope, t *exportTable) (dto.BaseExportTable, error) {
+	table := s.exportTableSchema(t, scope.idMap, scope.skipped, scope.asText)
+	if a := scope.automations[t.key]; a != nil {
+		table.Functions, table.Triggers = a.functions, a.triggers
+	}
+	table.PrimaryKey = s.exportPrimaryKey(ctx, scope.schemaName, t, scope.unusable, scope.warnings)
+	table.Constraints = s.exportConstraints(ctx, scope.schemaName, t, scope.unusable, scope.warnings)
+	views, err := s.exportViews(ctx, scope.schemaName, t, scope.idMap, scope.skippedKeys)
 	if err != nil {
-		return nil, err
+		return table, err
 	}
-	reportProgress(ctx, 8)
-	warnings := &file.Skipped
-	skipped, asText := s.skippedColumns(tables, warnings)
-	// Fields that a view, a trigger, a key or a constraint cannot use as they were: left out, or turned into text
-	unusable := unionOf(skipped, asText)
-
-	skippedKeys := map[string]struct{}{}
-	for id := range unusable {
-		if key, ok := idMap[id]; ok {
-			skippedKeys[key] = struct{}{}
-		}
-	}
-
-	// Files (attachments, cover image) travel only in a zip, and only when storage can be read
-	withFiles := opts.IncludeAttachments && s.storage != nil
-	if opts.IncludeAttachments && !withFiles {
-		*warnings = append(*warnings, "files not exported: no storage provider is configured")
-	}
-	file.Base.Cover = s.exportCover(ctx, schemaName, base.Image, withFiles, warnings)
-
-	var automations map[string]*exportedAutomations
-	if opts.IncludeAutomations {
-		automations, err = s.exportAutomations(ctx, schemaName, tables, unusable, warnings)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	for ti, t := range tables {
-		reportFraction(ctx, 8, 15, ti, len(tables))
-		table := s.exportTableSchema(t, idMap, skipped, asText)
-		if a := automations[t.key]; a != nil {
-			table.Functions, table.Triggers = a.functions, a.triggers
-		}
-		table.PrimaryKey = s.exportPrimaryKey(ctx, schemaName, t, unusable, warnings)
-		table.Constraints = s.exportConstraints(ctx, schemaName, t, unusable, warnings)
-		views, err := s.exportViews(ctx, schemaName, t, idMap, skippedKeys)
-		if err != nil {
-			return nil, err
-		}
-		table.Views = views
-		file.Schema.Tables = append(file.Schema.Tables, table)
-	}
-
-	if opts.IncludeSystemColumns && !opts.IncludeData {
-		*warnings = append(*warnings, "source columns not exported: they are values of the rows, so they need the data")
-	}
-	if opts.IncludeData {
-		data, err := s.exportData(ctx, schemaName, tables, skipped, asText, resolveFilters(tableResponses, opts.Filters), withFiles, opts.IncludeSystemColumns, warnings)
-		if err != nil {
-			return nil, err
-		}
-		file.Data = data
-	}
-	reportProgress(ctx, 65)
-	// What was left out is only logged: the file and the response carry nothing about the export run
-	for _, w := range file.Skipped {
-		logger.Get().Warn().Str("base_id", baseID).Msg("base export: " + w)
-	}
-	return file, nil
+	table.Views = views
+	return table, nil
 }
 
 // loadExportTables reads tables and columns, gives every table, column and relation a key, and returns the
 // id -> "@key" map used to rewrite ids inside meta.
 func (s *baseTransferService) loadExportTables(ctx context.Context, schemaName string, responses []dto.TableResponse) ([]*exportTable, map[string]string, error) {
-	models := make([]dto.ModelResponse, 0, len(responses))
-	for _, r := range responses {
-		models = append(models, r.Model)
-	}
-	sort.SliceStable(models, func(i, j int) bool {
-		if a, b := orderOf(models[i].OrderIndex), orderOf(models[j].OrderIndex); a != b {
-			return a < b
-		}
-		return models[i].Title < models[j].Title
-	})
+	models := sortedModels(responses)
 
 	alloc := newKeyAllocator()
 	idMap := map[string]string{}
@@ -148,15 +198,7 @@ func (s *baseTransferService) loadExportTables(ctx context.Context, schemaName s
 		if err != nil {
 			return nil, nil, err
 		}
-		live := make([]dto.ColumnResponse, 0, len(cols))
-		for _, c := range cols {
-			if !boolOf(c.Deleted) {
-				live = append(live, c)
-			}
-		}
-		sort.SliceStable(live, func(i, j int) bool { return orderOf(live[i].OrderIndex) < orderOf(live[j].OrderIndex) })
-
-		t := &exportTable{key: alloc.next("t_", m.Title), model: m, columns: live, fieldKeys: map[string]string{}}
+		t := &exportTable{key: alloc.next("t_", m.Title), model: m, columns: liveColumns(cols), fieldKeys: map[string]string{}}
 		idMap[m.ID.String()] = dto.BaseExportRefPrefix + t.key
 		tables = append(tables, t)
 	}
@@ -173,28 +215,61 @@ func (s *baseTransferService) loadExportTables(ctx context.Context, schemaName s
 	// Relations are named after their source field (r_customers_orders); one with no source field gets a plain name
 	for _, role := range []string{entityRoleSource, ""} {
 		for _, t := range tables {
-			for _, c := range t.columns {
-				rid := idString(c.Meta["relation_id"])
-				if c.UIDT != uidtLinks || rid == "" || (role != "" && idString(c.Meta["entity_role"]) != role) {
-					continue
-				}
-				if _, ok := idMap[rid]; !ok {
-					name := "relation"
-					if role != "" {
-						name = strings.TrimPrefix(t.key, "t_") + " " + c.Title
-					}
-					idMap[rid] = dto.BaseExportRefPrefix + clipKey(alloc.next("r_", name))
-				}
-			}
+			nameRelations(t, role, idMap, alloc)
 		}
 	}
 	return tables, idMap, nil
 }
 
+// sortedModels takes the models of the tables, by order_index and then title
+func sortedModels(responses []dto.TableResponse) []dto.ModelResponse {
+	models := make([]dto.ModelResponse, 0, len(responses))
+	for _, r := range responses {
+		models = append(models, r.Model)
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if a, b := orderOf(models[i].OrderIndex), orderOf(models[j].OrderIndex); a != b {
+			return a < b
+		}
+		return models[i].Title < models[j].Title
+	})
+	return models
+}
+
+// liveColumns keeps the columns that are not deleted, by order_index
+func liveColumns(cols []dto.ColumnResponse) []dto.ColumnResponse {
+	live := make([]dto.ColumnResponse, 0, len(cols))
+	for _, c := range cols {
+		if !boolOf(c.Deleted) {
+			live = append(live, c)
+		}
+	}
+	sort.SliceStable(live, func(i, j int) bool { return orderOf(live[i].OrderIndex) < orderOf(live[j].OrderIndex) })
+	return live
+}
+
+// nameRelations gives the relations of the links of a table a key, for the links of one entity role
+func nameRelations(t *exportTable, role string, idMap map[string]string, alloc *keyAllocator) {
+	for _, c := range t.columns {
+		rid := idString(c.Meta["relation_id"])
+		if c.UIDT != uidtLinks || rid == "" || (role != "" && idString(c.Meta["entity_role"]) != role) {
+			continue
+		}
+		if _, ok := idMap[rid]; ok {
+			continue
+		}
+		name := "relation"
+		if role != "" {
+			name = strings.TrimPrefix(t.key, "t_") + " " + c.Title
+		}
+		idMap[rid] = dto.BaseExportRefPrefix + clipKey(alloc.next("r_", name))
+	}
+}
+
 // skippedColumns finds fields that import cannot create (unsupported type, or built on such a field) and says so.
 // A link to a table that is not exported cannot stay a link: it is returned in the second set, with the lookups and
 // rollups built on it, and is exported as a text field.
-func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]string) (map[string]struct{}, map[string]struct{}) {
+func (s *baseTransferService) skippedColumns(tables []*exportTable, linksAsText bool, warnings *[]string) (map[string]struct{}, map[string]struct{}) {
 	skipped := map[string]struct{}{}
 	asText := map[string]struct{}{}
 	titles := map[string]string{}
@@ -210,62 +285,99 @@ func (s *baseTransferService) skippedColumns(tables []*exportTable, warnings *[]
 				skipped[c.ID.String()] = struct{}{}
 				*warnings = append(*warnings, fmt.Sprintf("field %s (%s) not exported: type %q is not supported yet", titles[c.ID.String()], c.ID, c.UIDT))
 			}
-			if c.UIDT == uidtLinks {
-				withID := idString(nestedString(c.Meta, "relation", "with"))
-				if withID != "" {
-					if _, ok := tableIDs[withID]; !ok {
-						asText[c.ID.String()] = struct{}{}
-						*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: linked table is not exported", titles[c.ID.String()]))
-					}
-				}
-			}
+			markLinkAsText(c, titles[c.ID.String()], linksAsText, tableIDs, asText, warnings)
 		}
 	}
 	// A field built on a skipped field (e.g. a lookup of a rollup) cannot be rebuilt either
 	for changed := true; changed; {
 		changed = false
 		for _, t := range tables {
-			// the relations of the links of this table that become text: a lookup names its link by field id or by relation
-			textRelations := map[string]struct{}{}
-			for _, c := range t.columns {
-				if _, ok := asText[c.ID.String()]; ok && c.UIDT == uidtLinks {
-					if rid := idString(c.Meta["relation_id"]); rid != "" {
-						textRelations[rid] = struct{}{}
-					}
-				}
-			}
-			for _, c := range t.columns {
-				id := c.ID.String()
-				if _, done := skipped[id]; done || boolOf(c.System) {
-					continue
-				}
-				if _, done := asText[id]; done {
-					continue
-				}
-				meta := normalizeMap(c.Meta)
-				if containsString(meta, skipped) {
-					skipped[id] = struct{}{}
-					*warnings = append(*warnings, fmt.Sprintf("field %s not exported: it depends on a field that is not exported", titles[id]))
-					changed = true
-				} else if _, throughText := textRelations[idString(c.Meta["relation_id"])]; isLookupLike(c.UIDT) && throughText && !containsString(meta, asText) {
-					asText[id] = struct{}{}
-					*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: it reads through a link that is exported as text", titles[id]))
-					changed = true
-				} else if containsString(meta, asText) {
-					// a lookup or rollup of a link that becomes text becomes text; anything else built on it cannot
-					if isLookupLike(c.UIDT) {
-						asText[id] = struct{}{}
-						*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: it reads through a link that is exported as text", titles[id]))
-					} else {
-						skipped[id] = struct{}{}
-						*warnings = append(*warnings, fmt.Sprintf("field %s not exported: it depends on a field that is exported as text", titles[id]))
-					}
-					changed = true
-				}
+			if propagateSkips(t, titles, skipped, asText, warnings) {
+				changed = true
 			}
 		}
 	}
 	return skipped, asText
+}
+
+// markLinkAsText puts a link in asText when its format cannot hold links or its linked table is not exported
+func markLinkAsText(c dto.ColumnResponse, title string, linksAsText bool, tableIDs, asText map[string]struct{}, warnings *[]string) {
+	if c.UIDT != uidtLinks {
+		return
+	}
+	withID := idString(nestedString(c.Meta, "relation", "with"))
+	if linksAsText {
+		// a format that cannot hold links (csv): every link is text
+		asText[c.ID.String()] = struct{}{}
+		*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: this format cannot hold links", title))
+	} else if withID != "" {
+		if _, ok := tableIDs[withID]; !ok {
+			asText[c.ID.String()] = struct{}{}
+			*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: linked table is not exported", title))
+		}
+	}
+}
+
+// textLinkRelations are the relations of the links of a table that become text: a lookup names its link by field id
+// or by relation
+func textLinkRelations(t *exportTable, asText map[string]struct{}) map[string]struct{} {
+	textRelations := map[string]struct{}{}
+	for _, c := range t.columns {
+		if _, ok := asText[c.ID.String()]; ok && c.UIDT == uidtLinks {
+			if rid := idString(c.Meta["relation_id"]); rid != "" {
+				textRelations[rid] = struct{}{}
+			}
+		}
+	}
+	return textRelations
+}
+
+// propagateSkips skips or turns into text the fields of a table built on fields that are skipped or text; it reports
+// whether it changed anything
+func propagateSkips(t *exportTable, titles map[string]string, skipped, asText map[string]struct{}, warnings *[]string) bool {
+	changed := false
+	textRelations := textLinkRelations(t, asText)
+	for _, c := range t.columns {
+		id := c.ID.String()
+		if _, done := skipped[id]; done || boolOf(c.System) {
+			continue
+		}
+		if _, done := asText[id]; done {
+			continue
+		}
+		if propagateSkip(c, titles[id], textRelations, skipped, asText, warnings) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+// propagateSkip decides one field that may depend on a skipped field or on a link that is exported as text
+func propagateSkip(c dto.ColumnResponse, title string, textRelations, skipped, asText map[string]struct{}, warnings *[]string) bool {
+	id := c.ID.String()
+	meta := normalizeMap(c.Meta)
+	if containsString(meta, skipped) {
+		skipped[id] = struct{}{}
+		*warnings = append(*warnings, fmt.Sprintf("field %s not exported: it depends on a field that is not exported", title))
+		return true
+	}
+	if _, throughText := textRelations[idString(c.Meta["relation_id"])]; isLookupLike(c.UIDT) && throughText && !containsString(meta, asText) {
+		asText[id] = struct{}{}
+		*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: it reads through a link that is exported as text", title))
+		return true
+	}
+	if containsString(meta, asText) {
+		// a lookup or rollup of a link that becomes text becomes text; anything else built on it cannot
+		if isLookupLike(c.UIDT) {
+			asText[id] = struct{}{}
+			*warnings = append(*warnings, fmt.Sprintf("field %s exported as text: it reads through a link that is exported as text", title))
+		} else {
+			skipped[id] = struct{}{}
+			*warnings = append(*warnings, fmt.Sprintf("field %s not exported: it depends on a field that is exported as text", title))
+		}
+		return true
+	}
+	return false
 }
 
 func (s *baseTransferService) exportTableSchema(t *exportTable, idMap map[string]string, skipped, asText map[string]struct{}) dto.BaseExportTable {
@@ -289,30 +401,35 @@ func (s *baseTransferService) exportTableSchema(t *exportTable, idMap map[string
 		if _, skip := skipped[c.ID.String()]; skip {
 			continue
 		}
-		field := dto.BaseExportField{
-			Key:         t.fieldKeys[c.ID.String()],
-			Title:       c.Title,
-			Description: c.Description,
-			UIDT:        c.UIDT,
-			DT:          c.DT,
-			OrderIndex:  orderOf(c.OrderIndex),
-		}
-		if boolOf(c.System) {
-			// System fields are not created by import; the column name lets it find them in the new table
-			field.System = true
-			field.ColumnName = c.ColumnName
-		} else if _, text := asText[c.ID.String()]; text {
-			// a link, lookup or rollup exported as text: a plain text field, with none of the relation
-			field.UIDT, field.DT, field.Meta = textFieldType, "TEXT", nil
-		} else {
-			field.Meta = rewriteMap(c.Meta, idMap)
-			if len(field.Meta) == 0 {
-				field.Meta = nil
-			}
-		}
-		out.Fields = append(out.Fields, field)
+		out.Fields = append(out.Fields, exportField(t, c, idMap, asText))
 	}
 	return out
+}
+
+// exportField describes one column as a field of the file
+func exportField(t *exportTable, c dto.ColumnResponse, idMap map[string]string, asText map[string]struct{}) dto.BaseExportField {
+	field := dto.BaseExportField{
+		Key:         t.fieldKeys[c.ID.String()],
+		Title:       c.Title,
+		Description: c.Description,
+		UIDT:        c.UIDT,
+		DT:          c.DT,
+		OrderIndex:  orderOf(c.OrderIndex),
+	}
+	if boolOf(c.System) {
+		// System fields are not created by import; the column name lets it find them in the new table
+		field.System = true
+		field.ColumnName = c.ColumnName
+	} else if _, text := asText[c.ID.String()]; text {
+		// a link, lookup or rollup exported as text: a plain text field, with none of the relation
+		field.UIDT, field.DT, field.Meta = textFieldType, "TEXT", nil
+	} else {
+		field.Meta = rewriteMap(c.Meta, idMap)
+		if len(field.Meta) == 0 {
+			field.Meta = nil
+		}
+	}
+	return field
 }
 
 func (s *baseTransferService) exportViews(ctx context.Context, schemaName string, t *exportTable, idMap map[string]string, skippedKeys map[string]struct{}) ([]dto.BaseExportView, error) {
@@ -378,43 +495,16 @@ func filterTableResponses(responses []dto.TableResponse, filters []string) []dto
 	return filtered
 }
 
+// cleanViewMeta leaves out of a view's meta what points at a field that is not exported
 func cleanViewMeta(meta map[string]interface{}, skippedKeys map[string]struct{}) map[string]interface{} {
 	if meta == nil || len(skippedKeys) == 0 {
 		return meta
 	}
 	out := make(map[string]interface{}, len(meta))
 	for k, v := range meta {
-		switch k {
-		case "filters", "sorts", "groups":
-			if list, ok := v.([]interface{}); ok {
-				var filtered []interface{}
-				for _, item := range list {
-					if m, isMap := item.(map[string]interface{}); isMap {
-						col := idString(m["column"])
-						if _, skip := skippedKeys[col]; skip {
-							continue
-						}
-					}
-					filtered = append(filtered, item)
-				}
-				out[k] = filtered
-				continue
-			}
-		case "fieldConfig":
-			if list, ok := v.([]interface{}); ok {
-				var filtered []interface{}
-				for _, item := range list {
-					if m, isMap := item.(map[string]interface{}); isMap {
-						id := idString(m["id"])
-						if _, skip := skippedKeys[id]; skip {
-							continue
-						}
-					}
-					filtered = append(filtered, item)
-				}
-				out[k] = filtered
-				continue
-			}
+		if list, ok := cleanViewList(k, v, skippedKeys); ok {
+			out[k] = list
+			continue
 		}
 		if str, isStr := v.(string); isStr {
 			if _, skip := skippedKeys[str]; skip {
@@ -424,6 +514,40 @@ func cleanViewMeta(meta map[string]interface{}, skippedKeys map[string]struct{})
 		out[k] = v
 	}
 	return out
+}
+
+// viewListKey is the item key that names a field, for the lists of a view's meta that hold fields
+func viewListKey(k string) (string, bool) {
+	switch k {
+	case "filters", "sorts", "groups":
+		return "column", true
+	case "fieldConfig":
+		return "id", true
+	}
+	return "", false
+}
+
+// cleanViewList drops the items of a filters, sorts, groups or fieldConfig list that name a skipped field; ok is
+// false when the entry is not such a list
+func cleanViewList(k string, v interface{}, skippedKeys map[string]struct{}) ([]interface{}, bool) {
+	itemKey, isList := viewListKey(k)
+	if !isList {
+		return nil, false
+	}
+	list, ok := v.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	var filtered []interface{}
+	for _, item := range list {
+		if m, isMap := item.(map[string]interface{}); isMap {
+			if _, skip := skippedKeys[idString(m[itemKey])]; skip {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, true
 }
 
 // pkColumn returns the column whose values link cells of this table hold.
@@ -442,16 +566,64 @@ func (s *baseTransferService) pkColumn(ctx context.Context, schemaName, modelID 
 	return pk.ColumnNames[0]
 }
 
-func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, skipped, asText map[string]struct{}, filters map[string]dto.ExportTableFilter, withFiles, systemColumns bool, warnings *[]string) (*dto.BaseExportData, error) {
+// exportDataOptions are what exportData needs besides the tables
+type exportDataOptions struct {
+	skipped       map[string]struct{}
+	asText        map[string]struct{}
+	filters       map[string]dto.ExportTableFilter
+	withFiles     bool
+	systemColumns bool
+	warnings      *[]string
+}
+
+// exportRecords are the records of the tables read in pass 1 of exportData
+type exportRecords struct {
+	records map[string][]map[string]interface{}
+	rids    map[string]map[string]string // model id -> primary-key value -> _rid
+	rowRID  map[string][]string          // model id -> _rid per record, in record order
+}
+
+func (s *baseTransferService) exportData(ctx context.Context, schemaName string, tables []*exportTable, opts exportDataOptions) (*dto.BaseExportData, error) {
 	data := &dto.BaseExportData{
 		RowCounts: map[string]int{},
 		Tables:    map[string]dto.BaseExportTableRow{},
 	}
 
 	// Pass 1: read every table and give each record a _rid, so link cells can be turned into _rid in pass 2.
-	records := map[string][]map[string]interface{}{}
-	rids := map[string]map[string]string{} // model id -> primary-key value -> _rid
-	rowRID := map[string][]string{}        // model id -> _rid per record, in record order
+	recs, err := s.readExportRecords(ctx, schemaName, tables, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// The display text of the rows that the links exported as text pointed at
+	linkTexts, err := s.loadLinkTexts(ctx, schemaName, tables, opts.asText, opts.warnings)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pass 2: values by field key.
+	cells := &cellWriter{
+		opts: opts, linkTexts: linkTexts, rids: recs.rids,
+		attachments: newAttachmentCollector(), attachmentWarned: map[string]bool{},
+	}
+	for ti, t := range tables {
+		reportFraction(ctx, 40, 65, ti, len(tables))
+		modelID := t.model.ID.String()
+		rows := cells.tableRows(t, recs.records[modelID], recs.rowRID[modelID])
+		data.Tables[t.key] = dto.BaseExportTableRow{Rows: rows}
+		data.RowCounts[t.key] = len(rows)
+	}
+	data.Attachments = cells.attachments.files
+	return data, nil
+}
+
+// readExportRecords is pass 1 of exportData: it reads every table, sorted and filtered, and gives each record a _rid
+func (s *baseTransferService) readExportRecords(ctx context.Context, schemaName string, tables []*exportTable, opts exportDataOptions) (*exportRecords, error) {
+	out := &exportRecords{
+		records: map[string][]map[string]interface{}{},
+		rids:    map[string]map[string]string{},
+		rowRID:  map[string][]string{},
+	}
 	for ti, t := range tables {
 		reportFraction(ctx, 15, 40, ti, len(tables))
 		modelID := t.model.ID.String()
@@ -463,128 +635,151 @@ func (s *baseTransferService) exportData(ctx context.Context, schemaName string,
 		sort.SliceStable(recs, func(i, j int) bool { return numericID(recs[i]["id"]) < numericID(recs[j]["id"]) })
 		// A row filter keeps only the rows that match. It runs before the rows get a _rid, so links to a row that was
 		// filtered out are dropped, and files, row counts and the rest only see the rows that stay.
-		if f, ok := filters[modelID]; ok {
+		if f, ok := opts.filters[modelID]; ok {
 			recs = filterRecords(recs, t.columns, f)
 		}
-		records[modelID] = recs
+		out.records[modelID] = recs
 
-		pk := s.pkColumn(ctx, schemaName, modelID, warnings)
-		rids[modelID] = map[string]string{}
+		pk := s.pkColumn(ctx, schemaName, modelID, opts.warnings)
+		out.rids[modelID] = map[string]string{}
 		for _, rec := range recs {
 			rid := fmt.Sprintf("%s_%s", t.key, cellKey(rec["id"]))
-			rowRID[modelID] = append(rowRID[modelID], rid)
-			rids[modelID][cellKey(rec[pk])] = rid
+			out.rowRID[modelID] = append(out.rowRID[modelID], rid)
+			out.rids[modelID][cellKey(rec[pk])] = rid
 			// A key may also be written by id when the key column holds nothing useful
-			if _, ok := rids[modelID][cellKey(rec["id"])]; !ok {
-				rids[modelID][cellKey(rec["id"])] = rid
+			if _, ok := out.rids[modelID][cellKey(rec["id"])]; !ok {
+				out.rids[modelID][cellKey(rec["id"])] = rid
 			}
 		}
 	}
+	return out, nil
+}
 
-	// The display text of the rows that the links exported as text pointed at
-	linkTexts, err := s.loadLinkTexts(ctx, schemaName, tables, asText, warnings)
-	if err != nil {
-		return nil, err
+// cellWriter turns the records of a table into rows of values by field key (pass 2 of exportData)
+type cellWriter struct {
+	opts             exportDataOptions
+	linkTexts        map[string]map[string]string
+	rids             map[string]map[string]string
+	attachments      *attachmentCollector
+	attachmentWarned map[string]bool
+}
+
+// tableRows writes the rows of one table; the cells of a row are written in the order of the fields of the table
+func (w *cellWriter) tableRows(t *exportTable, records []map[string]interface{}, rowRIDs []string) []dto.BaseExportRow {
+	rows := make([]dto.BaseExportRow, 0, len(records))
+	valueOrder := make([]string, 0, len(t.columns))
+	for _, c := range t.columns {
+		if !boolOf(c.System) || (w.opts.systemColumns && isSourceColumn(c.ColumnName)) {
+			valueOrder = append(valueOrder, t.fieldKeys[c.ID.String()])
+		}
 	}
-
-	// Pass 2: values by field key.
-	attachments := newAttachmentCollector()
-	attachmentWarned := map[string]bool{}
-	for ti, t := range tables {
-		reportFraction(ctx, 40, 65, ti, len(tables))
-		modelID := t.model.ID.String()
-		rows := make([]dto.BaseExportRow, 0, len(records[modelID]))
-		// the cells of a row are written in the order of the fields of the table
-		valueOrder := make([]string, 0, len(t.columns))
+	for i, rec := range records {
+		values := map[string]interface{}{}
 		for _, c := range t.columns {
-			if !boolOf(c.System) || (systemColumns && isSourceColumn(c.ColumnName)) {
-				valueOrder = append(valueOrder, t.fieldKeys[c.ID.String()])
-			}
+			w.writeCell(t, c, rec, values)
 		}
-		for i, rec := range records[modelID] {
-			values := map[string]interface{}{}
-			for _, c := range t.columns {
-				id := c.ID.String()
-				if boolOf(c.System) {
-					// the source columns are written only when asked for; the other system fields never
-					if systemColumns && isSourceColumn(c.ColumnName) {
-						if v := sourceValue(c.ColumnName, rec[c.ColumnName]); v != nil {
-							values[t.fieldKeys[id]] = v
-						}
-					}
-					continue
-				}
-				if _, skip := skipped[id]; skip {
-					continue
-				}
-				if _, text := asText[id]; text {
-					// a link, lookup or rollup exported as text: the text of what it showed
-					var cell string
-					if c.UIDT == uidtLinks {
-						cell = linkCellText(rec[c.ColumnName], linkTexts[id])
-					} else {
-						cell = valueText(rec[c.ColumnName])
-					}
-					if cell != "" {
-						values[t.fieldKeys[id]] = cell
-					}
-					continue
-				}
-				if c.UIDT == uidtLookup {
-					continue
-				}
-				val := rec[c.ColumnName]
-				if val == nil {
-					continue
-				}
-				switch c.UIDT {
-				case uidtAttachment:
-					if !withFiles {
-						if !attachmentWarned[id] {
-							attachmentWarned[id] = true
-							*warnings = append(*warnings, fmt.Sprintf("attachment files of %s.%s are not exported; the cells are left empty", t.model.Title, c.Title))
-						}
-						continue
-					}
-					var refs []string
-					for _, item := range attachmentItems(val) {
-						ref, reason := attachments.add(item)
-						if reason != "" {
-							*warnings = append(*warnings, fmt.Sprintf("attachment of %s.%s skipped: %s", t.model.Title, c.Title, reason))
-							continue
-						}
-						refs = append(refs, ref)
-					}
-					if len(refs) > 0 {
-						values[t.fieldKeys[id]] = refs
-					}
-					continue
-				case constant.UIDTUUID:
-					// An auto uuid field is filled in by the system for every new row, and the app refuses a written value
-					if isAutoUUID(c.Meta) {
-						continue
-					}
-					values[t.fieldKeys[id]] = val
-				case uidtLinks:
-					target := nestedString(c.Meta, "relation", "with")
-					linked := linkedRIDs(val, rids[target])
-					if len(linked) == 0 {
-						continue
-					}
-					values[t.fieldKeys[id]] = linked
-				default:
-					values[t.fieldKeys[id]] = val
-				}
-			}
-			row := dto.BaseExportRow{RID: rowRID[modelID][i], Values: values}
-			row.OrderBy(valueOrder)
-			rows = append(rows, row)
-		}
-		data.Tables[t.key] = dto.BaseExportTableRow{Rows: rows}
-		data.RowCounts[t.key] = len(rows)
+		row := dto.BaseExportRow{RID: rowRIDs[i], Values: values}
+		row.OrderBy(valueOrder)
+		rows = append(rows, row)
 	}
-	data.Attachments = attachments.files
-	return data, nil
+	return rows
+}
+
+// writeCell puts the value of one column of a record in values, unless the column has nothing to write
+func (w *cellWriter) writeCell(t *exportTable, c dto.ColumnResponse, rec, values map[string]interface{}) {
+	id := c.ID.String()
+	if boolOf(c.System) {
+		w.writeSourceCell(t, c, rec, values)
+		return
+	}
+	if _, skip := w.opts.skipped[id]; skip {
+		return
+	}
+	if _, text := w.opts.asText[id]; text {
+		w.writeTextCell(t, c, rec, values)
+		return
+	}
+	if c.UIDT == uidtLookup {
+		return
+	}
+	val := rec[c.ColumnName]
+	if val == nil {
+		return
+	}
+	w.writeValue(t, c, val, values)
+}
+
+// writeSourceCell writes a system column: the source columns are written only when asked for; the other system
+// fields never
+func (w *cellWriter) writeSourceCell(t *exportTable, c dto.ColumnResponse, rec, values map[string]interface{}) {
+	if w.opts.systemColumns && isSourceColumn(c.ColumnName) {
+		if v := sourceValue(c.ColumnName, rec[c.ColumnName]); v != nil {
+			values[t.fieldKeys[c.ID.String()]] = v
+		}
+	}
+}
+
+// writeTextCell writes a link, lookup or rollup exported as text: the text of what it showed
+func (w *cellWriter) writeTextCell(t *exportTable, c dto.ColumnResponse, rec, values map[string]interface{}) {
+	id := c.ID.String()
+	var cell string
+	if c.UIDT == uidtLinks {
+		cell = linkCellText(rec[c.ColumnName], w.linkTexts[id])
+	} else {
+		cell = valueText(rec[c.ColumnName])
+	}
+	if cell != "" {
+		values[t.fieldKeys[id]] = cell
+	}
+}
+
+// writeValue writes a value that is not empty, by the type of its column
+func (w *cellWriter) writeValue(t *exportTable, c dto.ColumnResponse, val interface{}, values map[string]interface{}) {
+	id := c.ID.String()
+	switch c.UIDT {
+	case uidtAttachment:
+		w.writeAttachments(t, c, val, values)
+	case constant.UIDTUUID:
+		// An auto uuid field is filled in by the system for every new row, and the app refuses a written value
+		if isAutoUUID(c.Meta) {
+			return
+		}
+		values[t.fieldKeys[id]] = val
+	case uidtLinks:
+		target := nestedString(c.Meta, "relation", "with")
+		linked := linkedRIDs(val, w.rids[target])
+		if len(linked) == 0 {
+			return
+		}
+		values[t.fieldKeys[id]] = linked
+	default:
+		values[t.fieldKeys[id]] = val
+	}
+}
+
+// writeAttachments puts the refs of the files of an attachment cell in values; without files it warns once per field
+func (w *cellWriter) writeAttachments(t *exportTable, c dto.ColumnResponse, val interface{}, values map[string]interface{}) {
+	id := c.ID.String()
+	warnings := w.opts.warnings
+	if !w.opts.withFiles {
+		if !w.attachmentWarned[id] {
+			w.attachmentWarned[id] = true
+			*warnings = append(*warnings, fmt.Sprintf("attachment files of %s.%s are not exported; the cells are left empty", t.model.Title, c.Title))
+		}
+		return
+	}
+	var refs []string
+	for _, item := range attachmentItems(val) {
+		ref, reason := w.attachments.add(item)
+		if reason != "" {
+			*warnings = append(*warnings, fmt.Sprintf("attachment of %s.%s skipped: %s", t.model.Title, c.Title, reason))
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	if len(refs) > 0 {
+		values[t.fieldKeys[id]] = refs
+	}
 }
 
 // linkedRIDs turns the key values of a link cell into _rid; keys with no matching record are dropped.

@@ -48,6 +48,9 @@ type ExportOptions struct {
 	IncludeFiles bool
 	// OpenFile reads the files the model lists; it may be nil when the model lists none
 	OpenFile OpenFileFunc
+	// Delimiter is the field separator of a delimited-text format (csv): ',', ';', '\t' or '|'. Zero means ','.
+	// Other formats ignore it.
+	Delimiter rune
 }
 
 // ImportOptions are the options of one import
@@ -64,6 +67,9 @@ type ImportResult struct {
 	// Attachments gives the files a zip carried, by path; nil when the file carried none. It reads from the input
 	// given to Import, so the input must stay open until the import is done.
 	Attachments *dto.Attachments
+	// Source says which line of which file each row came from (by _rid); nil for a format that has no such thing.
+	// It is only used to name a row in the error log.
+	Source *dto.ImportSource
 }
 
 // Adapter reads and writes one file format

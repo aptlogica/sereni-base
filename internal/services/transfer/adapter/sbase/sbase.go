@@ -10,8 +10,6 @@ package sbase
 import (
 	"archive/zip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +19,7 @@ import (
 
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/internal/ziputil"
 )
 
 const (
@@ -65,7 +64,7 @@ func (sbaseAdapter) Export(ctx context.Context, file *dto.BaseExportFile, opt ad
 	if file.Data != nil {
 		for i := range file.Data.Attachments {
 			a := &file.Data.Attachments[i]
-			size, sum, err := packFile(ctx, zw, opt.OpenFile, a.Filename, a.Path, a.StoragePath)
+			size, sum, err := ziputil.PackFile(ctx, zw, opt.OpenFile, a.Filename, a.Path, a.StoragePath)
 			if err != nil {
 				return err
 			}
@@ -73,7 +72,7 @@ func (sbaseAdapter) Export(ctx context.Context, file *dto.BaseExportFile, opt ad
 		}
 	}
 	if c := file.Base.Cover; c != nil {
-		size, sum, err := packFile(ctx, zw, opt.OpenFile, c.Filename, c.Path, c.StoragePath)
+		size, sum, err := ziputil.PackFile(ctx, zw, opt.OpenFile, c.Filename, c.Path, c.StoragePath)
 		if err != nil {
 			return err
 		}
@@ -95,29 +94,6 @@ func encodeJSON(w io.Writer, v interface{}) error {
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
 	return enc.Encode(v)
-}
-
-// packFile copies one stored file into the zip and returns the size and checksum of what was actually read.
-func packFile(ctx context.Context, zw *zip.Writer, openFile adapter.OpenFileFunc, name, path, storagePath string) (int64, string, error) {
-	rc, err := openFile(ctx, storagePath)
-	if err != nil {
-		return 0, "", fmt.Errorf("read %q: %w", name, err)
-	}
-	defer rc.Close()
-
-	fw, err := zw.Create(path)
-	if err != nil {
-		return 0, "", err
-	}
-	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(fw, hash), io.LimitReader(rc, adapter.MaxAttachmentBytes+1))
-	if err != nil {
-		return 0, "", fmt.Errorf("read %q: %w", name, err)
-	}
-	if n > adapter.MaxAttachmentBytes {
-		return 0, "", fmt.Errorf("%q is larger than %d MB", name, adapter.MaxAttachmentBytes>>20)
-	}
-	return n, "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // Import reads a .sbase.json, or a .zip that holds base.sbase.json (the extension of opt.Filename tells which).
@@ -176,24 +152,4 @@ func findZipEntry(zr *zip.Reader) *zip.File {
 }
 
 // NewZipSource wraps an opened zip as the attachments of an import.
-func NewZipSource(zr *zip.Reader) *dto.Attachments {
-	files := map[string]*zip.File{}
-	for _, f := range zr.File {
-		if !f.FileInfo().IsDir() {
-			files[f.Name] = f
-		}
-	}
-	return &dto.Attachments{
-		Has: func(path string) bool {
-			_, ok := files[path]
-			return ok
-		},
-		Open: func(path string) (io.ReadCloser, error) {
-			f, ok := files[path]
-			if !ok {
-				return nil, fmt.Errorf("%s is not in the zip", path)
-			}
-			return f.Open()
-		},
-	}
-}
+func NewZipSource(zr *zip.Reader) *dto.Attachments { return ziputil.NewZipSource(zr) }

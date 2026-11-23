@@ -53,7 +53,7 @@ func TestApplicationFormats(t *testing.T) {
 
 // An adapter reads and writes a format; it never reaches the database or a service
 func TestAdaptersImportNoDatabaseOrService(t *testing.T) {
-	for _, dir := range []string{"../../../../internal/services/transfer/adapter", "../../../../internal/services/transfer/adapter/sbase"} {
+	for _, dir := range []string{"../../../../internal/services/transfer/adapter", "../../../../internal/services/transfer/adapter/sbase", "../../../../internal/services/transfer/adapter/csv", "../../../../internal/services/transfer/adapter/internal/ziputil"} {
 		entries, err := os.ReadDir(dir)
 		require.NoError(t, err)
 		for _, e := range entries {

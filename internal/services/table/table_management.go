@@ -2620,6 +2620,27 @@ func (s tableManagementService) CreateRowWithRecords(ctx context.Context, schema
 	}, nil
 }
 
+// AlignBulkRecords gives every record the same keys: the keys of all the records together. A record that has no
+// value for a key gets nil (NULL) for it. The bulk insert writes the columns of the first record for every record,
+// so without this a value that only a later record has is silently lost. The records given are not changed.
+func AlignBulkRecords(records []map[string]interface{}) []map[string]interface{} {
+	keys := map[string]struct{}{}
+	for _, record := range records {
+		for key := range record {
+			keys[key] = struct{}{}
+		}
+	}
+	aligned := make([]map[string]interface{}, len(records))
+	for i, record := range records {
+		out := make(map[string]interface{}, len(keys))
+		for key := range keys {
+			out[key] = record[key] // a missing key is nil
+		}
+		aligned[i] = out
+	}
+	return aligned
+}
+
 func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, schemaName string, modelAlias string, records []map[string]interface{}) ([]dto.RecordResponse, error) {
 	lg := logger.Get()
 	tableName := fmt.Sprintf(SchemaTableFormat, schemaName, modelAlias)
@@ -2635,7 +2656,10 @@ func (s tableManagementService) CreateRowsWithRecordsBulk(ctx context.Context, s
 		}
 	}
 
-	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, records)
+	// The bulk insert takes its column list from the first record only. A value that the first record does not
+	// have (an empty cell that import leaves out) would be dropped from every later record, so every record is
+	// given every key of the batch first.
+	createdRecords, err := s.repo.BulkService.BulkInsert(tableName, AlignBulkRecords(records))
 	if err != nil {
 		lg.Error().Stack().Err(err).Msg("Failed to bulk insert rows")
 		return nil, s.recordWriteError(ctx, schemaName, err, "failed to bulk insert rows")

@@ -40,6 +40,8 @@ type fakeDB struct {
 	failOnUIDT string
 	// failRows makes row insertion fail, after attachments were uploaded
 	failRows bool
+	// refuseRow makes the database refuse a row, like a value that does not fit its column; the call fails as a whole
+	refuseRow func(values map[string]interface{}) error
 
 	// files is the object storage by path; assets are the stored asset records by id
 	files  map[string][]byte
@@ -325,6 +327,13 @@ func (f *fakeDB) columnByID(id string) (dto.ColumnResponse, bool) {
 func (f *fakeDB) CreateRowsWithValues(_ context.Context, _ string, modelID string, rowsInput []map[string]interface{}, _ string, _ string) ([]dto.RecordResponse, error) {
 	if f.failRows {
 		return nil, errors.New("rows failed")
+	}
+	if f.refuseRow != nil {
+		for _, in := range rowsInput {
+			if err := f.refuseRow(in); err != nil {
+				return nil, err
+			}
+		}
 	}
 	var out []dto.RecordResponse
 	for _, in := range rowsInput {

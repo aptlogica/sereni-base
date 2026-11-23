@@ -50,9 +50,9 @@ func (f *fakeJobs) ListWorkspaceJobs(_ context.Context, _, _, _ string) ([]dto.T
 	return nil, f.err
 }
 
-func (f *fakeJobs) StartImport(_ context.Context, _, workspaceID, userID string, file io.Reader, filename string, size int64, opts dto.ImportBaseOptions) (dto.TransferJobResponse, error) {
-	data, _ := io.ReadAll(file)
-	f.imported = importCall{workspaceID: workspaceID, userID: userID, filename: filename, size: size, data: string(data), opts: opts}
+func (f *fakeJobs) StartImport(_ context.Context, _, workspaceID, userID string, upload dto.ImportUpload, opts dto.ImportBaseOptions) (dto.TransferJobResponse, error) {
+	data, _ := io.ReadAll(upload.File)
+	f.imported = importCall{workspaceID: workspaceID, userID: userID, filename: upload.Filename, size: upload.Size, data: string(data), opts: opts}
 	if f.err != nil {
 		return dto.TransferJobResponse{}, f.err
 	}

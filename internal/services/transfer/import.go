@@ -63,6 +63,12 @@ type importRun struct {
 	automationIDs      []string
 	functionNames      map[string]string
 
+	// skipFailed leaves out the rows the database refuses instead of failing the import; skipped are those left out,
+	// and source says where each row came from, for the error log
+	skipFailed bool
+	skipped    []skippedRow
+	source     *dto.ImportSource
+
 	createdModels []string
 	rows          map[string]rowRef
 	result        dto.ImportBaseResult
@@ -86,12 +92,36 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 		return dto.ImportBaseResult{}, &dto.ImportValidationError{Problems: problems}
 	}
 
+	run := s.newImportRun(ctx, schemaName, workspaceID, userID, plan, file, opts)
+	run.result = dto.ImportBaseResult{
+		Title:  firstNonEmpty(opts.Title, file.Base.Title),
+		Tables: len(file.Schema.Tables),
+		Views:  len(plan.views),
+	}
+	run.countSchema(file)
+	run.describeData(file, opts)
+	if functions, triggers := countAutomations(file); functions+triggers > 0 && !opts.IncludeAutomations {
+		run.warn("%d trigger function(s) and %d trigger(s) in the file were not created: they run SQL, so they are only created when the request has include_automations=true (a form field or a URL parameter) and the user has the automations permission", functions, triggers)
+	}
+
+	if err := run.execute(); err != nil {
+		run.rollback()
+		return dto.ImportBaseResult{}, err
+	}
+	run.finishReport()
+	return run.result, nil
+}
+
+// newImportRun sets up the state of an import of a file that passed validation
+func (s *baseTransferService) newImportRun(ctx context.Context, schemaName, workspaceID, userID string, plan *importPlan, file *dto.BaseExportFile, opts dto.ImportBaseOptions) *importRun {
 	run := &importRun{
 		s: s, ctx: ctx, schema: schemaName, workspaceID: workspaceID, userID: userID,
 		plan:          plan,
 		includeData:   opts.IncludeData && file.Data != nil,
 		systemColumns: opts.IncludeSystemColumns && opts.IncludeData && file.Data != nil,
 		titleGiven:    strings.TrimSpace(opts.Title) != "",
+		skipFailed:    opts.SkipFailedRows,
+		source:        opts.Source,
 		ids:           map[string]string{},
 		tables:        map[string]dto.TableResponse{},
 		columns:       map[string]dto.ColumnResponse{},
@@ -108,43 +138,40 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 			run.index[a.Ref] = a
 		}
 	}
-	run.result = dto.ImportBaseResult{
-		Title:  firstNonEmpty(opts.Title, file.Base.Title),
-		Tables: len(file.Schema.Tables),
-		Views:  len(plan.views),
-	}
+	return run
+}
+
+// countSchema counts the constraints and the fields (not the system ones) of the file for the report
+func (r *importRun) countSchema(file *dto.BaseExportFile) {
 	for _, t := range file.Schema.Tables {
-		run.result.Constraints += len(t.Constraints)
+		r.result.Constraints += len(t.Constraints)
 		for _, f := range t.Fields {
 			if !f.System {
-				run.result.Fields++
+				r.result.Fields++
 			}
 		}
 	}
-	if run.includeData {
-		for _, t := range file.Data.Tables {
-			run.result.Rows += len(t.Rows)
-		}
-		run.result.Files = len(run.index)
-		if len(run.index) > 0 && !opts.IncludeAttachments {
-			run.result.Files = 0
-			run.warn("attachments were not imported as requested; attachment cells are left empty")
-		} else if len(run.index) > 0 && run.attachments == nil {
-			run.result.Files = 0
-			run.warn("attachment files were not imported: upload the .sbase.zip to import them; attachment cells are left empty")
-		}
-	} else if file.Data != nil {
-		run.result.Warnings = append(run.result.Warnings, "rows in the file were not imported")
-	}
-	if functions, triggers := countAutomations(file); functions+triggers > 0 && !opts.IncludeAutomations {
-		run.warn("%d trigger function(s) and %d trigger(s) in the file were not created: they run SQL, so they are only created when the request has include_automations=true (a form field or a URL parameter) and the user has the automations permission", functions, triggers)
-	}
+}
 
-	if err := run.execute(); err != nil {
-		run.rollback()
-		return dto.ImportBaseResult{}, err
+// describeData counts the rows and files of the file for the report, and warns about what is not imported
+func (r *importRun) describeData(file *dto.BaseExportFile, opts dto.ImportBaseOptions) {
+	if !r.includeData {
+		if file.Data != nil {
+			r.result.Warnings = append(r.result.Warnings, "rows in the file were not imported")
+		}
+		return
 	}
-	return run.result, nil
+	for _, t := range file.Data.Tables {
+		r.result.Rows += len(t.Rows)
+	}
+	r.result.Files = len(r.index)
+	if len(r.index) > 0 && !opts.IncludeAttachments {
+		r.result.Files = 0
+		r.warn("attachments were not imported as requested; attachment cells are left empty")
+	} else if len(r.index) > 0 && r.attachments == nil {
+		r.result.Files = 0
+		r.warn("attachment files were not imported: upload the .sbase.zip to import them; attachment cells are left empty")
+	}
 }
 
 func firstNonEmpty(values ...string) string {
@@ -205,26 +232,46 @@ func (r *importRun) rollback() {
 		return
 	}
 	ctx := context.WithoutCancel(r.ctx)
+	r.rollbackAutomations(ctx)
+	r.rollbackAssets(ctx)
+	r.rollbackTables(ctx)
+	if r.baseID == uuid.Nil {
+		return
+	}
+	r.rollbackBase(ctx)
+}
+
+// rollbackAutomations drops triggers and functions first, newest first: a function cannot be dropped while a trigger
+// still uses it
+func (r *importRun) rollbackAutomations(ctx context.Context) {
 	lg := logger.Get()
-	// triggers and functions first, newest first: a function cannot be dropped while a trigger still uses it
 	for i := len(r.automationIDs) - 1; i >= 0; i-- {
 		if err := r.s.automations.Delete(ctx, r.schema, r.automationIDs[i]); err != nil {
 			lg.Error().Err(err).Str("automation_id", r.automationIDs[i]).Msg("base import rollback: failed to delete trigger or function")
 		}
 	}
+}
+
+func (r *importRun) rollbackAssets(ctx context.Context) {
+	lg := logger.Get()
 	for _, id := range r.assetIDs {
 		if err := r.s.assets.DeleteAsset(ctx, id, r.schema); err != nil {
 			lg.Error().Err(err).Str("asset_id", id).Msg("base import rollback: failed to delete attachment")
 		}
 	}
+}
+
+func (r *importRun) rollbackTables(ctx context.Context) {
+	lg := logger.Get()
 	for i := len(r.createdModels) - 1; i >= 0; i-- {
 		if err := r.s.tableService.DeleteTable(ctx, r.schema, r.createdModels[i]); err != nil {
 			lg.Error().Err(err).Str("model_id", r.createdModels[i]).Msg("base import rollback: failed to delete table")
 		}
 	}
-	if r.baseID == uuid.Nil {
-		return
-	}
+}
+
+func (r *importRun) rollbackBase(ctx context.Context) {
+	lg := logger.Get()
 	if r.coverAdded {
 		if _, err := r.s.baseService.RemoveBaseImage(ctx, r.schema, r.baseID.String(), r.userID); err != nil {
 			lg.Error().Err(err).Str("base_id", r.baseID.String()).Msg("base import rollback: failed to remove cover image")
@@ -324,35 +371,48 @@ func (r *importRun) createTables() error {
 		if err != nil {
 			return fmt.Errorf("create table %q: %w", t.Title, err)
 		}
-		modelID := resp.Model.ID.String()
-		r.createdModels = append(r.createdModels, modelID)
-		r.tables[t.Key] = resp
-		r.ids[dto.BaseExportRefPrefix+t.Key] = modelID
-		if len(resp.Views) > 0 {
-			view := resp.Views[0]
-			r.defaultView[t.Key] = &view
-		}
-
-		// The new table already has its system fields; point the file's system field keys at them
-		for _, f := range t.Fields {
-			if !f.System {
-				continue
-			}
-			found := false
-			for _, c := range resp.Columns {
-				if c.ColumnName == f.ColumnName {
-					r.columns[f.Key] = c
-					r.ids[dto.BaseExportRefPrefix+f.Key] = c.ID.String()
-					found = true
-					break
-				}
-			}
-			if !found {
-				r.warn("system field %s of table %q was not found in the new table", f.Title, t.Title)
-			}
-		}
+		r.registerTable(t, resp)
+		r.mapSystemFields(t, resp)
 	}
 	return nil
+}
+
+// registerTable remembers a created table: its model, its id and the default view it came with
+func (r *importRun) registerTable(t dto.BaseExportTable, resp dto.TableResponse) {
+	modelID := resp.Model.ID.String()
+	r.createdModels = append(r.createdModels, modelID)
+	r.tables[t.Key] = resp
+	r.ids[dto.BaseExportRefPrefix+t.Key] = modelID
+	if len(resp.Views) > 0 {
+		view := resp.Views[0]
+		r.defaultView[t.Key] = &view
+	}
+}
+
+// mapSystemFields points the file's system field keys at the system fields the new table already has
+func (r *importRun) mapSystemFields(t dto.BaseExportTable, resp dto.TableResponse) {
+	for _, f := range t.Fields {
+		if !f.System {
+			continue
+		}
+		c, found := columnByName(resp.Columns, f.ColumnName)
+		if !found {
+			r.warn("system field %s of table %q was not found in the new table", f.Title, t.Title)
+			continue
+		}
+		r.columns[f.Key] = c
+		r.ids[dto.BaseExportRefPrefix+f.Key] = c.ID.String()
+	}
+}
+
+// columnByName finds the column with a column name
+func columnByName(columns []dto.ColumnResponse, name string) (dto.ColumnResponse, bool) {
+	for _, c := range columns {
+		if c.ColumnName == name {
+			return c, true
+		}
+	}
+	return dto.ColumnResponse{}, false
 }
 
 // metaFor rewrites the @keys of a meta object to the new ids.
@@ -557,26 +617,37 @@ func (r *importRun) valuesByColumn(row dto.BaseExportRow) (map[string]interface{
 			}
 			continue
 		}
-		if f.UIDT == uidtLinks || val == nil {
-			continue
+		v, ok, err := r.columnValue(f, val)
+		if err != nil {
+			return nil, err
 		}
-		// New rows get new uuids from the system; the app refuses a written value for an auto uuid field
-		if f.UIDT == constant.UIDTUUID && isAutoUUID(f.Meta) {
-			continue
+		if ok {
+			out[r.columns[key].ID.String()] = v
 		}
-		if f.UIDT == uidtAttachment {
-			if r.attachments == nil {
-				continue
-			}
-			assets, err := r.uploadCell(val)
-			if err != nil {
-				return nil, err
-			}
-			val = assets
-		}
-		out[r.columns[key].ID.String()] = val
 	}
 	return out, nil
+}
+
+// columnValue gives the value to write for a field of a row; ok is false when the field has nothing to write
+func (r *importRun) columnValue(f dto.BaseExportField, val interface{}) (interface{}, bool, error) {
+	if f.UIDT == uidtLinks || val == nil {
+		return nil, false, nil
+	}
+	// New rows get new uuids from the system; the app refuses a written value for an auto uuid field
+	if f.UIDT == constant.UIDTUUID && isAutoUUID(f.Meta) {
+		return nil, false, nil
+	}
+	if f.UIDT == uidtAttachment {
+		if r.attachments == nil {
+			return nil, false, nil
+		}
+		assets, err := r.uploadCell(val)
+		if err != nil {
+			return nil, false, err
+		}
+		return assets, true, nil
+	}
+	return val, true, nil
 }
 
 // uploadCell uploads the files an attachment cell refers to and returns the cell value made of the new assets.
@@ -607,27 +678,76 @@ func (r *importRun) createRows() error {
 		modelID := r.tables[t.Key].Model.ID.String()
 		for start := 0; start < len(rows); start += rowBatchSize {
 			end := min(start+rowBatchSize, len(rows))
+			// the rows of this batch that have values to insert, with the files uploaded for each
 			batch := make([]map[string]interface{}, 0, end-start)
+			batchRows := make([]dto.BaseExportRow, 0, end-start)
+			batchAssets := make([][]string, 0, end-start)
 			for _, row := range rows[start:end] {
+				uploadedBefore := len(r.assetIDs)
 				values, err := r.valuesByColumn(row)
 				if err != nil {
+					if r.skipFailed {
+						r.skipRow(t, row, err, append([]string(nil), r.assetIDs[uploadedBefore:]...))
+						continue
+					}
 					return fmt.Errorf("prepare rows of table %q: %w", t.Title, err)
 				}
 				batch = append(batch, values)
+				batchRows = append(batchRows, row)
+				batchAssets = append(batchAssets, append([]string(nil), r.assetIDs[uploadedBefore:]...))
 			}
-			created, err := creator.CreateRowsWithValues(r.ctx, r.schema, modelID, batch, r.userID, r.userID)
-			if err != nil {
-				return fmt.Errorf("insert rows of table %q: %w", t.Title, err)
+			if err := r.insertBatch(creator, t, modelID, batch, batchRows, batchAssets); err != nil {
+				return err
 			}
-			if len(created) != len(batch) {
-				return fmt.Errorf("insert rows of table %q: expected %d rows back, got %d", t.Title, len(batch), len(created))
-			}
-			for i, rec := range created {
-				r.rows[rows[start+i].RID] = rowRef{table: t.Key, id: int(numericID(rec.Record["id"]))}
-			}
-			doneRows += len(batch)
+			doneRows += end - start
 			reportFraction(r.ctx, r.progressFrom, r.progressTo, doneRows, totalRows)
 		}
+	}
+	return nil
+}
+
+// insertBatch inserts the rows of a batch in one call. When the call fails and the import skips failed rows, the rows
+// are inserted one by one: the ones the database refuses are skipped and logged, the others are imported. Otherwise
+// a failure fails the import.
+func (r *importRun) insertBatch(creator rowCreator, t dto.BaseExportTable, modelID string, batch []map[string]interface{}, batchRows []dto.BaseExportRow, batchAssets [][]string) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	created, err := creator.CreateRowsWithValues(r.ctx, r.schema, modelID, batch, r.userID, r.userID)
+	if err == nil && len(created) != len(batch) {
+		return fmt.Errorf("insert rows of table %q: expected %d rows back, got %d", t.Title, len(batch), len(created))
+	}
+	if err == nil {
+		for i, rec := range created {
+			r.rows[batchRows[i].RID] = rowRef{table: t.Key, id: int(numericID(rec.Record["id"]))}
+		}
+		return nil
+	}
+	if !r.skipFailed {
+		return fmt.Errorf("insert rows of table %q: %w", t.Title, err)
+	}
+	if r.ctx.Err() != nil {
+		return r.ctx.Err()
+	}
+	return r.insertRowsOneByOne(creator, t, modelID, batch, batchRows, batchAssets)
+}
+
+// insertRowsOneByOne inserts the rows of a failed batch separately: the ones the database refuses are skipped and
+// logged, the others are imported
+func (r *importRun) insertRowsOneByOne(creator rowCreator, t dto.BaseExportTable, modelID string, batch []map[string]interface{}, batchRows []dto.BaseExportRow, batchAssets [][]string) error {
+	for i, values := range batch {
+		one, err := creator.CreateRowsWithValues(r.ctx, r.schema, modelID, []map[string]interface{}{values}, r.userID, r.userID)
+		if err != nil {
+			if r.ctx.Err() != nil {
+				return r.ctx.Err()
+			}
+			r.skipRow(t, batchRows[i], err, batchAssets[i])
+			continue
+		}
+		if len(one) != 1 {
+			return fmt.Errorf("insert rows of table %q: expected 1 row back, got %d", t.Title, len(one))
+		}
+		r.rows[batchRows[i].RID] = rowRef{table: t.Key, id: int(numericID(one[0].Record["id"]))}
 	}
 	return nil
 }
@@ -638,26 +758,37 @@ func (r *importRun) linkRows() error {
 		modelID := r.tables[t.Key].Model.ID.String()
 		fields := sortedFields(t.Fields)
 		for _, row := range r.plan.file.Data.Tables[t.Key].Rows {
-			from := r.rows[row.RID]
-			for _, f := range fields {
-				cell, ok := row.Values[f.Key].([]interface{})
-				if f.System || f.UIDT != uidtLinks || idString(f.Meta["entity_role"]) != entityRoleSource || !ok {
-					continue
-				}
-				for _, item := range cell {
-					to := r.rows[item.(string)]
-					_, err := r.s.tableService.UpdateRawDataForLinks(r.ctx, r.schema, dto.UpdateRowDataLinksRequest{
-						ModelID:     modelID,
-						ColumnId:    r.columns[f.Key].ID.String(),
-						SourceRowId: from.id,
-						TargetRowId: to.id,
-						Action:      linkAction,
-						UpdatedBy:   r.userID,
-					})
-					if err != nil {
-						return fmt.Errorf("link %s to %s in field %q: %w", row.RID, item, f.Title, err)
-					}
-				}
+			if _, imported := r.rows[row.RID]; !imported {
+				continue // a row that was skipped has nothing to link
+			}
+			if err := r.linkRowCells(modelID, fields, row); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// linkRowCells writes the link cells of one imported row, from the fields that are the source of their relation
+func (r *importRun) linkRowCells(modelID string, fields []dto.BaseExportField, row dto.BaseExportRow) error {
+	from := r.rows[row.RID]
+	for _, f := range fields {
+		cell, ok := row.Values[f.Key].([]interface{})
+		if f.System || f.UIDT != uidtLinks || idString(f.Meta["entity_role"]) != entityRoleSource || !ok {
+			continue
+		}
+		for _, item := range cell {
+			to := r.rows[item.(string)]
+			_, err := r.s.tableService.UpdateRawDataForLinks(r.ctx, r.schema, dto.UpdateRowDataLinksRequest{
+				ModelID:     modelID,
+				ColumnId:    r.columns[f.Key].ID.String(),
+				SourceRowId: from.id,
+				TargetRowId: to.id,
+				Action:      linkAction,
+				UpdatedBy:   r.userID,
+			})
+			if err != nil {
+				return fmt.Errorf("link %s to %s in field %q: %w", row.RID, item, f.Title, err)
 			}
 		}
 	}
@@ -718,26 +849,34 @@ func (r *importRun) columnNames(t dto.BaseExportTable) map[string]string {
 // createConstraints creates the unique and check constraints after all rows exist.
 func (r *importRun) createConstraints() error {
 	for _, t := range r.plan.file.Schema.Tables {
-		if len(t.Constraints) == 0 {
-			continue
+		if err := r.createTableConstraints(t); err != nil {
+			return err
 		}
-		if r.s.constraints == nil {
-			r.warn("constraints of table %q were not created: the constraint service is not configured", t.Title)
-			continue
+	}
+	return nil
+}
+
+// createTableConstraints creates the constraints of one table
+func (r *importRun) createTableConstraints(t dto.BaseExportTable) error {
+	if len(t.Constraints) == 0 {
+		return nil
+	}
+	if r.s.constraints == nil {
+		r.warn("constraints of table %q were not created: the constraint service is not configured", t.Title)
+		return nil
+	}
+	names := r.columnNames(t)
+	modelID := r.tables[t.Key].Model.ID.String()
+	for _, c := range t.Constraints {
+		req := dto.CreateTableConstraintRequest{ModelID: modelID, Type: c.Type, Title: c.Title, CreatedBy: r.userID}
+		for _, key := range c.FieldKeys {
+			req.ColumnIDs = append(req.ColumnIDs, r.columns[key].ID.String())
 		}
-		names := r.columnNames(t)
-		modelID := r.tables[t.Key].Model.ID.String()
-		for _, c := range t.Constraints {
-			req := dto.CreateTableConstraintRequest{ModelID: modelID, Type: c.Type, Title: c.Title, CreatedBy: r.userID}
-			for _, key := range c.FieldKeys {
-				req.ColumnIDs = append(req.ColumnIDs, r.columns[key].ID.String())
-			}
-			if c.Type == "check" {
-				req.CheckInput = dto.CheckInput{Category: c.Category, Condition: detokenizeCondition(c.Condition, names)}
-			}
-			if _, err := r.s.constraints.Create(r.ctx, r.schema, req); err != nil {
-				return fmt.Errorf("create %s constraint %q on table %q: %w", c.Type, c.Title, t.Title, err)
-			}
+		if c.Type == "check" {
+			req.CheckInput = dto.CheckInput{Category: c.Category, Condition: detokenizeCondition(c.Condition, names)}
+		}
+		if _, err := r.s.constraints.Create(r.ctx, r.schema, req); err != nil {
+			return fmt.Errorf("create %s constraint %q on table %q: %w", c.Type, c.Title, t.Title, err)
 		}
 	}
 	return nil
@@ -765,23 +904,7 @@ func (r *importRun) restoreSystemColumns() error {
 		modelID := r.tables[t.Key].Model.ID.String()
 		for _, row := range r.plan.file.Data.Tables[t.Key].Rows {
 			done++
-			values := map[string]interface{}{}
-			for key, val := range row.Values {
-				f := r.plan.fields[key]
-				if !f.System || f.ColumnName == "id" || !isSourceColumn(f.ColumnName) || val == nil {
-					continue
-				}
-				if f.ColumnName == "created_time" || f.ColumnName == "last_modified_time" {
-					// validated when the file was read, so this parses
-					ts, ok := parseSourceTime(fmt.Sprint(val))
-					if !ok {
-						continue
-					}
-					values[f.ColumnName] = ts
-					continue
-				}
-				values[f.ColumnName] = fmt.Sprint(val)
-			}
+			values := r.sourceValues(row)
 			if len(values) > 0 {
 				if err := restorer.RestoreRowSystemValues(r.ctx, r.schema, modelID, r.rows[row.RID].id, values); err != nil {
 					return fmt.Errorf("restore source columns of %s: %w", row.RID, err)
@@ -791,4 +914,28 @@ func (r *importRun) restoreSystemColumns() error {
 		}
 	}
 	return nil
+}
+
+// sourceValues takes the source columns (not the id) of a row of the file, by column name
+func (r *importRun) sourceValues(row dto.BaseExportRow) map[string]interface{} {
+	values := map[string]interface{}{}
+	for key, val := range row.Values {
+		f := r.plan.fields[key]
+		if !f.System || f.ColumnName == "id" || !isSourceColumn(f.ColumnName) || val == nil {
+			continue
+		}
+		if v, ok := sourceColumnValue(f.ColumnName, val); ok {
+			values[f.ColumnName] = v
+		}
+	}
+	return values
+}
+
+// sourceColumnValue converts a source value of the file: a time is parsed (it was validated when the file was read,
+// so this parses), the rest is text; ok is false for a time that does not parse
+func sourceColumnValue(columnName string, val interface{}) (interface{}, bool) {
+	if columnName == "created_time" || columnName == "last_modified_time" {
+		return parseSourceTime(fmt.Sprint(val))
+	}
+	return fmt.Sprint(val), true
 }

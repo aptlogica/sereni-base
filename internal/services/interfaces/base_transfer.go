@@ -41,7 +41,7 @@ type BaseTransferJobService interface {
 	StartExport(ctx context.Context, schemaName, baseID, userID string, opts dto.ExportBaseOptions) (dto.TransferJobResponse, error)
 	// StartImport keeps the uploaded file, stores a queued job and returns at once; the import runs in the background.
 	// A user may have a limited number of active imports (separate from exports); beyond it, TransferLimitReached.
-	StartImport(ctx context.Context, schemaName, workspaceID, userID string, file io.Reader, filename string, size int64, opts dto.ImportBaseOptions) (dto.TransferJobResponse, error)
+	StartImport(ctx context.Context, schemaName, workspaceID, userID string, upload dto.ImportUpload, opts dto.ImportBaseOptions) (dto.TransferJobResponse, error)
 	// ListWorkspaceJobs returns the user's exports and imports of a workspace, newest first, with their progress
 	ListWorkspaceJobs(ctx context.Context, schemaName, workspaceID, userID string) ([]dto.TransferJobResponse, error)
 	// Get returns a job of the user (an export or an import); ErrTransferJobNotFound for a job that is missing or belongs to someone else

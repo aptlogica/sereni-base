@@ -19,6 +19,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
+	csvformat "github.com/aptlogica/sereni-base/internal/services/transfer/adapter/csv"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/sbase"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/formats"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
@@ -87,8 +88,11 @@ func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
 //   - include_system_columns: boolean (default false). Writes id, created / modified time and user of every row; needs include_data.
 //   - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
 //   - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
+//   - format: "sbase" (default) or "csv". A csv is a zip with one file per table (and attachments/ with the files);
+//     links and lookups are written as text, and triggers and system columns are not exported.
+//   - delimiter: only for csv: "comma" (default), "semicolon", "tab" or "pipe". Anything else is 400.
 //
-// An export is always a .sbase.zip (base.sbase.json plus the attachment files and cover image when asked).
+// An export is always a zip: .sbase.zip (base.sbase.json plus the attachment files and cover image when asked).
 // Without include_data it is returned directly. With it, it can take a while, so it runs
 // as a background job: the response is 202 with the job (poll GET /export-job/:id, then download it from
 // GET /export-job/:id/download); the finished zip is also sent to the user's email. A user can have two exports
@@ -151,14 +155,49 @@ func (h *BaseTransferHandler) ExportBase(c *gin.Context) {
 		includeAutomations = automationsAllowed && (incTrig || incFn)
 	}
 
-	h.runExport(c, id, dto.ExportBaseOptions{
+	opts := dto.ExportBaseOptions{
 		IncludeData:        includeData,
 		IncludeAttachments: includeAttachments,
 		IncludeAutomations: includeAutomations,
 		// source columns are values of the rows, so they need the data
 		IncludeSystemColumns: includeSystemColumns && includeData,
 		Tables:               queryTables(c),
-	})
+	}
+	if !applyExportFormat(c, &opts, c.Query("format"), c.Query("delimiter")) {
+		return
+	}
+	h.runExport(c, id, opts)
+}
+
+// applyExportFormat sets the file format of an export (sbase by default, or csv) and, for csv, the delimiter. An
+// unknown format or delimiter is a 400. A csv cannot hold triggers, system columns or links, so those are switched
+// off (links become text).
+func applyExportFormat(c *gin.Context, opts *dto.ExportBaseOptions, format, delimiter string) bool {
+	format = strings.ToLower(strings.TrimSpace(format))
+	delimiter = strings.ToLower(strings.TrimSpace(delimiter))
+	switch format {
+	case "", sbase.Name:
+		opts.Format = sbase.Name
+		return true
+	case csvformat.Name:
+		opts.Format = csvformat.Name
+	default:
+		response.SendError(c, responseConst.Error.InvalidPayload)
+		return false
+	}
+	opts.Delimiter = ','
+	if delimiter != "" {
+		d, ok := csvformat.Delimiters[delimiter]
+		if !ok {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return false
+		}
+		opts.Delimiter = d
+	}
+	opts.LinksAsText = true
+	opts.IncludeAutomations = false
+	opts.IncludeSystemColumns = false
+	return true
 }
 
 // ExportBaseWithBody exports a base with the options in a JSON body, which can also hold row filters.
@@ -196,6 +235,9 @@ func (h *BaseTransferHandler) ExportBaseWithBody(c *gin.Context) {
 		IncludeSystemColumns: includeData && req.IncludeSystemColumns != nil && *req.IncludeSystemColumns,
 		Tables:               cleanTableNames(req.Tables),
 		Filters:              req.Filters,
+	}
+	if !applyExportFormat(c, &opts, req.Format, req.Delimiter) {
+		return
 	}
 
 	if len(opts.Filters) > 0 {
@@ -250,10 +292,18 @@ func (h *BaseTransferHandler) runExport(c *gin.Context, id string, exportOpts dt
 	}
 
 	// the core service read the base into a model; the adapter writes it as a file
-	format := h.format()
-	opts := adapter.ExportOptions{IncludeData: includeData, IncludeFiles: includeAttachments, OpenFile: h.transferService.OpenFile}
+	format := h.adapterFor(exportOpts.Format)
+	opts := adapter.ExportOptions{IncludeData: includeData, IncludeFiles: includeAttachments, OpenFile: h.transferService.OpenFile, Delimiter: exportOpts.Delimiter}
 	filename, contentType := format.Describe(opts, file.Base.Title)
 	h.sendArchive(c, format, opts, file, filename, contentType)
+}
+
+// exportAdapter returns the adapter of the format a request asks for; an empty name is the SereniBase format
+func (h *BaseTransferHandler) adapterFor(name string) adapter.Adapter {
+	if a, ok := h.adapters.Get(name); ok && name != "" {
+		return a
+	}
+	return h.format()
 }
 
 // cleanTableNames trims the names of the tables of an export and drops blanks and duplicates
@@ -297,9 +347,13 @@ func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter
 	c.DataFromReader(http.StatusOK, info.Size(), contentType, tmp, nil)
 }
 
-// ImportBase creates a new base in a workspace from an uploaded .sbase.zip file.
-// POST /workspace/:id/import-base  (multipart: file, title, include_data, include_system_columns, include_automations;
-// include_automations may also be a URL parameter)
+// ImportBase creates a new base in a workspace from an uploaded .sbase.zip file, or from a zip of CSV files.
+// POST /workspace/:id/import-base  (multipart: file, title, format, include_data, include_attachments,
+// include_system_columns, include_automations; include_automations may also be a URL parameter)
+// format is "sbase" (default) or "csv": a zip with one .csv file per table (the file an export with
+// format=csv writes), whose first row holds the field titles. The delimiter of each file is found from its header,
+// the types are inferred from the values, and the paths of files in attachments/ become attachment fields. The new
+// base is named after the file unless title is given. Triggers and system columns are not imported from a CSV.
 // A broken file is refused at once (400). Otherwise the import runs as a background job: the response is 202 with the
 // job (poll GET /import-job/:id until it is completed or failed).
 // A user can have two imports active at once; a third is refused with 429.
@@ -346,6 +400,20 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 	// source columns are values of the rows, so they need the data
 	includeSystemColumns = includeSystemColumns && includeData
 
+	// the format of the upload: a SereniBase export (default) or a zip of CSV files. A CSV has no triggers and no
+	// system columns, so those are not imported from it.
+	importFormat := strings.ToLower(strings.TrimSpace(c.PostForm("format")))
+	switch importFormat {
+	case "", sbase.Name:
+		importFormat = sbase.Name
+	case csvformat.Name:
+		includeAutomations = false
+		includeSystemColumns = false
+	default:
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase or csv")
+		return
+	}
+
 	// the adapter reads the file into a model; it stays open until the import is done, because the files of a zip
 	// are read from it while the base is created
 	upfile, err := upload.Open()
@@ -354,7 +422,7 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		return
 	}
 	defer upfile.Close()
-	read, err := h.format().Import(c.Request.Context(), upfile, upload.Size, adapter.ImportOptions{
+	read, err := h.adapterFor(importFormat).Import(c.Request.Context(), upfile, upload.Size, adapter.ImportOptions{
 		Filename: upload.Filename,
 		MaxBytes: maxBaseImportBytes,
 	})
@@ -378,12 +446,14 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "the file could not be read")
 			return
 		}
-		job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, upfile, upload.Filename, upload.Size, dto.ImportBaseOptions{
+		job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, dto.ImportUpload{File: upfile, Filename: upload.Filename, Size: upload.Size}, dto.ImportBaseOptions{
 			Title:                title,
 			IncludeData:          includeData,
 			IncludeAttachments:   includeAttachments,
 			IncludeAutomations:   includeAutomations,
 			IncludeSystemColumns: includeSystemColumns,
+			Format:               importFormat,
+			SkipFailedRows:       importFormat == csvformat.Name,
 		})
 		if errors.Is(err, app_errors.TransferLimitReached) {
 			response.SendError(c, responseConst.BaseError.TransferLimitReached)
@@ -404,6 +474,9 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		IncludeAttachments:   includeAttachments,
 		IncludeAutomations:   includeAutomations,
 		IncludeSystemColumns: includeSystemColumns,
+		Format:               importFormat,
+		SkipFailedRows:       importFormat == csvformat.Name,
+		Source:               read.Source,
 	})
 	var invalid *dto.ImportValidationError
 	if errors.As(err, &invalid) {

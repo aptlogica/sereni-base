@@ -1919,3 +1919,45 @@ func TestSourceTimesGivenAsTextWithoutZone(t *testing.T) {
 		t.Fatalf("problems: %v", problems)
 	}
 }
+
+// With LinksAsText (a format that cannot hold links, csv) every link is text, also one to a table that is exported,
+// and so is the lookup built on it. Without it the same export keeps the links.
+func TestExportLinksAsTextTurnsEveryLinkIntoText(t *testing.T) {
+	c := seedCRM(t)
+	svc := newService(c.db)
+	ctx := context.Background()
+	types := func(opts dto.ExportBaseOptions) (map[string]string, *dto.BaseExportFile) {
+		file, err := svc.svc.ExportBase(ctx, "s", c.baseID, opts)
+		must(t, err)
+		out := map[string]string{}
+		for _, tbl := range file.Schema.Tables {
+			for _, f := range tbl.Fields {
+				if !f.System {
+					out[tbl.Title+"."+f.Title] = f.UIDT
+				}
+			}
+		}
+		return out, file
+	}
+
+	plain, _ := types(dto.ExportBaseOptions{IncludeData: true})
+	if plain["Orders.Customer"] != "links" {
+		t.Fatalf("without LinksAsText the link between two exported tables stays a link: %v", plain)
+	}
+
+	text, file := types(dto.ExportBaseOptions{IncludeData: true, LinksAsText: true})
+	for name, uidt := range text {
+		if uidt == "links" || uidt == "lookup" || uidt == "rollup" {
+			t.Fatalf("%s is still %s: every link, lookup and rollup must be text", name, uidt)
+		}
+	}
+	if text["Orders.Customer"] != "longText" || text["Orders.Customer name"] != "longText" {
+		t.Fatalf("the link and the lookup on it must be long text: %v", text)
+	}
+	if !strings.Contains(strings.Join(file.Skipped, " "), "cannot hold links") {
+		t.Fatalf("expected a warning for each link, got %v", file.Skipped)
+	}
+	if problems := transfer.ValidateBaseFile(roundTrip(t, file)); len(problems) > 0 {
+		t.Fatalf("the export with links as text is not valid: %v", problems)
+	}
+}

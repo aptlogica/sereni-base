@@ -878,7 +878,7 @@ const uploadedJSON = `{"base":{"title":"Uploaded"},"schema":{"tables":[]},"data"
 
 func startImport(t *testing.T, f *jobFixture, user, filename string, body []byte, opts dto.ImportBaseOptions) dto.TransferJobResponse {
 	t.Helper()
-	job, err := f.svc.StartImport(context.Background(), constant.MasterDatabase, "ws-1", user, bytes.NewReader(body), filename, int64(len(body)), opts)
+	job, err := f.svc.StartImport(context.Background(), constant.MasterDatabase, "ws-1", user, dto.ImportUpload{File: bytes.NewReader(body), Filename: filename, Size: int64(len(body))}, opts)
 	if err != nil {
 		t.Fatalf("StartImport: %v", err)
 	}
@@ -944,7 +944,7 @@ func TestImportJobSurvivesTheEndOfTheRequest(t *testing.T) {
 	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
 	f.exporter.importGate = make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
-	job, err := f.svc.StartImport(ctx, constant.MasterDatabase, "ws-1", "user-1", strings.NewReader(uploadedJSON), "x.sbase.json", int64(len(uploadedJSON)), dto.ImportBaseOptions{})
+	job, err := f.svc.StartImport(ctx, constant.MasterDatabase, "ws-1", "user-1", dto.ImportUpload{File: strings.NewReader(uploadedJSON), Filename: "x.sbase.json", Size: int64(len(uploadedJSON))}, dto.ImportBaseOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1020,7 +1020,7 @@ func TestUserMayHaveTwoActiveImportsAndOneDoesNotBlockExports(t *testing.T) {
 	if a.ID == b.ID {
 		t.Fatal("every import is its own job")
 	}
-	_, err := f.svc.StartImport(context.Background(), constant.MasterDatabase, "ws-1", "user-1", strings.NewReader(uploadedJSON), "c.sbase.json", int64(len(uploadedJSON)), dto.ImportBaseOptions{})
+	_, err := f.svc.StartImport(context.Background(), constant.MasterDatabase, "ws-1", "user-1", dto.ImportUpload{File: strings.NewReader(uploadedJSON), Filename: "c.sbase.json", Size: int64(len(uploadedJSON))}, dto.ImportBaseOptions{})
 	if !errors.Is(err, app_errors.TransferLimitReached) {
 		t.Fatalf("third import = %v, want TransferLimitReached", err)
 	}

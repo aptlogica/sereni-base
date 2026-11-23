@@ -173,6 +173,13 @@ type ExportBaseOptions struct {
 	// IncludeSystemColumns writes the source (system) columns of every row: id, created and modified time, created
 	// and modified by. Needs IncludeData.
 	IncludeSystemColumns bool
+	// LinksAsText exports every link field (and the lookups and rollups built on it) as long text, whether or not the
+	// linked table is exported. Set for formats that cannot hold links (csv).
+	LinksAsText bool
+	// Format is the file format of the export: "sbase" (the default, also when empty) or "csv".
+	Format string
+	// Delimiter is the field separator of a delimited-text format (csv): ',', ';', '\t' or '|'. Zero means ','.
+	Delimiter rune
 	// Tables limits the export to specific tables by ID, title, or key. If empty, all tables are exported.
 	Tables []string
 	// Filters keeps only the rows that match, per table (by id, title or alias, like Tables). A table with no entry
@@ -201,9 +208,13 @@ type ExportBaseRequest struct {
 	IncludeAttachments *bool `json:"include_attachments"`
 	IncludeAutomations *bool `json:"include_automations"`
 	// IncludeSystemColumns adds the source columns (id, created / modified time and user) to the rows. Needs include_data.
-	IncludeSystemColumns *bool                        `json:"include_system_columns"`
-	Tables               []string                     `json:"tables"`
-	Filters              map[string]ExportTableFilter `json:"filters"`
+	IncludeSystemColumns *bool `json:"include_system_columns"`
+	// Format is "sbase" (default) or "csv"; Delimiter is "comma" (default), "semicolon", "tab" or "pipe" and is only
+	// used by csv.
+	Format    string                       `json:"format"`
+	Delimiter string                       `json:"delimiter"`
+	Tables    []string                     `json:"tables"`
+	Filters   map[string]ExportTableFilter `json:"filters"`
 }
 
 // ExportFilterError says why the filters of an export are not valid, in words for the user
@@ -213,6 +224,13 @@ type ExportFilterError struct {
 
 func (e *ExportFilterError) Error() string {
 	return "the export filters are not valid: " + strings.Join(e.Problems, "; ")
+}
+
+// ImportUpload is the uploaded file of a base import: its content, name and size in bytes
+type ImportUpload struct {
+	File     io.Reader
+	Filename string
+	Size     int64
 }
 
 // ImportBaseOptions are the options of a base import
@@ -231,6 +249,36 @@ type ImportBaseOptions struct {
 	// IncludeSystemColumns restores the source columns of the rows from the file: id, created / modified time and
 	// created / modified by. When false the rows get a new id, the time of the import and the importing user.
 	IncludeSystemColumns bool
+	// Format is the file format of the upload: "sbase" (the default, also when empty) or "csv" (a zip of .csv
+	// files, which becomes a new base with one table per file).
+	Format string
+	// SkipFailedRows imports the rows the database accepts and leaves out the ones it refuses, instead of failing the
+	// whole import on the first one. The rows left out are listed in ImportBaseResult.ErrorLog. Set for a csv, which
+	// has no schema that could have promised the values would fit.
+	SkipFailedRows bool
+	// Source says where each row came from in the file (by _rid), for the error log of a skipped row; it is not part
+	// of the file format, so an adapter that has no line numbers leaves it nil.
+	Source *ImportSource
+}
+
+// ImportSource says where the rows of an import came from, so a row that is refused can be named by its file and
+// line and shown as it was written
+type ImportSource struct {
+	// Rows is by _rid
+	Rows map[string]ImportRowSource
+	// EmptyRows and DuplicateRows count the rows of the files that were blank, or the same as an earlier row. They only
+	// go in the report: blank rows were never imported, and duplicate rows are imported as they are.
+	EmptyRows, DuplicateRows int
+}
+
+// ImportRowSource is one row as it was in its file
+type ImportRowSource struct {
+	// File and Table name the file and the table made from it
+	File, Table string
+	// Line is the line of the row in the file; the header is line 1
+	Line int
+	// Headers and Cells are the header row and this row, as text
+	Headers, Cells []string
 }
 
 // ImportBaseResult is what an import reports
@@ -247,6 +295,13 @@ type ImportBaseResult struct {
 	Functions   int      `json:"functions,omitempty"`
 	Triggers    int      `json:"triggers,omitempty"`
 	Warnings    []string `json:"warnings,omitempty"`
+	// SkippedRows counts the rows the database refused and that were left out (only with SkipFailedRows); ErrorLog
+	// is the text of the report that names each one and says why. EmptyRows and DuplicateRows are counted from the
+	// files for the report.
+	SkippedRows   int    `json:"skipped_rows,omitempty"`
+	EmptyRows     int    `json:"empty_rows,omitempty"`
+	DuplicateRows int    `json:"duplicate_rows,omitempty"`
+	ErrorLog      string `json:"error_log,omitempty"`
 }
 
 // ImportValidationError lists everything wrong with a file, so the user can fix it in one pass
