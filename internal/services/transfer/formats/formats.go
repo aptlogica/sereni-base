@@ -9,6 +9,7 @@ package formats
 import (
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/csv"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/jsonfmt"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/sbase"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/xlsx"
 )
@@ -19,5 +20,6 @@ func Registry() *adapter.Registry {
 	r.Register(sbase.New())
 	r.Register(csv.New())
 	r.Register(xlsx.New())
+	r.Register(jsonfmt.New())
 	return r
 }

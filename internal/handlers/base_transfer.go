@@ -20,6 +20,7 @@ import (
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter"
 	csvformat "github.com/aptlogica/sereni-base/internal/services/transfer/adapter/csv"
+	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/jsonfmt"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/sbase"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/adapter/xlsx"
 	"github.com/aptlogica/sereni-base/internal/services/transfer/formats"
@@ -89,7 +90,7 @@ func (h *BaseTransferHandler) ExportDependencies(c *gin.Context) {
 //   - include_system_columns: boolean (default false). Writes id, created / modified time and user of every row; needs include_data.
 //   - include_automations: boolean (default true for users with automations permission, false otherwise). Exports triggers and functions.
 //   - tables: comma-separated list or multiple query parameters of table IDs, titles, or keys to export.
-//   - format: "sbase" (default), "csv" or "xlsx". A csv is a zip with one file per table (and attachments/ with the files);
+//   - format: "sbase" (default), "csv", "xlsx" or "json". A csv is a zip with one file per table (and attachments/ with the files);
 //     an xlsx is one workbook with one sheet per table (and, with attachments, a zip of the workbook and attachments/).
 //     In both, links and lookups are written as text, and triggers and system columns are not exported.
 //   - delimiter: only for csv: "comma" (default), "semicolon", "tab" or "pipe". Anything else is 400; so is a delimiter with xlsx.
@@ -181,6 +182,18 @@ func applyExportFormat(c *gin.Context, opts *dto.ExportBaseOptions, format, deli
 	switch format {
 	case "", sbase.Name:
 		opts.Format = sbase.Name
+		return true
+	case jsonfmt.Name:
+		// a json export is a zip with one file per table, as a csv is: no delimiter, no triggers or system columns,
+		// and links become text. The attachment files are in attachments/ when they are asked for.
+		if delimiter != "" {
+			response.SendError(c, responseConst.Error.InvalidPayload)
+			return false
+		}
+		opts.Format = jsonfmt.Name
+		opts.LinksAsText = true
+		opts.IncludeAutomations = false
+		opts.IncludeSystemColumns = false
 		return true
 	case xlsx.Name:
 		// a workbook has no delimiter and carries no triggers or system columns; links become text. The attachment
@@ -362,6 +375,44 @@ func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter
 	c.DataFromReader(http.StatusOK, info.Size(), contentType, tmp, nil)
 }
 
+// importFileProblem says why the name of an uploaded file is refused for a format, or "" when it is fine. An sbase or
+// csv export is a zip, and that is the only file an import of them takes; an xlsx export is a workbook (.xlsx), or a
+// zip of the workbook and its attachment files; a json import also takes one .json file, which is one table.
+func importFileProblem(format, filename string) string {
+	lowerName := strings.ToLower(filename)
+	if format == xlsx.Name {
+		if !strings.HasSuffix(lowerName, xlsx.Extension) && !strings.HasSuffix(lowerName, ".zip") {
+			return "only .xlsx or .zip files are supported"
+		}
+	} else if format == jsonfmt.Name {
+		if !strings.HasSuffix(lowerName, jsonfmt.Extension) && !strings.HasSuffix(lowerName, ".zip") {
+			return "only .zip or .json files are supported"
+		}
+	} else if !strings.HasSuffix(lowerName, ".zip") {
+		return "only .zip files are supported"
+	}
+	return ""
+}
+
+// importFlags reads the include_* options of an import
+func importFlags(c *gin.Context) (data, attachments, automations, systemColumns bool, err error) {
+	if data, err = formBool(c, "include_data", true); err != nil {
+		return
+	}
+	if attachments, err = formBool(c, "include_attachments", true); err != nil {
+		return
+	}
+	if automations, err = ImportAutomationsRequested(c); err != nil {
+		return
+	}
+	if systemColumns, err = formBool(c, "include_system_columns", false); err != nil {
+		return
+	}
+	// source columns are values of the rows, so they need the data
+	systemColumns = systemColumns && data
+	return
+}
+
 // ImportBase creates a new base in a workspace from an uploaded .sbase.zip file, from a zip of CSV files, or from an
 // .xlsx workbook.
 // POST /workspace/:id/import-base  (multipart: file, title, format, include_data, include_attachments,
@@ -392,56 +443,31 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 	// the format of the upload: a SereniBase export (default), a zip of CSV files, or an Excel workbook
 	importFormat := strings.ToLower(strings.TrimSpace(c.PostForm("format")))
 	switch importFormat {
-	case "", sbase.Name, csvformat.Name, xlsx.Name:
+	case "", sbase.Name, csvformat.Name, xlsx.Name, jsonfmt.Name:
 	default:
-		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase, csv or xlsx")
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase, csv, xlsx or json")
 		return
 	}
-	// an sbase or csv export is a zip, and that is the only file an import of them takes; an xlsx export is a
-	// workbook (.xlsx), or a zip of the workbook and its attachment files
-	lowerName := strings.ToLower(upload.Filename)
-	if importFormat == xlsx.Name {
-		if !strings.HasSuffix(lowerName, xlsx.Extension) && !strings.HasSuffix(lowerName, ".zip") {
-			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "only .xlsx or .zip files are supported")
-			return
-		}
-	} else if !strings.HasSuffix(lowerName, ".zip") {
-		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "only .zip files are supported")
+	if problem := importFileProblem(importFormat, upload.Filename); problem != "" {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, problem)
 		return
 	}
 	if upload.Size > maxBaseImportBytes {
 		response.SendError(c, responseConst.AssetError.FileTooLargeError)
 		return
 	}
-	includeData, err := formBool(c, "include_data", true)
+	includeData, includeAttachments, includeAutomations, includeSystemColumns, err := importFlags(c)
 	if err != nil {
 		response.SendError(c, responseConst.Error.InvalidPayload)
 		return
 	}
-	includeAttachments, err := formBool(c, "include_attachments", true)
-	if err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
-		return
-	}
-	includeAutomations, err := ImportAutomationsRequested(c)
-	if err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
-		return
-	}
-	includeSystemColumns, err := formBool(c, "include_system_columns", false)
-	if err != nil {
-		response.SendError(c, responseConst.Error.InvalidPayload)
-		return
-	}
-	// source columns are values of the rows, so they need the data
-	includeSystemColumns = includeSystemColumns && includeData
 
 	// A CSV or a workbook has no triggers and no system columns, so those are not imported from it, and a workbook
 	// has no files.
 	switch importFormat {
 	case "", sbase.Name:
 		importFormat = sbase.Name
-	case csvformat.Name, xlsx.Name:
+	case csvformat.Name, xlsx.Name, jsonfmt.Name:
 		includeAutomations = false
 		includeSystemColumns = false
 	}

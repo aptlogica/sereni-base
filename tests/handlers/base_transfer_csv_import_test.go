@@ -217,3 +217,90 @@ func TestImportXLSXTakesAZipOfTheWorkbookAndFiles(t *testing.T) {
 		t.Fatalf("status %d, body %s, options %+v", rec.Code, rec.Body.String(), jobs.imported.opts)
 	}
 }
+
+// jsonZip is a zip with one .json file per table
+func jsonZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, text := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(text))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// format=json reads a zip of .json files with the json adapter and starts the job with that format; triggers and
+// system columns are never imported from it, whatever is asked
+func TestImportJSONStartsAJobWithTheJSONFormat(t *testing.T) {
+	jobs, svc := &fakeJobs{}, &capturingTransfer{}
+	data := jsonZip(t, map[string]string{"Customers.json": `[{"Name": "Asha", "Age": 31}]`, "Products.json": `[]`})
+	w := uploadFile(t, jobs, svc, map[string]string{"format": "json", "include_automations": "true", "include_system_columns": "true"}, "Sales CRM.json.zip", data)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+	got := jobs.imported.opts
+	if got.Format != "json" || got.IncludeAutomations || got.IncludeSystemColumns || !got.IncludeData || !got.SkipFailedRows {
+		t.Fatalf("options: %+v", got)
+	}
+	if jobs.imported.filename != "Sales CRM.json.zip" {
+		t.Fatalf("the job must keep the file name: %q", jobs.imported.filename)
+	}
+}
+
+// a json import takes a .zip or one .json file; any other file is refused at once
+func TestImportJSONRefusesOtherFiles(t *testing.T) {
+	for _, name := range []string{"book.xlsx", "book.csv", "book"} {
+		jobs, svc := &fakeJobs{}, &capturingTransfer{}
+		w := uploadFile(t, jobs, svc, map[string]string{"format": "json"}, name, []byte(`[{"a": 1}]`))
+		if w.Code != http.StatusBadRequest || !bytes.Contains(w.Body.Bytes(), []byte("only .zip or .json files are supported")) || jobs.imported.filename != "" {
+			t.Fatalf("%s: status %d, body %s", name, w.Code, w.Body.String())
+		}
+	}
+}
+
+// a single .json file starts a job with the json format
+func TestImportJSONTakesASingleFile(t *testing.T) {
+	jobs, svc := &fakeJobs{}, &capturingTransfer{}
+	w := uploadFile(t, jobs, svc, map[string]string{"format": "json"}, "Customers.json", []byte(`[{"Name": "Asha"}]`))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+	if jobs.imported.filename != "Customers.json" || jobs.imported.opts.Format != "json" {
+		t.Fatalf("job: %q %+v", jobs.imported.filename, jobs.imported.opts)
+	}
+}
+
+// a file that is not the rows of a table is refused at once
+func TestImportJSONRefusesASingleFileThatIsNotTheFormat(t *testing.T) {
+	jobs, svc := &fakeJobs{}, &capturingTransfer{}
+	w := uploadFile(t, jobs, svc, map[string]string{"format": "json"}, "Customers.json", []byte(`{"a": 1}`))
+	if w.Code != http.StatusBadRequest || !bytes.Contains(w.Body.Bytes(), []byte("Customers.json must be an array of objects")) || jobs.imported.filename != "" {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+}
+
+// a zip whose files are not what the format writes is refused at once, in words for the user
+func TestImportJSONRefusesAZipThatIsNotTheFormat(t *testing.T) {
+	for _, tc := range []struct {
+		files map[string]string
+		want  string
+	}{
+		{map[string]string{"a.json": "hello"}, "a.json is not valid JSON"},
+		{map[string]string{"a.json": `{"A": []}`}, "a.json must be an array of objects"},
+		{map[string]string{"readme.txt": "x"}, "the zip has no .json file"},
+		{map[string]string{"base.sbase.json": `{}`}, "import it with the sbase format"},
+	} {
+		jobs, svc := &fakeJobs{}, &capturingTransfer{}
+		w := uploadFile(t, jobs, svc, map[string]string{"format": "json"}, "data.zip", jsonZip(t, tc.files))
+		if w.Code != http.StatusBadRequest || !bytes.Contains(w.Body.Bytes(), []byte(tc.want)) || jobs.imported.filename != "" {
+			t.Fatalf("%v: status %d, body %s", tc.files, w.Code, w.Body.String())
+		}
+	}
+}

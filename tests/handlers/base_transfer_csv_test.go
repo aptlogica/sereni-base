@@ -145,3 +145,25 @@ func TestExportBaseXLSXWithFilesIsAZip(t *testing.T) {
 		t.Fatalf("headers %v", w.Header())
 	}
 }
+
+// a json export is a zip with one .json file per table, whatever the options; links become text, and triggers and
+// system columns are switched off
+func TestExportBaseJSONIsAZip(t *testing.T) {
+	svc, w := exportAs(t, "format=json&include_system_columns=true&include_automations=true", nil, true)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/zip" ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), "CRM.json.zip") {
+		t.Fatalf("status %d, headers %v", w.Code, w.Header())
+	}
+	got := svc.exported
+	if got.Format != "json" || !got.LinksAsText || got.IncludeAutomations || got.IncludeSystemColumns || got.Delimiter != 0 {
+		t.Fatalf("json options: %+v", got)
+	}
+}
+
+// a JSON file has no delimiter
+func TestExportBaseJSONRefusesADelimiter(t *testing.T) {
+	svc, w := exportWith(t, "format=json&delimiter=tab", nil)
+	if w.Code != http.StatusBadRequest || svc.exported.Format != "" {
+		t.Fatalf("status %d, options %+v", w.Code, svc.exported)
+	}
+}
