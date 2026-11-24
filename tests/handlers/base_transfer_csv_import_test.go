@@ -280,8 +280,8 @@ func TestImportJSONTakesASingleFile(t *testing.T) {
 // a file that is not the rows of a table is refused at once
 func TestImportJSONRefusesASingleFileThatIsNotTheFormat(t *testing.T) {
 	jobs, svc := &fakeJobs{}, &capturingTransfer{}
-	w := uploadFile(t, jobs, svc, map[string]string{"format": "json"}, "Customers.json", []byte(`{"a": 1}`))
-	if w.Code != http.StatusBadRequest || !bytes.Contains(w.Body.Bytes(), []byte("Customers.json must be an array of objects")) || jobs.imported.filename != "" {
+	w := uploadFile(t, jobs, svc, map[string]string{"format": "json"}, "Customers.json", []byte(`{}`))
+	if w.Code != http.StatusBadRequest || !bytes.Contains(w.Body.Bytes(), []byte("Customers.json is empty: it has no rows")) || jobs.imported.filename != "" {
 		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
 	}
 }
@@ -293,7 +293,7 @@ func TestImportJSONRefusesAZipThatIsNotTheFormat(t *testing.T) {
 		want  string
 	}{
 		{map[string]string{"a.json": "hello"}, "a.json is not valid JSON"},
-		{map[string]string{"a.json": `{"A": []}`}, "a.json must be an array of objects"},
+		{map[string]string{"a.json": `"A"`}, "a.json must be an array of objects or one object"},
 		{map[string]string{"readme.txt": "x"}, "the zip has no .json file"},
 		{map[string]string{"base.sbase.json": `{}`}, "import it with the sbase format"},
 	} {

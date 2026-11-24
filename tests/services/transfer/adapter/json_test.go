@@ -257,7 +257,9 @@ func TestJSONImportMakesOneTablePerFile(t *testing.T) {
 
 func TestJSONImportRefusesWhatIsNotTheFormat(t *testing.T) {
 	for name, tc := range map[string]struct{ file, want string }{
-		"not an array":   {`{"a": 1}`, "Orders.json must be an array of objects"},
+		"not an array":   {`"text"`, "Orders.json must be an array of objects or one object"},
+		"empty object":   {`{}`, "Orders.json is empty: it has no rows"},
+		"data after obj": {`{"a": 1} {}`, "data after the object"},
 		"row not object": {`[{"a": 1}, 5]`, "row 2 of Orders.json must be an object"},
 		"invalid json":   {`[{"a": `, "Orders.json is not valid JSON"},
 		"syntax error":   {`[}`, "Orders.json is not valid JSON"},
@@ -293,9 +295,31 @@ func TestJSONImportRefusesWhatIsNotTheFormat(t *testing.T) {
 	_, err = importJSON(t, []byte("{}"), "x.sbase.json")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "import it with the sbase format")
-	_, err = importJSON(t, []byte(`{"a": 1}`), "Orders.json")
+	_, err = importJSON(t, []byte(`{}`), "Orders.json")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Orders.json must be an array of objects")
+	assert.Contains(t, err.Error(), "Orders.json is empty: it has no rows")
+}
+
+// one object as the whole file is a table of one row
+func TestJSONImportTakesASingleObject(t *testing.T) {
+	for _, name := range []string{"Products.json", "Products.json.zip"} {
+		data := []byte(`{"product": "Laptop", "price": 50000, "specs": {"ram": 16}}`)
+		if strings.HasSuffix(name, ".zip") {
+			data = jsonZip(t, map[string]string{"Products.json": string(data)})
+		}
+		res, err := importJSON(t, data, name)
+		require.NoError(t, err, name)
+		require.Len(t, res.File.Schema.Tables, 1, name)
+		tb := res.File.Schema.Tables[0]
+		assert.Equal(t, "Products", tb.Title)
+		require.Len(t, tb.Fields, 3, name)
+		assert.Equal(t, []string{"product", "price", "specs"}, []string{tb.Fields[0].Title, tb.Fields[1].Title, tb.Fields[2].Title})
+		rows := res.File.Data.Tables[tb.Key].Rows
+		require.Len(t, rows, 1, name)
+		assert.Equal(t, "Laptop", rows[0].Values[tb.Fields[0].Key])
+		// a nested object is not flattened: it stays as JSON text in its own column
+		assert.Equal(t, `{"ram":16}`, rows[0].Values[tb.Fields[2].Key])
+	}
 }
 
 // one .json file is one table, named after the file; the base is named after the file too

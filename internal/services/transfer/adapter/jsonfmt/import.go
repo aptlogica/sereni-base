@@ -180,11 +180,18 @@ func readTableDoc(name string, rc io.Reader, limit int64) (csv.Sheet, error) {
 	if err != nil {
 		return csv.Sheet{}, invalidJSON(name, err)
 	}
-	if d, ok := tok.(json.Delim); !ok || d != '[' {
-		return csv.Sheet{}, fmt.Errorf("%s must be an array of objects", name)
-	}
-
 	cols := &columnSet{index: map[string]int{}}
+	switch d, _ := tok.(json.Delim); d {
+	case '[':
+		return readRows(dec, name, cols)
+	case '{':
+		return readSingleObject(dec, name, cols)
+	}
+	return csv.Sheet{}, fmt.Errorf("%s must be an array of objects or one object", name)
+}
+
+// readRows reads the rest of a file that is an array of rows, after its opening [
+func readRows(dec *json.Decoder, name string, cols *columnSet) (csv.Sheet, error) {
 	var rows []map[int]string
 	for dec.More() {
 		row, err := readRow(dec, name, len(rows)+1, cols)
@@ -200,6 +207,22 @@ func readTableDoc(name string, rc io.Reader, limit int64) (csv.Sheet, error) {
 		return csv.Sheet{}, fmt.Errorf("%s has data after the array of rows", name)
 	}
 	return buildSheet(tableTitle(name), cols.names, rows), nil
+}
+
+// readSingleObject reads the rest of a file that is one object, after its opening {: the file is a table of one row.
+// An object with no key has no row and no field, so it is refused.
+func readSingleObject(dec *json.Decoder, name string, cols *columnSet) (csv.Sheet, error) {
+	if !dec.More() {
+		return csv.Sheet{}, fmt.Errorf("%s is empty: it has no rows", name)
+	}
+	row, err := readObjectBody(dec, name, cols)
+	if err != nil {
+		return csv.Sheet{}, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return csv.Sheet{}, fmt.Errorf("%s has data after the object", name)
+	}
+	return buildSheet(tableTitle(name), cols.names, []map[int]string{row}), nil
 }
 
 // columnSet holds the keys seen so far, in order of first appearance
@@ -227,6 +250,11 @@ func readRow(dec *json.Decoder, name string, number int, cols *columnSet) (map[i
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
 		return nil, fmt.Errorf("row %d of %s must be an object", number, name)
 	}
+	return readObjectBody(dec, name, cols)
+}
+
+// readObjectBody reads the keys and values of an object, after its opening {, up to and including its closing }
+func readObjectBody(dec *json.Decoder, name string, cols *columnSet) (map[int]string, error) {
 	row := map[int]string{}
 	for dec.More() {
 		keyTok, err := dec.Token()
@@ -240,7 +268,7 @@ func readRow(dec *json.Decoder, name string, number int, cols *columnSet) (map[i
 		}
 		row[cols.position(key)] = cellText(v)
 	}
-	if _, err := dec.Token(); err != nil { // the closing } of the row
+	if _, err := dec.Token(); err != nil { // the closing }
 		return nil, invalidJSON(name, err)
 	}
 	return row, nil
