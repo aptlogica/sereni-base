@@ -418,11 +418,13 @@ func setupTransferJobRoutes(private *gin.RouterGroup, handlers Handlers) {
 	{
 		export.GET("/:id", handlers.BaseTransfer.GetExportJob)
 		export.GET("/:id/download", handlers.BaseTransfer.DownloadExportJob)
+		export.DELETE("/:id", handlers.BaseTransfer.RemoveExportJob)
 	}
 	imports := private.Group("/import-job")
 	{
 		imports.GET("/:id", handlers.BaseTransfer.GetImportJob)
 		imports.GET("/:id/log", handlers.BaseTransfer.GetImportJobLog)
+		imports.DELETE("/:id", handlers.BaseTransfer.RemoveImportJob)
 	}
 }
 

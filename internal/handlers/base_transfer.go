@@ -616,6 +616,37 @@ func (h *BaseTransferHandler) GetImportJob(c *gin.Context) {
 	h.getJob(c, "import", responseConst.BaseSuccess.ImportStatus)
 }
 
+// RemoveExportJob deletes a finished export (and its file) from the jobs list.
+// DELETE /export-job/:id
+func (h *BaseTransferHandler) RemoveExportJob(c *gin.Context) {
+	h.removeJob(c, "export", responseConst.BaseSuccess.ExportStatus)
+}
+
+// RemoveImportJob deletes a finished import (and its log) from the jobs list.
+// DELETE /import-job/:id
+func (h *BaseTransferHandler) RemoveImportJob(c *gin.Context) {
+	h.removeJob(c, "import", responseConst.BaseSuccess.ImportStatus)
+}
+
+func (h *BaseTransferHandler) removeJob(c *gin.Context, jobType string, success responseConst.ResponseCode) {
+	id, user, schema, ok := h.transferJobRequest(c)
+	if !ok {
+		return
+	}
+	job, err := h.jobs.Get(c.Request.Context(), schema, id, user)
+	if err == nil && job.Type != jobType {
+		err = app_errors.TransferJobNotFound
+	}
+	if err == nil {
+		err = h.jobs.Remove(c.Request.Context(), schema, id, user)
+	}
+	if err != nil {
+		h.sendTransferJobError(c, err)
+		return
+	}
+	response.SendSuccess(c, success, job)
+}
+
 // ListWorkspaceJobs returns the current user's exports and imports of a workspace with their status and progress, newest
 // first, so the app can show them all in one place. Other users' jobs are never listed.
 // GET /workspace/:id/transfer-jobs

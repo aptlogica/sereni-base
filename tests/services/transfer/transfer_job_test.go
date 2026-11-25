@@ -1154,3 +1154,46 @@ func TestFinishedImportJobWithoutIssuesHasNoLog(t *testing.T) {
 		t.Fatalf("no log expected: %+v", done)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Removing a job from the list
+// ---------------------------------------------------------------------------
+
+func TestFinishedExportCanBeRemovedWithItsFile(t *testing.T) {
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	job := start(t, f, "user-1")
+	done := f.waitFor(t, job.ID, "user-1", completed)
+	if _, _, err := f.svc.Open(context.Background(), constant.MasterDatabase, job.ID, "user-1"); err != nil {
+		t.Fatalf("the file is there before: %v", err)
+	}
+	if err := f.svc.Remove(context.Background(), constant.MasterDatabase, done.ID, "user-1"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := f.svc.Get(context.Background(), constant.MasterDatabase, job.ID, "user-1"); !errors.Is(err, app_errors.TransferJobNotFound) {
+		t.Fatalf("the job is gone: %v", err)
+	}
+	if _, err := f.files.Open(context.Background(), "exports/"+job.ID+".zip"); err == nil {
+		t.Fatal("the file is deleted with the job")
+	}
+}
+
+func TestRunningJobCannotBeRemoved(t *testing.T) {
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	f.exporter.gate = make(chan struct{})
+	job := start(t, f, "user-1")
+	f.waitFor(t, job.ID, "user-1", func(j dto.TransferJobResponse) bool { return j.Status == "running" })
+	if err := f.svc.Remove(context.Background(), constant.MasterDatabase, job.ID, "user-1"); !errors.Is(err, app_errors.TransferJobNotReady) {
+		t.Fatalf("remove of a running job = %v, want TransferJobNotReady", err)
+	}
+	close(f.exporter.gate)
+}
+
+func TestFailedImportCanBeRemoved(t *testing.T) {
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	f.exporter.importErr = errors.New("boom")
+	job := startImport(t, f, "user-1", "x.sbase.json", []byte(uploadedJSON), dto.ImportBaseOptions{})
+	f.waitFor(t, job.ID, "user-1", func(j dto.TransferJobResponse) bool { return j.Status == "failed" })
+	if err := f.svc.Remove(context.Background(), constant.MasterDatabase, job.ID, "user-1"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+}

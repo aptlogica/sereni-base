@@ -46,6 +46,8 @@ func (f *fakeJobs) StartExport(_ context.Context, _, baseID, userID string, opts
 	return dto.TransferJobResponse{ID: jobID, Status: "queued", BaseID: baseID, Reused: f.reused}, nil
 }
 
+func (f *fakeJobs) Remove(_ context.Context, _, _, _ string) error { return f.err }
+
 func (f *fakeJobs) ListWorkspaceJobs(_ context.Context, _, _, _ string) ([]dto.TransferJobResponse, error) {
 	return nil, f.err
 }

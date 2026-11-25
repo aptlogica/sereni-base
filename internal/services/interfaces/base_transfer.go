@@ -46,6 +46,9 @@ type BaseTransferJobService interface {
 	ListWorkspaceJobs(ctx context.Context, schemaName, workspaceID, userID string) ([]dto.TransferJobResponse, error)
 	// Get returns a job of the user (an export or an import); ErrTransferJobNotFound for a job that is missing or belongs to someone else
 	Get(ctx context.Context, schemaName, jobID, userID string) (dto.TransferJobResponse, error)
+	// Remove deletes a finished job (and the file of an export). A job that is still queued or running is refused with
+	// TransferJobNotReady.
+	Remove(ctx context.Context, schemaName, jobID, userID string) error
 	// Open opens the zip of a completed job of the user. The caller closes it.
 	Open(ctx context.Context, schemaName, jobID, userID string) (io.ReadCloser, dto.TransferJobResponse, error)
 }
