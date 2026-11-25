@@ -131,7 +131,9 @@ type fakeExporter struct {
 	mu      sync.Mutex
 	started int
 
-	// import side: what the job gave to ImportBase, and how it should answer
+	// import side: what the job gave to ImportBase, and how it should answer. realImport, when set, runs the import
+	// on a real service instead, so a failure comes with the step it happened in.
+	realImport interfaces.BaseTransferService
 	importErr  error
 	importGate chan struct{}
 	imports    []importRecord
@@ -143,7 +145,10 @@ type importRecord struct {
 	opts                   dto.ImportBaseOptions
 }
 
-func (f *fakeExporter) ImportBase(ctx context.Context, _, workspaceID, userID string, file *dto.BaseExportFile, opts dto.ImportBaseOptions) (dto.ImportBaseResult, error) {
+func (f *fakeExporter) ImportBase(ctx context.Context, schema, workspaceID, userID string, file *dto.BaseExportFile, opts dto.ImportBaseOptions) (dto.ImportBaseResult, error) {
+	if f.realImport != nil {
+		return f.realImport.ImportBase(ctx, schema, workspaceID, userID, file, opts)
+	}
 	f.mu.Lock()
 	f.imports = append(f.imports, importRecord{title: file.Base.Title, workspace: workspaceID, user: userID, opts: opts})
 	err, gate := f.importErr, f.importGate
@@ -987,8 +992,12 @@ func TestImportJobFailuresAreReportedForTheUser(t *testing.T) {
 	f2.exporter.importErr = errors.New("pq: password authentication failed for user admin")
 	job = startImport(t, f2, "user-1", "x.sbase.json", []byte(uploadedJSON), dto.ImportBaseOptions{})
 	done = f2.waitFor(t, job.ID, "user-1", failed)
-	if strings.Contains(done.Error, "pq:") || strings.Contains(done.Error, "password") || !strings.Contains(done.Error, "nothing was created") || len(done.Result) != 0 {
+	if strings.Contains(done.Error, "pq:") || strings.Contains(done.Error, "password") || !strings.Contains(done.Error, "nothing was created") {
 		t.Fatalf("internal failure: %+v", done)
+	}
+	// the failed import keeps a log for the user, and it holds no internals either
+	if strings.Contains(string(done.Result), "pq:") || strings.Contains(string(done.Result), "password") || !done.HasLog {
+		t.Fatalf("the log of an internal failure: %+v / %s", done, done.Result)
 	}
 
 	// a file the adapter cannot read: its own words
@@ -1107,5 +1116,41 @@ func TestListWorkspaceJobsListsOnlyTheUsersJobs(t *testing.T) {
 	none, _ := lister.ListWorkspaceJobs(context.Background(), constant.MasterDatabase, "ws-2", "user-1")
 	if len(none) != 0 {
 		t.Fatalf("another workspace has no jobs: %+v", none)
+	}
+}
+
+// a failed import keeps a log the user can download: the header, the error, and the problems of an invalid file
+func TestFailedImportJobKeepsAnErrorLog(t *testing.T) {
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	f.exporter.importErr = &dto.ImportValidationError{Problems: []string{"schema.tables[0]: key \"t_a\" is already used", "data: bad row"}}
+	job := startImport(t, f, "user-1", "Sales.sbase.json", []byte(uploadedJSON), dto.ImportBaseOptions{})
+	done := f.waitFor(t, job.ID, "user-1", failed)
+	if !done.HasLog {
+		t.Fatalf("a failed import has a log: %+v", done)
+	}
+	var result struct {
+		ErrorLog string   `json:"error_log"`
+		Problems []string `json:"problems"`
+	}
+	if err := json.Unmarshal(done.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Import Issues Report", "Format: Sereni Base", "File: Sales.sbase.json", "Result: failed", "ERROR:", "the base file is not valid", "PROBLEMS (2):", `1. schema.tables[0]: key "t_a" is already used`, "2. data: bad row"} {
+		if !strings.Contains(result.ErrorLog, want) {
+			t.Fatalf("the log lacks %q:\n%s", want, result.ErrorLog)
+		}
+	}
+	if len(result.Problems) != 2 {
+		t.Fatalf("the problems are still listed apart: %v", result.Problems)
+	}
+}
+
+// the log of a finished import with nothing to report does not exist
+func TestFinishedImportJobWithoutIssuesHasNoLog(t *testing.T) {
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	job := startImport(t, f, "user-1", "x.sbase.json", []byte(uploadedJSON), dto.ImportBaseOptions{})
+	done := f.waitFor(t, job.ID, "user-1", completed)
+	if done.HasLog || done.SkippedRows != 0 || done.WarningCount != 0 {
+		t.Fatalf("no log expected: %+v", done)
 	}
 }

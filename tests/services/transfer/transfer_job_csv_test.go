@@ -9,6 +9,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -138,5 +139,77 @@ func TestImportJobOfACsvZipWithoutCsvFilesFails(t *testing.T) {
 	done := f.waitFor(t, job.ID, "user-1", failed)
 	if !strings.Contains(done.Error, "no .csv file") {
 		t.Fatalf("error = %q", done.Error)
+	}
+}
+
+func csvZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, text := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(text))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// A failure while the base is being created says which step failed and why, in the message and in the log, and the log
+// is the one the download endpoint serves
+func TestFailedImportJobSaysWhichStepFailedAndWhy(t *testing.T) {
+	db := newFakeDB()
+	db.failOnUIDT = "number"
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	f.exporter.realImport = newService(db).svc
+
+	body := csvZip(t, map[string]string{"Orders.csv": "No,Note\n1,ok\n2,fine\n"})
+	job := startImport(t, f, "user-1", "Shop.csv.zip", body, dto.ImportBaseOptions{IncludeData: true, Format: "csv", SkipFailedRows: true})
+	done := f.waitFor(t, job.ID, "user-1", failed)
+
+	want := `the import failed while creating the fields: create field "No" in table "Orders": boom; nothing was created`
+	if done.Error != want {
+		t.Fatalf("error = %q, want %q", done.Error, want)
+	}
+	var result struct {
+		ErrorLog string `json:"error_log"`
+	}
+	if err := json.Unmarshal(done.Result, &result); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"Format: CSV      File: Shop.csv.zip", "Result: failed (nothing was created)", "ERROR:\n" + want, "Step: creating the fields", `Reason: create field "No" in table "Orders": boom`} {
+		if !strings.Contains(result.ErrorLog, line) {
+			t.Fatalf("the log lacks %q:\n%s", line, result.ErrorLog)
+		}
+	}
+	if strings.Contains(result.ErrorLog, "contact support") {
+		t.Fatalf("the generic text must not be what the user is told:\n%s", result.ErrorLog)
+	}
+}
+
+// What an error says about a connection, a credential or the server's files is not given to the user: the step still is
+func TestFailedImportJobKeepsInternalsOutOfTheLog(t *testing.T) {
+	for name, cause := range map[string]string{
+		"a credential": "pq: password authentication failed for user admin",
+		"a connection": "dial tcp 10.0.0.5:5432: connect: connection refused",
+		"a panic":      "panic: runtime error: index out of range [3] with length 2",
+	} {
+		f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+		f.exporter.importErr = errors.New(cause)
+		job := startImport(t, f, "user-1", "x.sbase.json", []byte(uploadedJSON), dto.ImportBaseOptions{})
+		done := f.waitFor(t, job.ID, "user-1", failed)
+		text := done.Error + string(done.Result)
+		for _, leak := range []string{"password", "admin", "10.0.0.5", "5432", "pq:", "index out of range"} {
+			if strings.Contains(text, leak) {
+				t.Fatalf("%s: %q leaked:\n%s", name, leak, text)
+			}
+		}
+		if !done.HasLog {
+			t.Fatalf("%s: a failed import has a log", name)
+		}
 	}
 }

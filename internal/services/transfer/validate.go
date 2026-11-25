@@ -21,7 +21,43 @@ const (
 	// maxTitleLength and maxRIDLength are the limits of the schema
 	maxTitleLength = 255
 	maxRIDLength   = 128
+	// maxDBNameLength is the longest name Postgres allows for a table or a column. The name of a table or a column in the
+	// database is made from its title (spaces become _, other symbols are dropped, a name that does not start with a
+	// letter gets "table_" in front) and then dbNameSuffixLength characters are added to make it unique: "_", the Unix
+	// time (10 digits), "_" and 4 random characters.
+	maxDBNameLength    = 63
+	dbNameSuffixLength = 16
 )
+
+const (
+	// the keys of the meta of a link or lookup field, and the message several checks share
+	metaRelationID   = "relation_id"
+	metaRelation     = "relation"
+	msgTitleRequired = "%s: title is required"
+)
+
+var dbNameUnsafe = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
+
+// dbNameLength is how long the name in the database of a table or a field with this title will be: the same rule the
+// table service uses when it creates one
+func dbNameLength(title string) int {
+	slug := dbNameUnsafe.ReplaceAllString(strings.ReplaceAll(title, " ", "_"), "")
+	if slug == "" || (slug[0] >= '0' && slug[0] <= '9') {
+		slug = "table_" + slug
+	}
+	return len(slug) + dbNameSuffixLength
+}
+
+// dbNameProblem is the problem for a title whose name in the database would be over the limit of 63 characters, or ""
+// when it fits. The database refuses such a table or column, and the import would fail with only "database error".
+func dbNameProblem(where, what, title string) string {
+	n := dbNameLength(title)
+	if n <= maxDBNameLength {
+		return ""
+	}
+	return fmt.Sprintf("%s: the %s %q exceeds the database limit of %d characters: its database name would be %d characters (the letters, digits and spaces of the name, plus %d that the app adds). Shorten the name by at least %d characters",
+		where, what, shortTitle(title), maxDBNameLength, n, dbNameSuffixLength, n-maxDBNameLength)
+}
 
 // importPlan is a checked file with the lookups import needs.
 type importPlan struct {
@@ -62,6 +98,21 @@ var sha256Pattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 // longer reports whether s has more than max characters.
 func longer(s string, max int) bool { return utf8.RuneCountInString(s) > max }
 
+// tooLongProblem is the problem for a name over the limit: where it is, what it is (a table name, a field name ...),
+// the start of it, how long it is and what the limit is, so the user can find it and knows how much to cut
+func tooLongProblem(where, what, title string) string {
+	return fmt.Sprintf("%s: the %s %q is too long: it has %d characters and the limit is %d", where, what, shortTitle(title), utf8.RuneCountInString(title), maxTitleLength)
+}
+
+// shortTitle is the start of a long name, for a message
+func shortTitle(title string) string {
+	const shown = 40
+	if runes := []rune(title); len(runes) > shown {
+		return string(runes[:shown]) + "..."
+	}
+	return title
+}
+
 type problemList []string
 
 func (p *problemList) add(format string, args ...interface{}) {
@@ -82,7 +133,7 @@ func buildPlan(file *dto.BaseExportFile) (*importPlan, []string) {
 	if strings.TrimSpace(file.Base.Title) == "" {
 		problems.add("base.title is required")
 	} else if longer(file.Base.Title, maxTitleLength) {
-		problems.add("base.title is longer than %d characters", maxTitleLength)
+		problems.add("%s", tooLongProblem("base.title", "base name", file.Base.Title))
 	}
 
 	plan := &importPlan{
@@ -93,56 +144,13 @@ func buildPlan(file *dto.BaseExportFile) (*importPlan, []string) {
 		relTarget:  map[string]string{},
 		tableIndex: map[string]int{},
 	}
-	keys := map[string]string{} // every key in the file -> what it names
-
-	checkKey := func(key, what, where string) bool {
-		if !keyPattern.MatchString(key) {
-			problems.add("%s: %s %q is not a valid key", where, what, key)
-			return false
-		}
-		if prev, dup := keys[key]; dup {
-			problems.add("%s: key %q is already used by a %s", where, key, prev)
-			return false
-		}
-		keys[key] = what
-		return true
-	}
+	checkKey := (&keyChecker{keys: map[string]string{}, problems: &problems}).check
 
 	if len(file.Schema.Tables) == 0 {
 		problems.add("schema.tables has no tables")
 	}
 	for i, t := range file.Schema.Tables {
-		where := fmt.Sprintf("schema.tables[%d]", i)
-		if checkKey(t.Key, "table", where) {
-			plan.tableIndex[t.Key] = i
-		}
-		if strings.TrimSpace(t.Title) == "" {
-			problems.add("%s: title is required", where)
-		} else if longer(t.Title, maxTitleLength) {
-			problems.add("%s: title is longer than %d characters", where, maxTitleLength)
-		}
-		for j, f := range t.Fields {
-			fwhere := fmt.Sprintf("%s.fields[%d]", where, j)
-			if !checkKey(f.Key, "field", fwhere) {
-				continue
-			}
-			plan.fieldTable[f.Key] = t.Key
-			plan.fields[f.Key] = f
-			if strings.TrimSpace(f.Title) == "" && !f.System {
-				problems.add("%s: title is required", fwhere)
-			} else if longer(f.Title, maxTitleLength) {
-				problems.add("%s: title is longer than %d characters", fwhere, maxTitleLength)
-			}
-			if f.System {
-				if f.ColumnName == "" {
-					problems.add("%s: system field needs column_name", fwhere)
-				}
-				continue
-			}
-			if !isSupportedUIDT(f.UIDT) {
-				problems.add("%s: field type %q is not supported", fwhere, f.UIDT)
-			}
-		}
+		validateTable(plan, i, t, checkKey, &problems)
 	}
 
 	collectViews(plan, &problems)
@@ -154,6 +162,72 @@ func buildPlan(file *dto.BaseExportFile) (*importPlan, []string) {
 	validateAutomations(plan, checkKey, &problems)
 	validateData(plan, &problems)
 	return plan, problems
+}
+
+// keyChecker checks the keys of the file: each must be well formed and used once. keys is every key in the file ->
+// what it names.
+type keyChecker struct {
+	keys     map[string]string
+	problems *problemList
+}
+
+func (k *keyChecker) check(key, what, where string) bool {
+	if !keyPattern.MatchString(key) {
+		k.problems.add("%s: %s %q is not a valid key", where, what, key)
+		return false
+	}
+	if prev, dup := k.keys[key]; dup {
+		k.problems.add("%s: key %q is already used by a %s", where, key, prev)
+		return false
+	}
+	k.keys[key] = what
+	return true
+}
+
+// checkName checks the title of a table or a field: it is there (when required), it is not over the limit of the
+// schema, and the name the database would get for it fits (when checkDB)
+func checkName(where, what, title string, required, checkDB bool, problems *problemList) {
+	switch {
+	case required && strings.TrimSpace(title) == "":
+		problems.add(msgTitleRequired, where)
+	case longer(title, maxTitleLength):
+		problems.add("%s", tooLongProblem(where, what, title))
+	case checkDB:
+		if msg := dbNameProblem(where, what, title); msg != "" {
+			problems.add("%s", msg)
+		}
+	}
+}
+
+// validateTable checks one table of the schema and its fields, and adds them to the plan
+func validateTable(plan *importPlan, i int, t dto.BaseExportTable, checkKey func(key, what, where string) bool, problems *problemList) {
+	where := fmt.Sprintf("schema.tables[%d]", i)
+	if checkKey(t.Key, "table", where) {
+		plan.tableIndex[t.Key] = i
+	}
+	checkName(where, "table name", t.Title, true, true, problems)
+	for j, f := range t.Fields {
+		validateField(plan, t.Key, fmt.Sprintf("%s.fields[%d]", where, j), f, checkKey, problems)
+	}
+}
+
+// validateField checks one field of a table and adds it to the plan
+func validateField(plan *importPlan, tableKey, where string, f dto.BaseExportField, checkKey func(key, what, where string) bool, problems *problemList) {
+	if !checkKey(f.Key, "field", where) {
+		return
+	}
+	plan.fieldTable[f.Key] = tableKey
+	plan.fields[f.Key] = f
+	checkName(where, "field name", f.Title, !f.System, !f.System, problems)
+	if f.System {
+		if f.ColumnName == "" {
+			problems.add("%s: system field needs column_name", where)
+		}
+		return
+	}
+	if !isSupportedUIDT(f.UIDT) {
+		problems.add("%s: field type %q is not supported", where, f.UIDT)
+	}
 }
 
 // knownRef reports whether "@key" names a table, field or relation of the file.
@@ -176,28 +250,33 @@ func collectRelations(plan *importPlan, problems *problemList) {
 			if f.UIDT != uidtLinks || f.System {
 				continue
 			}
-			rel := strings.TrimPrefix(idString(f.Meta["relation_id"]), dto.BaseExportRefPrefix)
-			role := idString(f.Meta["entity_role"])
-			where := fmt.Sprintf("field %s", f.Key)
-			if rel == "" || !refPattern.MatchString(dto.BaseExportRefPrefix+rel) {
-				problems.add("%s: meta.relation_id must be a @key", where)
-				continue
-			}
-			switch role {
-			case entityRoleSource:
-				if prev, dup := plan.relSource[rel]; dup {
-					problems.add("%s: relation @%s already has source field %s", where, rel, prev)
-				}
-				plan.relSource[rel] = f.Key
-			case entityRoleTarget:
-				if prev, dup := plan.relTarget[rel]; dup {
-					problems.add("%s: relation @%s already has target field %s", where, rel, prev)
-				}
-				plan.relTarget[rel] = f.Key
-			default:
-				problems.add("%s: meta.entity_role must be source or target", where)
-			}
+			collectRelation(plan, f, problems)
 		}
+	}
+}
+
+// collectRelation records the relation of one link field as the source or the target of its relation
+func collectRelation(plan *importPlan, f dto.BaseExportField, problems *problemList) {
+	rel := strings.TrimPrefix(idString(f.Meta[metaRelationID]), dto.BaseExportRefPrefix)
+	role := idString(f.Meta["entity_role"])
+	where := fmt.Sprintf("field %s", f.Key)
+	if rel == "" || !refPattern.MatchString(dto.BaseExportRefPrefix+rel) {
+		problems.add("%s: meta.relation_id must be a @key", where)
+		return
+	}
+	switch role {
+	case entityRoleSource:
+		if prev, dup := plan.relSource[rel]; dup {
+			problems.add("%s: relation @%s already has source field %s", where, rel, prev)
+		}
+		plan.relSource[rel] = f.Key
+	case entityRoleTarget:
+		if prev, dup := plan.relTarget[rel]; dup {
+			problems.add("%s: relation @%s already has target field %s", where, rel, prev)
+		}
+		plan.relTarget[rel] = f.Key
+	default:
+		problems.add("%s: meta.entity_role must be source or target", where)
 	}
 }
 
@@ -209,11 +288,11 @@ func validateRelations(plan *importPlan, problems *problemList) {
 	}
 	for rel, source := range plan.relSource {
 		f := plan.fields[source]
-		with := strings.TrimPrefix(nestedString(f.Meta, "relation", "with"), dto.BaseExportRefPrefix)
+		with := strings.TrimPrefix(nestedString(f.Meta, metaRelation, "with"), dto.BaseExportRefPrefix)
 		if _, ok := plan.tableIndex[with]; !ok {
 			problems.add("field %s: meta.relation.with must name a table of the file", source)
 		}
-		switch nestedString(f.Meta, "relation", "type") {
+		switch nestedString(f.Meta, metaRelation, "type") {
 		case "one-to-one", "has-many", "many-to-many":
 		default:
 			problems.add("field %s: meta.relation.type must be one-to-one, has-many or many-to-many", source)
@@ -232,28 +311,39 @@ func validateRefs(plan *importPlan, problems *problemList) {
 			if f.System {
 				continue
 			}
-			refs := map[string]struct{}{}
-			collectRefs(f.Meta, refs)
-			for ref := range refs {
-				if !plan.knownRef(ref) {
-					problems.add("field %s: meta refers to %s, which is not in the file", f.Key, ref)
-				}
-			}
-			if f.UIDT == uidtLookup {
-				for _, k := range []string{"lookup_column_id", "relation_id"} {
-					if !refPattern.MatchString(idString(f.Meta[k])) {
-						problems.add("field %s: lookup meta.%s must be a @key", f.Key, k)
-					}
-				}
-				if rel := strings.TrimPrefix(idString(f.Meta["relation_id"]), dto.BaseExportRefPrefix); rel != "" {
-					if _, ok := plan.relSource[rel]; !ok {
-						problems.add("field %s: lookup uses relation @%s, which has no link field", f.Key, rel)
-					}
-				}
-				validateLookupTarget(plan, f, problems)
-			}
+			validateFieldRefs(plan, f, problems)
 		}
 	}
+}
+
+// validateFieldRefs checks the @keys in the meta of one field, and that a lookup is complete
+func validateFieldRefs(plan *importPlan, f dto.BaseExportField, problems *problemList) {
+	refs := map[string]struct{}{}
+	collectRefs(f.Meta, refs)
+	for ref := range refs {
+		if !plan.knownRef(ref) {
+			problems.add("field %s: meta refers to %s, which is not in the file", f.Key, ref)
+		}
+	}
+	if f.UIDT == uidtLookup {
+		validateLookupField(plan, f, problems)
+	}
+}
+
+// validateLookupField checks that a lookup names the field it reads and the relation it goes through, and that the
+// relation has a link field
+func validateLookupField(plan *importPlan, f dto.BaseExportField, problems *problemList) {
+	for _, k := range []string{"lookup_column_id", metaRelationID} {
+		if !refPattern.MatchString(idString(f.Meta[k])) {
+			problems.add("field %s: lookup meta.%s must be a @key", f.Key, k)
+		}
+	}
+	if rel := strings.TrimPrefix(idString(f.Meta[metaRelationID]), dto.BaseExportRefPrefix); rel != "" {
+		if _, ok := plan.relSource[rel]; !ok {
+			problems.add("field %s: lookup uses relation @%s, which has no link field", f.Key, rel)
+		}
+	}
+	validateLookupTarget(plan, f, problems)
 }
 
 // collectViews gathers the views of every table, then the views of the top-level list (format 1.0.0). A view
@@ -283,7 +373,7 @@ func validateViews(plan *importPlan, checkKey func(key, what, where string) bool
 		if strings.TrimSpace(v.Title) == "" || strings.TrimSpace(v.Type) == "" {
 			problems.add("%s: title and type are required", where)
 		} else if longer(v.Title, maxTitleLength) {
-			problems.add("%s: title is longer than %d characters", where, maxTitleLength)
+			problems.add("%s", tooLongProblem(where, "view name", v.Title))
 		}
 		refs := map[string]struct{}{}
 		collectRefs(v.Meta, refs)
@@ -300,6 +390,25 @@ func validateData(plan *importPlan, problems *problemList) {
 	if data == nil {
 		return
 	}
+	rids := collectRowIDs(plan, data, problems)
+	cells := &cellChecker{
+		plan:     plan,
+		rids:     rids,
+		refs:     validateAttachmentIndex(data, problems),
+		usedIDs:  map[string]struct{}{},
+		problems: problems,
+	}
+	for tkey, rows := range data.Tables {
+		for i, r := range rows.Rows {
+			for fkey, val := range r.Values {
+				cells.check(tkey, i, fkey, val)
+			}
+		}
+	}
+}
+
+// collectRowIDs checks the tables and the _rid of the rows of the data, and returns every _rid -> its table key
+func collectRowIDs(plan *importPlan, data *dto.BaseExportData, problems *problemList) map[string]string {
 	rids := map[string]string{} // _rid -> table key
 	for tkey, rows := range data.Tables {
 		if _, ok := plan.tableIndex[tkey]; !ok {
@@ -324,36 +433,47 @@ func validateData(plan *importPlan, problems *problemList) {
 			rids[r.RID] = tkey
 		}
 	}
-	refs := validateAttachmentIndex(data, problems)
-	usedIDs := map[string]struct{}{}
-	for tkey, rows := range data.Tables {
-		for i, r := range rows.Rows {
-			for fkey, val := range r.Values {
-				f, ok := plan.fields[fkey]
-				where := fmt.Sprintf("data.tables.%s.rows[%d].values.%s", tkey, i, fkey)
-				switch {
-				case !ok || plan.fieldTable[fkey] != tkey:
-					problems.add("%s: field is not in table %s", where, tkey)
-				case f.System && isSourceColumn(f.ColumnName):
-					checkSourceValue(f, val, where, problems)
-					if f.ColumnName == "id" {
-						// two rows of a table cannot get the same id
-						k := tkey + "|" + cellKey(val)
-						if _, dup := usedIDs[k]; dup {
-							problems.add("%s: the id %s is used by another row of table %s", where, cellKey(val), tkey)
-						}
-						usedIDs[k] = struct{}{}
-					}
-				case f.System || f.UIDT == uidtLookup:
-					problems.add("%s: %s fields are calculated and cannot hold values", where, describeField(f))
-				case f.UIDT == uidtLinks:
-					checkLinkCell(f, val, rids, where, problems)
-				case f.UIDT == uidtAttachment:
-					checkAttachmentCell(val, refs, where, problems)
-				}
-			}
+	return rids
+}
+
+// cellChecker checks the cells of the rows: rids is every _rid -> its table, refs the refs of the attachment files, and
+// usedIDs the ids the rows of a source column have taken so far
+type cellChecker struct {
+	plan     *importPlan
+	rids     map[string]string
+	refs     map[string]struct{}
+	usedIDs  map[string]struct{}
+	problems *problemList
+}
+
+// check checks the value of one field of one row
+func (c *cellChecker) check(tkey string, i int, fkey string, val interface{}) {
+	f, ok := c.plan.fields[fkey]
+	where := fmt.Sprintf("data.tables.%s.rows[%d].values.%s", tkey, i, fkey)
+	switch {
+	case !ok || c.plan.fieldTable[fkey] != tkey:
+		c.problems.add("%s: field is not in table %s", where, tkey)
+	case f.System && isSourceColumn(f.ColumnName):
+		checkSourceValue(f, val, where, c.problems)
+		if f.ColumnName == "id" {
+			c.checkUniqueID(tkey, val, where)
 		}
+	case f.System || f.UIDT == uidtLookup:
+		c.problems.add("%s: %s fields are calculated and cannot hold values", where, describeField(f))
+	case f.UIDT == uidtLinks:
+		checkLinkCell(f, val, c.rids, where, c.problems)
+	case f.UIDT == uidtAttachment:
+		checkAttachmentCell(val, c.refs, where, c.problems)
 	}
+}
+
+// checkUniqueID checks that two rows of a table do not get the same id
+func (c *cellChecker) checkUniqueID(tkey string, val interface{}, where string) {
+	k := tkey + "|" + cellKey(val)
+	if _, dup := c.usedIDs[k]; dup {
+		c.problems.add("%s: the id %s is used by another row of table %s", where, cellKey(val), tkey)
+	}
+	c.usedIDs[k] = struct{}{}
 }
 
 // checkSourceValue checks the value of a source column (id, created / modified time and user) of a row.
@@ -389,7 +509,7 @@ func checkLinkCell(f dto.BaseExportField, val interface{}, rids map[string]strin
 		return
 	}
 	// Both sides of a link name the table on the other side in meta.relation.with
-	with := strings.TrimPrefix(nestedString(f.Meta, "relation", "with"), dto.BaseExportRefPrefix)
+	with := strings.TrimPrefix(nestedString(f.Meta, metaRelation, "with"), dto.BaseExportRefPrefix)
 	for _, item := range list {
 		rid, isStr := item.(string)
 		if !isStr {
@@ -478,39 +598,50 @@ func validateCover(c *dto.BaseExportCover, problems *problemList) {
 func validateTableExtras(plan *importPlan, problems *problemList) {
 	for i, t := range plan.file.Schema.Tables {
 		where := fmt.Sprintf("schema.tables[%d]", i)
-		seen := map[string]bool{}
-		for _, key := range t.PrimaryKey {
-			f, ok := plan.fields[key]
-			switch {
-			case !ok || plan.fieldTable[key] != t.Key:
-				problems.add("%s.primary_key: %q is not a field of table %s", where, key, t.Key)
-			case f.System:
-				problems.add("%s.primary_key: %q is a system field and cannot be a key", where, key)
-			case f.UIDT == uidtLinks || f.UIDT == uidtLookup || f.UIDT == uidtAttachment:
-				problems.add("%s.primary_key: %q is a %s field and cannot be a key", where, key, f.UIDT)
-			case seen[key]:
-				problems.add("%s.primary_key: %q is listed twice", where, key)
-			}
-			seen[key] = true
-		}
+		validatePrimaryKey(plan, t, where, problems)
 		for j, c := range t.Constraints {
 			validateConstraint(plan, t.Key, fmt.Sprintf("%s.constraints[%d]", where, j), c, problems)
 		}
 		for j, f := range t.Fields {
-			if f.UIDT == "formula" && !f.System {
-				if v, has := f.Meta["formula"]; has {
-					if _, isString := v.(string); !isString {
-						problems.add("%s.fields[%d]: meta.formula must be text", where, j)
-					}
-				}
-			}
+			validateFormulaMeta(f, fmt.Sprintf("%s.fields[%d]", where, j), problems)
+		}
+	}
+}
+
+// validatePrimaryKey checks that the key of a table is made of its own plain fields, each listed once
+func validatePrimaryKey(plan *importPlan, t dto.BaseExportTable, where string, problems *problemList) {
+	seen := map[string]bool{}
+	for _, key := range t.PrimaryKey {
+		f, ok := plan.fields[key]
+		switch {
+		case !ok || plan.fieldTable[key] != t.Key:
+			problems.add("%s.primary_key: %q is not a field of table %s", where, key, t.Key)
+		case f.System:
+			problems.add("%s.primary_key: %q is a system field and cannot be a key", where, key)
+		case f.UIDT == uidtLinks || f.UIDT == uidtLookup || f.UIDT == uidtAttachment:
+			problems.add("%s.primary_key: %q is a %s field and cannot be a key", where, key, f.UIDT)
+		case seen[key]:
+			problems.add("%s.primary_key: %q is listed twice", where, key)
+		}
+		seen[key] = true
+	}
+}
+
+// validateFormulaMeta checks that the formula of a formula field is text
+func validateFormulaMeta(f dto.BaseExportField, where string, problems *problemList) {
+	if f.UIDT != "formula" || f.System {
+		return
+	}
+	if v, has := f.Meta["formula"]; has {
+		if _, isString := v.(string); !isString {
+			problems.add("%s: meta.formula must be text", where)
 		}
 	}
 }
 
 func validateConstraint(plan *importPlan, tableKey, where string, c dto.BaseExportConstraint, problems *problemList) {
 	if strings.TrimSpace(c.Title) == "" {
-		problems.add("%s: title is required", where)
+		problems.add(msgTitleRequired, where)
 	}
 	inTable := func(key string) bool { return plan.fieldTable[key] == tableKey }
 	for _, key := range c.FieldKeys {
@@ -524,19 +655,25 @@ func validateConstraint(plan *importPlan, tableKey, where string, c dto.BaseExpo
 			problems.add("%s: a unique constraint needs field_keys", where)
 		}
 	case "check":
-		if strings.TrimSpace(c.Condition) == "" {
-			problems.add("%s: a check constraint needs a condition", where)
-		}
-		if c.Category != "" && !checkCategories[c.Category] {
-			problems.add("%s: category %q is not one of number_date, text, compare, custom", where, c.Category)
-		}
-		for _, key := range conditionKeys(c.Condition) {
-			if !inTable(key) {
-				problems.add("%s: condition uses {%s}, which is not a field of table %s", where, key, tableKey)
-			}
-		}
+		validateCheckConstraint(c, inTable, where, tableKey, problems)
 	default:
 		problems.add("%s: type must be unique or check", where)
+	}
+}
+
+// validateCheckConstraint checks the condition and the category of a check constraint, and that the condition only
+// uses fields of its own table
+func validateCheckConstraint(c dto.BaseExportConstraint, inTable func(key string) bool, where, tableKey string, problems *problemList) {
+	if strings.TrimSpace(c.Condition) == "" {
+		problems.add("%s: a check constraint needs a condition", where)
+	}
+	if c.Category != "" && !checkCategories[c.Category] {
+		problems.add("%s: category %q is not one of number_date, text, compare, custom", where, c.Category)
+	}
+	for _, key := range conditionKeys(c.Condition) {
+		if !inTable(key) {
+			problems.add("%s: condition uses {%s}, which is not a field of table %s", where, key, tableKey)
+		}
 	}
 }
 
@@ -556,7 +693,16 @@ func validateLookupTarget(plan *importPlan, f dto.BaseExportField, problems *pro
 	}
 
 	// the link it goes through is a link field of the lookup's own table with the same relation
-	rel := strings.TrimPrefix(idString(f.Meta["relation_id"]), dto.BaseExportRefPrefix)
+	pointsAt := tablesLinkedFor(plan, f)
+	if len(pointsAt) > 0 && !pointsAt[plan.fieldTable[shown]] {
+		problems.add("field %s: the field it reads (%s) is not on the table its link points at", f.Key, shown)
+	}
+}
+
+// tablesLinkedFor is the set of tables the link fields of a lookup's own table point at, for the relation (and the link
+// field, when it names one) of the lookup
+func tablesLinkedFor(plan *importPlan, f dto.BaseExportField) map[string]bool {
+	rel := strings.TrimPrefix(idString(f.Meta[metaRelationID]), dto.BaseExportRefPrefix)
 	through := strings.TrimPrefix(idString(f.Meta["link_column_id"]), dto.BaseExportRefPrefix)
 	own := plan.fieldTable[f.Key]
 	pointsAt := map[string]bool{}
@@ -564,12 +710,10 @@ func validateLookupTarget(plan *importPlan, f dto.BaseExportField, problems *pro
 		if plan.fieldTable[key] != own || candidate.UIDT != uidtLinks || candidate.System {
 			continue
 		}
-		if strings.TrimPrefix(idString(candidate.Meta["relation_id"]), dto.BaseExportRefPrefix) != rel || (through != "" && key != through) {
+		if strings.TrimPrefix(idString(candidate.Meta[metaRelationID]), dto.BaseExportRefPrefix) != rel || (through != "" && key != through) {
 			continue
 		}
-		pointsAt[strings.TrimPrefix(nestedString(candidate.Meta, "relation", "with"), dto.BaseExportRefPrefix)] = true
+		pointsAt[strings.TrimPrefix(nestedString(candidate.Meta, metaRelation, "with"), dto.BaseExportRefPrefix)] = true
 	}
-	if len(pointsAt) > 0 && !pointsAt[plan.fieldTable[shown]] {
-		problems.add("field %s: the field it reads (%s) is not on the table its link points at", f.Key, shown)
-	}
+	return pointsAt
 }

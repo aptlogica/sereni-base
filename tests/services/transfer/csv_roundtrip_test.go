@@ -9,6 +9,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -170,5 +171,90 @@ func TestCSVImportErrorLogOnlyWhenARowWasSkipped(t *testing.T) {
 	blanks := run("a,b\n1,x\n,\n1,x\n")
 	if blanks.SkippedRows != 0 || blanks.EmptyRows != 1 || blanks.DuplicateRows != 1 || blanks.ErrorLog != "" {
 		t.Fatalf("blank and repeated rows are counted and give no log: %+v\n%s", blanks, blanks.ErrorLog)
+	}
+}
+
+// The log says what was imported (format, file, base), lists the warnings, and is also written when there is only a warning
+func TestImportErrorLogHasAHeaderAndTheWarnings(t *testing.T) {
+	files := map[string]string{"Orders.csv": "No,Note\n1,ok\n2,bad\n"}
+	read := readCSV(t, files, "Shop.csv.zip")
+	db := newFakeDB()
+	db.refuseRow = refuseBad
+	res, err := newService(db).svc.ImportBase(context.Background(), "s", workspace, "user-1", read.File, dto.ImportBaseOptions{
+		IncludeData: true, Format: "csv", SkipFailedRows: true, Source: read.Source, FileName: "Shop.csv.zip",
+	})
+	must(t, err)
+	for _, want := range []string{
+		"Import Issues Report", "Format: CSV      File: Shop.csv.zip", "Base: Shop", "Result: completed with issues",
+		"Total Error Rows: 1", "Warnings: 1", "WARNINGS:", "- 1 row(s) were not imported", "ROWS NOT IMPORTED",
+	} {
+		if !strings.Contains(res.ErrorLog, want) {
+			t.Fatalf("the error log lacks %q:\n%s", want, res.ErrorLog)
+		}
+	}
+
+	// a Sereni Base import skips no rows, but its warnings still make a log
+	c := seedCRM(t)
+	file, _ := exportZip(t, c, c.baseID)
+	res, err = newService(c.db).svc.ImportBase(context.Background(), "s", workspace, "u", roundTrip(t, file), dto.ImportBaseOptions{IncludeData: true, FileName: "crm.sbase.json"})
+	must(t, err)
+	if res.SkippedRows != 0 || !strings.Contains(res.ErrorLog, "WARNINGS:") || !strings.Contains(res.ErrorLog, "upload the .sbase.zip") || !strings.Contains(res.ErrorLog, "Format: Sereni Base      File: crm.sbase.json") || strings.Contains(res.ErrorLog, "ROWS NOT IMPORTED") {
+		t.Fatalf("a warning gives a log without rows: %+v\n%s", res, res.ErrorLog)
+	}
+}
+
+// A table or field name whose name in the database would be over 63 characters is refused in plain words, with all
+// of them listed at once, and the log of the failed import says the same
+func TestImportRefusesNamesThatExceedTheDatabaseLimit(t *testing.T) {
+	// "Getting Started - Quick Reference Links (Quick Links) 2026-11-25_12-53": 64 letters, digits and spaces + 16 = 80
+	title := "Getting Started - Quick Reference Links (Quick Links) 2026-11-25_12-53"
+	read := readCSV(t, map[string]string{title + ".csv": "a," + strings.Repeat("c", 60) + "\n1,x\n", "Short.csv": "a\n1\n"}, "Shop.csv.zip")
+	_, err := newService(newFakeDB()).svc.ImportBase(context.Background(), "s", workspace, "user-1", read.File, dto.ImportBaseOptions{IncludeData: true, Format: "csv", SkipFailedRows: true, Source: read.Source, FileName: "Shop.csv.zip"})
+	var invalid *dto.ImportValidationError
+	if !errors.As(err, &invalid) || len(invalid.Problems) != 2 {
+		t.Fatalf("err = %v", err)
+	}
+	wantTable := `schema.tables[0]: the table name "Getting Started - Quick Reference Links ..." exceeds the database limit of 63 characters: its database name would be 80 characters (the letters, digits and spaces of the name, plus 16 that the app adds). Shorten the name by at least 17 characters`
+	if invalid.Problems[0] != wantTable {
+		t.Fatalf("problem = %q\nwant      %q", invalid.Problems[0], wantTable)
+	}
+	if !strings.Contains(invalid.Problems[1], `schema.tables[0].fields[1]: the field name "`) || !strings.Contains(invalid.Problems[1], "exceeds the database limit of 63 characters") {
+		t.Fatalf("problem = %q", invalid.Problems[1])
+	}
+}
+
+// A name that fits is accepted: 47 letters is the most (symbols are dropped, a space counts as one), because 16 characters are added; a name that starts with a digit gets "table_" in front
+func TestImportAcceptsNamesUpToTheDatabaseLimit(t *testing.T) {
+	ok := strings.Repeat("a", 47)
+	for name, title := range map[string]string{"47 letters": ok, "symbols are dropped": strings.Repeat("a", 47) + "(!!!)???"} {
+		read := readCSV(t, map[string]string{title + ".csv": "a\n1\n"}, "Shop.csv.zip")
+		if _, err := newService(newFakeDB()).svc.ImportBase(context.Background(), "s", workspace, "user-1", read.File, dto.ImportBaseOptions{IncludeData: true, Format: "csv", SkipFailedRows: true, Source: read.Source}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	for name, title := range map[string]string{"48 letters": strings.Repeat("a", 48), "41 letters after a digit": "1" + strings.Repeat("a", 41)} {
+		read := readCSV(t, map[string]string{title + ".csv": "a\n1\n"}, "Shop.csv.zip")
+		_, err := newService(newFakeDB()).svc.ImportBase(context.Background(), "s", workspace, "user-1", read.File, dto.ImportBaseOptions{IncludeData: true, Format: "csv", SkipFailedRows: true, Source: read.Source})
+		var invalid *dto.ImportValidationError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("%s must be refused: %v", name, err)
+		}
+	}
+}
+
+// A name of a Sereni Base file that is over the limit is refused, in plain words: which name, how long, and the limit
+func TestImportRefusesAFileNameThatIsTooLongInPlainWords(t *testing.T) {
+	c := seedCRM(t)
+	file, _ := exportZip(t, c, c.baseID)
+	file = roundTrip(t, file)
+	file.Schema.Tables[0].Title = strings.Repeat("B", 300)
+	_, err := newService(c.db).svc.ImportBase(context.Background(), "s", workspace, "u", file, dto.ImportBaseOptions{IncludeData: true})
+	var invalid *dto.ImportValidationError
+	if !errors.As(err, &invalid) || len(invalid.Problems) != 1 {
+		t.Fatalf("err = %v", err)
+	}
+	want := `schema.tables[0]: the table name "` + strings.Repeat("B", 40) + `..." is too long: it has 300 characters and the limit is 255`
+	if invalid.Problems[0] != want {
+		t.Fatalf("problem = %q\nwant      %q", invalid.Problems[0], want)
 	}
 }

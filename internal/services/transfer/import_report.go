@@ -61,40 +61,61 @@ func reasonOf(err error) string {
 	return err.Error()
 }
 
-// finishReport counts what was left out and writes the error log, for an import that skips failed rows
+// finishReport counts what was left out and writes the error log. The counts are only for an import that skips
+// failed rows; the log is written for any import that left rows out or has warnings, and is empty otherwise.
 func (r *importRun) finishReport() {
-	if !r.skipFailed {
-		return
-	}
-	r.result.SkippedRows = len(r.skipped)
-	r.result.Rows -= len(r.skipped)
-	if r.source != nil {
-		r.result.EmptyRows = r.source.EmptyRows
-		r.result.DuplicateRows = r.source.DuplicateRows
-	}
-	if len(r.skipped) > 0 {
-		r.warn("%d row(s) were not imported because the database refused them; the error log says which and why", len(r.skipped))
+	if r.skipFailed {
+		r.result.SkippedRows = len(r.skipped)
+		r.result.Rows -= len(r.skipped)
+		if r.source != nil {
+			r.result.EmptyRows = r.source.EmptyRows
+			r.result.DuplicateRows = r.source.DuplicateRows
+		}
+		if len(r.skipped) > 0 {
+			r.warn("%d row(s) were not imported because the database refused them; the error log says which and why", len(r.skipped))
+		}
 	}
 	r.result.ErrorLog = r.errorLog()
 }
 
-// errorLog is the text of the report: a summary, then each row that was left out with its file, line, reason and
-// cells, then the raw rows. It has the form of the log of the import of a table from a CSV. It is empty when no row
-// was left out: blank and repeated rows alone are only counted, they are not an error.
+// errorLog is the text of the report: a header (format, file, base), a summary, the warnings, then each row that was
+// left out with its file, line, reason and cells, then the raw rows. The rows part has the form of the log of the
+// import of a table from a CSV. It is empty when no row was left out and there is no warning: blank and repeated
+// rows alone are only counted, they are not an error.
 func (r *importRun) errorLog() string {
-	if len(r.skipped) == 0 {
+	if len(r.skipped) == 0 && len(r.result.Warnings) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("Import Issues Report\n")
 	b.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().Format(time.RFC3339)))
+	writeLogHeader(&b, r.format, r.fileName, r.result.Title)
+	b.WriteString("Result: completed with issues\n")
 	b.WriteString(strings.Repeat("=", 100) + "\n\n")
 	b.WriteString("SUMMARY:\n")
 	b.WriteString(fmt.Sprintf("Total Error Rows: %d\n", len(r.skipped)))
 	b.WriteString(fmt.Sprintf("Total Empty Rows: %d\n", r.result.EmptyRows))
 	b.WriteString(fmt.Sprintf("Total Duplicate Rows: %d\n", r.result.DuplicateRows))
+	b.WriteString(fmt.Sprintf("Tables: %d   Fields: %d   Rows imported: %d\n", r.result.Tables, r.result.Fields, r.result.Rows))
+	b.WriteString(fmt.Sprintf("Warnings: %d\n", len(r.result.Warnings)))
 	b.WriteString(strings.Repeat("-", 100) + "\n\n")
 
+	if len(r.result.Warnings) > 0 {
+		b.WriteString("WARNINGS:\n")
+		for _, w := range r.result.Warnings {
+			b.WriteString("- " + w + "\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(r.skipped) > 0 {
+		r.writeSkippedRows(&b)
+	}
+	return capLog(b.String())
+}
+
+// writeSkippedRows writes the rows that were left out, and then the same rows as they were in the files
+func (r *importRun) writeSkippedRows(b *strings.Builder) {
 	b.WriteString("ROWS NOT IMPORTED (the database refused them):\n\n")
 	logged := r.skipped
 	if len(logged) > maxLoggedRows {
@@ -129,7 +150,49 @@ func (r *importRun) errorLog() string {
 		b.WriteString("RAW CSV DATA (the rows that were not imported, as they were in the files):\n")
 		b.WriteString(raw.String())
 	}
-	return b.String()
+}
+
+// maxLogBytes caps the text of a log; a log that is longer is cut and says so on its last line
+const maxLogBytes = 1 << 20
+
+// capLog cuts a log that is over maxLogBytes (on a line end) and adds a last line that says it was cut
+func capLog(text string) string {
+	if len(text) <= maxLogBytes {
+		return text
+	}
+	cut := text[:maxLogBytes]
+	if i := strings.LastIndex(cut, "\n"); i > 0 {
+		cut = cut[:i+1]
+	}
+	return cut + "... the log was cut here because it is too long.\n"
+}
+
+// formatLabel is the name of an import format in a log
+func formatLabel(format string) string {
+	switch format {
+	case "csv":
+		return "CSV"
+	case "xlsx":
+		return "Excel"
+	case "json":
+		return "JSON"
+	case "", "sbase":
+		return "Sereni Base"
+	}
+	return format
+}
+
+// writeLogHeader writes the lines that say what was imported: the format, the file and the base. A line of which
+// nothing is known is left out.
+func writeLogHeader(b *strings.Builder, format, fileName, baseTitle string) {
+	line := "Format: " + formatLabel(format)
+	if fileName != "" {
+		line += "      File: " + fileName
+	}
+	b.WriteString(line + "\n")
+	if baseTitle != "" {
+		b.WriteString("Base: " + baseTitle + "\n")
+	}
 }
 
 // rowSource finds where a row came from; a nil source knows nothing

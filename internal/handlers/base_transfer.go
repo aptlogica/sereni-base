@@ -6,11 +6,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -535,6 +537,7 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		Format:               importFormat,
 		SkipFailedRows:       importFormat != sbase.Name,
 		Source:               read.Source,
+		FileName:             upload.Filename,
 	})
 	var invalid *dto.ImportValidationError
 	if errors.As(err, &invalid) {
@@ -653,6 +656,45 @@ func (h *BaseTransferHandler) getJob(c *gin.Context, jobType string, success res
 		return
 	}
 	response.SendSuccess(c, success, job)
+}
+
+// importLogUnsafe is what a file name cannot hold
+var importLogUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// importLogFileName is the name of the error log of an import: after the new base when it is known
+func importLogFileName(baseTitle string) string {
+	name := strings.Trim(importLogUnsafe.ReplaceAllString(baseTitle, "_"), "_")
+	if name == "" {
+		return "import_error_rows_report.txt"
+	}
+	return name + "_import_error_rows_report.txt"
+}
+
+// GetImportJobLog downloads the error log of an import of the current user as a text file: the rows that were left
+// out and the warnings of a finished import, or what went wrong in a failed one. A job that has no log answers 404.
+// GET /import-job/:id/log
+func (h *BaseTransferHandler) GetImportJobLog(c *gin.Context) {
+	id, user, schema, ok := h.transferJobRequest(c)
+	if !ok {
+		return
+	}
+	job, err := h.jobs.Get(c.Request.Context(), schema, id, user)
+	if err == nil && job.Type != "import" {
+		err = app_errors.TransferJobNotFound
+	}
+	if err != nil {
+		h.sendTransferJobError(c, err)
+		return
+	}
+	var result struct {
+		ErrorLog string `json:"error_log"`
+	}
+	if len(job.Result) == 0 || json.Unmarshal(job.Result, &result) != nil || strings.TrimSpace(result.ErrorLog) == "" {
+		response.SendError(c, responseConst.BaseError.TransferJobNotFound)
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, importLogFileName(job.BaseTitle)))
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(result.ErrorLog))
 }
 
 // DownloadExportJob downloads the zip of a completed export of the current user.

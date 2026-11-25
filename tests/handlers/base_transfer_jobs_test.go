@@ -325,3 +325,48 @@ func TestImportJobStatusIsOnlyForImports(t *testing.T) {
 		t.Fatalf("status %d", w.Code)
 	}
 }
+
+// the error log of an import is a text file named after the new base; a job that has none, or that is not an import, answers 404
+func TestGetImportJobLogDownloadsTheLogAsText(t *testing.T) {
+	get := func(h *handlers.BaseTransferHandler, c *gin.Context) { h.GetImportJobLog(c) }
+
+	jobs := &fakeJobs{job: dto.TransferJobResponse{
+		ID: jobID, Type: "import", Status: "completed", BaseTitle: "Sales CRM: 2024",
+		Result: []byte(`{"tables":1,"error_log":"Import Issues Report\nWARNINGS:\n- cover image was not imported\n"}`),
+	}}
+	w := jobRequest(t, jobs, get, "/", jobID)
+	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") ||
+		!strings.Contains(w.Header().Get("Content-Disposition"), `filename="Sales_CRM_2024_import_error_rows_report.txt"`) ||
+		!strings.Contains(w.Body.String(), "- cover image was not imported") {
+		t.Fatalf("status %d, headers %v, body %s", w.Code, w.Header(), w.Body.String())
+	}
+
+	// a failed import has no base title: the plain name
+	jobs.job.BaseTitle = ""
+	w = jobRequest(t, jobs, get, "/", jobID)
+	if !strings.Contains(w.Header().Get("Content-Disposition"), `filename="import_error_rows_report.txt"`) {
+		t.Fatalf("headers %v", w.Header())
+	}
+
+	// no log in the result, no result, or an export: not found
+	for name, job := range map[string]dto.TransferJobResponse{
+		"empty log": {ID: jobID, Type: "import", Status: "completed", Result: []byte(`{"tables":1}`)},
+		"no result": {ID: jobID, Type: "import", Status: "completed"},
+		"an export": {ID: jobID, Type: "export", Status: "completed", Result: []byte(`{"error_log":"x"}`)},
+	} {
+		w = jobRequest(t, &fakeJobs{job: job}, get, "/", jobID)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s: status %d, body %s", name, w.Code, w.Body.String())
+		}
+	}
+
+	// a job of another user, or one that does not exist
+	w = jobRequest(t, &fakeJobs{err: app_errors.TransferJobNotFound}, get, "/", jobID)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status %d", w.Code)
+	}
+	w = jobRequest(t, &fakeJobs{}, get, "/", "not-a-uuid")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status %d", w.Code)
+	}
+}

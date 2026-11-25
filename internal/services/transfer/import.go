@@ -70,6 +70,8 @@ type importRun struct {
 	skipFailed bool
 	skipped    []skippedRow
 	source     *dto.ImportSource
+	// format and fileName are only written in the header of the error log
+	format, fileName string
 
 	createdModels []string
 	rows          map[string]rowRef
@@ -124,6 +126,8 @@ func (s *baseTransferService) newImportRun(ctx context.Context, schemaName, work
 		titleGiven:    strings.TrimSpace(opts.Title) != "",
 		skipFailed:    opts.SkipFailedRows,
 		source:        opts.Source,
+		format:        opts.Format,
+		fileName:      opts.FileName,
 		ids:           map[string]string{},
 		tables:        map[string]dto.TableResponse{},
 		columns:       map[string]dto.ColumnResponse{},
@@ -190,28 +194,30 @@ func (r *importRun) execute() error {
 	type step struct {
 		run    func() error
 		weight int
+		// what the step does, for the error log when it fails ("creating the tables")
+		what string
 	}
 	steps := []step{
-		{r.createBase, 2},
-		{r.importCover, 2},
-		{r.createTables, 8},
-		{r.createPlainFields, 10},
+		{r.createBase, 2, "creating the base"},
+		{r.importCover, 2, "importing the cover image"},
+		{r.createTables, 8, "creating the tables"},
+		{r.createPlainFields, 10, "creating the fields"},
 		// The key is set before any link exists: the app does not allow a key change once links store its values
-		{r.setPrimaryKeys, 2},
-		{r.createLinkFields, 6},
-		{r.createLookupFields, 4},
-		{r.createViews, 4},
+		{r.setPrimaryKeys, 2, "setting the primary keys"},
+		{r.createLinkFields, 6, "creating the link fields"},
+		{r.createLookupFields, 4, "creating the lookup fields"},
+		{r.createViews, 4, "creating the views"},
 	}
 	if r.includeData {
 		// The auto uuid fields were created as manual fields so the rows could keep their values; now they become auto
-		steps = append(steps, step{r.createRows, 50}, step{r.makeUUIDsAuto, 1}, step{r.linkRows, 6})
+		steps = append(steps, step{r.createRows, 50, "importing the rows"}, step{r.makeUUIDsAuto, 1, "restoring the auto uuid fields"}, step{r.linkRows, 6, "linking the rows"})
 		if r.systemColumns {
 			// last, because linking rows changes their modified time and user
-			steps = append(steps, step{r.restoreSystemColumns, 4})
+			steps = append(steps, step{r.restoreSystemColumns, 4, "restoring the system columns"})
 		}
 	}
 	// Constraints come last, so the rows being inserted are never held up by a rule
-	steps = append(steps, step{r.createConstraints, 3}, step{r.createAutomations, 3})
+	steps = append(steps, step{r.createConstraints, 3, "creating the constraints"}, step{r.createAutomations, 3, "creating the triggers and functions"})
 	total := 0
 	for _, st := range steps {
 		total += st.weight
@@ -220,7 +226,7 @@ func (r *importRun) execute() error {
 	for _, st := range steps {
 		r.progressFrom, r.progressTo = done*99/total, (done+st.weight)*99/total
 		if err := st.run(); err != nil {
-			return err
+			return &importStepError{step: st.what, err: err}
 		}
 		done += st.weight
 		reportProgress(r.ctx, done*99/total)

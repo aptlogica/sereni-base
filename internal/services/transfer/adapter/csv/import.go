@@ -220,9 +220,6 @@ func fieldTitles(header []string) []string {
 		for n := 1; systemTitles[strings.ToLower(title)]; n++ {
 			title = fmt.Sprintf("%s (%d)", strings.TrimSpace(h), n)
 		}
-		if runes := []rune(title); len(runes) > 255 {
-			title = string(runes[:255])
-		}
 		key := strings.ToLower(title)
 		if n := seen[key]; n > 0 {
 			seen[key]++
@@ -239,11 +236,23 @@ func fieldTitles(header []string) []string {
 
 // buildTable turns the records of one file into a table and its rows
 func buildTable(index int, fileName string, records [][]string, lines []int, usedKeys map[string]bool, refs *attachmentIndex, source *dto.ImportSource) (dto.BaseExportTable, []dto.BaseExportRow) {
-	return buildTitledTable(index, fileName, uniqueTableTitle(index, fileName, usedKeys), records, lines, usedKeys, refs, source)
+	in := tableInput{index: index, fileName: fileName, title: uniqueTableTitle(index, fileName, usedKeys), records: records, lines: lines}
+	return buildTitledTable(in, usedKeys, refs, source)
+}
+
+// tableInput is what one table is built from: the place of the file (or sheet) among the others, its name, the title
+// chosen for the table, and its records with the line of the file each one came from
+type tableInput struct {
+	index    int
+	fileName string
+	title    string
+	records  [][]string
+	lines    []int
 }
 
 // buildTitledTable is buildTable for a caller that has already chosen the title of the table
-func buildTitledTable(index int, fileName, title string, records [][]string, lines []int, usedKeys map[string]bool, refs *attachmentIndex, source *dto.ImportSource) (dto.BaseExportTable, []dto.BaseExportRow) {
+func buildTitledTable(in tableInput, usedKeys map[string]bool, refs *attachmentIndex, source *dto.ImportSource) (dto.BaseExportTable, []dto.BaseExportRow) {
+	index, fileName, title, records, lines := in.index, in.fileName, in.title, in.records, in.lines
 	table := dto.BaseExportTable{
 		Key:        uniqueKey("t_", title, usedKeys),
 		Title:      title,
@@ -270,9 +279,6 @@ func uniqueTableTitle(index int, fileName string, usedKeys map[string]bool) stri
 	title := strings.TrimSpace(strings.TrimSuffix(path.Base(fileName), path.Ext(fileName)))
 	if title == "" {
 		title = fmt.Sprintf("Table %d", index+1)
-	}
-	if runes := []rune(title); len(runes) > 240 {
-		title = string(runes[:240])
 	}
 	for n, base := 2, title; usedKeys["title:"+strings.ToLower(title)]; n++ {
 		title = fmt.Sprintf("%s (%d)", base, n)

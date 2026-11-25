@@ -422,6 +422,7 @@ func setupTransferJobRoutes(private *gin.RouterGroup, handlers Handlers) {
 	imports := private.Group("/import-job")
 	{
 		imports.GET("/:id", handlers.BaseTransfer.GetImportJob)
+		imports.GET("/:id/log", handlers.BaseTransfer.GetImportJobLog)
 	}
 }
 

@@ -259,6 +259,8 @@ type ImportBaseOptions struct {
 	// Source says where each row came from in the file (by _rid), for the error log of a skipped row; it is not part
 	// of the file format, so an adapter that has no line numbers leaves it nil.
 	Source *ImportSource
+	// FileName is the name of the uploaded file; it is only written in the header of the error log
+	FileName string
 }
 
 // ImportSource says where the rows of an import came from, so a row that is refused can be named by its file and
@@ -332,6 +334,11 @@ type TransferJobResponse struct {
 	Reused      bool            `json:"reused,omitempty"`
 	DownloadURL string          `json:"download_url,omitempty"`
 	FileURL     string          `json:"file_url,omitempty"`
+	// HasLog is true for an import that has an error log to download (GET /import-job/:id/log): rows were left out,
+	// there are warnings, or the import failed. SkippedRows and WarningCount are the counts behind it.
+	HasLog       bool `json:"has_log,omitempty"`
+	SkippedRows  int  `json:"skipped_rows,omitempty"`
+	WarningCount int  `json:"warning_count,omitempty"`
 }
 
 // Kinds of ExportDependency

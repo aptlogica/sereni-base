@@ -425,6 +425,9 @@ func (s *transferJobService) response(job tenant.TransferJob) dto.TransferJobRes
 	}
 	if job.Result != "" {
 		resp.Result = json.RawMessage(job.Result)
+		if resp.Type == tenant.TransferJobTypeImport {
+			resp.HasLog, resp.SkippedRows, resp.WarningCount = importLogFacts(job.Result)
+		}
 	}
 	if job.Status == tenant.TransferJobCompleted {
 		resp.Progress = 100
@@ -513,7 +516,7 @@ func (s *transferJobService) processImport(schemaName string, job tenant.Transfe
 		if s.ctx.Err() != nil {
 			return // the server is stopping; the next start fails the job (Recover)
 		}
-		s.fail(schemaName, job, err)
+		s.failImport(schemaName, job, opts.Format, err)
 		return
 	}
 
@@ -563,6 +566,7 @@ func (s *transferJobService) runImport(ctx context.Context, schemaName string, j
 	}
 	// where each row came from, to name a row the database refuses in the error log
 	opts.Source = read.Source
+	opts.FileName = job.FileName
 	return s.transfer.ImportBase(ctx, schemaName, job.WorkspaceID, job.UserID, read.File, opts)
 }
 
@@ -777,6 +781,11 @@ func durationText(d time.Duration) string {
 
 // fail records why a job failed. The user gets a short message; the real error goes to the log.
 func (s *transferJobService) fail(schemaName string, job tenant.TransferJob, cause error) {
+	s.failImport(schemaName, job, "", cause)
+}
+
+// failImport is fail for a job whose import format is known: the format is written in the header of the error log
+func (s *transferJobService) failImport(schemaName string, job tenant.TransferJob, format string, cause error) {
 	logger.Get().Error().Err(cause).Str("job_id", job.ID).Str("type", jobType(job)).Msg("base transfer failed")
 	fields := map[string]interface{}{
 		"status":     tenant.TransferJobFailed,
@@ -787,15 +796,29 @@ func (s *transferJobService) fail(schemaName string, job tenant.TransferJob, cau
 		fields["error"] = importFailureMessage
 		var fileErr *importFileError
 		var invalid *dto.ImportValidationError
+		var problems []string
+		var detail failureDetail
 		switch {
 		case errors.As(cause, &fileErr):
 			// what is wrong with the file is meant for the user
 			fields["error"] = fileErr.Error()
 		case errors.As(cause, &invalid):
 			fields["error"] = importInvalidMessage
-			if raw, err := json.Marshal(map[string]interface{}{"problems": invalid.Problems}); err == nil {
-				fields["result"] = string(raw)
+			problems = invalid.Problems
+		default:
+			// a failure of the import itself: say which step failed and why, as far as that can be said to the user
+			detail = describeFailure(cause)
+			if detail.step != "" && detail.reason != "" {
+				fields["error"] = fmt.Sprintf("the import failed while %s: %s; nothing was created", detail.step, detail.reason)
 			}
+		}
+		// the failed import keeps a log the user can download: what went wrong, and the problems when there are some
+		result := map[string]interface{}{"error_log": failedImportLog(format, job.FileName, fields["error"].(string), problems, detail)}
+		if len(problems) > 0 {
+			result["problems"] = problems
+		}
+		if raw, err := json.Marshal(result); err == nil {
+			fields["result"] = string(raw)
 		}
 	} else {
 		_ = s.deleteExportFile(context.Background(), job)

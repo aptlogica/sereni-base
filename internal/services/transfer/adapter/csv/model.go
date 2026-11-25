@@ -39,7 +39,8 @@ func BuildModel(title string, sheets []Sheet, zipFiles map[string]*zip.File) (*d
 	source := &dto.ImportSource{Rows: map[string]dto.ImportRowSource{}}
 	for i, sh := range sheets {
 		tableTitle := uniqueSheetTitle(i, sh.Name, usedKeys)
-		table, rows := buildTitledTable(i, sh.Name, tableTitle, sh.Records, sh.Lines, usedKeys, refs, source)
+		in := tableInput{index: i, fileName: sh.Name, title: tableTitle, records: sh.Records, lines: sh.Lines}
+		table, rows := buildTitledTable(in, usedKeys, refs, source)
 		model.Schema.Tables = append(model.Schema.Tables, table)
 		model.Data.Tables[table.Key] = dto.BaseExportTableRow{Rows: rows}
 		model.Data.RowCounts[table.Key] = len(rows)
@@ -54,9 +55,6 @@ func uniqueSheetTitle(index int, name string, usedKeys map[string]bool) string {
 	title := strings.TrimSpace(name)
 	if title == "" {
 		title = fmt.Sprintf("Table %d", index+1)
-	}
-	if runes := []rune(title); len(runes) > 240 {
-		title = string(runes[:240])
 	}
 	for n, base := 2, title; usedKeys["title:"+strings.ToLower(title)]; n++ {
 		title = fmt.Sprintf("%s (%d)", base, n)
