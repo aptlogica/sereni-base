@@ -55,6 +55,10 @@ func (d *dbTransferJobStore) Create(_ context.Context, schemaName string, job te
 	if job.FileName != "" {
 		row["file_name"] = job.FileName
 	}
+	// an import is created with the format it was asked for in its result, until the result of the import takes its place
+	if job.Result != "" {
+		row["result"] = job.Result
+	}
 	if job.SizeBytes > 0 {
 		row["size_bytes"] = job.SizeBytes
 	}

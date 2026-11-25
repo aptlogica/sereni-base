@@ -98,6 +98,7 @@ func (s *baseTransferService) ImportBase(ctx context.Context, schemaName, worksp
 
 	run := s.newImportRun(ctx, schemaName, workspaceID, userID, plan, file, opts)
 	run.result = dto.ImportBaseResult{
+		Format: firstNonEmpty(opts.Format, "sbase"),
 		Title:  firstNonEmpty(opts.Title, file.Base.Title),
 		Tables: len(file.Schema.Tables),
 		Views:  len(plan.views),

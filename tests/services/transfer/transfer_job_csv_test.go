@@ -213,3 +213,69 @@ func TestFailedImportJobKeepsInternalsOutOfTheLog(t *testing.T) {
 		}
 	}
 }
+
+// The list of a workspace says the format of each job: an export from the name of its file, an import from the format it was
+// asked for; an import that fails keeps it, and the list does not carry the text of a log
+func TestWorkspaceJobsListSaysTheFormatAndLeavesTheLogOut(t *testing.T) {
+	f := newJobFixture(t, transfer.TransferJobSettings{}, nil)
+	lister := f.svc.(interface {
+		ListWorkspaceJobs(context.Context, string, string, string) ([]dto.TransferJobResponse, error)
+	})
+	list := func() map[string]dto.TransferJobResponse {
+		jobs, err := lister.ListWorkspaceJobs(context.Background(), constant.MasterDatabase, "ws-1", "user-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]dto.TransferJobResponse{}
+		for _, j := range jobs {
+			out[j.ID] = j
+		}
+		return out
+	}
+
+	exports := map[string]string{}
+	for format, want := range map[string]string{"csv": "csv", "json": "json", "xlsx": "xlsx", "sbase": "sbase"} {
+		job, err := f.svc.StartExport(context.Background(), constant.MasterDatabase, "base-1", "user-1", dto.ExportBaseOptions{IncludeData: true, Format: format, LinksAsText: format != "sbase"})
+		if err != nil {
+			t.Fatalf("StartExport %s: %v", format, err)
+		}
+		f.waitFor(t, job.ID, "user-1", completed)
+		exports[job.ID] = want
+		if job.Format != want && job.Format != "" {
+			t.Fatalf("%s: the job says %q", format, job.Format)
+		}
+	}
+	for id, want := range exports {
+		got := list()[id]
+		if got.Format != want || got.Type != "export" || got.WorkspaceID != "ws-1" {
+			t.Fatalf("export %s: %+v", want, got)
+		}
+	}
+
+	// an import says its format while it runs, and after it, failed or not
+	f.exporter.importGate = make(chan struct{})
+	body := csvZip(t, map[string]string{"T.csv": "a\n1\n"})
+	running := startImport(t, f, "user-1", "T.csv.zip", body, dto.ImportBaseOptions{IncludeData: true, Format: "csv"})
+	if got := list()[running.ID]; got.Format != "csv" || got.Status == "completed" {
+		t.Fatalf("a running csv import: %+v", got)
+	}
+	close(f.exporter.importGate)
+	f.waitFor(t, running.ID, "user-1", completed)
+	if got := list()[running.ID]; got.Format != "csv" {
+		t.Fatalf("a finished csv import: %+v", got)
+	}
+
+	f.exporter.importGate = nil
+	f.exporter.importErr = errors.New("boom")
+	failedJob := startImport(t, f, "user-1", "x.json.zip", csvZip(t, map[string]string{"A.json": "[]"}), dto.ImportBaseOptions{Format: "json"})
+	f.waitFor(t, failedJob.ID, "user-1", failed)
+	got := list()[failedJob.ID]
+	if got.Format != "json" || !got.HasLog || strings.Contains(string(got.Result), "error_log") {
+		t.Fatalf("a failed json import: has_log %v, result %s, format %q", got.HasLog, got.Result, got.Format)
+	}
+	// the job itself still carries the log, for the download
+	whole, _ := f.svc.Get(context.Background(), constant.MasterDatabase, failedJob.ID, "user-1")
+	if !strings.Contains(string(whole.Result), "error_log") {
+		t.Fatalf("the job keeps its log: %s", whole.Result)
+	}
+}

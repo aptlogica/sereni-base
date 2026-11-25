@@ -285,6 +285,8 @@ type ImportRowSource struct {
 
 // ImportBaseResult is what an import reports
 type ImportBaseResult struct {
+	// Format is the file format of the import: sbase, csv, xlsx or json
+	Format      string   `json:"format,omitempty"`
 	BaseID      string   `json:"base_id,omitempty"`
 	Title       string   `json:"title"`
 	Tables      int      `json:"tables"`
@@ -318,8 +320,10 @@ func (e *ImportValidationError) Error() string {
 
 // An export is completed when its zip can be downloaded (DownloadURL, FileURL) until ExpiresAt. An import is completed when its new base exists (BaseID, Result).
 type TransferJobResponse struct {
-	ID          string          `json:"id"`
-	Type        string          `json:"type"`
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	// Format is the file format of the job: sbase, csv, xlsx or json. It is empty for a job whose format is not known.
+	Format      string          `json:"format,omitempty"`
 	BaseID      string          `json:"base_id,omitempty"`
 	BaseTitle   string          `json:"base_title,omitempty"`
 	WorkspaceID string          `json:"workspace_id,omitempty"`

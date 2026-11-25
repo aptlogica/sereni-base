@@ -298,6 +298,7 @@ func (s *transferJobService) StartImport(ctx context.Context, schemaName, worksp
 		SizeBytes:   upload.Size,
 		UserID:      userID,
 		Status:      tenant.TransferJobQueued,
+		Result:      importFormatResult(opts.Format),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -353,6 +354,9 @@ func (s *transferJobService) ListWorkspaceJobs(ctx context.Context, schemaName, 
 		if resp.Status == statusExpired {
 			continue
 		}
+		// the text of a log can be long, and the list is asked for again and again: has_log says there is one, and
+		// GET /import-job/:id/log gives it
+		resp.Result = withoutErrorLog(resp.Result)
 		out = append(out, resp)
 	}
 	return out, nil
@@ -423,6 +427,7 @@ func (s *transferJobService) response(job tenant.TransferJob) dto.TransferJobRes
 		ExpiresAt:   job.ExpiresAt,
 		CreatedAt:   job.CreatedAt,
 	}
+	resp.Format = jobFormat(job)
 	if job.Result != "" {
 		resp.Result = json.RawMessage(job.Result)
 		if resp.Type == tenant.TransferJobTypeImport {
@@ -520,6 +525,7 @@ func (s *transferJobService) processImport(schemaName string, job tenant.Transfe
 		return
 	}
 
+	result.Format = firstNonEmpty(result.Format, opts.Format, "sbase")
 	raw, _ := json.Marshal(result)
 	logger.Get().Info().Str("job_id", job.ID).Str("base_id", result.BaseID).Msg("base import completed")
 	s.update(schemaName, job.ID, map[string]interface{}{
@@ -813,7 +819,7 @@ func (s *transferJobService) failImport(schemaName string, job tenant.TransferJo
 			}
 		}
 		// the failed import keeps a log the user can download: what went wrong, and the problems when there are some
-		result := map[string]interface{}{"error_log": failedImportLog(format, job.FileName, fields["error"].(string), problems, detail)}
+		result := map[string]interface{}{"format": firstNonEmpty(format, "sbase"), "error_log": failedImportLog(format, job.FileName, fields["error"].(string), problems, detail)}
 		if len(problems) > 0 {
 			result["problems"] = problems
 		}
