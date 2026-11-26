@@ -3,3 +3,4 @@ storage-service https://github.com/aptlogica/sereni-storage-provider v0.3.0
 auth-service https://github.com/aptlogica/sereni-jwt-provider v0.3.0
 email-service https://github.com/aptlogica/sereni-email-smtp v0.3.0
 base-ui https://github.com/aptlogica/base-ui v0.3.1
+sereni-log https://github.com/aptlogica/sereni-log initial-commit

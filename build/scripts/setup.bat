@@ -169,6 +169,31 @@ REM Create a temporary file with all default environment variables
     echo ANTIVIRUS_CLAMAV_TIMEOUT_SECONDS=30
     echo ANTIVIRUS_MAX_UPLOAD_SIZE_MB=32
     echo.
+    echo # ------------------------------------------------------------------------------
+    echo #                           LOG SERVICE CONFIGURATION
+    echo # ------------------------------------------------------------------------------
+    echo.
+    echo LOG_SERVICE_URL=http://sereni-log:8089/api/v1
+    echo LOG_SERVICE_API_KEY=
+    echo.
+    echo LOGSERVICE_HOST=0.0.0.0
+    echo LOGSERVICE_PORT=8089
+    echo LOGSERVICE_GRPC_PORT=9090
+    echo LOGSERVICE_GIN_MODE=release
+    echo LOGSERVICE_LOG_LEVEL=info
+    echo LOGSERVICE_PROVIDER=loki
+    echo LOGSERVICE_LOKI_URL=http://loki:3100
+    echo LOGSERVICE_LOKI_TENANT_ID=
+    echo LOGSERVICE_LOKI_TIMEOUT_SECONDS=10
+    echo LOGSERVICE_API_KEY=
+    echo LOGSERVICE_CORS_ALLOWED_ORIGINS=
+    echo LOGSERVICE_CORS_ALLOWED_METHODS=GET,POST,OPTIONS
+    echo LOGSERVICE_CORS_ALLOWED_HEADERS=Origin,Content-Type,X-API-Key
+    echo LOGSERVICE_RETENTION_DAYS=14
+    echo LOGSERVICE_MAX_ENTRY_BYTES=32768
+    echo LOGSERVICE_MAX_REQUEST_BYTES=4194304
+    echo LOGSERVICE_ALLOWED_LABELS=env
+    echo.
     echo # ┌──────────────────────────────────────────────────────────────────────────────┐
     echo # │                           🎨 FRONTEND CONFIGURATION                           │
     echo # └──────────────────────────────────────────────────────────────────────────────┘

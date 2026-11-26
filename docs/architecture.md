@@ -45,6 +45,7 @@ Sereni is built as a modular microservices ecosystem with the following componen
 | **Email Service** | `sereni-email-smtp` | 8082 | Go | Email delivery service |
 | **Storage Provider** | `sereni-storage-provider` | 8083 | Go | File storage service |
 | **Antivirus Service** | `sereni-antivirus-clamav` | 8084 | Go | File security scanning |
+| **Log Service** | `sereni-log` | 8089 (internal only) | Go | API log storage and search, backed by Loki |
 | **PostgreSQL REST** | `go-postgres-rest` | 8080 | Go | High-performance database API |
 
 ## Provider Architecture

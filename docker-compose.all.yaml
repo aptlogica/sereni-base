@@ -235,9 +235,62 @@ services:
     networks:
       - serenibase-network
 
+  # Log service (Loki backend). Internal only: no ports are published to the host.
+  # Other services reach it as http://sereni-log:${LOGSERVICE_PORT:-8089}.
+  loki:
+    image: grafana/loki:3.5.0
+    ports:
+      - "3100"
+    environment:
+      - LOG_RETENTION_DAYS=${LOGSERVICE_RETENTION_DAYS:-14}
+    volumes:
+      - ./services/sereni-log/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml -config.expand-env=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - serenibase-network
+    restart: unless-stopped
+
+  sereni-log:
+    build:
+      context: ./services/sereni-log
+    environment:
+      SERVER_HOST: ${LOGSERVICE_HOST:-0.0.0.0}
+      SERVER_PORT: ${LOGSERVICE_PORT:-8089}
+      GRPC_PORT: ${LOGSERVICE_GRPC_PORT:-9090}
+      GIN_MODE: ${LOGSERVICE_GIN_MODE:-release}
+      LOG_LEVEL: ${LOGSERVICE_LOG_LEVEL:-info}
+      LOG_PROVIDER: ${LOGSERVICE_PROVIDER:-loki}
+      LOKI_URL: ${LOGSERVICE_LOKI_URL:-http://loki:3100}
+      LOKI_TENANT_ID: ${LOGSERVICE_LOKI_TENANT_ID:-}
+      LOKI_TIMEOUT_SECONDS: ${LOGSERVICE_LOKI_TIMEOUT_SECONDS:-10}
+      LOG_API_KEY: ${LOGSERVICE_API_KEY:-}
+      CORS_ALLOWED_ORIGINS: ${LOGSERVICE_CORS_ALLOWED_ORIGINS:-}
+      CORS_ALLOWED_METHODS: ${LOGSERVICE_CORS_ALLOWED_METHODS:-GET,POST,OPTIONS}
+      CORS_ALLOWED_HEADERS: ${LOGSERVICE_CORS_ALLOWED_HEADERS:-Origin,Content-Type,X-API-Key}
+      LOG_RETENTION_DAYS: ${LOGSERVICE_RETENTION_DAYS:-14}
+      LOG_MAX_ENTRY_BYTES: ${LOGSERVICE_MAX_ENTRY_BYTES:-32768}
+      LOG_MAX_REQUEST_BYTES: ${LOGSERVICE_MAX_REQUEST_BYTES:-4194304}
+      LOG_ALLOWED_LABELS: ${LOGSERVICE_ALLOWED_LABELS:-env}
+    ports:
+      - "${LOGSERVICE_PORT:-8089}"
+      - "${LOGSERVICE_GRPC_PORT:-9090}"
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - serenibase-network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   rustfs_data:
+  loki_data:
   clamav-db:
     driver: local
     driver_opts:

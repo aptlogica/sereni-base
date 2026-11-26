@@ -165,6 +165,8 @@ These are automatically set by the setup script with recommended values:
 | `EMAIL_URL` | `http://email-service:8082/api/v1/email` | Email service URL |
 | `STORAGE_URL` | `http://sereni-storage-provider:8083/api/v1` | Storage service URL |
 | `ANTIVIRUS_URL` | `http://antivirus-service:8084` | Antivirus service URL |
+| `LOG_SERVICE_URL` | `http://sereni-log:8089/api/v1` | Log service URL (used from Phase 2 of the API log work) |
+| `LOGSERVICE_*` | see `.env.example` | Settings of the `sereni-log` container (port, retention days, limits). The log service is internal only and publishes no port to the host. |
 
 ### Optional Variables
 
@@ -424,7 +426,8 @@ sereni-base/
     ├── base-ui/              # Frontend application
     ├── email-service/        # Email/SMTP service
     ├── storage-service/      # File storage service
-    └── antivirus-service/    # ClamAV integration
+    ├── antivirus-service/    # ClamAV integration
+    └── sereni-log/           # Log service (Loki), internal only, branch initial-commit
 ```
 
 ---
