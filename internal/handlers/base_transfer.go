@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"regexp"
@@ -32,6 +33,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// headerContentDisposition is the header that names a downloaded file
+const headerContentDisposition = "Content-Disposition"
+
+// errImportFileUnreadable is the message when an uploaded file cannot be read
+const errImportFileUnreadable = "the file could not be read"
 
 // maxBaseImportBytes caps an uploaded base file, and the JSON read out of a zip
 const maxBaseImportBytes = 100 << 20
@@ -373,7 +380,7 @@ func (h *BaseTransferHandler) sendArchive(c *gin.Context, format adapter.Adapter
 		response.CheckAndSendError(c, err)
 		return
 	}
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.Header(headerContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.DataFromReader(http.StatusOK, info.Size(), contentType, tmp, nil)
 }
 
@@ -428,6 +435,10 @@ func importFlags(c *gin.Context) (data, attachments, automations, systemColumns 
 // the field titles; the types are inferred from the values, a column of paths of files in attachments/ becomes an
 // attachment field, and a formula is read as the value it last calculated. Any other file is refused with 400
 // "only .xlsx or .zip files are supported". Triggers and system columns are not imported from a workbook.
+// With format=csv, file may be sent several times: one or more .csv files instead of a zip. Each is checked to be a CSV (a
+// wrong name, an empty file, a binary file renamed .csv and a repeated name are refused with 400 and the file's name), and a
+// .csv with a .zip, or more than one .zip, is refused. The files are collected in one import file and follow the flow of a
+// zip; the base is named after the file for one CSV and "Imported CSV" for several. Other formats take one file.
 // A broken file is refused at once (400). Otherwise the import runs as a background job: the response is 202 with the
 // job (poll GET /import-job/:id until it is completed or failed).
 // A user can have two imports active at once; a third is refused with 429.
@@ -437,25 +448,18 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 		response.SendError(c, responseConst.WorkspaceError.IdRequired)
 		return
 	}
-	upload, err := c.FormFile("file")
-	if err != nil {
+	form, err := c.MultipartForm()
+	if err != nil || len(form.File["file"]) == 0 {
 		response.SendError(c, responseConst.AssetError.FilesNotFound)
 		return
 	}
-	// the format of the upload: a SereniBase export (default), a zip of CSV files, or an Excel workbook
-	importFormat := strings.ToLower(strings.TrimSpace(c.PostForm("format")))
-	switch importFormat {
-	case "", sbase.Name, csvformat.Name, xlsx.Name, jsonfmt.Name:
-	default:
-		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase, csv, xlsx or json")
+	uploads := form.File["file"]
+	importFormat, ok := importFormatOf(c)
+	if !ok {
 		return
 	}
-	if problem := importFileProblem(importFormat, upload.Filename); problem != "" {
-		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, problem)
-		return
-	}
-	if upload.Size > maxBaseImportBytes {
-		response.SendError(c, responseConst.AssetError.FileTooLargeError)
+	looseCSV, ok := checkImportUploads(c, importFormat, uploads)
+	if !ok {
 		return
 	}
 	includeData, includeAttachments, includeAutomations, includeSystemColumns, err := importFlags(c)
@@ -476,14 +480,13 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 
 	// the adapter reads the file into a model; it stays open until the import is done, because the files of a zip
 	// are read from it while the base is created
-	upfile, err := upload.Open()
-	if err != nil {
-		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "the file could not be read")
+	file, ok := openImportFile(c, uploads, looseCSV)
+	if !ok {
 		return
 	}
-	defer upfile.Close()
-	read, err := h.adapterFor(importFormat).Import(c.Request.Context(), upfile, upload.Size, adapter.ImportOptions{
-		Filename: upload.Filename,
+	defer file.close()
+	read, err := h.adapterFor(importFormat).Import(c.Request.Context(), file.file, file.size, adapter.ImportOptions{
+		Filename: file.name,
 		MaxBytes: maxBaseImportBytes,
 	})
 	if err != nil {
@@ -496,49 +499,134 @@ func (h *BaseTransferHandler) ImportBase(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	user, _ := userID.(string)
 
-	title := strings.TrimSpace(c.PostForm("title"))
-
-	// An import can take longer than the server's write timeout, so it runs as a background job: the file is kept and
-	// the response is 202 with the job to follow (GET /import-job/:id). The file was read above only to refuse a broken
-	// one at once; the job reads it again.
-	if h.jobs != nil {
-		if _, err := upfile.Seek(0, io.SeekStart); err != nil {
-			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "the file could not be read")
-			return
-		}
-		job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, dto.ImportUpload{File: upfile, Filename: upload.Filename, Size: upload.Size}, dto.ImportBaseOptions{
-			Title:                title,
-			IncludeData:          includeData,
-			IncludeAttachments:   includeAttachments,
-			IncludeAutomations:   includeAutomations,
-			IncludeSystemColumns: includeSystemColumns,
-			Format:               importFormat,
-			SkipFailedRows:       importFormat != sbase.Name,
-		})
-		if errors.Is(err, app_errors.TransferLimitReached) {
-			response.SendError(c, responseConst.BaseError.TransferLimitReached)
-			return
-		}
-		if err != nil {
-			response.CheckAndSendError(c, err)
-			return
-		}
-		response.SendSuccess(c, responseConst.BaseSuccess.ImportStarted, job)
-		return
-	}
-
-	result, err := h.transferService.ImportBase(c.Request.Context(), schema, workspaceID, user, read.File, dto.ImportBaseOptions{
-		Title:                title,
+	opts := dto.ImportBaseOptions{
+		Title:                strings.TrimSpace(c.PostForm("title")),
 		IncludeData:          includeData,
-		Attachments:          read.Attachments,
 		IncludeAttachments:   includeAttachments,
 		IncludeAutomations:   includeAutomations,
 		IncludeSystemColumns: includeSystemColumns,
 		Format:               importFormat,
 		SkipFailedRows:       importFormat != sbase.Name,
-		Source:               read.Source,
-		FileName:             upload.Filename,
-	})
+	}
+	// An import can take longer than the server's write timeout, so it runs as a background job: the file is kept and
+	// the response is 202 with the job to follow (GET /import-job/:id). The file was read above only to refuse a broken
+	// one at once; the job reads it again.
+	if h.jobs != nil {
+		h.startImportJob(c, schema, workspaceID, user, file, opts)
+		return
+	}
+	opts.Attachments = read.Attachments
+	opts.Source = read.Source
+	opts.FileName = file.name
+	h.importDuringRequest(c, schema, workspaceID, user, read.File, opts)
+}
+
+// importFormatOf reads the format of an import and refuses one that is not known (the response is sent then)
+func importFormatOf(c *gin.Context) (string, bool) {
+	// the format of the upload: a SereniBase export (default), a zip of CSV files, or an Excel workbook
+	importFormat := strings.ToLower(strings.TrimSpace(c.PostForm("format")))
+	switch importFormat {
+	case "", sbase.Name, csvformat.Name, xlsx.Name, jsonfmt.Name:
+		return importFormat, true
+	default:
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "format must be sbase, csv, xlsx or json")
+		return "", false
+	}
+}
+
+// checkImportUploads refuses uploads the format does not take (the response is sent then) and says whether they are
+// loose .csv files. A csv import also takes one or more loose .csv files (see bundleCSVFiles); every other format
+// takes one file.
+func checkImportUploads(c *gin.Context, importFormat string, uploads []*multipart.FileHeader) (looseCSV, ok bool) {
+	if importFormat == csvformat.Name {
+		var problem string
+		if looseCSV, problem = csvUploadKind(uploads); problem != "" {
+			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, problem)
+			return false, false
+		}
+	} else if len(uploads) > 1 {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "only one file is supported")
+		return false, false
+	}
+	if looseCSV {
+		return true, true
+	}
+	if problem := importFileProblem(importFormat, uploads[0].Filename); problem != "" {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, problem)
+		return false, false
+	}
+	if uploads[0].Size > maxBaseImportBytes {
+		response.SendError(c, responseConst.AssetError.FileTooLargeError)
+		return false, false
+	}
+	return false, true
+}
+
+// importFile is the file an import reads: the upload, or the loose CSV files collected in one temporary file
+type importFile struct {
+	file multipart.File
+	name string
+	size int64
+	// cleanup removes what was made to hold the file; nil for an upload
+	cleanup func()
+}
+
+// close releases the file and removes the temporary file, if there is one
+func (f *importFile) close() {
+	_ = f.file.Close()
+	if f.cleanup != nil {
+		f.cleanup()
+	}
+}
+
+// openImportFile opens the file of an import: the one upload, or the loose CSV files collected in one file (see
+// bundleCSVFiles). When it cannot, the response is sent and ok is false.
+func openImportFile(c *gin.Context, uploads []*multipart.FileHeader, looseCSV bool) (*importFile, bool) {
+	if !looseCSV {
+		upfile, err := uploads[0].Open()
+		if err != nil {
+			response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, errImportFileUnreadable)
+			return nil, false
+		}
+		return &importFile{file: upfile, name: uploads[0].Filename, size: uploads[0].Size}, true
+	}
+	tmp, size, name, problem, err := bundleCSVFiles(uploads, maxBaseImportBytes)
+	if problem == errCSVFilesTooLarge {
+		response.SendError(c, responseConst.AssetError.FileTooLargeError)
+		return nil, false
+	}
+	if problem != "" {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, problem)
+		return nil, false
+	}
+	if err != nil {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, "the files could not be read")
+		return nil, false
+	}
+	return &importFile{file: tmp, name: name, size: size, cleanup: func() { _ = os.Remove(tmp.Name()) }}, true
+}
+
+// startImportJob keeps the file and starts the background job of an import; the response is 202 with the job
+func (h *BaseTransferHandler) startImportJob(c *gin.Context, schema, workspaceID, user string, file *importFile, opts dto.ImportBaseOptions) {
+	if _, err := file.file.Seek(0, io.SeekStart); err != nil {
+		response.SendErrorWithMessage(c, responseConst.Error.InvalidPayload, errImportFileUnreadable)
+		return
+	}
+	job, err := h.jobs.StartImport(c.Request.Context(), schema, workspaceID, user, dto.ImportUpload{File: file.file, Filename: file.name, Size: file.size}, opts)
+	if errors.Is(err, app_errors.TransferLimitReached) {
+		response.SendError(c, responseConst.BaseError.TransferLimitReached)
+		return
+	}
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	response.SendSuccess(c, responseConst.BaseSuccess.ImportStarted, job)
+}
+
+// importDuringRequest creates the base from the model during the request (used when there is no job service)
+func (h *BaseTransferHandler) importDuringRequest(c *gin.Context, schema, workspaceID, user string, model *dto.BaseExportFile, opts dto.ImportBaseOptions) {
+	result, err := h.transferService.ImportBase(c.Request.Context(), schema, workspaceID, user, model, opts)
 	var invalid *dto.ImportValidationError
 	if errors.As(err, &invalid) {
 		response.SendErrorWithData(c, responseConst.Error.ValidationFailed, "the base file is not valid", invalid.Problems)
@@ -724,7 +812,7 @@ func (h *BaseTransferHandler) GetImportJobLog(c *gin.Context) {
 		response.SendError(c, responseConst.BaseError.TransferJobNotFound)
 		return
 	}
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, importLogFileName(job.BaseTitle)))
+	c.Header(headerContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, importLogFileName(job.BaseTitle)))
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(result.ErrorLog))
 }
 
@@ -749,7 +837,7 @@ func (h *BaseTransferHandler) DownloadExportJob(c *gin.Context) {
 	if name == "" {
 		name = "base.sbase.zip"
 	}
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	c.Header(headerContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, name))
 	contentType := "application/zip"
 	if strings.HasSuffix(strings.ToLower(name), xlsx.Extension) {
 		contentType = xlsx.ContentType

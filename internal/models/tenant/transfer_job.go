@@ -62,6 +62,7 @@ func (tbl TransferJob) TableSchema(prefix string) models.CreateTableRequest {
 			{Name: "workspace_id", DataType: "varchar"},
 			{Name: "user_id", DataType: "varchar", NotNull: true},
 			{Name: "status", DataType: "varchar", NotNull: true, DefaultValue: StrPtr("'queued'")},
+			{Name: "progress", DataType: "integer", NotNull: true, DefaultValue: StrPtr("0")},
 			{Name: "file_name", DataType: "varchar"},
 			{Name: "file_url", DataType: "text"},
 			{Name: "size_bytes", DataType: "double precision", DefaultValue: StrPtr("0")},
