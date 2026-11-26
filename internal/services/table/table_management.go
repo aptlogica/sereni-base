@@ -1454,18 +1454,20 @@ func isLegacyTitle(columnData dto.ColumnResponse) bool {
 	return columnData.System != nil && *columnData.System && columnData.ColumnName == tenant.LegacyTitleColumnName
 }
 
+// isSystemColumn reads the system flag; a column without one (NULL) is an ordinary column
+func isSystemColumn(columnData dto.ColumnResponse) bool {
+	return columnData.System != nil && *columnData.System
+}
+
 func (s tableManagementService) allowUpdate(columnData dto.ColumnResponse) bool {
-	if *columnData.System {
+	if isSystemColumn(columnData) {
 		return isLegacyTitle(columnData)
 	}
 	return true
 }
 
 func (s tableManagementService) allowDelete(columnData dto.ColumnResponse) bool {
-	if *columnData.System {
-		return false
-	}
-	return true
+	return !isSystemColumn(columnData)
 }
 func (s tableManagementService) updateColumnDatatypeInDb(ctx context.Context, schemaName string, tableName string, columnName string, newDataType string, emptyBefore bool) error {
 	lg := logger.Get()
@@ -2186,6 +2188,11 @@ func (s tableManagementService) ReorderColumn(
 func (s tableManagementService) reorderColumnsAfterDelete(ctx context.Context, schemaName string, modelID string, deletedColumn dto.ColumnResponse) error {
 	functionName := "reorder_columns_after_delete"
 	schemaFunctionName := fmt.Sprintf("%s.%s", constant.MasterDatabase, functionName)
+
+	// A column without a position leaves no gap to close
+	if deletedColumn.OrderIndex == nil {
+		return nil
+	}
 
 	args := map[string]interface{}{
 		"p_schema_name": schemaName,

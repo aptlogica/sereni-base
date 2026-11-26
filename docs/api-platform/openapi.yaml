@@ -26,6 +26,13 @@ info:
     type for every table, at `/api/v1/{bs}/openapi.json`, and shows it at
     `/api/v1/{bs}/docs` (Swagger UI) and `/api/v1/{bs}/redoc` (ReDoc).
 
+    **Base management** (tag "Base management", off by default): create, change and delete tables, columns,
+    unique and check constraints and the primary key. An owner or co-owner turns it on per base in the Developer
+    settings; until then these routes answer `403 feature_disabled` and the per-base spec doesn't list them. Every
+    write is made in the name of the user who turned the feature
+    on. System columns can't be changed. Check conditions are structured JSON, never SQL. Schema changes show up in
+    the API on the next request.
+
     CORS is open: any origin may call the API from a browser (`Access-Control-Allow-Origin: *`, no credentials),
     and `X-Request-Id`, `Retry-After` and `Idempotent-Replayed` are readable.
     See [README.md](README.md) for a quick start and `../API_PLATFORM_FOUNDATION.md` for the design.
@@ -41,9 +48,11 @@ security: []
 
 tags:
   - name: Schema
-    description: Tables and fields of the base (read-only; set them up in the SereniBase app)
+    description: Tables and fields of the base (read-only here; change them with Base management)
   - name: Records
     description: Read and write the records of a table
+  - name: Base management
+    description: Create, change and delete tables, columns, constraints and the primary key. Listed only while base management is on for the base; needs a secret key.
 
 paths:
   /tables:
@@ -68,6 +77,40 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+    post:
+      tags: [Base management]
+      x-base-management: true
+      summary: Create a table
+      operationId: createTable
+      description: |
+        Creates a table, optionally with its first columns. The table never gets a default Title column. If a
+        step fails, the half-built table is removed. Needs base management switched on for the base
+        (`403 feature_disabled` otherwise). Safe to retry with an `Idempotency-Key`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTable" }
+      responses:
+        "201":
+          description: The new table and its columns
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TableWrite" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /tables/{table}:
     parameters:
       - $ref: "#/components/parameters/Table"
@@ -88,6 +131,65 @@ paths:
                       data: { $ref: "#/components/schemas/TableDetail" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    patch:
+      tags: [Base management]
+      x-base-management: true
+      summary: Rename a table or change its description
+      operationId: updateTable
+      description: IDs survive renames. Needs base management switched on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, description: { type: string } } }
+      responses:
+        "200":
+          description: The changed table
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TableWrite" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [Base management]
+      x-base-management: true
+      summary: Delete a table and its records
+      operationId: deleteTable
+      description: |
+        If link columns in other tables point at this table, answers `409 in_use` and lists them in `details`, unless
+        `force=true`.
+      parameters:
+        - name: force
+          in: query
+          schema: { type: boolean }
+          description: Delete the table although other tables link to it.
+      responses:
+        "200":
+          description: The table is deleted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/DeletedItem" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
@@ -117,6 +219,353 @@ paths:
                       data: { $ref: "#/components/schemas/TableColumns" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/AmbiguousName" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+    post:
+      tags: [Base management]
+      x-base-management: true
+      summary: Add a column
+      operationId: createColumn
+      description: |
+        Same as the app's create-column: `title`, `uidt` (the app's type), `meta` for options (select choices, link
+        target `relation: {with, type}`, lookup `link_column_id` and `lookup_column_id`), the column's `default` value
+        and `id_generation` (both also go in `meta`) and optional per-column `constraints` (`unique` and `check`).
+        The types `formula`, `attachment` and `user` answer `422 type_not_supported`. If a constraint
+        fails, the new column is removed again. Links and lookups take no default, id generation or constraints.
+        Sending `default` or `id_generation` under `constraints` answers `422 validation_failed`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateColumn" }
+      responses:
+        "201":
+          description: The new column
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ColumnWrite" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /tables/{table}/columns/{column}:
+    parameters:
+      - $ref: "#/components/parameters/Table"
+      - $ref: "#/components/parameters/Column"
+    patch:
+      tags: [Base management]
+      x-base-management: true
+      summary: Change a column
+      operationId: updateColumn
+      description: |
+        Rename, change options, `default` or `id_generation` (all in `meta`, merged into the current meta), add or
+        drop `unique` and `check` (`constraints`), or change the type (`uidt`). A type change must be in the app's allowed conversions, otherwise
+        `409 conversion_not_allowed` lists the allowed targets. Values that can't be cast become empty.
+        `dry_run=true` reports what a type change would do without changing anything; `empty_first: true` empties
+        the column first. System columns answer `403 system_column`.
+      parameters:
+        - name: dry_run
+          in: query
+          schema: { type: boolean }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateColumn" }
+      responses:
+        "200":
+          description: The changed column, or with `dry_run` a preview (`filled_values`, `values_lost`, `exact`)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ColumnWrite" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [Base management]
+      x-base-management: true
+      summary: Delete a column
+      operationId: deleteColumn
+      description: |
+        `409 in_use` lists constraints and lookups that use the column. A column that holds data needs
+        `force=true`. System columns answer `403 system_column`.
+      parameters:
+        - name: force
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: The column is deleted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/DeletedItem" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /tables/{table}/columns/reorder:
+    parameters:
+      - $ref: "#/components/parameters/Table"
+    post:
+      tags: [Base management]
+      x-base-management: true
+      summary: Move a column
+      operationId: reorderColumn
+      description: Moves `column` before or after another column. System columns can't be moved (`403 system_column`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [column], properties: { column: { type: string }, before: { type: string }, after: { type: string } } }
+      responses:
+        "200":
+          description: The table's columns in their new order
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/ColumnWrite" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /tables/{table}/constraints:
+    parameters:
+      - $ref: "#/components/parameters/Table"
+    get:
+      tags: [Base management]
+      x-base-management: true
+      summary: List unique and check constraints
+      operationId: listConstraints
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [unique, check] }
+      responses:
+        "200":
+          description: The constraints with their columns, status (`ok`, or `missing` in Postgres) and check condition
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/TableConstraint" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      tags: [Base management]
+      x-base-management: true
+      summary: Add a unique or check constraint
+      operationId: createConstraint
+      description: |
+        A unique constraint over one or more `columns`, or a check constraint with a structured `check.where`
+        condition (the filter tree of `/records/query`: `all`, `any`, `none`). The server compiles it to SQL; SQL text is
+        never accepted. `422` when existing data already breaks it.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConstraint" }
+      responses:
+        "201":
+          description: The new constraint
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TableConstraint" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /tables/{table}/constraints/check:
+    parameters:
+      - $ref: "#/components/parameters/Table"
+    post:
+      tags: [Base management]
+      x-base-management: true
+      summary: Dry run a constraint
+      operationId: checkConstraint
+      description: Reports duplicates (unique) or how many records break a condition (check), without changing anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConstraint" }
+      responses:
+        "200":
+          description: Whether the constraint could be added
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { type: object, properties: { valid: { type: boolean }, message: { type: string }, violations: { type: integer } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /tables/{table}/constraints/{constraint}:
+    parameters:
+      - $ref: "#/components/parameters/Table"
+      - name: constraint
+        in: path
+        required: true
+        description: Constraint title or ID (`con_...`)
+        schema: { type: string }
+    put:
+      tags: [Base management]
+      x-base-management: true
+      summary: Change a constraint
+      operationId: updateConstraint
+      description: Change title, columns or condition. The type can't change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConstraint" }
+      responses:
+        "200":
+          description: The changed constraint
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TableConstraint" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [Base management]
+      x-base-management: true
+      summary: Drop a constraint
+      operationId: deleteConstraint
+      responses:
+        "200":
+          description: The constraint is dropped
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/DeletedItem" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /tables/{table}/primary-key:
+    parameters:
+      - $ref: "#/components/parameters/Table"
+    get:
+      tags: [Base management]
+      x-base-management: true
+      summary: Show the primary key
+      operationId: getPrimaryKey
+      description: The key columns in key order, and which columns could be key columns. Needed to address records by key.
+      responses:
+        "200":
+          description: The primary key
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PrimaryKey" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    put:
+      tags: [Base management]
+      x-base-management: true
+      summary: Set the primary key
+      operationId: setPrimaryKey
+      description: Sets the key to one or more columns after checking that existing records are unique on them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [columns], properties: { columns: { type: array, items: { type: string }, minItems: 1 } } }
+      responses:
+        "200":
+          description: The new primary key
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PrimaryKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "500": { $ref: "#/components/responses/InternalError" }
 
@@ -712,6 +1161,12 @@ components:
       required: true
       description: Table name (URL-encoded) or ID (`tbl_...`)
       schema: { type: string }
+    Column:
+      name: column
+      in: path
+      required: true
+      description: Column name (URL-encoded) or ID (`fld_...`)
+      schema: { type: string }
     Keys:
       name: keys
       in: query
@@ -752,6 +1207,170 @@ components:
       schema: { type: integer }
 
   schemas:
+    CreateTable:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        columns:
+          type: array
+          description: First columns. Optional; the table never gets a default Title column.
+          items: { $ref: "#/components/schemas/CreateColumn" }
+    CreateColumn:
+      type: object
+      description: A column. `title` and `uidt` are required when creating.
+      properties:
+        title: { type: string }
+        description: { type: string }
+        uidt: { type: string, example: email, description: "The app's type, e.g. text, longText, number, decimal, email, select, multiSelect, boolean, date, uuid, links, lookup" }
+        meta:
+          type: object
+          description: |
+            Settings of the column. Select choices, link `relation` {with, type}, lookup `link_column_id` and
+            `lookup_column_id`, and the two below. `default` and `id_generation` are not for links and lookups.
+          properties:
+            default: { description: "The value a new record gets when none is sent. Not combined with `constraints.unique` or `constraints.check`. null removes it on a change." }
+            id_generation:
+              type: object
+              description: uuid columns only
+              properties:
+                mode: { type: string, enum: [auto, manual], description: "auto: the system creates every value and nobody can write it. manual: people enter a valid UUID. Default auto." }
+                version: { type: string, description: Optional }
+                backfill: { type: boolean, description: "On a change to auto: fill the empty cells of existing records. An action, not stored." }
+        constraints:
+          type: object
+          description: Not for links and lookups. Only `unique` and `check`; `default` and `id_generation` go in `meta`.
+          properties:
+            unique: { type: boolean }
+            check:
+              type: object
+              description: A check on this column only. For a condition over several columns use `POST /tables/{table}/constraints`.
+              properties:
+                category: { type: string, description: "Optional, e.g. text or number_date. Default custom." }
+                where: { $ref: "#/components/schemas/CheckCondition" }
+        empty_first: { type: boolean, description: On a type change, empty the column first }
+    ColumnWrite:
+      type: object
+      properties:
+        id: { type: string, example: fld_3f2a9c1e5b7d4a0c8e1f2a3b4c5d6e7f }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string }
+        uidt: { type: string }
+        dt: { type: string }
+        meta: { type: object }
+    TableWrite:
+      type: object
+      properties:
+        id: { type: string, example: tbl_3f2a9c1e5b7d4a0c8e1f2a3b4c5d6e7f }
+        name: { type: string }
+        description: { type: string }
+        base_id: { type: string }
+        columns:
+          type: array
+          items: { $ref: "#/components/schemas/ColumnWrite" }
+    DeletedItem:
+      type: object
+      properties:
+        id: { type: string }
+        deleted: { type: boolean, enum: [true] }
+    CreateConstraint:
+      type: object
+      properties:
+        title: { type: string }
+        type: { type: string, enum: [unique, check], description: Required when creating; can't change }
+        columns: { type: array, items: { type: string }, description: Column names or IDs }
+        check:
+          type: object
+          properties:
+            category: { type: string }
+            where: { $ref: "#/components/schemas/CheckCondition" }
+    CheckCondition:
+      type: object
+      description: |
+        The condition every record must satisfy, as JSON, never SQL. The server turns it into the SQL inside the
+        database's `CHECK (...)`.
+
+        **A group** has exactly one key, a non-empty array:
+
+        - `all`: every item is true (AND)
+        - `any`: at least one item is true (OR)
+        - `none`: no item is true (NOT (a OR b))
+
+        Each item is a condition or another group. Groups nest up to 5 deep; at most 50 conditions in all.
+
+        **A condition** has `column` (a name or `fld_` ID), `op` and, for most operators, `value`. No other keys.
+
+        | op | value | Works on |
+        |---|---|---|
+        | `eq`, `neq`, `gt`, `gte`, `lt`, `lte` | a string, number or true/false | any column |
+        | `in` | an array of 1 to 100 such values | any column |
+        | `contains`, `starts_with`, `ends_with` | a string; `%`, `_` and `\` match themselves | text columns only |
+        | `not_empty` | none | text columns only; true when the value is not null and not blank |
+        | `is_null`, `is_not_null` | none | any column |
+
+        Operators that take no value refuse one (`422`); the others require it. Links and lookups can't be used:
+        they have no value of their own. In a column's own check (`constraints.check` on a column) the condition can
+        use that column only, otherwise `422 validation_failed`. Existing records must already pass, otherwise
+        nothing is added and the answer is `422`. A wrong part is named by its path in `details`, e.g.
+        `where.all[1].op`.
+      properties:
+        all: { type: array, minItems: 1, items: { $ref: "#/components/schemas/CheckConditionItem" } }
+        any: { type: array, minItems: 1, items: { $ref: "#/components/schemas/CheckConditionItem" } }
+        none: { type: array, minItems: 1, items: { $ref: "#/components/schemas/CheckConditionItem" } }
+      example:
+        all:
+          - { column: Email, op: contains, value: "@" }
+          - any:
+              - { column: Status, op: in, value: [Open, Paid] }
+              - { column: Notes, op: not_empty }
+    CheckConditionItem:
+      description: A condition, or a nested group
+      oneOf:
+        - type: object
+          required: [column, op]
+          additionalProperties: false
+          properties:
+            column: { type: string, description: Column name or fld_ ID }
+            op: { type: string, enum: [eq, neq, gt, gte, lt, lte, in, contains, starts_with, ends_with, is_null, is_not_null, not_empty] }
+            value: {}
+        - $ref: "#/components/schemas/CheckCondition"
+    TableConstraint:
+      type: object
+      properties:
+        id: { type: string, example: con_3f2a9c1e5b7d4a0c8e1f2a3b4c5d6e7f }
+        title: { type: string }
+        type: { type: string, enum: [unique, check] }
+        columns:
+          type: array
+          items: { type: string }
+          description: Column names, as accepted when creating the constraint
+        check:
+          type: object
+          description: Check constraints only. category and where are the fields a create or change takes, so a constraint can be edited and sent back with PUT.
+          properties:
+            category: { type: string }
+            where:
+              $ref: "#/components/schemas/CheckCondition"
+            condition: { type: string, description: "Read only. The SQL Postgres enforces. A check made in the app has this and no where." }
+        constraint_name: { type: string, description: Read only }
+        status: { type: string, enum: [ok, missing], description: Read only }
+        definition: { type: string, description: Read only }
+    PrimaryKey:
+      type: object
+      properties:
+        columns: { type: array, items: { type: object } }
+        candidates:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              in_key: { type: boolean }
+              eligible: { type: boolean }
+              reason: { type: string }
     RecordID:
       type: string
       pattern: "^rec_[1-9][0-9]*$"
@@ -990,6 +1609,11 @@ components:
         deleted: { type: boolean, enum: [true] }
 
   responses:
+    Forbidden:
+      description: "`feature_disabled` (base management is off for this base; turn it on in the Developer settings) or `system_column` (system columns can't be changed or deleted)"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     BadRequest:
       description: Malformed JSON, a bad query parameter or where tree, a value in the wrong format, a cursor made for another filter or edited, the same ID twice, a record ID on a table addressed by key, or an Idempotency-Key longer than 255 characters
       content:
@@ -1006,7 +1630,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     Conflict:
-      description: An Idempotency-Key reused with a different body, or still running; the table was busy with other changes (nothing was saved, try again); a name matches several items (`ambiguous_name`); or the table's fields changed while the request was being answered (`schema_changed`, try again).
+      description: An Idempotency-Key reused with a different body, or still running; the table was busy with other changes (nothing was saved, try again); a name matches several items (`ambiguous_name`); or the table's fields changed while the request was being answered (`schema_changed`, try again). Base management adds `in_use` (other tables, constraints or lookups depend on it; `details` lists them), `conversion_not_allowed` (the type change is not allowed; `details` lists the allowed types) and `conflict` for a name that is already taken.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }

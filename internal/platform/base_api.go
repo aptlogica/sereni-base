@@ -80,7 +80,9 @@ func (s *baseAPIService) Get(ctx context.Context, schemaName, baseID string) (dt
 	if !found {
 		return dto.BaseAPIResponse{BaseID: baseID}, nil
 	}
-	return toResponse(row), nil
+	out := toResponse(row)
+	out.Settings = toSettingsResponse(s.settings(ctx, schemaName, baseID))
+	return out, nil
 }
 
 func (s *baseAPIService) Enable(ctx context.Context, schemaName, baseID string) (dto.BaseAPIResponse, error) {

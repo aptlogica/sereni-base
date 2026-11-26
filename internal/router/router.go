@@ -366,6 +366,10 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		base.POST("/:id/api/enable",
 			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, baseParam),
 			handlers.BaseAPI.EnableBaseAPI)
+		// Base management switch: owners and co-owners only
+		base.PATCH("/:id/api/settings",
+			adminOnly(middlewares),
+			handlers.BaseAPI.UpdateBaseAPISettings)
 
 		// All access operations
 		base.GET("/:id", baseAccess, handlers.Base.GetBaseByID)

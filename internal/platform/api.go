@@ -38,6 +38,11 @@ type API struct {
 	bases              *baseCache
 	schemas            *schemaCache
 	now                func() time.Time
+
+	// Base management (schema writes); nil until WithSchemaServices
+	schemaSvc *SchemaServices
+	refresher *cacheRefresher
+	locks     schemaLocks
 }
 
 // NewAPI returns the public API. schema is the schema of the metadata tables (constant.MasterDatabase).
@@ -71,6 +76,10 @@ func (a *API) Register(api *gin.RouterGroup) {
 	bs.GET("/tables", a.listTables)
 	bs.GET("/tables/:table", a.getTable)
 	bs.GET("/tables/:table/columns", a.listColumns)
+
+	if a.schemaSvc != nil {
+		a.registerSchemaWrites(bs)
+	}
 
 	records := bs.Group("/tables/:table/records")
 	records.GET("", a.listRecords)
@@ -199,4 +208,34 @@ func splitList(value string) []string {
 		}
 	}
 	return out
+}
+
+// registerSchemaWrites adds the base management routes: tables, columns, constraints and the primary key.
+// Every write goes through schemaWrite: the per-base switch and the per-base lock.
+func (a *API) registerSchemaWrites(bs *gin.RouterGroup) {
+	guard := a.schemaWrite()
+	write := func(method, path string, handlers ...gin.HandlerFunc) {
+		bs.Handle(method, path, append(append([]gin.HandlerFunc{}, guard...), handlers...)...)
+	}
+	write(http.MethodPost, "/tables", a.idempotent(), a.createTable)
+	write(http.MethodPatch, "/tables/:table", a.updateTable)
+	write(http.MethodDelete, "/tables/:table", a.deleteTable)
+
+	write(http.MethodPost, "/tables/:table/columns", a.idempotent(), a.createColumn)
+	write(http.MethodPatch, "/tables/:table/columns/:column", a.updateColumn)
+	write(http.MethodDelete, "/tables/:table/columns/:column", a.deleteColumn)
+	write(http.MethodPost, "/tables/:table/columns/reorder", a.reorderColumn)
+
+	// Reads of constraints and the key need the switch too: they show how the table is protected
+	read := func(path string, handler gin.HandlerFunc) {
+		bs.GET(path, a.requireFeature(featureBaseManagement), handler)
+	}
+	read("/tables/:table/constraints", a.listConstraints)
+	write(http.MethodPost, "/tables/:table/constraints", a.idempotent(), a.createConstraint)
+	write(http.MethodPost, "/tables/:table/constraints/check", a.checkConstraint)
+	write(http.MethodPut, "/tables/:table/constraints/:constraint", a.updateConstraint)
+	write(http.MethodDelete, "/tables/:table/constraints/:constraint", a.deleteConstraint)
+
+	read("/tables/:table/primary-key", a.getPrimaryKey)
+	write(http.MethodPut, "/tables/:table/primary-key", a.setPrimaryKey)
 }

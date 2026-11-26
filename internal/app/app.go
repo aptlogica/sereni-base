@@ -236,7 +236,13 @@ func New(cfg *config.Config) (*App, error) {
 		if !ok {
 			return nil, fmt.Errorf("table management service does not support public API writes")
 		}
-		publicAPI = platform.NewAPI(dbService.DB, appConstant.MasterDatabase, recordWriter, cfg.PublicAPI.RateLimitPerMinute)
+		publicAPI = platform.NewAPI(dbService.DB, appConstant.MasterDatabase, recordWriter, cfg.PublicAPI.RateLimitPerMinute).
+			WithSchemaServices(platform.SchemaServices{
+				Tables:      tableManagementService,
+				Constraints: tableConstraintService,
+				PrimaryKeys: primaryKeyService,
+			})
+		publicAPI.StartBackground(context.Background())
 	}
 
 	// Initialize handlers

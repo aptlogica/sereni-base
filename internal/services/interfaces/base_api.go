@@ -17,4 +17,7 @@ type BaseAPIService interface {
 	// Enable gives the base its permanent public ID if it has none and turns the API on.
 	// Enabling an enabled base changes nothing.
 	Enable(ctx context.Context, schemaName, baseID string) (dto.BaseAPIResponse, error)
+	// UpdateSettings changes the settings of the features in the request and returns the new status. The user
+	// who turns a feature on is recorded as its actor.
+	UpdateSettings(ctx context.Context, schemaName, baseID, userID string, req dto.UpdateBaseAPISettingsRequest) (dto.BaseAPIResponse, error)
 }

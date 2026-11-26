@@ -54,3 +54,41 @@ func TestFilterOperatorsMatchBuildFilter(t *testing.T) {
 		}
 	}
 }
+
+// The base management paths are in the generic spec, marked, and stripped for bases that have it off
+func TestOpenAPIBaseManagementPaths(t *testing.T) {
+	doc, err := openAPIBase()
+	require.NoError(t, err)
+	paths := child(doc, "paths")
+	want := map[string][]string{
+		"/tables":                                  {"post"},
+		"/tables/{table}":                          {"patch", "delete"},
+		"/tables/{table}/columns":                  {"post"},
+		"/tables/{table}/columns/{column}":         {"patch", "delete"},
+		"/tables/{table}/columns/reorder":          {"post"},
+		"/tables/{table}/constraints":              {"get", "post"},
+		"/tables/{table}/constraints/check":        {"post"},
+		"/tables/{table}/constraints/{constraint}": {"put", "delete"},
+		"/tables/{table}/primary-key":              {"get", "put"},
+	}
+	for path, methods := range want {
+		item := child(paths, path)
+		for _, m := range methods {
+			op := child(item, m)
+			assert.Equal(t, true, op["x-base-management"], path+" "+m)
+		}
+	}
+
+	stripBaseManagement(doc)
+	paths = child(doc, "paths")
+	assert.NotContains(t, paths, "/tables/{table}/constraints")
+	assert.NotContains(t, paths, "/tables/{table}/primary-key")
+	// The read operations stay, the write ones are gone
+	assert.Contains(t, child(paths, "/tables"), "get")
+	assert.NotContains(t, child(paths, "/tables"), "post")
+	assert.NotContains(t, child(paths, "/tables/{table}"), "delete")
+	assert.NotContains(t, child(paths, "/tables/{table}/columns"), "post")
+	for _, tag := range doc["tags"].([]any) {
+		assert.NotEqual(t, baseManagementTag, tag.(map[string]any)["name"])
+	}
+}

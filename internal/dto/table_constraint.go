@@ -43,6 +43,9 @@ type CheckInput struct {
 	Category string `json:"category,omitempty"`
 	// The SQL condition inside CHECK (...), e.g. age_1790232948 BETWEEN 18 AND 100
 	Condition string `json:"condition,omitempty"`
+	// The structured condition the API platform compiled Condition from. Kept so it can be returned as
+	// it was given; constraints made in the app have none.
+	Where map[string]interface{} `json:"where,omitempty"`
 }
 
 // ConstraintColumn is a column of a constraint, resolved from its ID

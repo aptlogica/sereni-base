@@ -278,7 +278,101 @@ curl -X POST "$BASE/tables/Orders/records" -H "Content-Type: application/json" \
   -H "Idempotency-Key: order-2026-11-04-001" -d '{"fields": {"Name": "Asha"}}'
 ```
 
-## 5. Errors
+## 5. Change the schema (base management)
+
+Base management lets your **server** create, change and delete tables, columns, constraints and the primary key. It is **off by default**:
+
+1. An owner or co-owner turns it on for the base in the Developer popup (**Base management API**), or with `PATCH /api/v1/base/{id}/api/settings` and `{"base_management": {"enabled": true}}`.
+2. There is no secret key check yet: like the rest of the base API, the write routes run without authentication, and only when the server runs with `PUBLIC_API_OPEN_ACCESS=true` (dev only). A secret key will be required once the security work lands.
+3. Writes are made in the name of the user who turned the feature on (the base owner if that user has left). Only one schema change per base runs at a time (`503 unavailable` if one is still running after 30 seconds).
+
+While the feature is off, the write routes answer `403 feature_disabled`, and the base's `/docs`, `/redoc` and `/openapi.json` do not list them.
+
+| Method and path | What it does |
+|---|---|
+| `POST /tables` | Create a table, optionally with `columns` (there is never a default Title column). A failed step removes the half-built table |
+| `PATCH /tables/{table}` | Rename or change the description. IDs survive renames |
+| `DELETE /tables/{table}` | Delete a table and its records. `409 in_use` lists link columns in other tables that point at it, unless `?force=true` |
+| `POST /tables/{table}/columns` | Add a column: `title`, `uidt`, `meta` (also holds `default` and `id_generation`), optional `constraints` (`unique`, `check`) |
+| `PATCH /tables/{table}/columns/{column}` | Rename, change options or the type. `?dry_run=true` previews a type change; `409 conversion_not_allowed` lists the allowed types |
+| `DELETE /tables/{table}/columns/{column}` | Delete a column. `409 in_use` lists dependents; `?force=true` is needed when it holds data |
+| `POST /tables/{table}/columns/reorder` | Move a column `before` or `after` another |
+| `GET /tables/{table}/constraints` | List unique and check constraints (`?type=unique` or `check`) |
+| `POST /tables/{table}/constraints` | Add a unique constraint or a check constraint with a structured condition |
+| `POST /tables/{table}/constraints/check` | Dry run: duplicates, or how many records break a condition |
+| `PUT /tables/{table}/constraints/{constraint}` | Change title, columns or condition (the type cannot change) |
+| `DELETE /tables/{table}/constraints/{constraint}` | Drop a constraint |
+| `GET /tables/{table}/primary-key` | Show the key columns and the possible key columns |
+| `PUT /tables/{table}/primary-key` | Set the key to one or more columns |
+
+```bash
+# Add a column that must be unique and contain an @
+curl -X POST "$BASE/tables/Orders/columns" -H "Content-Type: application/json" -d '{
+  "title": "Email", "uidt": "email",
+  "constraints": { "unique": true,
+    "check": { "category": "text", "where": { "all": [ { "column": "Email", "op": "contains", "value": "@" } ] } } }
+}'
+
+# A column with a default value (a setting, so in meta)
+curl -X POST "$BASE/tables/Orders/columns" -H "Content-Type: application/json" -d '{
+  "title": "Status", "uidt": "text", "meta": { "default": "draft" }
+}'
+```
+
+### Check conditions
+
+A check constraint (`constraints.check.where` on a column, or `check.where` on `POST /tables/{table}/constraints`) takes a condition as JSON. The server compiles it to the SQL inside `CHECK (...)`; nothing you send is run as SQL.
+
+**Groups.** An object with exactly one key holding a non-empty array:
+
+| Key | True when | SQL |
+|---|---|---|
+| `all` | every item is true | `a AND b` |
+| `any` | at least one item is true | `a OR b` |
+| `none` | no item is true | `NOT (a OR b)` |
+
+Each item is a condition or another group. Groups nest up to 5 deep, with at most 50 conditions in all.
+
+**Conditions.** `{"column": "Price", "op": "gte", "value": 0}`: `column` is a name or `fld_` ID, then `op`, then `value` where the operator takes one. Any other key is refused.
+
+| `op` | `value` | Works on | Meaning |
+|---|---|---|---|
+| `eq`, `neq` | string, number or true/false | any column | equal, not equal |
+| `gt`, `gte`, `lt`, `lte` | string, number or true/false | any column | greater / less than (or equal) |
+| `in` | array of 1 to 100 such values | any column | equals one of them |
+| `contains`, `starts_with`, `ends_with` | string (`%`, `_` and `\` match themselves) | text columns only | text match |
+| `not_empty` | none | text columns only | not null and not blank |
+| `is_null`, `is_not_null` | none | any column | has no value / has a value |
+
+A value for `is_null`, `is_not_null` or `not_empty` is refused; a missing value for the others is refused too. Links and lookups can't be used: they have no value of their own.
+
+```json
+{ "all": [
+    { "column": "Email", "op": "contains", "value": "@" },
+    { "any": [
+        { "column": "Status", "op": "in", "value": ["Open", "Paid"] },
+        { "column": "Notes",  "op": "not_empty" }
+    ] }
+] }
+```
+
+**Rules.**
+- A column's own check (`constraints.check` in `POST /tables/{table}/columns`) can use that column only. For a condition over several columns, use `POST /tables/{table}/constraints`.
+- Existing records must already pass. If any breaks the condition, nothing is added and the answer is `422`. `POST /tables/{table}/constraints/check` counts the records that break it without changing anything.
+- A wrong part is named by its path in `details`, for example `constraints.check.where.all[1].op`.
+- A column with a check can't also have a `default`.
+- **A constraint comes back the way you create it.** `GET` returns `title`, `type`, `columns` (names) and, for a check, `check: {category, where, condition}`. Edit those and send them back with `PUT /tables/{table}/constraints/{constraint}`; `id`, `constraint_name`, `status`, `definition` and `check.condition` are read only and ignored. Leave `check` out of a `PUT` to keep the condition. A check made in the app (not through this API) has no `where`, only `condition`.
+
+Rules worth knowing:
+
+- **System columns** (Id, Created Time and the like) cannot be changed, moved or deleted: `403 system_column`.
+- **Column types:** the app's `uidt`. `formula`, `attachment` and `user` answer `422 type_not_supported` until the data API can read and write them; `links` and `lookup` are allowed and take no per-column constraints.
+- **Default and ID generation are column settings, so they go in `meta`:** `"meta": {"default": "draft"}` and, on a `uuid` column, `"meta": {"id_generation": {"mode": "auto"}}`. `constraints` takes only `unique` and `check`; `default` or `id_generation` there answers `422`. A default can't be combined with `unique` or `check`. `id_generation.backfill: true` (on a change) fills the empty cells of existing records and is not stored. Links and lookups take neither.
+- **Check conditions are JSON, never SQL.** See [Check conditions](#check-conditions) below.
+- A name that is already taken is `409 conflict`; all validation problems come back together as `422 validation_failed`.
+- Schema changes show up in the data API on the next request; the server also rebuilds its cached schema and OpenAPI spec in the background.
+
+## 6. Errors
 
 ```json
 {
@@ -304,5 +398,12 @@ curl -X POST "$BASE/tables/Orders/records" -H "Content-Type: application/json" \
 | `internal_error` | 500 | Server error; quote `meta.request_id` when reporting it. If an automation on the table failed, the message says so: check the table's automations |
 | `query_timeout` | 503 | A read ran longer than 10 seconds and was stopped; narrow the filter or search, expand fewer fields, or ask for a smaller page |
 | `schema_changed` | 409 | A field or table used by the request was changed or deleted in the app while the request was being answered; try again |
+| `forbidden` | 403 | Reserved for the secret key check of the security work; not returned yet |
+| `feature_disabled` | 403 | Base management is off for this base; turn it on in the Developer settings |
+| `system_column` | 403 | System columns can't be changed, moved or deleted |
+| `in_use` | 409 | Other tables, constraints or lookups depend on what you are deleting (`details` lists them) |
+| `conversion_not_allowed` | 409 | The column's type can't be changed to that type (`details` lists the allowed types) |
+| `type_not_supported` | 422 | `formula`, `attachment` and `user` columns can't be created through the API yet |
+| `unavailable` | 503 | Another schema change on this base is still running; try again after `Retry-After` |
 
 Every response has an `X-Request-Id` header equal to `meta.request_id`. You can send your own `X-Request-Id` (up to 64 characters of `A-Z a-z 0-9 _ -`) to trace a request through the server logs.

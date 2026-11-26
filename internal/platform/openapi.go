@@ -153,6 +153,9 @@ func (a *API) buildSpec(ctx context.Context, base baseRef) ([]byte, error) {
 		}
 	}
 	doc["tags"] = b.tags
+	if !base.Settings.BaseManagement.Enabled {
+		stripBaseManagement(doc)
+	}
 	return json.Marshal(doc)
 }
 
@@ -453,4 +456,44 @@ func copyValue(v any) any {
 		return out
 	}
 	return v
+}
+
+// baseManagementTag is the tag of the schema write paths in the generic spec
+const baseManagementTag = "Base management"
+
+// stripBaseManagement removes the operations marked x-base-management from the spec, and the paths and the tag
+// left empty: a base lists the schema write paths only while base management is on for it
+func stripBaseManagement(doc schemaObject) {
+	paths := child(doc, "paths")
+	for path, rawItem := range paths {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		operations := 0
+		for method, rawOp := range item {
+			op, isOp := rawOp.(map[string]any)
+			if !isOp || method == "parameters" {
+				continue
+			}
+			if marked, _ := op["x-base-management"].(bool); marked {
+				delete(item, method)
+				continue
+			}
+			operations++
+		}
+		if operations == 0 {
+			delete(paths, path)
+		}
+	}
+	if tags, ok := doc["tags"].([]any); ok {
+		kept := make([]any, 0, len(tags))
+		for _, t := range tags {
+			if tag, ok := t.(map[string]any); ok && tag["name"] == baseManagementTag {
+				continue
+			}
+			kept = append(kept, t)
+		}
+		doc["tags"] = kept
+	}
 }

@@ -29,6 +29,16 @@ const (
 	CodeInternalError    ErrorCode = "internal_error"
 	CodeQueryTimeout     ErrorCode = "query_timeout"
 	CodeSchemaChanged    ErrorCode = "schema_changed"
+
+	// Base management (schema writes). CodeForbidden is for the secret key check the security task adds.
+	CodeInUse                ErrorCode = "in_use"
+	CodeForbidden            ErrorCode = "forbidden"
+	CodeFeatureDisabled      ErrorCode = "feature_disabled"
+	CodeConversionNotAllowed ErrorCode = "conversion_not_allowed"
+	CodeSystemColumn         ErrorCode = "system_column"
+	CodeTypeNotSupported     ErrorCode = "type_not_supported"
+	CodeConstraintViolation  ErrorCode = "constraint_violation"
+	CodeUnavailable          ErrorCode = "unavailable"
 )
 
 var errorStatus = map[ErrorCode]int{
@@ -42,6 +52,15 @@ var errorStatus = map[ErrorCode]int{
 	CodeInternalError:    http.StatusInternalServerError,
 	CodeQueryTimeout:     http.StatusServiceUnavailable,
 	CodeSchemaChanged:    http.StatusConflict,
+
+	CodeInUse:                http.StatusConflict,
+	CodeForbidden:            http.StatusForbidden,
+	CodeFeatureDisabled:      http.StatusForbidden,
+	CodeConversionNotAllowed: http.StatusConflict,
+	CodeSystemColumn:         http.StatusForbidden,
+	CodeTypeNotSupported:     http.StatusUnprocessableEntity,
+	CodeConstraintViolation:  http.StatusUnprocessableEntity,
+	CodeUnavailable:          http.StatusServiceUnavailable,
 }
 
 // Status returns the HTTP status of an error code

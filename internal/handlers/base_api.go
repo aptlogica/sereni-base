@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"github.com/aptlogica/sereni-base/internal/dto"
 	"github.com/aptlogica/sereni-base/internal/services/interfaces"
 	"github.com/aptlogica/sereni-base/internal/utils/response"
 	responseConst "github.com/aptlogica/sereni-base/internal/utils/response/constants"
@@ -63,4 +64,35 @@ func (h *BaseAPIHandler) EnableBaseAPI(c *gin.Context) {
 		return
 	}
 	response.SendSuccess(c, responseConst.BaseAPISuccess.Enabled, out)
+}
+
+// @Summary      Change the base API settings
+// @Description  Turns base management (the schema write APIs) on or off for the base. The user who turns it on becomes the actor of every schema write made through the API. Owner and co-owner only.
+// @Tags         Admin Base
+// @Accept       json
+// @Produce      json
+// @Param        X-Request-ID  header  string  false  "Optional client-generated request trace ID"
+// @Param        id       path      string  true  "Base ID"
+// @Param        request  body      dto.UpdateBaseAPISettingsRequest  true  "Settings to change"
+// @Success      200  {object}  dto.BaseAPIResponse
+// @Failure      400  {object}  models.ErrorResponse  "Invalid payload, or the base API is off"
+// @Security     BearerAuth
+// @Router       /base/{id}/api/settings [patch]
+func (h *BaseAPIHandler) UpdateBaseAPISettings(c *gin.Context) {
+	var req dto.UpdateBaseAPISettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	schemaNameVal, _ := c.Get("schema")
+	schemaName, _ := schemaNameVal.(string)
+	userIDVal, _ := c.Get("user_id")
+	userID, _ := userIDVal.(string)
+
+	out, err := h.baseAPIService.UpdateSettings(c, schemaName, c.Param("id"), userID, req)
+	if err != nil {
+		response.CheckAndSendError(c, err)
+		return
+	}
+	response.SendSuccess(c, responseConst.BaseAPISuccess.Fetched, out)
 }

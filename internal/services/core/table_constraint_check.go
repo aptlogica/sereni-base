@@ -72,7 +72,7 @@ func checkInput(in dto.CheckInput) (dto.CheckInput, error) {
 	if err != nil {
 		return dto.CheckInput{}, err
 	}
-	return dto.CheckInput{Category: category, Condition: condition}, nil
+	return dto.CheckInput{Category: category, Condition: condition, Where: in.Where}, nil
 }
 
 // checkCondition makes sure the condition stays inside CHECK (...): one expression, no statement

@@ -27,6 +27,10 @@ type baseRef struct {
 	WorkspaceID   string
 	PublicID      string
 	SchemaVersion int64
+	Settings      baseSettings
+	// Owner is the user who created the base; schema writes fall back to them when the user who turned
+	// base management on is gone
+	Owner string
 }
 
 type baseEntry struct {
@@ -85,7 +89,7 @@ func (a *API) lookupBase(ctx context.Context, publicID string) (baseRef, bool, e
 // readBase reads the enabled base with this public ID from the database
 func (a *API) readBase(ctx context.Context, publicID string) (baseRef, bool, error) {
 	ref := baseRef{PublicID: publicID}
-	rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT b.id::text, b.workspace_id::text, a.schema_version FROM %[1]s.base_api a JOIN %[1]s.bases b ON b.id = a.base_id
+	rows, err := a.db.QueryContext(ctx, fmt.Sprintf(`SELECT b.id::text, b.workspace_id::text, a.schema_version, a.settings::text, COALESCE(b.created_by::text, '') FROM %[1]s.base_api a JOIN %[1]s.bases b ON b.id = a.base_id
 		 WHERE a.public_id = $1 AND a.enabled = true AND COALESCE(b.status, 'active') = 'active'`,
 		a.schemaIdent()), publicID)
 	if err != nil {
@@ -95,9 +99,11 @@ func (a *API) readBase(ctx context.Context, publicID string) (baseRef, bool, err
 	if !rows.Next() {
 		return ref, false, rows.Err()
 	}
-	if err := rows.Scan(&ref.ID, &ref.WorkspaceID, &ref.SchemaVersion); err != nil {
+	var rawSettings []byte
+	if err := rows.Scan(&ref.ID, &ref.WorkspaceID, &ref.SchemaVersion, &rawSettings, &ref.Owner); err != nil {
 		return ref, false, err
 	}
+	ref.Settings = parseBaseSettings(rawSettings)
 	return ref, true, rows.Err()
 }
 
