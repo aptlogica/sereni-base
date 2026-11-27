@@ -242,10 +242,13 @@ services:
     ports:
       - "3100"
     environment:
-      - LOG_RETENTION_DAYS=${LOGSERVICE_RETENTION_DAYS:-14}
+      - LOG_RETENTION=${LOGSERVICE_RETENTION:-14d}
     volumes:
       - ./services/sereni-log/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - ./services/sereni-log/loki-entrypoint.sh:/loki-entrypoint.sh:ro
       - loki_data:/loki
+    # The script turns LOG_RETENTION (30m, 12h, 14d, 2w) into whole days for Loki, then starts it
+    entrypoint: ["/bin/sh", "/loki-entrypoint.sh"]
     command: -config.file=/etc/loki/local-config.yaml -config.expand-env=true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
@@ -273,7 +276,7 @@ services:
       CORS_ALLOWED_ORIGINS: ${LOGSERVICE_CORS_ALLOWED_ORIGINS:-}
       CORS_ALLOWED_METHODS: ${LOGSERVICE_CORS_ALLOWED_METHODS:-GET,POST,OPTIONS}
       CORS_ALLOWED_HEADERS: ${LOGSERVICE_CORS_ALLOWED_HEADERS:-Origin,Content-Type,X-API-Key}
-      LOG_RETENTION_DAYS: ${LOGSERVICE_RETENTION_DAYS:-14}
+      LOG_RETENTION: ${LOGSERVICE_RETENTION:-14d}
       LOG_MAX_ENTRY_BYTES: ${LOGSERVICE_MAX_ENTRY_BYTES:-32768}
       LOG_MAX_REQUEST_BYTES: ${LOGSERVICE_MAX_REQUEST_BYTES:-4194304}
       LOG_ALLOWED_LABELS: ${LOGSERVICE_ALLOWED_LABELS:-env}

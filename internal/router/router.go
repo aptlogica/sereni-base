@@ -55,6 +55,7 @@ type Handlers struct {
 	PrimaryKey      *handlers.PrimaryKeyHandler
 	TableConstraint *handlers.TableConstraintHandler
 	BaseAPI         *handlers.BaseAPIHandler
+	BaseAPILogs     *handlers.BaseAPILogsHandler
 	// PublicAPI serves /api/v1/{bs}; registered only when PUBLIC_API_OPEN_ACCESS is on
 	PublicAPI *platform.API
 }
@@ -366,6 +367,13 @@ func setupBaseRoutes(private *gin.RouterGroup, handlers Handlers, middlewares Mi
 		base.POST("/:id/api/enable",
 			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Update, baseParam),
 			handlers.BaseAPI.EnableBaseAPI)
+		// Logs of the base's public API, read from sereni-log: any member who can open the base
+		base.GET("/:id/api/logs",
+			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Read, baseParam),
+			handlers.BaseAPILogs.ListLogs)
+		base.GET("/:id/api/logs/count",
+			objectGuard(middlewares, appConstant.ResourceCodes.Base, appConstant.ActionCodes.Read, baseParam),
+			handlers.BaseAPILogs.CountLogs)
 		// Base management switch: owners and co-owners only
 		base.PATCH("/:id/api/settings",
 			adminOnly(middlewares),

@@ -131,6 +131,22 @@ type PublicAPIConfig struct {
 	RateLimitPerMinute int  `mapstructure:"rate_limit_per_minute"`
 	// Comma-separated workspace slugs whose bases all get the API enabled at startup when open access is on
 	SeedWorkspaces string `mapstructure:"seed_workspaces"`
+	// LogMode is "all" (default): every request is logged; "errors": only those that end with status 400 or
+	// higher; "off": none
+	LogMode string `mapstructure:"log_mode"`
+
+	// Log service (sereni-log). Empty LogServiceURL turns shipping off: only the local log line is written.
+	LogServiceURL    string `mapstructure:"log_service_url"`     // including /api/v1, like STORAGE_URL
+	LogServiceAPIKey string `mapstructure:"log_service_api_key"` // sent as X-API-Key only when set
+	// LogBodies is "errors" (default): request and response bodies are stored only for status 400 and up,
+	// "all" or "off"
+	LogBodies       string `mapstructure:"log_bodies"`
+	LogMaxBodyBytes int    `mapstructure:"log_max_body_bytes"` // cap of one body
+	// LogRedactFields are comma-separated field names masked in bodies, added to the built-in secret names
+	LogRedactFields string `mapstructure:"log_redact_fields"`
+	LogQueueSize    int    `mapstructure:"log_queue_size"`    // entries buffered before dropping
+	LogBatchSize    int    `mapstructure:"log_batch_size"`    // entries per push, at most 1000
+	LogFlushSeconds int    `mapstructure:"log_flush_seconds"` // longest wait before a partial batch is sent
 }
 
 func Load() (*Config, error) {
@@ -211,6 +227,15 @@ func Load() (*Config, error) {
 	viper.BindEnv("public_api.open_access", "PUBLIC_API_OPEN_ACCESS")
 	viper.BindEnv("public_api.rate_limit_per_minute", "PUBLIC_API_RATE_LIMIT_PER_MINUTE")
 	viper.BindEnv("public_api.seed_workspaces", "PUBLIC_API_SEED_WORKSPACES")
+	viper.BindEnv("public_api.log_mode", "PUBLIC_API_LOG_MODE")
+	viper.BindEnv("public_api.log_service_url", "LOG_SERVICE_URL")
+	viper.BindEnv("public_api.log_service_api_key", "LOG_SERVICE_API_KEY")
+	viper.BindEnv("public_api.log_bodies", "PUBLIC_API_LOG_BODIES")
+	viper.BindEnv("public_api.log_max_body_bytes", "PUBLIC_API_LOG_MAX_BODY_BYTES")
+	viper.BindEnv("public_api.log_redact_fields", "PUBLIC_API_LOG_REDACT_FIELDS")
+	viper.BindEnv("public_api.log_queue_size", "PUBLIC_API_LOG_QUEUE_SIZE")
+	viper.BindEnv("public_api.log_batch_size", "PUBLIC_API_LOG_BATCH_SIZE")
+	viper.BindEnv("public_api.log_flush_seconds", "PUBLIC_API_LOG_FLUSH_SECONDS")
 
 	// Set defaults
 	viper.SetDefault("server.port", "8080")
@@ -282,6 +307,15 @@ func Load() (*Config, error) {
 	viper.SetDefault("public_api.open_access", false)
 	viper.SetDefault("public_api.rate_limit_per_minute", 600)
 	viper.SetDefault("public_api.seed_workspaces", "")
+	viper.SetDefault("public_api.log_mode", "all")
+	viper.SetDefault("public_api.log_service_url", "")
+	viper.SetDefault("public_api.log_service_api_key", "")
+	viper.SetDefault("public_api.log_bodies", "errors")
+	viper.SetDefault("public_api.log_max_body_bytes", 8192)
+	viper.SetDefault("public_api.log_redact_fields", "password,token,secret,authorization,api_key")
+	viper.SetDefault("public_api.log_queue_size", 10000)
+	viper.SetDefault("public_api.log_batch_size", 500)
+	viper.SetDefault("public_api.log_flush_seconds", 2)
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
@@ -290,4 +324,3 @@ func Load() (*Config, error) {
 
 	return &config, nil
 }
-

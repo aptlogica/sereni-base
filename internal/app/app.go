@@ -16,7 +16,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/aptlogica/sereni-base/internal/config"
 	appConstant "github.com/aptlogica/sereni-base/internal/constant"
@@ -25,6 +28,8 @@ import (
 	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/internal/platform"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
+	"github.com/aptlogica/sereni-base/internal/providers/logquery"
+	"github.com/aptlogica/sereni-base/internal/providers/logship"
 	"github.com/aptlogica/sereni-base/internal/router"
 	"github.com/aptlogica/sereni-base/internal/scripts"
 	"github.com/aptlogica/sereni-base/internal/services"
@@ -53,6 +58,7 @@ type App struct {
 	authProvider auth.AuthProvider
 	dbService    *pkg.DatabaseService
 	publicAPI    *platform.API
+	logShipper   *logship.Client // sends API platform logs to sereni-log; nil when LOG_SERVICE_URL is empty
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -231,6 +237,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Base public API, open without authentication: only built when PUBLIC_API_OPEN_ACCESS is on
 	var publicAPI *platform.API
+	var logShipper *logship.Client
 	if cfg.PublicAPI.OpenAccess {
 		recordWriter, ok := tableManagementService.(platform.RecordWriter)
 		if !ok {
@@ -242,6 +249,10 @@ func New(cfg *config.Config) (*App, error) {
 				Constraints: tableConstraintService,
 				PrimaryKeys: primaryKeyService,
 			})
+		var err error
+		if logShipper, err = configurePublicAPILog(publicAPI, cfg); err != nil {
+			return nil, err
+		}
 		publicAPI.StartBackground(context.Background())
 	}
 
@@ -257,6 +268,9 @@ func New(cfg *config.Config) (*App, error) {
 	tableConstraintHandler := handlers.NewTableConstraintHandler(tableConstraintService)
 	primaryKeyHandler := handlers.NewPrimaryKeyHandler(primaryKeyService)
 	baseAPIHandler := handlers.NewBaseAPIHandler(baseAPIService)
+	// Reading the API logs only needs LOG_SERVICE_URL; it does not depend on PUBLIC_API_OPEN_ACCESS
+	logQuery := logquery.New(logquery.Config{URL: cfg.PublicAPI.LogServiceURL, APIKey: cfg.PublicAPI.LogServiceAPIKey})
+	baseAPILogsHandler := handlers.NewBaseAPILogsHandler(services.NewBaseAPILogService(baseAPIService, logQuery))
 
 	handlerGroups := router.Handlers{
 		Auth:            authHandler,
@@ -270,6 +284,7 @@ func New(cfg *config.Config) (*App, error) {
 		TableConstraint: tableConstraintHandler,
 		PrimaryKey:      primaryKeyHandler,
 		BaseAPI:         baseAPIHandler,
+		BaseAPILogs:     baseAPILogsHandler,
 		PublicAPI:       publicAPI,
 	}
 
@@ -329,7 +344,69 @@ func New(cfg *config.Config) (*App, error) {
 		authProvider: authProvider,
 		dbService:    dbService,
 		publicAPI:    publicAPI,
+		logShipper:   logShipper,
 	}, nil
+}
+
+// configurePublicAPILog sets up the access log of the public API from the PUBLIC_API_LOG_* and LOG_SERVICE_*
+// settings. Every logged request goes to the local log; with LOG_SERVICE_URL set it is also queued for
+// sereni-log, with bodies as PUBLIC_API_LOG_BODIES says. It returns the shipper to flush at shutdown, or nil.
+func configurePublicAPILog(api *platform.API, cfg *config.Config) (*logship.Client, error) {
+	pc := cfg.PublicAPI
+	var logAll bool
+	switch strings.ToLower(strings.TrimSpace(pc.LogMode)) {
+	case "", "all":
+		logAll = true
+	case "errors":
+	case "off":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("PUBLIC_API_LOG_MODE must be all, errors or off, got %q", pc.LogMode)
+	}
+	sinks := platform.MultiSink{platform.ZerologSink{}}
+
+	var shipper *logship.Client
+	if url := strings.TrimSpace(pc.LogServiceURL); url != "" {
+		bodies := strings.ToLower(strings.TrimSpace(pc.LogBodies))
+		switch bodies {
+		case "":
+			bodies = platform.BodiesErrors
+		case platform.BodiesOff, platform.BodiesErrors, platform.BodiesAll:
+		default:
+			return nil, fmt.Errorf("PUBLIC_API_LOG_BODIES must be off, errors or all, got %q", pc.LogBodies)
+		}
+		shipper = logship.New(logship.Config{
+			URL:           url,
+			APIKey:        pc.LogServiceAPIKey,
+			QueueSize:     pc.LogQueueSize,
+			BatchSize:     pc.LogBatchSize,
+			FlushInterval: time.Duration(pc.LogFlushSeconds) * time.Second,
+			OnDrop:        platform.LogShipDropped,
+		})
+		shipper.Start()
+		sinks = append(sinks, platform.LogServiceSink{Shipper: shipper})
+		api.WithLogBodies(bodies, pc.LogMaxBodyBytes, splitList(pc.LogRedactFields))
+	}
+	api.WithLogSink(sinks, cfg.Server.Env, logAll)
+	return shipper, nil
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// Shutdown flushes the API platform logs still queued for sereni-log. It waits until ctx is done.
+func (a *App) Shutdown(ctx context.Context) error {
+	if a.logShipper == nil {
+		return nil
+	}
+	return a.logShipper.Shutdown(ctx)
 }
 
 func (a *App) Run() error {
@@ -355,8 +432,35 @@ func (a *App) Run() error {
 	// fmt.Printf("💾 Export data: GET /api/v1/export/{table}/csv\n")
 	// fmt.Printf("🔧 Health checks: GET /health, /ready, /live\n")
 
-	// Start the server
-	return a.server.ListenAndServe()
+	// Start the server. On SIGINT or SIGTERM stop taking requests, then flush the logs still queued for
+	// sereni-log, each with a short deadline.
+	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- a.server.ListenAndServe() }()
+
+	select {
+	case err := <-serverErr:
+		a.flushLogs()
+		return err
+	case <-stop.Done():
+		ctx, done := context.WithTimeout(context.Background(), 10*time.Second)
+		defer done()
+		if err := a.server.Shutdown(ctx); err != nil {
+			logger.Get().Warn().Err(err).Msg("server did not stop cleanly")
+		}
+		a.flushLogs()
+		return nil
+	}
+}
+
+// flushLogs sends the API platform logs still queued for sereni-log, waiting up to 5 seconds
+func (a *App) flushLogs() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := a.Shutdown(ctx); err != nil {
+		logger.Get().Warn().Err(err).Msg("API logs were not all sent before shutdown")
+	}
 }
 
 func runBeforeServer(repo *pkg.DatabaseService, authProvider auth.AuthProvider, cfg *config.Config) {

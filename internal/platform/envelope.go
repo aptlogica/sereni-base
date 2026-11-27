@@ -8,6 +8,7 @@ package platform
 import (
 	"errors"
 	"net/http"
+	"reflect"
 
 	"github.com/aptlogica/sereni-base/internal/middleware"
 	"github.com/aptlogica/sereni-base/internal/providers/logger"
@@ -137,6 +138,9 @@ func respond(c *gin.Context, status int, data any) {
 
 // respondList writes a page of a list; next_cursor is null on the last page
 func respondList(c *gin.Context, data any, nextCursor string, limit int, total *int64) {
+	if rv := reflect.ValueOf(data); rv.Kind() == reflect.Slice {
+		c.Set(ctxRecordCount, rv.Len()) // the access log stores the size of a list, not its body
+	}
 	m := listMeta{RequestID: requestID(c), Limit: limit, Total: total}
 	if nextCursor != "" {
 		m.NextCursor = &nextCursor
@@ -164,6 +168,15 @@ func respondError(c *gin.Context, err error) {
 		} else {
 			lg.Error().Stack().Err(err).Str("request_id", requestID(c)).Msg("public API request failed")
 			apiErr = NewError(CodeInternalError, "Something went wrong on our side. Please try again.")
+		}
+	}
+	// for the access log
+	c.Set(ctxErrorCode, string(apiErr.Code))
+	c.Set(ctxErrorMessage, apiErr.Message)
+	// a handler that knows the exact message sets its own key first, and that one stays
+	if _, set := c.Get(ctxErrorKey); !set {
+		if key := errorMessageKey(apiErr.Code); defaultMessages.has(key) {
+			c.Set(ctxErrorKey, key)
 		}
 	}
 	c.AbortWithStatusJSON(apiErr.Code.Status(), envelope{

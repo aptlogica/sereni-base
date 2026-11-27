@@ -62,6 +62,7 @@ var NewWorkspaceManagementService = workspace.NewWorkspaceManagementService
 
 var NewBaseService = base.NewBaseService
 var NewBaseManagementService = base.NewBaseManagementService
+var NewBaseAPILogService = base.NewBaseAPILogService
 
 // ============================================================================
 // Table Services - Re-exports from table subdirectory

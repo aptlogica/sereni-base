@@ -1,0 +1,203 @@
+{
+  "locale": "en-US",
+  "version": 1,
+  "messages": {
+    "log.api.request": {
+      "type": "log",
+      "level": "info",
+      "message": "{method} {api} returned {status}",
+      "params": [
+        "method",
+        "api",
+        "status"
+      ],
+      "note": "Any 2xx or 3xx on a /api/v1/bs_.../ route. Only logged when PUBLIC_API_LOG_MODE is all."
+    },
+    "log.api.client_error": {
+      "type": "log",
+      "level": "warn",
+      "message": "{method} {api} returned {status}",
+      "params": [
+        "method",
+        "api",
+        "status"
+      ],
+      "note": "Any 4xx on a /api/v1/bs_.../ route, except the two cases below."
+    },
+    "log.api.server_error": {
+      "type": "log",
+      "level": "error",
+      "message": "{method} {api} returned {status}",
+      "params": [
+        "method",
+        "api",
+        "status"
+      ],
+      "note": "Any 5xx on a /api/v1/bs_.../ route."
+    },
+    "log.api.unknown_base": {
+      "type": "log",
+      "level": "warn",
+      "message": "{method} {api} for unknown base {base_id}",
+      "params": [
+        "method",
+        "api",
+        "base_id"
+      ],
+      "note": "resolveBase aborted with 404: the base ID is malformed, unknown, disabled or archived."
+    },
+    "log.api.rate_limited": {
+      "type": "log",
+      "level": "warn",
+      "message": "{method} {api} rate limited",
+      "params": [
+        "method",
+        "api"
+      ],
+      "note": "429 from the per-base rate limiter."
+    },
+    "log.ship.batch_dropped": {
+      "type": "log",
+      "level": "warn",
+      "message": "Dropped {count} log entries: {reason}",
+      "params": [
+        "count",
+        "reason"
+      ],
+      "note": "Queue full, 4xx from sereni-log, or retries used up. Written to the local log only, never sent through the shipper."
+    },
+    "error.bad_request": {
+      "type": "error",
+      "code": "bad_request",
+      "message": "The API could not understand the request. Something in the URL, the filter or the body is wrong.",
+      "action": "1) Read error_message: it names the exact thing that is wrong. 2) Check the spelling of table names, field names and filter values, and make sure the body is valid JSON. 3) Fix that one thing and send the request again. Example: if it says there is no field called Customer, open the table and use the exact name of the field.",
+      "note": "400. Wrong filter, unknown field name, broken JSON, wrong key."
+    },
+    "error.not_found": {
+      "type": "error",
+      "code": "not_found",
+      "message": "The table, field or record you asked for does not exist in this base.",
+      "action": "1) Look at the table, field or record name or ID in the URL. A small typo is the most common cause. 2) Open the base and check that it still exists: records and tables can be deleted by someone else. 3) If you were deleting a record that is already gone, the job is already done and nothing more is needed.",
+      "note": "404, after the base was found."
+    },
+    "error.unknown_base": {
+      "type": "error",
+      "code": "not_found",
+      "message": "This base ID does not match any base that can be used. It may be wrong, turned off or archived.",
+      "action": "1) Copy the base ID (it starts with bs_) again from the Developer page and compare it with your URL. 2) On the same page, check that the API switch is ON for this base. 3) Check that the base is not archived. 4) Send the request again.",
+      "note": "404 before the base was found. The access log uses this text when the base could not be resolved."
+    },
+    "error.ambiguous_name": {
+      "type": "error",
+      "code": "ambiguous_name",
+      "message": "Two or more items have the same name, so the API cannot tell which one you mean.",
+      "action": "Use the ID of the item instead of its name. You can get the IDs from the list of tables or fields. To stop this from happening again, give each table or field its own name.",
+      "note": "409."
+    },
+    "error.conflict": {
+      "type": "error",
+      "code": "conflict",
+      "message": "The request clashes with something that already exists or is already running.",
+      "action": "1) Read error_message to see what clashes. 2) If a table or column with that name already exists, choose another name or update the existing one. 3) If it mentions an Idempotency-Key, wait a few seconds and send the same request again, or use a new key for a new request. 4) If it says the column holds data, add ?force=true only if you really want to delete the data too.",
+      "note": "409. Duplicate name, reused Idempotency-Key, delete that needs force."
+    },
+    "error.payload_too_large": {
+      "type": "error",
+      "code": "payload_too_large",
+      "message": "You sent too much data in one request.",
+      "action": "Split the work into smaller requests. One request can hold at most 100 records, and the body can be at most 10 MB. Send the records in batches of 100 or fewer, one batch after the other.",
+      "note": "413. 100 records per bulk request, 10 MB body."
+    },
+    "error.validation_failed": {
+      "type": "error",
+      "code": "validation_failed",
+      "message": "One or more values do not fit the field they were sent to.",
+      "action": "1) Open the error response and read details: it lists each field and what is wrong with it. 2) Match each value to its field type: numbers for number fields, YYYY-MM-DD for dates, one of the listed options for select fields. 3) Send the request again with the fixed values.",
+      "note": "422."
+    },
+    "error.rate_limited": {
+      "type": "error",
+      "code": "rate_limited",
+      "message": "You are sending requests faster than this base allows.",
+      "action": "1) Wait. The Retry-After header of the response says how many seconds. 2) Send the request again after that time. 3) To avoid it next time, slow your calls down, or send up to 100 records in one bulk request instead of one request per record.",
+      "note": "429. Limit per base per minute, set in the environment."
+    },
+    "error.internal_error": {
+      "type": "error",
+      "code": "internal_error",
+      "message": "Something broke on our side. It is not caused by your request.",
+      "action": "1) Try the same request again after a few seconds: many of these pass on the second try. 2) If it keeps failing, send the request ID (request_id in the response) to support. With that ID we can find the exact cause in our server log. 3) Do not keep sending the same failing request in a loop.",
+      "note": "500. The real cause is in the server log under the same request_id; the client never sees it."
+    },
+    "error.query_timeout": {
+      "type": "error",
+      "code": "query_timeout",
+      "message": "The request took longer than 10 seconds, so it was stopped.",
+      "action": "Ask for less data. 1) Add a filter so fewer records match. 2) Lower limit (the default is 50, the most is 200). 3) Ask only for the fields you need with the fields parameter. 4) Do not expand links you do not need. Then send the request again.",
+      "note": "503. The limit is queryTimeout in query_limits.go (10 s)."
+    },
+    "error.schema_changed": {
+      "type": "error",
+      "code": "schema_changed",
+      "message": "Someone changed the fields of the table while your request was running.",
+      "action": "Send the same request again. If it fails a second time, read the fields of the table again, because a field you use may have been renamed or deleted.",
+      "note": "409."
+    },
+    "error.in_use": {
+      "type": "error",
+      "code": "in_use",
+      "message": "This item cannot be deleted because other things still use it.",
+      "action": "1) Look at details in the error response: it lists what uses this item (for example a lookup, a link or a rule). 2) Remove or change those first. 3) Then delete this item again.",
+      "note": "409."
+    },
+    "error.forbidden": {
+      "type": "error",
+      "code": "forbidden",
+      "message": "Your key is not allowed to do this.",
+      "action": "1) Check that you are using the right key. 2) Ask an owner or co-owner of the base for a key that has this permission. 3) Send the request again with the new key.",
+      "note": "403."
+    },
+    "error.feature_disabled": {
+      "type": "error",
+      "code": "feature_disabled",
+      "message": "Base management is turned off for this base, so the API will not change tables or fields.",
+      "action": "A base owner or co-owner must open the Developer settings of this base and turn on base management. After that, send the request again.",
+      "note": "403. The per-base base management switch."
+    },
+    "error.conversion_not_allowed": {
+      "type": "error",
+      "code": "conversion_not_allowed",
+      "message": "This field cannot be changed to that type without losing data.",
+      "action": "1) Add a new field of the type you want. 2) Copy the values from the old field into the new one. 3) Check the data, then delete the old field.",
+      "note": "409. For example links and lookups cannot change type."
+    },
+    "error.system_column": {
+      "type": "error",
+      "code": "system_column",
+      "message": "This is a system field (such as id, created_at or updated_at). The system owns it, so it cannot be edited or deleted.",
+      "action": "Change or delete one of your own fields instead. If you need a value like these, add a normal field and fill it yourself.",
+      "note": "403."
+    },
+    "error.type_not_supported": {
+      "type": "error",
+      "code": "type_not_supported",
+      "message": "The API cannot create or use this field type yet.",
+      "action": "Pick a type the API supports. The full list is in the API docs page of the base. If you need this type now, create the field in the app and then use it through the API.",
+      "note": "422."
+    },
+    "error.constraint_violation": {
+      "type": "error",
+      "code": "constraint_violation",
+      "message": "The value breaks a rule set on the table, such as unique or required.",
+      "action": "1) Read error_message to see which rule. 2) If it is unique, use a value that is not used yet, or update the record that already has it. 3) If it is required, send a value for that field. 4) Send the request again.",
+      "note": "422."
+    },
+    "error.unavailable": {
+      "type": "error",
+      "code": "unavailable",
+      "message": "The service is busy right now, for example another change to the tables of this base is still running.",
+      "action": "Wait for the number of seconds in the Retry-After header (5 if there is none), then send the request again. Do not send several changes to the same base at the same time.",
+      "note": "503. A schema change waits up to 30 s for the lock."
+    }
+  }
+}

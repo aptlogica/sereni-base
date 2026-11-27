@@ -85,6 +85,15 @@ The base public API (`/api/v1/{bs}`), see [API_PLATFORM_FOUNDATION.md](API_PLATF
 - `PUBLIC_API_OPEN_ACCESS=false` - Registers the public API routes **without authentication**. Dev only: the server refuses to start with it on when `SERVER_ENV=prod`
 - `PUBLIC_API_RATE_LIMIT_PER_MINUTE=600` - Requests per minute per base
 - `PUBLIC_API_SEED_WORKSPACES=` - Comma-separated workspace slugs whose bases all get the API enabled at startup (only when open access is on)
+- `PUBLIC_API_LOG_MODE=all` - Access log of public API calls, one line each with the base ID and `request_id`: `all` (default), `errors` (status 400 and up only) or `off`
+- `LOG_SERVICE_URL=` - Send the API logs to sereni-log in the background, including `/api/v1`, e.g. `http://sereni-log:8089/api/v1`. Empty: only the local log line is written
+- `LOG_SERVICE_API_KEY=` - Sent as `X-API-Key` when set
+- `PUBLIC_API_LOG_BODIES=errors` - Bodies sent with the entry: `errors` (status 400 and up, default), `all` or `off`. Secret fields are masked
+- `PUBLIC_API_LOG_MAX_BODY_BYTES=8192` - Cap of one body (at most 12288)
+- `PUBLIC_API_LOG_REDACT_FIELDS=password,token,secret,authorization,api_key` - Names masked in bodies, added to the built-in list (also `access_key`)
+- `PUBLIC_API_LOG_QUEUE_SIZE=10000` - Entries buffered before dropping
+- `PUBLIC_API_LOG_BATCH_SIZE=500` - Entries per push, at most 1000
+- `PUBLIC_API_LOG_FLUSH_SECONDS=2` - Longest wait before a partial batch is sent
 - The `CORS_*` settings don't apply to the public API: `/api/v1/bs_...` is open to every origin.
 
 ### Logging (Defaults)

@@ -43,6 +43,12 @@ type API struct {
 	schemaSvc *SchemaServices
 	refresher *cacheRefresher
 	locks     schemaLocks
+
+	// Access log; nil turns it off (see WithLogSink)
+	logSink LogSink
+	logEnv  string
+	logAll  bool        // log every request, not only the failed ones
+	bodies  *bodyPolicy // which bodies are captured for the log service; nil: none
 }
 
 // NewAPI returns the public API. schema is the schema of the metadata tables (constant.MasterDatabase).
@@ -66,7 +72,7 @@ func (a *API) schemaIdent() string { return pq.QuoteIdentifier(a.schema) }
 // Register adds the /:bs routes to the /api/v1 group. Existing /api/v1/<name> routes always win; any other
 // first segment is looked up as a base public ID.
 func (a *API) Register(api *gin.RouterGroup) {
-	bs := api.Group("/:bs", a.resolveBase(), authPlaceholder(), a.rateLimit())
+	bs := api.Group("/:bs", a.accessLog(), a.resolveBase(), authPlaceholder(), a.rateLimit())
 
 	// The base's own spec and its docs pages, as FastAPI serves them
 	bs.GET("/openapi.json", a.openAPISpec)

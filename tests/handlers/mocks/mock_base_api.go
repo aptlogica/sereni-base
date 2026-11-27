@@ -70,3 +70,18 @@ func (mr *MockBaseAPIServiceMockRecorder) Get(ctx, schemaName, baseID any) *gomo
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBaseAPIService)(nil).Get), ctx, schemaName, baseID)
 }
+
+// UpdateSettings mocks base method.
+func (m *MockBaseAPIService) UpdateSettings(ctx context.Context, schemaName, baseID, userID string, req dto.UpdateBaseAPISettingsRequest) (dto.BaseAPIResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSettings", ctx, schemaName, baseID, userID, req)
+	ret0, _ := ret[0].(dto.BaseAPIResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateSettings indicates an expected call of UpdateSettings.
+func (mr *MockBaseAPIServiceMockRecorder) UpdateSettings(ctx, schemaName, baseID, userID, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSettings", reflect.TypeOf((*MockBaseAPIService)(nil).UpdateSettings), ctx, schemaName, baseID, userID, req)
+}
